@@ -3,5 +3,10 @@
   "extends": [
     "ultracite/biome/core",
     "ultracite/biome/react"
-  ]
+  ],
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  }
 }

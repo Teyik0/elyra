@@ -1,6 +1,63 @@
 import { parse } from "node:path";
+import type { StaticOptions } from "@elysiajs/static/types";
 import { Glob } from "bun";
+import { Elysia, type AnyElysia } from "elysia";
 import { isPageModule, type PageModule, type PageOptions } from "./page";
+import { handleISR, prerenderSSG, renderSSR } from "./render";
+
+export function createRoutePlugin(
+  route: ResolvedRoute,
+  config: StaticOptions<string>
+): AnyElysia {
+  const { pattern, mode } = route;
+  const { query, params, loader, action } = route.module.options ?? {};
+
+  const getPlugins: AnyElysia[] = []
+
+  // 1. Guard for query/params validation
+  if (query || params) {
+    getPlugins.push(new Elysia().guard({ query, params }));
+  }
+
+  // 2. Macro + Resolve for loader
+  if (loader?.macro) {
+    getPlugins.push(new Elysia().use(loader.macro));
+  }
+
+  if (loader?.handler) {
+    getPlugins.push(new Elysia().resolve(async (ctx) => ({
+      __pageData: await loader.handler(ctx),
+    })));
+  }
+
+  // 3. GET route
+  getPlugins.push(new Elysia().get(pattern, async (ctx) => {
+    switch (mode) {
+      case "ssg": {
+        const html = await prerenderSSG(route, ctx.params ?? {}, config);
+        return new Response(html, {
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "public, max-age=0, must-revalidate",
+          },
+        });
+      }
+
+      case "isr":
+        return handleISR(route, ctx, config);
+
+      default:
+        return renderSSR(route, ctx, config);
+    }
+  }));
+
+  // 4. TO-REFACTOR -> POST route for action
+
+  return getPlugins.reduce(
+    (app, plugin) => app.use(plugin),
+    new Elysia()
+  );
+}
 
 export interface ResolvedRoute {
   pattern: string; // URL pattern e.g. /blog/:slug

@@ -1,106 +1,67 @@
+# CLAUDE.md
 
-Default to using Bun instead of Node.js.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Use `bunx <package> <command>` instead of `npx <package> <command>`
-- Bun automatically loads .env, so don't use dotenv.
+## Project Overview
 
-## APIs
+**Elysion** is a React meta-framework powered by [Elysia](https://elysiajs.com/). It provides file-based routing with SSR, SSG, and ISR rendering modes, similar to Next.js but built on Elysia + Bun.
 
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
+## Commands
 
-## Testing
+- `bun run dev` — Run the example app with watch mode
+- `bun run build` — Build the library to `dist/`
+- `bun run check` — Lint with ultracite (biome-based)
+- `bun run fix` — Auto-fix lint issues
+- `bun run tsc` — Type-check without emitting
+- `bun test` — Run tests
 
-Use `bun test` to run tests.
+## Tooling
 
-```ts#index.test.ts
-import { test, expect } from "bun:test";
+- **Runtime**: Bun only. Never use Node.js, npm, yarn, pnpm, dotenv, express, vite, or webpack.
+- **Linting**: Ultracite (wraps Biome). Config in `biome.jsonc`.
+- **CSS**: Tailwind v4 via `bun-plugin-tailwind` (configured in `bunfig.toml`).
+- **Path alias**: `"elysion"` maps to `./src/index.ts` (see `tsconfig.json` paths).
 
-test("hello world", () => {
-  expect(1).toBe(1);
-});
+## Architecture
+
+The framework lives in `src/` and an example app lives in `example/`.
+
+### Core (`src/`)
+
+- **`index.ts`** — Main entrypoint. Exports `elysion()` which scans pages, creates route plugins, mounts static file serving via `@elysiajs/static`, and starts the Elysia server. Also re-exports `page` from `page.ts`.
+- **`page.ts`** — Defines the `page(component, options?)` function that page files must use as their default export. Options include `loader`, `head`, `action`, `mode` (ssr/ssg/isr), and `revalidate`. The `PageModule` type is branded with `__brand: "elysion-react-page"`.
+- **`router.ts`** — File-based router. `scanPages()` globs `**/*.tsx` in the pages directory, imports each, and resolves routes. `createRoutePlugin()` creates an Elysia plugin per route with GET (and optionally POST for actions) handlers. Contains rendering logic for SSR/SSG/ISR modes with caching.
+- **`render.ts`** — (WIP) Server-side React rendering utilities.
+
+### Rendering Modes
+
+Mode resolution in `router.ts` (`resolveMode`):
+- No loader → **SSG** (static generation)
+- Has loader → **SSR** (server-side rendering)
+- Has `revalidate > 0` → **ISR** (incremental static regeneration)
+- Explicit `mode` option always wins
+
+### File-based Routing Conventions
+
+Pages go in a `pages/` directory (configurable via `pagesDir`):
+- `index.tsx` → `/`
+- `about.tsx` → `/about`
+- `blog/index.tsx` → `/blog`
+- `blog/[slug].tsx` → `/blog/:slug`
+- `[...catch].tsx` → `/*` (catch-all)
+- `_hidden.tsx` → ignored (underscore prefix)
+
+### Example App (`example/`)
+
+- `example/src/server.ts` — Creates an Elysia app, uses `elysion()` plugin, adds API routes under `/api`
+- `example/src/pages/` — Page components using `page()` export convention
+- `example/public/` — Static assets served at `/public`
+
+### Page File Convention
+
+Every page must default-export the result of `page(Component, options?)`:
+
+```tsx
+import { page } from "elysion";
+export default page(MyComponent, { mode: "ssr", loader: async () => {...} });
 ```
-
-## Frontend
-
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
-
-Server:
-
-```ts#index.ts
-import index from "./index.html"
-
-Bun.serve({
-  routes: {
-    "/": index,
-    "/api/users/:id": {
-      GET: (req) => {
-        return new Response(JSON.stringify({ id: req.params.id }));
-      },
-    },
-  },
-  // optional websocket support
-  websocket: {
-    open: (ws) => {
-      ws.send("Hello, world!");
-    },
-    message: (ws, message) => {
-      ws.send(message);
-    },
-    close: (ws) => {
-      // handle close
-    }
-  },
-  development: {
-    hmr: true,
-    console: true,
-  }
-})
-```
-
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
-
-```html#index.html
-<html>
-  <body>
-    <h1>Hello, world!</h1>
-    <script type="module" src="./frontend.tsx"></script>
-  </body>
-</html>
-```
-
-With the following `frontend.tsx`:
-
-```tsx#frontend.tsx
-import React from "react";
-import { createRoot } from "react-dom/client";
-
-// import .css files directly and it works
-import './index.css';
-
-const root = createRoot(document.body);
-
-export default function Frontend() {
-  return <h1>Hello, world!</h1>;
-}
-
-root.render(<Frontend />);
-```
-
-Then, run index.ts
-
-```sh
-bun --hot ./index.ts
-```
-
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.

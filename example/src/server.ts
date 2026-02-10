@@ -3,7 +3,7 @@ import { elysion } from "elysion";
 
 const app = new Elysia()
   .use(
-    elysion({
+    await elysion({
       pagesDir: `${import.meta.dir}/pages`,
       staticOptions: {
         assets: `${import.meta.dir}/../public`,
@@ -25,6 +25,4 @@ const app = new Elysia()
   )
   .listen(3000);
 
-console.log(
-  `\n🦊 elysia-react-ssr example running at http://localhost:${app.server?.port}\n`
-);
+console.log(`\n🦊 elysion running at http://localhost:${app.server?.port}`);
