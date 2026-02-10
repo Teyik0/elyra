@@ -1,6 +1,6 @@
 import { staticPlugin } from "@elysiajs/static";
 import type { StaticOptions } from "@elysiajs/static/types";
-import { Elysia, type AnyElysia } from "elysia";
+import { type AnyElysia, Elysia } from "elysia";
 import { createRoutePlugin, scanPages } from "./router";
 
 interface ElysionProps {

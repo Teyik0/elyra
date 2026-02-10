@@ -1,4 +1,4 @@
-import type { Elysia } from "elysia";
+import type { BaseMacro, LocalHook } from "elysia";
 
 export interface LoaderContext {
   params: Record<string, string>;
@@ -11,22 +11,43 @@ export interface ActionContext<TBody = unknown> {
   body: TBody;
 }
 
-// Macro can be a function that returns an Elysia plugin or hooks
-export type Macro = (app: Elysia) => Elysia;
+// Hooks disponibles pour loader/action (sans body/query/params qui sont au niveau page)
+export type PageHooks = Omit<
+  // biome-ignore lint/suspicious/noExplicitAny: Elysia types are complex
+  LocalHook<any, any, any, any>,
+  | "body"
+  | "query"
+  | "params"
+  | "headers"
+  | "cookie"
+  | "response"
+  | "type"
+  | "detail"
+>;
 
-export interface LoaderConfig<TData = Record<string, unknown>> {
-  macro?: Macro;
+// Base type for loader without macro
+interface LoaderBase<TData = Record<string, unknown>> {
   handler: (ctx: LoaderContext) => Promise<TData> | TData;
 }
 
-export interface ActionConfig<
-  TBody = unknown,
-  TResult = Record<string, unknown>,
-> {
+export type LoaderConfig<
+  TData = Record<string, unknown>,
+  // biome-ignore lint/suspicious/noExplicitAny: Elysia macro types are complex
+  TMacro extends BaseMacro = any,
+> = LoaderBase<TData> & PageHooks & TMacro;
+
+// Base type for action without macro
+interface ActionBase<TBody = unknown, TResult = Record<string, unknown>> {
   body: unknown;
-  macro?: Macro;
   handler: (ctx: ActionContext<TBody>) => Promise<TResult> | TResult;
 }
+
+export type ActionConfig<
+  TBody = unknown,
+  TResult = Record<string, unknown>,
+  // biome-ignore lint/suspicious/noExplicitAny: Elysia macro types are complex
+  TMacro extends BaseMacro = any,
+> = ActionBase<TBody, TResult> & PageHooks & TMacro;
 
 export interface PageOptions<
   TLoaderData = Record<string, unknown>,

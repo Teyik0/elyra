@@ -1,7 +1,7 @@
 import { parse } from "node:path";
 import type { StaticOptions } from "@elysiajs/static/types";
 import { Glob } from "bun";
-import { Elysia, type AnyElysia } from "elysia";
+import { type AnyElysia, Elysia } from "elysia";
 import { isPageModule, type PageModule, type PageOptions } from "./page";
 import { handleISR, prerenderSSG, renderSSR } from "./render";
 
@@ -12,51 +12,71 @@ export function createRoutePlugin(
   const { pattern, mode } = route;
   const { query, params, loader, action } = route.module.options ?? {};
 
-  const getPlugins: AnyElysia[] = []
+  const plugins: AnyElysia[] = [];
 
   // 1. Guard for query/params validation
   if (query || params) {
-    getPlugins.push(new Elysia().guard({ query, params }));
+    plugins.push(new Elysia().guard({ query, params }));
   }
 
-  // 2. Macro + Resolve for loader
-  if (loader?.macro) {
-    getPlugins.push(new Elysia().use(loader.macro));
-  }
-
+  // 2. Resolve for loader data if handler exists
   if (loader?.handler) {
-    getPlugins.push(new Elysia().resolve(async (ctx) => ({
-      __pageData: await loader.handler(ctx),
-    })));
+    plugins.push(
+      new Elysia().resolve(async (ctx) => ({
+        __pageData: await loader.handler(ctx),
+      }))
+    );
   }
 
-  // 3. GET route
-  getPlugins.push(new Elysia().get(pattern, async (ctx) => {
-    switch (mode) {
-      case "ssg": {
-        const html = await prerenderSSG(route, ctx.params ?? {}, config);
-        return new Response(html, {
-          headers: {
-            "Content-Type": "text/html; charset=utf-8",
-            "Cache-Control": "public, max-age=0, must-revalidate",
-          },
-        });
-      }
+  // 3. Extract hooks from loader (everything except handler)
+  const { handler: _loaderHandler, ...loaderHooks } = loader || {};
 
-      case "isr":
-        return handleISR(route, ctx, config);
+  // 4. Add GET route with all loader hooks (macros, beforeHandle, etc.)
+  plugins.push(
+    new Elysia().get(
+      pattern,
+      async (ctx) => {
+        switch (mode) {
+          case "ssg": {
+            const html = await prerenderSSG(route, ctx.params ?? {}, config);
+            return new Response(html, {
+              headers: {
+                "Content-Type": "text/html; charset=utf-8",
+                "Cache-Control": "public, max-age=0, must-revalidate",
+              },
+            });
+          }
 
-      default:
-        return renderSSR(route, ctx, config);
-    }
-  }));
+          case "isr":
+            return handleISR(route, ctx, config);
 
-  // 4. TO-REFACTOR -> POST route for action
-
-  return getPlugins.reduce(
-    (app, plugin) => app.use(plugin),
-    new Elysia()
+          default:
+            return renderSSR(route, ctx, config);
+        }
+      },
+      // Spread loader hooks (macros, beforeHandle, afterHandle, etc.)
+      Object.keys(loaderHooks).length > 0 ? loaderHooks : undefined
+    )
   );
+
+  // 5. POST route for action
+  if (action) {
+    const { handler: actionHandler, body, ...actionHooks } = action;
+
+    const actionPlugin = new Elysia().guard({ body });
+
+    // Add POST route with all action hooks
+    plugins.push(
+      actionPlugin.post(
+        pattern,
+        actionHandler,
+        // Spread action hooks (macros, beforeHandle, afterHandle, etc.)
+        Object.keys(actionHooks).length > 0 ? actionHooks : undefined
+      )
+    );
+  }
+
+  return plugins.reduce((app, plugin) => app.use(plugin), new Elysia());
 }
 
 export interface ResolvedRoute {

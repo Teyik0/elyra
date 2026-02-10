@@ -1,20 +1,16 @@
+import "../../public/global.css";
+
 import { page } from "elysion";
 import { useState } from "react";
 
-import "../../public/global.css";
-
-export default page(App, {});
-
-export function App() {
+export default page(() => {
   const [count, setCount] = useState(0);
-  const increase = () => setCount((c) => c + 1);
 
   return (
-    <main>
-      <h2>{count}</h2>
-      <button onClick={increase} type="button">
-        Increase
-      </button>
-    </main>
+    <div>
+      <h1>Counter example</h1>
+      <span>{count}</span>
+      <button onClick={() => setCount((prev) => prev + 1)} type="button" />
+    </div>
   );
-}
+});
