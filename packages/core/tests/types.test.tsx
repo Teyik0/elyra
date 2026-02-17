@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { t } from "elysia";
 import { expectTypeOf } from "expect-type";
-import { createRoute, type InferProps } from "../src/client/types";
+import { createRoute, type InferProps } from "../src/client";
 import { collectRouteChain, isElysionPage, isElysionRoute } from "../src/types";
 
 describe("createRoute types", () => {
@@ -9,9 +9,11 @@ describe("createRoute types", () => {
     const route = createRoute({ mode: "ssg" });
 
     route.page({
-      component: ({ params, query }) => {
-        expectTypeOf(params).toEqualTypeOf<unknown>();
-        expectTypeOf(query).toEqualTypeOf<unknown>();
+      component: (props) => {
+        // @ts-expect-error — params doesn't exist when not defined
+        props.params;
+        // @ts-expect-error — query doesn't exist when not defined
+        props.query;
         return null;
       },
     });
@@ -110,6 +112,25 @@ describe("createRoute types", () => {
     function Component({ params, post }: InferProps<typeof page>) {
       expectTypeOf(params.slug).toBeString();
       expectTypeOf(post).toEqualTypeOf<{ id: number; slug: string }>();
+      return null;
+    }
+  });
+
+  test("InferProps on page includes page-level loader data", () => {
+    const route = createRoute({
+      loader: async () => ({ post: { title: "Hello" } }),
+    });
+
+    const page = route.page({
+      loader: async () => ({
+        comments: [{ text: "Nice" }] as Array<{ text: string }>,
+      }),
+      component: (props) => <Component {...props} />,
+    });
+
+    function Component({ post, comments }: InferProps<typeof page>) {
+      expectTypeOf(post).toEqualTypeOf<{ title: string }>();
+      expectTypeOf(comments).toEqualTypeOf<Array<{ text: string }>>();
       return null;
     }
   });
@@ -234,7 +255,7 @@ describe("page head", () => {
 
     route.page({
       loader: async () => ({
-        comments: [{ text: "Nice" }] as Array<{ text: string }>,
+        comments: [{ text: "Nice" }],
       }),
       head: ({ post, comments }) => {
         expectTypeOf(post.title).toBeString();
