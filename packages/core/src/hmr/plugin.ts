@@ -36,6 +36,11 @@ export function createHmrPlugin(pagesDir: string) {
       const relativePath = ctx.path.replace("/_modules/pages/", "");
       const fullPath = resolve(pagesDir, relativePath);
 
+      // Prevent path traversal outside pagesDir
+      if (!fullPath.startsWith(pagesDir)) {
+        return new Response("Forbidden", { status: 403 });
+      }
+
       try {
         const code = await getTransformedModule(fullPath, pagesDir);
         return new Response(code, {

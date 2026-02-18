@@ -49,7 +49,7 @@ export default route.page({
           marginBottom: "20px",
         }}
       >
-        <h2>Profil utilisateur</h2>
+        <h2>Profil utilisateur test</h2>
         <p>
           <strong>Nom:</strong> {user.name}
         </p>

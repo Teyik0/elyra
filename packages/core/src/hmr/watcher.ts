@@ -75,10 +75,13 @@ export function setupHmrWatcher(pagesDir: string) {
     const isRouteFile = filename.endsWith("route.tsx") || filename.endsWith("route.ts");
     const messageType = isRouteFile ? "reload" : "update";
 
+    // Normalize to POSIX separators for valid URLs (Windows compatibility)
+    const normalizedFilename = filename.replace(/\\/g, "/");
+
     const message = JSON.stringify({
       type: messageType,
-      path: `/pages/${filename}`,
-      modules: [`/pages/${filename}`],
+      path: `/pages/${normalizedFilename}`,
+      modules: [`/pages/${normalizedFilename}`],
     });
 
     for (const client of globalThis.__elysionHmrClients) {
@@ -108,7 +111,7 @@ export async function getTransformedModule(fullPath: string, pagesDir: string): 
   }
 
   const source = await file.text();
-  const relativePath = relative(pagesDir, fullPath);
+  const relativePath = relative(pagesDir, fullPath).replace(/\\/g, "/");
   const moduleId = `/_modules/pages/${relativePath}`;
   const transformed = transformForReactRefresh(source, fullPath, moduleId);
 

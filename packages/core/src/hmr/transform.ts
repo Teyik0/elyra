@@ -7,7 +7,6 @@ import {
   isArrowFunctionExpression,
   isBlockStatement,
   isCallExpression,
-  isExportDefaultDeclaration,
   isFunctionExpression,
   isIdentifier,
   isObjectExpression,
@@ -62,10 +61,7 @@ function insertFunctionBeforeExport(
   if (!(program && isProgram(program.node))) {
     return;
   }
-  const exportIndex = program.node.body.findIndex((node) => isExportDefaultDeclaration(node));
-  if (exportIndex !== -1) {
-    program.node.body.splice(exportIndex, 0, fn);
-  }
+  path.insertBefore(fn);
 }
 
 function createExtractPlugin(onExtract: (name: string) => void): Babel.PluginObj {
@@ -131,13 +127,10 @@ export function transformForReactRefresh(code: string, filename: string, moduleI
       throw new Error("Extract transform failed");
     }
 
-    // Pass 2: Transform JSX and add React Refresh
+    // Pass 2: Transform JSX and add React Refresh (TypeScript already stripped in Pass 1)
     const result = transformSync(extractResult.code, {
       filename,
-      presets: [
-        [presetTypescript, { isTSX: true, allExtensions: true }],
-        [presetReact, { runtime: "classic" }],
-      ],
+      presets: [[presetReact, { runtime: "classic" }]],
       plugins: [[reactRefreshBabelPlugin, { skipEnvCheck: true }]],
       sourceMaps: "inline",
     });
@@ -185,8 +178,8 @@ export function transformForReactRefresh(code: string, filename: string, moduleI
     // Strip CSS imports
     transformedCode = transformedCode.replace(/^import\s+["'][^"']+\.css["'];?\s*$/gm, "");
 
-    // Strip import.meta.hot blocks
-    transformedCode = transformedCode.replace(/if\s*\(import\.meta\.hot\)\s*\{[^}]*\}/g, "");
+    // Strip import.meta.hot blocks (handles nested braces)
+    transformedCode = stripImportMetaHotBlocks(transformedCode);
 
     const withGlobals = injectGlobals(transformedCode);
     return wrapWithHMR(withGlobals, moduleId);
@@ -204,6 +197,41 @@ function injectGlobals(code: string): string {
   const elysiaStub = "const t = new Proxy({}, { get: () => (...args) => args[0] ?? {} });";
 
   return `${reactDecl}\n${hooksDecl}\n${elysionDecl}\n${elysiaStub}\n${code}`;
+}
+
+function stripImportMetaHotBlocks(code: string): string {
+  const pattern = /if\s*\(import\.meta\.hot\)\s*\{/g;
+  let result = "";
+  let lastIndex = 0;
+
+  for (const match of code.matchAll(pattern)) {
+    const matchIndex = match.index;
+    if (matchIndex === undefined) {
+      continue;
+    }
+
+    result += code.slice(lastIndex, matchIndex);
+
+    let depth = 1;
+    const start = matchIndex + match[0].length;
+    let end = start;
+
+    for (let i = start; i < code.length; i++) {
+      if (code[i] === "{") {
+        depth++;
+      } else if (code[i] === "}") {
+        depth--;
+      }
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+
+    lastIndex = end + 1;
+  }
+
+  return result + code.slice(lastIndex);
 }
 
 function wrapWithHMR(code: string, moduleId: string): string {

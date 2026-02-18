@@ -1,5 +1,3 @@
-import "../../public/global.css";
-
 import { createRoute } from "elysion/client";
 import { useState } from "react";
 

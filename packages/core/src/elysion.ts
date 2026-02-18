@@ -76,4 +76,4 @@ export async function elysion({
   return routePlugins.reduce((app, plugin) => app.use(plugin), appWithHmr);
 }
 
-import.meta.hot.accept();
+import.meta.hot?.accept();

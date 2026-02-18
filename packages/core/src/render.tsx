@@ -34,6 +34,7 @@ async function streamToString(stream: ReadableStream): Promise<string> {
 }
 
 const CLIENT_JS_PATH = "/_client/_hydrate.js";
+const CSS_PATH = "/public/global.css";
 
 /**
  * Load page module dynamically for HMR support
@@ -86,7 +87,7 @@ function buildElement(
   }
 
   return (
-    <Shell clientJsPath={CLIENT_JS_PATH} data={data} dev={dev}>
+    <Shell clientJsPath={CLIENT_JS_PATH} cssPath={CSS_PATH} data={data} dev={dev}>
       {element}
     </Shell>
   );

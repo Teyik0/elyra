@@ -9,6 +9,7 @@ interface ShellProps {
   headData?: HeadOptions;
   bootstrapScripts?: string[];
   clientJsPath?: string;
+  cssPath?: string;
   dev?: boolean;
 }
 
@@ -39,6 +40,7 @@ export function Shell({
   headData,
   bootstrapScripts = [],
   clientJsPath,
+  cssPath,
   dev = false,
 }: ShellProps) {
   const title = extractTitle(headData?.meta);
@@ -63,6 +65,8 @@ export function Shell({
               type="application/ld+json"
             />
           ))}
+
+        {cssPath && <link rel="stylesheet" href={cssPath} />}
 
         {headData?.links?.map((link, i) => (
           <link key={i} {...link} />
