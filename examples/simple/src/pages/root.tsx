@@ -9,7 +9,7 @@ export const route = createRoute({
             <div className="flex h-16 justify-between">
               <div className="flex">
                 <a className="flex items-center font-bold text-indigo-600 text-xl" href="/">
-                  Elysion Blog Test
+                  Elysion Blog
                 </a>
                 <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
                   <a

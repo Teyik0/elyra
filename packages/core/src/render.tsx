@@ -78,7 +78,9 @@ async function loadRootModule(root: RootLayout, _dev: boolean): Promise<RuntimeR
 }
 
 function injectSuppressHydration(element: ReactNode): ReactNode {
-  if (!element || typeof element !== "object") return element;
+  if (!element || typeof element !== "object") {
+    return element;
+  }
   const el = element as { type?: unknown; props?: Record<string, unknown> };
   const type = el.type;
   const props = el.props ?? {};
@@ -90,7 +92,7 @@ function injectSuppressHydration(element: ReactNode): ReactNode {
         ? props.children.map(injectSuppressHydration)
         : injectSuppressHydration(props.children as ReactNode);
     }
-    return Object.assign({}, element, { props: newProps });
+    return { ...element, props: newProps };
   }
 
   if (props.children) {
@@ -98,19 +100,19 @@ function injectSuppressHydration(element: ReactNode): ReactNode {
     newProps.children = Array.isArray(props.children)
       ? props.children.map(injectSuppressHydration)
       : injectSuppressHydration(props.children as ReactNode);
-    return Object.assign({}, element, { props: newProps });
+    return { ...element, props: newProps };
   }
 
   return element;
 }
 
-function buildElement(
+async function buildElement(
   route: ResolvedRoute,
   data: Record<string, unknown>,
   rootLayout: RuntimeRoute | null,
   rootPath: string | null,
-  _dev: boolean
-): ReactNode {
+  dev: boolean
+): Promise<ReactNode> {
   const page = route.page;
   if (!page) {
     return <div>Loading...</div>;
@@ -123,8 +125,28 @@ function buildElement(
   for (let i = route.routeChain.length - 1; i >= 0; i--) {
     const filePath = route.routeFilePaths[i];
     // Skip the root layout entry — it will be applied separately below
-    if (rootPath && filePath === rootPath) continue;
-    const routeEntry = route.routeChain[i];
+    if (rootPath && filePath === rootPath) {
+      continue;
+    }
+
+    let routeEntry = route.routeChain[i];
+
+    // In dev mode, re-import the layout module with a version query so SSR always
+    // reflects the latest file content (avoids SSR/client hydration mismatches).
+    if (dev && filePath) {
+      try {
+        const version = getModuleVersion(filePath);
+        const freshMod = await import(`${filePath}?v=${version}`);
+        const freshRoute = freshMod.route ?? freshMod.default;
+        if (freshRoute) {
+          routeEntry = freshRoute;
+        }
+      } catch (err) {
+        console.warn(`[elysion] Failed to reload layout ${filePath}:`, err);
+        // Fall through to use the startup-cached routeEntry
+      }
+    }
+
     if (routeEntry?.layout) {
       const Layout = routeEntry.layout;
       element = <Layout {...data}>{element}</Layout>;
@@ -158,9 +180,11 @@ async function runLoaders(
   // Run nested layout loaders (skip root if it appears in the chain — already ran above)
   for (let i = 0; i < route.routeChain.length; i++) {
     const filePath = route.routeFilePaths[i];
-    if (rootPath && filePath === rootPath) continue;
+    if (rootPath && filePath === rootPath) {
+      continue;
+    }
     const ancestor = route.routeChain[i];
-    if (ancestor.loader) {
+    if (ancestor?.loader) {
       const result = await ancestor.loader({ ...data, params, query });
       data = { ...data, ...result };
     }

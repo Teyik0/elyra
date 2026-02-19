@@ -195,7 +195,9 @@ function generateDevHydrateEntry(routes: ResolvedRoute[], rootPath: string | nul
       const filePath = route.routeFilePaths[j];
       if (ancestor?.layout && filePath) {
         const normalizedPath = filePath.replace(/\\/g, "/");
-        if (normalizedPath === normalizedRootPath) continue;
+        if (normalizedPath === normalizedRootPath) {
+          continue;
+        }
         const relPath = relative(srcDir, filePath).replace(/\\/g, "/");
         layoutPaths.push(`/src/${relPath}`);
       }
@@ -277,7 +279,11 @@ ${routeEntries.join(",\n")}
 
 // Global state
 let reactRoot = null;
+let isHydrationRoot = false;
 let hmrUpdateId = 0;
+// Cache of imported layout modules keyed by stable moduleId (no ?hmr= query).
+// Populated during initial hydration; updated via handleMessage() when layouts change.
+const layoutModuleCache = new Map();
 ${hasRoot ? "let rootModule = null;" : ""}
 
 ${
@@ -343,18 +349,16 @@ async function loadRoot() {
   }
 
   function performRefresh() {
-    try {
-      const result = RefreshRuntime.performReactRefresh();
-      if (result) {
-        console.log("[hmr] React Fast Refresh complete");
-      } else {
-        console.log("[hmr] No React Refresh update, re-rendering manually");
-        reRenderCurrentPage();
+    // Re-render FIRST to transition hydrateRoot → createRoot before React Refresh
+    // walks the root tree. Calling performReactRefresh() on a hydrateRoot-managed
+    // root triggers hydration reconciliation → throwOnHydrationMismatch.
+    reRenderCurrentPage().then(() => {
+      try {
+        RefreshRuntime.performReactRefresh();
+      } catch (err) {
+        console.error("[hmr] Fast Refresh swap failed:", err);
       }
-    } catch (err) {
-      console.error("[hmr] Fast Refresh failed, re-rendering:", err);
-      reRenderCurrentPage();
-    }
+    });
   }
 
   async function handleMessage(data) {
@@ -372,6 +376,9 @@ async function loadRoot() {
           const newModule = await import(url);
           if (mod.includes("root.tsx") || mod === "/root.tsx") {
             ${hasRoot ? "rootModule = newModule.route || newModule.default;" : ""}
+          } else if (mod.endsWith("route.tsx") || mod.endsWith("route.ts")) {
+            // Nested layout route changed — update the layout module cache
+            layoutModuleCache.set(moduleId, newModule);
           } else {
             window.__LATEST_PAGE_MODULE__ = newModule.default;
           }
@@ -440,12 +447,20 @@ async function reRenderCurrentPage() {
 
   let element = createElement(pageModule.component, loaderData);
 
-  // Apply nested route.tsx layouts
+  // Apply nested route.tsx layouts (use cache to avoid stale browser-cached modules)
   if (currentMatch) {
     for (let i = currentMatch.layoutPaths.length - 1; i >= 0; i--) {
       const layoutPath = currentMatch.layoutPaths[i];
+      const moduleId = "/_modules" + layoutPath;
       try {
-        const layoutMod = await import("/_modules" + layoutPath);
+        let layoutMod = layoutModuleCache.get(moduleId);
+        if (!layoutMod) {
+          // Cache miss: import with cache-bust and store
+          const url = moduleId + "?hmr=" + hmrUpdateId;
+          window.__CURRENT_MODULE__ = moduleId;
+          layoutMod = await import(url);
+          layoutModuleCache.set(moduleId, layoutMod);
+        }
         const layoutRoute = layoutMod.route || layoutMod.default;
         if (layoutRoute?.layout) {
           element = createElement(layoutRoute.layout, { ...loaderData, children: element });
@@ -469,12 +484,14 @@ async function reRenderCurrentPage() {
   // Inject suppressHydrationWarning to match SSR output
   element = injectSuppressHydration(element);
 
-  if (reactRoot) {
-    reactRoot.unmount();
+  if (isHydrationRoot) {
+    // First HMR after SSR: transition from hydrateRoot to createRoot
+    if (reactRoot) reactRoot.unmount();
+    reactRoot = createRoot(${hasRoot ? "document" : "document.documentElement"});
+    isHydrationRoot = false;
   }
-  reactRoot = createRoot(${hasRoot ? "document" : "document.documentElement"});
   reactRoot.render(element);
-  console.log("[hmr] Manual re-render complete (full remount)");
+  console.log("[hmr] Manual re-render complete");
 }
 
 // --- Initial Hydration ---
@@ -509,8 +526,11 @@ async function hydrate() {
     // Apply nested route.tsx layouts (innermost first, working outward)
     for (let i = match.layoutPaths.length - 1; i >= 0; i--) {
       const layoutPath = match.layoutPaths[i];
+      const moduleId = "/_modules" + layoutPath;
       try {
-        const layoutMod = await import("/_modules" + layoutPath);
+        window.__CURRENT_MODULE__ = moduleId;
+        const layoutMod = await import(moduleId);
+        layoutModuleCache.set(moduleId, layoutMod);
         const layoutRoute = layoutMod.route || layoutMod.default;
         if (layoutRoute?.layout) {
           element = createElement(layoutRoute.layout, { ...loaderData, children: element });
@@ -519,6 +539,7 @@ async function hydrate() {
         console.warn("[hmr] Failed to load layout:", layoutPath, err);
       }
     }
+    window.__CURRENT_MODULE__ = modulePath;
 
     ${
       hasRoot
@@ -534,6 +555,7 @@ async function hydrate() {
     element = injectSuppressHydration(element);
 
     reactRoot = hydrateRoot(rootEl, element);
+    isHydrationRoot = true;
     console.log("[hmr] Hydrated successfully for route:", match.pattern);
   } catch (err) {
     console.error("[hmr] Hydration failed:", err);

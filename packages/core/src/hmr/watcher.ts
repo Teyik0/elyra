@@ -86,9 +86,9 @@ export function setupHmrWatcher(pagesDir: string, cssInputPath?: string) {
     // Invalidate CSS cache since Tailwind classes might have changed
     invalidateCssCacheIfNeeded();
 
-    // Determine if this is a route file change (full reload) or page change (HMR)
-    const isRouteFile = filename.endsWith("route.tsx") || filename.endsWith("route.ts");
-    const messageType = isRouteFile ? "reload" : "update";
+    // Always use "update" — the client handles layout (route.tsx) and page updates the same way.
+    // route.tsx layouts update layoutModuleCache in the client; no full reload needed.
+    const messageType = "update";
 
     // Normalize to POSIX separators for valid URLs (Windows compatibility)
     const normalizedFilename = filename.replace(/\\/g, "/");

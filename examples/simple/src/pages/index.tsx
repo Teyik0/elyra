@@ -2,7 +2,7 @@ import { route } from "./root";
 
 export default route.page({
   head: () => ({
-    meta: [{ title: "Elysion Blog - React Meta-Framework" }],
+    meta: [{ title: "Elysion Read the Blog - React Meta-Framework" }],
     links: [{ rel: "canonical", href: "/" }],
   }),
   component: () => (
@@ -82,7 +82,7 @@ export default route.page({
               description="SSR list with pagination, ISR post pages with revalidation, nested layouts with sidebar"
               features={["SSR with query params", "ISR with revalidate", "Dynamic routes [slug]"]}
               href="/blog"
-              title="Public Blog"
+              title="Public Read the Blog"
             />
             <DemoCard
               description="Protected routes, nested layouts, CRUD operations with SQLite persistence"

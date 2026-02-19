@@ -13,22 +13,20 @@ export default route.page({
       setIsLoading(true);
       setMessage("");
 
-      try {
-        const { data, error } = await client.api.login.post({ email });
+      console.log("login startetefz");
+      const { data, error } = await client.api.login.post({ email });
 
-        if (data) {
-          setMessage("Connected! Redirecting...");
-          setTimeout(() => {
-            globalThis.location.href = "/dashboard";
-          }, 1000);
-        } else {
-          setMessage(error?.value?.message ?? "Login failed");
-        }
-      } catch {
-        setMessage("Network error");
-      } finally {
-        setIsLoading(false);
+      if (data) {
+        setMessage("Connected! Redirecting...");
+        setTimeout(() => {
+          globalThis.location.href = "/dashboard";
+        }, 1000);
+      } else {
+        console.log("login error", error);
+        setMessage(error?.value?.message ?? "Login failed");
       }
+
+      setIsLoading(false);
     };
 
     return (
