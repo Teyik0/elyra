@@ -64,15 +64,16 @@ export async function elysion({
   }
 
   const clientBundlePath = resolve(cwd, ".elysion", "client", "_hydrate.js");
-  // import.meta.hot.data persists across hot reloads, so we only rebuild once per dev session.
-  const clientAlreadyBuilt = import.meta.hot?.data.clientBuilt ?? false;
-  const shouldBuildClient = !(dev && clientAlreadyBuilt && existsSync(clientBundlePath));
+  // In dev mode, skip the rebuild if the bundle already exists on disk.
+  // elysion() is re-called on every bun --hot reload (whenever a watched file
+  // changes), but the dev bundle is route-agnostic: page modules are served
+  // individually at /_modules/src/*. Rebuilding on every hot reload triggers
+  // "Unseekable file" errors because React lives in Bun's .bun/ local cache,
+  // which Bun.build() cannot seek through after the initial build.
+  const shouldBuildClient = dev ? !existsSync(clientBundlePath) : true;
 
   if (shouldBuildClient) {
     await buildClient(routes, { dev, rootPath: root?.path ?? null });
-    if (import.meta.hot) {
-      import.meta.hot.data.clientBuilt = true;
-    }
   } else {
     console.log("[elysion] Using existing client bundle (HMR mode)");
   }

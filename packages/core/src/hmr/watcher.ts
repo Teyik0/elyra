@@ -55,6 +55,11 @@ export async function getTransformedModule(
   // Non-page files (e.g. client utilities) may import bare module specifiers
   // (like @elysiajs/eden) that the browser cannot resolve without a bundler.
   // Bundle them with Bun.build() so all dependencies are inlined as ESM.
+  //
+  // React and react-dom are marked external: they live in Bun's .bun/ local
+  // cache which is not seekable by Bun.build() at runtime. The HMR hydrate
+  // entry already exposes window.React = React, so page-side utilities that
+  // use React can rely on that global instead of bundling a second copy.
   if (relative(pagesDir, fullPath).startsWith("..")) {
     const result = await Bun.build({
       entrypoints: [fullPath],
@@ -62,6 +67,7 @@ export async function getTransformedModule(
       target: "browser",
       conditions: ["browser"],
       minify: false,
+      external: ["react", "react-dom", "react-dom/client", "react/jsx-runtime", "react/jsx-dev-runtime"],
     });
 
     if (!result.success) {
