@@ -84,33 +84,28 @@ async function loadRouteModule(routePath: string): Promise<RuntimeRoute | undefi
   return mod.route ?? mod.default;
 }
 
-export async function scanPages(
-  pagesDir: string,
-  _dev = false
-): Promise<{
-  root: RootLayout | null;
-  routes: ResolvedRoute[];
-}> {
-  const routes: ResolvedRoute[] = [];
-  let root: RootLayout | null = null;
-
-  // Phase 0: Scan for root.tsx
+async function scanRootLayout(pagesDir: string): Promise<RootLayout | null> {
   const rootPath = `${pagesDir}/root.tsx`;
-  const rootFile = Bun.file(rootPath);
-  if (await rootFile.exists()) {
-    const mod = await import(rootPath);
-    const rootExport = mod.route ?? mod.default;
-    if (rootExport && isElysionRoute(rootExport)) {
-      if (!rootExport.layout) {
-        console.warn(
-          "[elysion] root.tsx: createRoute() has no layout — the root layout will be skipped."
-        );
-      }
-      root = { path: rootPath, route: rootExport };
-    }
+  if (!(await Bun.file(rootPath).exists())) {
+    return null;
   }
+  const mod = await import(rootPath);
+  const rootExport = mod.route ?? mod.default;
+  if (!(rootExport && isElysionRoute(rootExport))) {
+    return null;
+  }
+  if (!rootExport.layout) {
+    console.warn(
+      "[elysion] root.tsx: createRoute() has no layout — the root layout will be skipped."
+    );
+  }
+  return { path: rootPath, route: rootExport };
+}
 
-  // Phase 1: Scan route.tsx files (nested layouts)
+async function buildRouteFileMap(
+  pagesDir: string,
+  root: RootLayout | null
+): Promise<Map<RuntimeRoute, string>> {
   const routeFileMap = new Map<RuntimeRoute, string>();
   // Pre-register root so its path appears in routeFilePaths (enables dedup in render/build)
   if (root) {
@@ -123,14 +118,17 @@ export async function scanPages(
       routeFileMap.set(routeExport, absolutePath);
     }
   }
+  return routeFileMap;
+}
 
-  // Phase 2: Scan page files
+async function scanPageFiles(
+  pagesDir: string,
+  routeFileMap: Map<RuntimeRoute, string>
+): Promise<ResolvedRoute[]> {
+  const routes: ResolvedRoute[] = [];
   const glob = new Glob("**/*.tsx");
-  for await (const absolutePath of glob.scan({ cwd: pagesDir, absolute: true })) {
-    if (![".tsx", ".ts", ".jsx", ".js"].some((ext) => absolutePath.endsWith(ext))) {
-      continue;
-    }
 
+  for await (const absolutePath of glob.scan({ cwd: pagesDir, absolute: true })) {
     const relativePath = absolutePath.replace(`${pagesDir}/`, "");
     const fileName = parse(relativePath).name;
 
@@ -161,6 +159,19 @@ export async function scanPages(
     });
   }
 
+  return routes;
+}
+
+export async function scanPages(
+  pagesDir: string,
+  _dev = false
+): Promise<{
+  root: RootLayout | null;
+  routes: ResolvedRoute[];
+}> {
+  const root = await scanRootLayout(pagesDir);
+  const routeFileMap = await buildRouteFileMap(pagesDir, root);
+  const routes = await scanPageFiles(pagesDir, routeFileMap);
   return { root, routes };
 }
 

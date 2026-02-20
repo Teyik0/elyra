@@ -42,6 +42,46 @@ export interface CssContext {
   mode: "inline" | "external";
 }
 
+function renderMetaTags(meta: MetaDescriptor[]): string[] {
+  const parts: string[] = [];
+  const title = extractTitle(meta);
+  if (title) {
+    parts.push(`<title>${escapeHtml(title)}</title>`);
+  }
+  for (const m of meta) {
+    if (isMetaTag(m)) {
+      parts.push(`<meta ${renderAttrs(m as Record<string, string>)} />`);
+    }
+    if ("script:ld+json" in m) {
+      parts.push(
+        `<script type="application/ld+json">${JSON.stringify(m["script:ld+json"])}</script>`
+      );
+    }
+  }
+  return parts;
+}
+
+function renderCssTag(cssContext: CssContext | null): string | null {
+  if (cssContext?.mode === "inline" && cssContext.code) {
+    return `<style id="__elysion_css__">${cssContext.code}</style>`;
+  }
+  if (cssContext?.mode === "external") {
+    return `<link id="__elysion_css_link__" href="/_client/styles.css" rel="stylesheet" />`;
+  }
+  return null;
+}
+
+function renderScriptTags(scripts: HeadOptions["scripts"]): string[] {
+  if (!scripts) {
+    return [];
+  }
+  return scripts.map((script) => {
+    const { children, ...rest } = script;
+    const attrs = renderAttrs(rest as Record<string, string | undefined>);
+    return children ? `<script ${attrs}>${children}</script>` : `<script ${attrs}></script>`;
+  });
+}
+
 export function buildHeadInjection(
   headData: HeadOptions | undefined,
   cssContext: CssContext | null
@@ -49,27 +89,12 @@ export function buildHeadInjection(
   const parts: string[] = [];
 
   if (headData?.meta) {
-    const title = extractTitle(headData.meta);
-    if (title) {
-      parts.push(`<title>${escapeHtml(title)}</title>`);
-    }
-
-    for (const m of headData.meta) {
-      if (isMetaTag(m)) {
-        parts.push(`<meta ${renderAttrs(m as Record<string, string>)} />`);
-      }
-      if ("script:ld+json" in m) {
-        parts.push(
-          `<script type="application/ld+json">${JSON.stringify(m["script:ld+json"])}</script>`
-        );
-      }
-    }
+    parts.push(...renderMetaTags(headData.meta));
   }
 
-  if (cssContext?.mode === "inline" && cssContext.code) {
-    parts.push(`<style id="__elysion_css__">${cssContext.code}</style>`);
-  } else if (cssContext?.mode === "external") {
-    parts.push(`<link id="__elysion_css_link__" href="/_client/styles.css" rel="stylesheet" />`);
+  const cssTag = renderCssTag(cssContext);
+  if (cssTag) {
+    parts.push(cssTag);
   }
 
   if (headData?.links) {
@@ -78,17 +103,7 @@ export function buildHeadInjection(
     }
   }
 
-  if (headData?.scripts) {
-    for (const script of headData.scripts) {
-      const { children, ...rest } = script;
-      const attrs = renderAttrs(rest as Record<string, string | undefined>);
-      if (children) {
-        parts.push(`<script ${attrs}>${children}</script>`);
-      } else {
-        parts.push(`<script ${attrs}></script>`);
-      }
-    }
-  }
+  parts.push(...renderScriptTags(headData?.scripts));
 
   if (headData?.styles) {
     for (const style of headData.styles) {

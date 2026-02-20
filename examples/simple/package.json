@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "bun --hot src/server.ts",
     "start": "NODE_ENV=production bun src/index.ts",
-    "build": "bun run build.ts"
+    "build": "bun run build.ts",
+    "test:e2e": "bun run ./tests/hmr.ts"
   },
   "dependencies": {
     "@elysiajs/eden": "^1.4.8",

@@ -62,37 +62,36 @@ function removeServerProperties(obj: t.ObjectExpression, properties: string[]): 
   return removed;
 }
 
+function pruneImportDeclaration(
+  node: t.ImportDeclaration,
+  index: number,
+  body: t.Statement[],
+  getBinding: (name: string) => { referenced: boolean } | undefined
+): void {
+  const { specifiers } = node;
+  if (!specifiers || specifiers.length === 0) {
+    return;
+  }
+
+  const usedSpecifiers = specifiers.filter((spec) => getBinding(spec.local.name)?.referenced);
+
+  if (usedSpecifiers.length === 0) {
+    body.splice(index, 1);
+  } else if (usedSpecifiers.length !== specifiers.length) {
+    node.specifiers = usedSpecifiers;
+  }
+}
+
 function deadCodeElimination(ast: t.File): void {
   traverse(ast, {
     Program(programPath) {
       const body = programPath.node.body;
+      const getBinding = (name: string) => programPath.scope.getBinding(name);
 
       for (let i = body.length - 1; i >= 0; i--) {
         const node = body[i] as t.Statement;
-        if (node.type !== "ImportDeclaration") {
-          continue;
-        }
-
-        const specifiers = node.specifiers;
-        if (!specifiers || specifiers.length === 0) {
-          continue;
-        }
-
-        const newSpecifiers: t.ImportDeclaration["specifiers"] = [];
-
-        for (const spec of specifiers) {
-          const localName = spec.local.name;
-          const binding = programPath.scope.getBinding(localName);
-
-          if (binding?.referenced) {
-            newSpecifiers.push(spec);
-          }
-        }
-
-        if (newSpecifiers.length === 0) {
-          body.splice(i, 1);
-        } else if (newSpecifiers.length !== specifiers.length) {
-          node.specifiers = newSpecifiers;
+        if (node.type === "ImportDeclaration") {
+          pruneImportDeclaration(node, i, body, getBinding);
         }
       }
     },
