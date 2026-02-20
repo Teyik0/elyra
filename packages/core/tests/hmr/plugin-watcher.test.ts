@@ -24,7 +24,10 @@ import { createHmrPlugin } from "../../src/hmr/plugin";
 
 const TMP = join(tmpdir(), `elysion-plugin-watcher-${process.pid}`);
 
-type TestServer = { url: string; stop: () => void };
+interface TestServer {
+  stop: () => void;
+  url: string;
+}
 
 async function startHmrServer(pagesDir: string): Promise<TestServer> {
   const plugin = createHmrPlugin(pagesDir);
@@ -33,7 +36,9 @@ async function startHmrServer(pagesDir: string): Promise<TestServer> {
   // Give the OS a moment to bind the port and start the watcher.
   await Bun.sleep(50);
   const port = app.server?.port;
-  if (!port) throw new Error("Server failed to bind a port");
+  if (!port) {
+    throw new Error("Server failed to bind a port");
+  }
   return {
     url: `http://localhost:${port}`,
     stop: () => app.stop(),
@@ -49,9 +54,9 @@ async function collectHmrMessages(
   serverUrl: string,
   action: () => void | Promise<void>,
   waitMs = 300
-): Promise<Array<Record<string, unknown>>> {
+): Promise<Record<string, unknown>[]> {
   const wsUrl = `${serverUrl.replace("http://", "ws://")}/__elysion/hmr`;
-  const messages: Array<Record<string, unknown>> = [];
+  const messages: Record<string, unknown>[] = [];
 
   const ws = new WebSocket(wsUrl);
   await new Promise<void>((resolve, reject) => {
@@ -61,7 +66,9 @@ async function collectHmrMessages(
 
   ws.onmessage = (e) => {
     const data = JSON.parse(e.data as string) as Record<string, unknown>;
-    if (data.type !== "connected") messages.push(data);
+    if (data.type !== "connected") {
+      messages.push(data);
+    }
   };
 
   await action();

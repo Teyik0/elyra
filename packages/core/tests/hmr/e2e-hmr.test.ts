@@ -43,7 +43,11 @@ import { createHmrPlugin } from "../../src/hmr/plugin";
 
 const TMP = join(tmpdir(), `elysion-e2e-hmr-${process.pid}`);
 
-type DevServer = { url: string; wsUrl: string; stop: () => void };
+interface DevServer {
+  stop: () => void;
+  url: string;
+  wsUrl: string;
+}
 
 /** Start a minimal dev server with the HMR plugin bound to a random port. */
 async function startDevServer(pagesDir: string): Promise<DevServer> {
@@ -52,7 +56,9 @@ async function startDevServer(pagesDir: string): Promise<DevServer> {
   // Give the OS time to bind the port and the watcher to initialise.
   await Bun.sleep(80);
   const port = app.server?.port;
-  if (!port) throw new Error("Server failed to bind a port");
+  if (!port) {
+    throw new Error("Server failed to bind a port");
+  }
   return {
     url: `http://localhost:${port}`,
     wsUrl: `ws://localhost:${port}`,
@@ -61,10 +67,10 @@ async function startDevServer(pagesDir: string): Promise<DevServer> {
 }
 
 interface HmrConnection {
-  /** All non-"connected" messages received so far. */
-  messages(): Array<Record<string, unknown>>;
   /** Close the WebSocket. */
   close(): void;
+  /** All non-"connected" messages received so far. */
+  messages(): Record<string, unknown>[];
 }
 
 /**
@@ -72,7 +78,7 @@ interface HmrConnection {
  * Returned `messages()` reflects live state — call it at any time.
  */
 async function connectHmr(wsUrl: string): Promise<HmrConnection> {
-  const collected: Array<Record<string, unknown>> = [];
+  const collected: Record<string, unknown>[] = [];
   const ws = new WebSocket(`${wsUrl}/__elysion/hmr`);
 
   await new Promise<void>((resolve, reject) => {
@@ -83,7 +89,9 @@ async function connectHmr(wsUrl: string): Promise<HmrConnection> {
   ws.onmessage = (e) => {
     const data = JSON.parse(e.data as string) as Record<string, unknown>;
     // Ignore the initial handshake ack.
-    if (data.type !== "connected") collected.push(data);
+    if (data.type !== "connected") {
+      collected.push(data);
+    }
   };
 
   return {
@@ -114,7 +122,6 @@ async function fetchModule(
 
 describe("E2E HMR — initial module serving (cold path)", () => {
   const PAGES_DIR = join(TMP, "cold", "pages");
-  const SRC_DIR = join(TMP, "cold");
   let server: DevServer;
 
   beforeAll(async () => {
@@ -128,15 +135,9 @@ describe("E2E HMR — initial module serving (cold path)", () => {
   });
 
   test("returns 200 and JavaScript for a simple page file", async () => {
-    writeFileSync(
-      join(PAGES_DIR, "hello.tsx"),
-      `export const greeting = "hello";`
-    );
+    writeFileSync(join(PAGES_DIR, "hello.tsx"), `export const greeting = "hello";`);
 
-    const { status, body } = await fetchModule(
-      server.url,
-      "/src/pages/hello.tsx"
-    );
+    const { status, body } = await fetchModule(server.url, "/src/pages/hello.tsx");
 
     expect(status).toBe(200);
     expect(body.length).toBeGreaterThan(0);
@@ -145,10 +146,7 @@ describe("E2E HMR — initial module serving (cold path)", () => {
   });
 
   test("React Refresh instrumentation ($RefreshReg$) is injected", async () => {
-    writeFileSync(
-      join(PAGES_DIR, "widget.tsx"),
-      `export const Widget = () => null;`
-    );
+    writeFileSync(join(PAGES_DIR, "widget.tsx"), "export const Widget = () => null;");
 
     const { body } = await fetchModule(server.url, "/src/pages/widget.tsx");
 
@@ -158,10 +156,7 @@ describe("E2E HMR — initial module serving (cold path)", () => {
   });
 
   test("module ID embedded in output matches the /_modules URL scheme", async () => {
-    writeFileSync(
-      join(PAGES_DIR, "about.tsx"),
-      `export const x = 42;`
-    );
+    writeFileSync(join(PAGES_DIR, "about.tsx"), "export const x = 42;");
 
     const { body } = await fetchModule(server.url, "/src/pages/about.tsx");
 
@@ -171,10 +166,7 @@ describe("E2E HMR — initial module serving (cold path)", () => {
   });
 
   test("window.React global is injected (relied on by React Refresh runtime)", async () => {
-    writeFileSync(
-      join(PAGES_DIR, "comp.tsx"),
-      `export const Comp = () => null;`
-    );
+    writeFileSync(join(PAGES_DIR, "comp.tsx"), "export const Comp = () => null;");
 
     const { body } = await fetchModule(server.url, "/src/pages/comp.tsx");
 
@@ -182,10 +174,7 @@ describe("E2E HMR — initial module serving (cold path)", () => {
   });
 
   test("returns 404 for a file that does not exist", async () => {
-    const { status } = await fetchModule(
-      server.url,
-      "/src/pages/does-not-exist.tsx"
-    );
+    const { status } = await fetchModule(server.url, "/src/pages/does-not-exist.tsx");
 
     expect(status).toBe(500); // transform error → 500 (file not found inside transform)
   });
@@ -218,12 +207,12 @@ describe("E2E HMR — file change triggers update and module content refreshes",
 
   test("WebSocket receives 'update' message after file is written", async () => {
     const filePath = join(PAGES_DIR, "counter.tsx");
-    writeFileSync(filePath, `export const count = 0;`);
+    writeFileSync(filePath, "export const count = 0;");
 
     const hmr = await connectHmr(server.wsUrl);
 
     // Simulate Ctrl+S: overwrite the file with new content
-    writeFileSync(filePath, `export const count = 1;`);
+    writeFileSync(filePath, "export const count = 1;");
 
     // Wait for debounce (50 ms) + OS event propagation
     await Bun.sleep(300);
@@ -270,10 +259,7 @@ describe("E2E HMR — file change triggers update and module content refreshes",
 
     // The server always reads from disk, so the ?hmr= query is only a
     // browser-side cache-buster — the content is always fresh.
-    const updated = await fetchModule(
-      server.url,
-      "/src/pages/title.tsx?hmr=2"
-    );
+    const updated = await fetchModule(server.url, "/src/pages/title.tsx?hmr=2");
     expect(updated.status).toBe(200);
     expect(updated.body).toContain("v2");
     expect(updated.body).not.toContain("v1");
@@ -281,7 +267,7 @@ describe("E2E HMR — file change triggers update and module content refreshes",
 
   test("server remains healthy (200) after multiple rapid file changes", async () => {
     const filePath = join(PAGES_DIR, "rapid.tsx");
-    writeFileSync(filePath, `export const n = 0;`);
+    writeFileSync(filePath, "export const n = 0;");
 
     // Simulate rapid Ctrl+S — same pattern as the debounce test in plugin-watcher
     for (let i = 1; i <= 10; i++) {
@@ -292,19 +278,16 @@ describe("E2E HMR — file change triggers update and module content refreshes",
     await Bun.sleep(300);
 
     // Server must still be alive and serving the final content
-    const { status, body } = await fetchModule(
-      server.url,
-      "/src/pages/rapid.tsx"
-    );
+    const { status, body } = await fetchModule(server.url, "/src/pages/rapid.tsx");
     expect(status).toBe(200);
     expect(body).toContain("n = 10");
   });
 
   test("React Refresh instrumentation is present after a hot update", async () => {
     const filePath = join(PAGES_DIR, "refresh.tsx");
-    writeFileSync(filePath, `export const A = () => null;`);
+    writeFileSync(filePath, "export const A = () => null;");
 
-    writeFileSync(filePath, `export const A = () => <span>updated</span>;`);
+    writeFileSync(filePath, "export const A = () => <span>updated</span>;");
     await Bun.sleep(100);
 
     const { body } = await fetchModule(server.url, "/src/pages/refresh.tsx");
@@ -354,15 +337,9 @@ describe("E2E HMR — no redundant buildClient on hot reload (regression guard)"
     // The /_modules/src/* route is independent of the client bundle — it reads
     // source files from disk and transforms them on-the-fly.  This test verifies
     // that the HMR module server stays healthy regardless of bundle state.
-    writeFileSync(
-      join(PAGES_DIR, "independent.tsx"),
-      `export const Independent = () => null;`
-    );
+    writeFileSync(join(PAGES_DIR, "independent.tsx"), "export const Independent = () => null;");
 
-    const { status, body } = await fetchModule(
-      server.url,
-      "/src/pages/independent.tsx"
-    );
+    const { status, body } = await fetchModule(server.url, "/src/pages/independent.tsx");
 
     expect(status).toBe(200);
     expect(body).toContain("$RefreshReg$");
@@ -386,10 +363,7 @@ describe("E2E HMR — no redundant buildClient on hot reload (regression guard)"
     const server2 = `http://localhost:${port2}`;
 
     try {
-      writeFileSync(
-        join(PAGES_DIR2, "dual.tsx"),
-        `export const Dual = () => null;`
-      );
+      writeFileSync(join(PAGES_DIR2, "dual.tsx"), "export const Dual = () => null;");
 
       const { status, body } = await fetchModule(server2, "/src/pages/dual.tsx");
       expect(status).toBe(200);
@@ -428,7 +402,10 @@ describe("E2E HMR — CSS update flag in HMR message", () => {
 
     const hmr = await connectHmr(server.wsUrl);
 
-    writeFileSync(filePath, `export const Styled = () => <div className="text-blue-500">new</div>;`);
+    writeFileSync(
+      filePath,
+      `export const Styled = () => <div className="text-blue-500">new</div>;`
+    );
     await Bun.sleep(300);
 
     const msgs = hmr.messages();
