@@ -24,7 +24,6 @@ export interface RootLayout {
   route: RuntimeRoute;
 }
 
-
 export function createRoutePlugin(
   route: ResolvedRoute,
   config: StaticOptions<string>,

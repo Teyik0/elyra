@@ -5,11 +5,10 @@
  * without a full page reload, and without hydration errors.
  */
 
-import { chromium, type Page } from "playwright";
 import * as fs from "node:fs";
+import { chromium, type Page } from "playwright";
 
-const INDEX_PATH =
-  "/Users/teyik0/Documents/prj-tst/examples/simple/src/pages/blog/route.tsx";
+const INDEX_PATH = "/Users/teyik0/Documents/prj-tst/examples/simple/src/pages/blog/route.tsx";
 
 // "All Posts" is a JSX text node in the blog sidebar — unique and not part of any identifier
 const ORIGINAL_TEXT = "All Posts";
@@ -41,7 +40,9 @@ function writeFile(path: string, content: string): void {
 
 async function getTargetText(page: Page): Promise<string | null> {
   // Target the "All Posts" link in the blog sidebar (blog/route.tsx layout)
-  return page.$eval('aside a[href="/blog"]', (el) => el.textContent?.trim() ?? null).catch(() => null);
+  return page
+    .$eval('aside a[href="/blog"]', (el) => el.textContent?.trim() ?? null)
+    .catch(() => null);
 }
 
 async function runHmrTest() {
@@ -174,7 +175,9 @@ async function runHmrTest() {
     // Print result
     console.log(`    sidebar "All Posts" link now: "${currentText}"`);
     console.log(`    Content changed: ${modResult.contentChanged ? "✓ YES" : "✗ NO"}`);
-    console.log(`    No full reload:  ${modResult.noFullReload ? "✓ YES" : "✗ NO (RELOAD DETECTED)"}`);
+    console.log(
+      `    No full reload:  ${modResult.noFullReload ? "✓ YES" : "✗ NO (RELOAD DETECTED)"}`
+    );
     console.log(`    HMR log found:   ${modResult.hmrLogFound ? "✓ YES" : "✗ NOT FOUND"}`);
 
     if (modResult.hydrationErrors.length > 0) {
@@ -215,14 +218,20 @@ async function runHmrTest() {
       result.noFullReload === true &&
       result.hydrationErrors.length === 0;
 
-    if (!pass) allPassed = false;
+    if (!pass) {
+      allPassed = false;
+    }
 
     const status = pass ? "PASS" : "FAIL";
     console.log(`\n  [${status}] ${result.label}`);
-    console.log(`    Content changed:   ${result.contentChanged ? "YES" : "NO"} (expected: "${result.to}", got: "${result.finalText}")`);
+    console.log(
+      `    Content changed:   ${result.contentChanged ? "YES" : "NO"} (expected: "${result.to}", got: "${result.finalText}")`
+    );
     console.log(`    No full reload:    ${result.noFullReload ? "YES" : "NO"}`);
     console.log(`    HMR log found:     ${result.hmrLogFound ? "YES" : "NO"}`);
-    console.log(`    Hydration errors:  ${result.hydrationErrors.length === 0 ? "NONE" : result.hydrationErrors.length + " ERROR(S)"}`);
+    console.log(
+      `    Hydration errors:  ${result.hydrationErrors.length === 0 ? "NONE" : result.hydrationErrors.length + " ERROR(S)"}`
+    );
   }
 
   console.log(`\n${"─".repeat(60)}`);
@@ -230,10 +239,7 @@ async function runHmrTest() {
     console.log("  OVERALL: ALL TESTS PASSED ✓");
   } else {
     const failCount = results.filter(
-      (r) =>
-        r.contentChanged !== true ||
-        r.noFullReload !== true ||
-        r.hydrationErrors.length > 0
+      (r) => r.contentChanged !== true || r.noFullReload !== true || r.hydrationErrors.length > 0
     ).length;
     console.log(`  OVERALL: ${failCount}/${results.length} TEST(S) FAILED ✗`);
   }

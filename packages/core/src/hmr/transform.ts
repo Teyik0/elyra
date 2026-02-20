@@ -10,6 +10,7 @@ import {
   isCallExpression,
   isFunctionExpression,
   isIdentifier,
+  isMemberExpression,
   isObjectExpression,
   isObjectProperty,
   isProgram,
@@ -20,11 +21,28 @@ const presetTypescript = require.resolve("@babel/preset-typescript");
 const presetReact = require.resolve("@babel/preset-react");
 const reactRefreshBabelPlugin = require.resolve("react-refresh/babel");
 
-function isPageCallExpression(decl: Babel.types.Node): decl is Babel.types.CallExpression {
-  if (!isCallExpression(decl)) {
-    return false;
+function findObjectProperty(
+  obj: Babel.types.ObjectExpression,
+  name: string
+): Babel.types.ObjectProperty | undefined {
+  return obj.properties.find(
+    (p): p is Babel.types.ObjectProperty => isObjectProperty(p) && isIdentifier(p.key, { name })
+  );
+}
+
+function removeServerProperties(obj: Babel.types.ObjectExpression, properties: string[]): boolean {
+  let removed = false;
+  for (const name of properties) {
+    const prop = findObjectProperty(obj, name);
+    if (prop) {
+      const idx = obj.properties.indexOf(prop);
+      if (idx !== -1) {
+        obj.properties.splice(idx, 1);
+        removed = true;
+      }
+    }
   }
-  return isIdentifier(decl.callee, { name: "page" });
+  return removed;
 }
 
 function findComponentProperty(arg: Babel.types.Expression): Babel.types.ObjectProperty | null {
@@ -65,6 +83,8 @@ function insertFunctionBeforeExport(
   path.insertBefore(fn);
 }
 
+const SERVER_ONLY_PROPERTIES = ["loader"];
+
 function createExtractPlugin(onExtract: (name: string) => void): Babel.PluginObj {
   return {
     name: "extract-page-component",
@@ -72,36 +92,75 @@ function createExtractPlugin(onExtract: (name: string) => void): Babel.PluginObj
       ExportDefaultDeclaration(path) {
         const decl = path.node.declaration;
 
-        if (!isPageCallExpression(decl)) {
+        if (!isCallExpression(decl)) {
           return;
         }
 
         const arg = decl.arguments[0];
-        if (!isObjectExpression(arg)) {
+        const callee = decl.callee;
+
+        if (isIdentifier(callee, { name: "page" })) {
+          if (isObjectExpression(arg)) {
+            removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
+
+            const componentProp = findComponentProperty(arg);
+            if (componentProp) {
+              const componentValue = componentProp.value;
+              if (shouldExtractComponent(componentValue)) {
+                const extractedName = path.scope.generateUidIdentifier("ElysionPage");
+                onExtract(extractedName.name);
+
+                if (
+                  isArrowFunctionExpression(componentValue) ||
+                  isFunctionExpression(componentValue)
+                ) {
+                  const namedFunction = createNamedFunctionFromArrow(
+                    componentValue.params,
+                    componentValue.body,
+                    extractedName
+                  );
+                  componentProp.value = extractedName;
+                  insertFunctionBeforeExport(path, namedFunction);
+                }
+              }
+            }
+          }
           return;
         }
 
-        const componentProp = findComponentProperty(arg);
-        if (!componentProp) {
+        if (isMemberExpression(callee) && isIdentifier(callee.property, { name: "page" })) {
+          if (isObjectExpression(arg)) {
+            removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
+          }
           return;
         }
 
-        const componentValue = componentProp.value;
-        if (!shouldExtractComponent(componentValue)) {
+        if (isIdentifier(callee, { name: "createRoute" }) && isObjectExpression(arg)) {
+          removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
+        }
+      },
+
+      CallExpression(path) {
+        const node = path.node;
+        const parent = path.parent;
+
+        if (parent?.type === "ExportDefaultDeclaration") {
           return;
         }
 
-        const extractedName = path.scope.generateUidIdentifier("ElysionPage");
-        onExtract(extractedName.name);
+        const callee = node.callee;
+        const arg = node.arguments[0];
 
-        if (isArrowFunctionExpression(componentValue) || isFunctionExpression(componentValue)) {
-          const namedFunction = createNamedFunctionFromArrow(
-            componentValue.params,
-            componentValue.body,
-            extractedName
-          );
-          componentProp.value = extractedName;
-          insertFunctionBeforeExport(path, namedFunction);
+        if (isIdentifier(callee, { name: "page" })) {
+          if (isObjectExpression(arg)) {
+            removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
+          }
+        } else if (isMemberExpression(callee) && isIdentifier(callee.property, { name: "page" })) {
+          if (isObjectExpression(arg)) {
+            removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
+          }
+        } else if (isIdentifier(callee, { name: "createRoute" }) && isObjectExpression(arg)) {
+          removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
         }
       },
     },
@@ -112,7 +171,7 @@ function rewriteRelativeImports(
   code: string,
   filePath: string,
   srcDir: string,
-  pagesDir: string
+  _pagesDir: string
 ): string {
   const fileDir = dirname(filePath);
 
@@ -121,22 +180,99 @@ function rewriteRelativeImports(
     (match, prefix, quote, importPath) => {
       const absoluteImportPath = resolve(fileDir, importPath);
 
-      // Outside srcDir entirely — leave as-is
       if (!absoluteImportPath.startsWith(srcDir)) {
         return match;
       }
 
-      // Within pagesDir — rewrite to /_modules/src/ URL for browser fetching
-      if (absoluteImportPath.startsWith(pagesDir)) {
-        const relativeToSrc = relative(srcDir, absoluteImportPath).replace(/\\/g, "/");
-        return `${prefix}${quote}/_modules/src/${relativeToSrc}${quote}`;
-      }
-
-      // Outside pagesDir but inside srcDir (e.g. ../../db, ../api) —
-      // strip entirely. These are server-only modules that must not reach the browser.
-      return "";
+      const relativeToSrc = relative(srcDir, absoluteImportPath).replace(/\\/g, "/");
+      return `${prefix}${quote}/_modules/src/${relativeToSrc}${quote}`;
     }
   );
+}
+
+function removeUnusedImports(code: string): string {
+  const lines = code.split("\n");
+  const importPattern = /^import\s+(.+?)\s+from\s*["'][^"']+["'];?\s*$/;
+  const importLines: Map<number, string[]> = new Map();
+  const allIdentifiers = new Set<string>();
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line) {
+      continue;
+    }
+    const match = line.match(importPattern);
+    if (match?.[1]) {
+      const specStr = match[1];
+      const identifiers: string[] = [];
+
+      const namedMatch = specStr.match(/^\{([^}]+)\}$/);
+      if (namedMatch?.[1]) {
+        for (const spec of namedMatch[1].split(",")) {
+          const trimmed = spec.trim();
+          if (!trimmed) {
+            continue;
+          }
+          const parts = trimmed.split(/\s+as\s+/);
+          const localName = (parts.length > 1 ? parts[1] : parts[0])?.trim();
+          if (localName) {
+            identifiers.push(localName);
+            allIdentifiers.add(localName);
+          }
+        }
+      } else {
+        const defaultMatch = specStr.match(/^(\w+)(?:\s*,\s*\{([^}]+)\})?$/);
+        if (defaultMatch?.[1]) {
+          identifiers.push(defaultMatch[1]);
+          allIdentifiers.add(defaultMatch[1]);
+          if (defaultMatch[2]) {
+            for (const spec of defaultMatch[2].split(",")) {
+              const trimmed = spec.trim();
+              if (!trimmed) {
+                continue;
+              }
+              const parts = trimmed.split(/\s+as\s+/);
+              const localName = (parts.length > 1 ? parts[1] : parts[0])?.trim();
+              if (localName) {
+                identifiers.push(localName);
+                allIdentifiers.add(localName);
+              }
+            }
+          }
+        } else {
+          const namespaceMatch = specStr.match(/^\*\s+as\s+(\w+)$/);
+          if (namespaceMatch?.[1]) {
+            identifiers.push(namespaceMatch[1]);
+            allIdentifiers.add(namespaceMatch[1]);
+          }
+        }
+      }
+
+      if (identifiers.length > 0) {
+        importLines.set(i, identifiers);
+      }
+    }
+  }
+
+  const codeWithoutImports = lines.filter((_, i) => !importLines.has(i)).join("\n");
+
+  const usedIdentifiers = new Set<string>();
+  for (const name of allIdentifiers) {
+    const regex = new RegExp(`\\b${name}\\b`, "g");
+    const matches = codeWithoutImports.match(regex);
+    if (matches && matches.length > 0) {
+      usedIdentifiers.add(name);
+    }
+  }
+
+  for (const [index, identifiers] of importLines) {
+    const usedFromThisLine = identifiers.filter((id) => usedIdentifiers.has(id));
+    if (usedFromThisLine.length === 0) {
+      lines[index] = "";
+    }
+  }
+
+  return lines.join("\n");
 }
 
 export function transformForReactRefresh(
@@ -215,6 +351,9 @@ export function transformForReactRefresh(
 
     // Strip CSS imports
     transformedCode = transformedCode.replace(/^import\s+["'][^"']+\.css["'];?\s*$/gm, "");
+
+    // Remove unused imports (after loader removal)
+    transformedCode = removeUnusedImports(transformedCode);
 
     // Rewrite relative imports to /_modules/src/ absolute URLs so the browser
     // can fetch them through the HMR module server

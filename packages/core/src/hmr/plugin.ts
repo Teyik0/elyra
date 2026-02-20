@@ -38,11 +38,6 @@ export function createHmrPlugin(pagesDir: string, cssInputPath?: string) {
         return status("Forbidden", `File does not exist at: ${fullPath}`);
       }
 
-      // Block access to server-only modules outside pagesDir
-      if (!fullPath.startsWith(pagesDir)) {
-        return status("Forbidden", "Server-only module not accessible from browser");
-      }
-
       // Try with extensions if file doesn't exist
       const extensions = [".tsx", ".ts", ".jsx", ".js"];
       const file = Bun.file(fullPath);

@@ -166,7 +166,11 @@ export function setupHmrWatcher(pagesDir: string, cssInputPath?: string) {
   }
 }
 
-export async function getTransformedModule(fullPath: string, srcDir: string, pagesDir: string): Promise<string> {
+export async function getTransformedModule(
+  fullPath: string,
+  srcDir: string,
+  pagesDir: string
+): Promise<string> {
   const cached = globalThis.__elysionModuleCache.get(fullPath);
   if (cached) {
     return cached.code;
@@ -177,10 +181,37 @@ export async function getTransformedModule(fullPath: string, srcDir: string, pag
     throw new Error(`File not found: ${fullPath}`);
   }
 
-  const source = await file.text();
   const relativePath = relative(srcDir, fullPath).replace(/\\/g, "/");
   const moduleId = `/_modules/src/${relativePath}`;
-  const transformed = transformForReactRefresh(source, fullPath, moduleId, srcDir, pagesDir);
+
+  let transformed: string;
+
+  // Non-page files (e.g. client utilities) may import bare module specifiers
+  // (like @elysiajs/eden) that the browser cannot resolve without a bundler.
+  // Bundle them with Bun.build() so all dependencies are inlined as ESM.
+  if (fullPath.startsWith(pagesDir)) {
+    const source = await file.text();
+    transformed = transformForReactRefresh(source, fullPath, moduleId, srcDir, pagesDir);
+  } else {
+    const result = await Bun.build({
+      entrypoints: [fullPath],
+      format: "esm",
+      target: "browser",
+      minify: false,
+    });
+
+    if (!result.success) {
+      const messages = result.logs.map((l) => l.message).join("\n");
+      throw new Error(`Bun.build() failed for ${fullPath}:\n${messages}`);
+    }
+
+    const output = result.outputs[0];
+    if (!output) {
+      throw new Error(`Bun.build() produced no output for ${fullPath}`);
+    }
+
+    transformed = await output.text();
+  }
 
   globalThis.__elysionModuleCache.set(fullPath, {
     code: transformed,

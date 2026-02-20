@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { ResolvedRoute } from "./router";
+import { transformForClient } from "./transform-client";
 
 export interface BuildClientOptions {
   outDir?: string;
@@ -31,6 +32,32 @@ export async function buildClient(
 
   console.log(`[elysion] Building client bundle (${dev ? "dev" : "production"})...`);
 
+  const transformPlugin: Bun.BunPlugin = {
+    name: "elysion-transform-client",
+    setup(build) {
+      build.onLoad({ filter: /\.(tsx|ts)$/ }, async (args) => {
+        const path = args.path;
+        if (path.includes("node_modules")) {
+          return undefined;
+        }
+
+        const file = Bun.file(path);
+        const code = await file.text();
+
+        try {
+          const result = transformForClient(code, path);
+          return {
+            contents: result.code,
+            loader: path.endsWith(".tsx") ? "tsx" : "ts",
+          };
+        } catch (error) {
+          console.error(`[elysion] Transform error for ${path}:`, error);
+          return undefined;
+        }
+      });
+    },
+  };
+
   const result = await Bun.build({
     entrypoints: [hydratePath],
     outdir: clientDir,
@@ -39,6 +66,7 @@ export async function buildClient(
     splitting: !dev,
     minify: !dev,
     naming: "[name].[ext]",
+    plugins: dev ? [] : [transformPlugin],
     define: {
       "process.env.NODE_ENV": JSON.stringify(dev ? "development" : "production"),
     },

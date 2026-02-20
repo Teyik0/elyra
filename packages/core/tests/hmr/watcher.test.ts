@@ -88,20 +88,20 @@ describe("getModuleVersion", () => {
 // ---------------------------------------------------------------------------
 describe("getTransformedModule — cache behaviour", () => {
   test("transforms a real file and returns a non-empty JS string", async () => {
-    const filePath = await writePage("index.tsx", `export const App = () => null;`);
+    const filePath = await writePage("index.tsx", "export const App = () => null;");
     const result = await getTransformedModule(filePath, SRC_DIR, PAGES_DIR);
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
   });
 
   test("stores the result in the module cache on first call", async () => {
-    const filePath = await writePage("store.tsx", `export const x = 1;`);
+    const filePath = await writePage("store.tsx", "export const x = 1;");
     await getTransformedModule(filePath, SRC_DIR, PAGES_DIR);
     expect(globalThis.__elysionModuleCache.has(filePath)).toBe(true);
   });
 
   test("returns the same string on a second call (cache hit)", async () => {
-    const filePath = await writePage("double.tsx", `export const x = 1;`);
+    const filePath = await writePage("double.tsx", "export const x = 1;");
     const first = await getTransformedModule(filePath, SRC_DIR, PAGES_DIR);
     const second = await getTransformedModule(filePath, SRC_DIR, PAGES_DIR);
     // Strict reference equality — not just content equality
@@ -109,7 +109,7 @@ describe("getTransformedModule — cache behaviour", () => {
   });
 
   test("re-transforms after the cache entry is removed", async () => {
-    const filePath = await writePage("evict.tsx", `export const x = 1;`);
+    const filePath = await writePage("evict.tsx", "export const x = 1;");
     await getTransformedModule(filePath, SRC_DIR, PAGES_DIR);
 
     globalThis.__elysionModuleCache.delete(filePath);
@@ -124,14 +124,14 @@ describe("getTransformedModule — cache behaviour", () => {
 
   test("cache entry includes a timestamp", async () => {
     const before = Date.now();
-    const filePath = await writePage("ts.tsx", `export const x = 1;`);
+    const filePath = await writePage("ts.tsx", "export const x = 1;");
     await getTransformedModule(filePath, SRC_DIR, PAGES_DIR);
     const after = Date.now();
 
     const entry = globalThis.__elysionModuleCache.get(filePath);
     expect(entry).toBeDefined();
-    expect(entry!.timestamp).toBeGreaterThanOrEqual(before);
-    expect(entry!.timestamp).toBeLessThanOrEqual(after);
+    expect(entry?.timestamp).toBeGreaterThanOrEqual(before);
+    expect(entry?.timestamp).toBeLessThanOrEqual(after);
   });
 });
 
@@ -141,19 +141,19 @@ describe("getTransformedModule — cache behaviour", () => {
 // ---------------------------------------------------------------------------
 describe("getTransformedModule — output content", () => {
   test("output contains the HMR $RefreshReg$ wrapper", async () => {
-    const filePath = await writePage("hmr.tsx", `export const App = () => null;`);
+    const filePath = await writePage("hmr.tsx", "export const App = () => null;");
     const result = await getTransformedModule(filePath, SRC_DIR, PAGES_DIR);
     expect(result).toContain("$RefreshReg$");
   });
 
   test("output contains injected globals (window.React)", async () => {
-    const filePath = await writePage("globals.tsx", `export const x = 1;`);
+    const filePath = await writePage("globals.tsx", "export const x = 1;");
     const result = await getTransformedModule(filePath, SRC_DIR, PAGES_DIR);
     expect(result).toContain("window.React");
   });
 
   test("module ID in output is derived from the path relative to srcDir", async () => {
-    const filePath = await writePage("about.tsx", `export const x = 1;`);
+    const filePath = await writePage("about.tsx", "export const x = 1;");
     const result = await getTransformedModule(filePath, SRC_DIR, PAGES_DIR);
     // srcDir = TMP_BASE, file = TMP_BASE/pages/about.tsx
     // relative path from srcDir = pages/about.tsx
@@ -167,8 +167,8 @@ describe("getTransformedModule — output content", () => {
 // ---------------------------------------------------------------------------
 describe("getTransformedModule — error cases", () => {
   test("throws with a descriptive message for a missing file", async () => {
-    await expect(
-      getTransformedModule("/nonexistent/file.tsx", SRC_DIR, PAGES_DIR)
-    ).rejects.toThrow("File not found");
+    await expect(getTransformedModule("/nonexistent/file.tsx", SRC_DIR, PAGES_DIR)).rejects.toThrow(
+      "File not found"
+    );
   });
 });

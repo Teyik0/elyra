@@ -13,7 +13,7 @@ export default route.page({
       setIsLoading(true);
       setMessage("");
 
-      console.log("login startetefz");
+      console.log("login started");
       const { data, error } = await client.api.login.post({ email });
 
       if (data) {

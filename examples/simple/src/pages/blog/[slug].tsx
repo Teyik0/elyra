@@ -4,6 +4,7 @@ import { useState } from "react";
 import { type Comment, type Post, parseTags, queries } from "../../db";
 
 type PostWithParsedTags = Omit<Post, "tags"> & { tags: string[] };
+
 import { route as blogRoute } from "./route";
 
 export const route = createRoute({
