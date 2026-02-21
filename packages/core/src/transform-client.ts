@@ -15,9 +15,18 @@ import {
 // Babel then only needs to parse plain JS, which is significantly faster
 // than parsing TSX through @babel/preset-typescript.
 // ---------------------------------------------------------------------------
-// Bun's default JSX factory is React.createElement / React.Fragment.
+// Force classic JSX transform (React.createElement) regardless of the
+// project tsconfig's "jsx": "react-jsx" setting — the Bun.build() step
+// that consumes this output handles the automatic runtime itself.
 const bunTranspiler = new Bun.Transpiler({
   loader: "tsx",
+  tsconfig: {
+    compilerOptions: {
+      jsx: "react",
+      jsxFactory: "React.createElement",
+      jsxFragmentFactory: "React.Fragment",
+    },
+  },
 });
 
 const SERVER_ONLY_PROPERTIES = ["loader"];

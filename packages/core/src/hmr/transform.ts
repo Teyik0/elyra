@@ -26,11 +26,21 @@ const reactRefreshBabelPlugin = require.resolve("react-refresh/babel");
 // trimUnusedImports removes type-only and structurally dead imports via the
 // native Bun parser (no regex needed).
 // ---------------------------------------------------------------------------
-// Bun's default JSX factory is React.createElement / React.Fragment,
-// so no explicit jsxFactory configuration is needed.
+// The project tsconfig uses "jsx": "react-jsx" (automatic runtime), which
+// makes Bun.Transpiler emit jsxDEV / jsx calls from react/jsx-dev-runtime.
+// Those imports are then stripped by our server-import regex, leaving
+// undefined references at runtime. Override via the tsconfig option to force
+// the classic transform (React.createElement) that the HMR globals provide.
 const bunTranspiler = new Bun.Transpiler({
   loader: "tsx",
   trimUnusedImports: true,
+  tsconfig: {
+    compilerOptions: {
+      jsx: "react",
+      jsxFactory: "React.createElement",
+      jsxFragmentFactory: "React.Fragment",
+    },
+  },
 });
 
 // ---------------------------------------------------------------------------
