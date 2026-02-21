@@ -1,4 +1,4 @@
-import { createRoute } from "elysion/client";
+import { createRoute } from "@teyik0/elysion/client";
 
 export const route = createRoute({
   layout: ({ children }) => (

@@ -1,5 +1,5 @@
+import { elysion } from "@teyik0/elysion";
 import Elysia from "elysia";
-import { elysion } from "elysion";
 import { api } from "./api";
 
 const app = new Elysia()
