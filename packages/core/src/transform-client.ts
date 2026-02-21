@@ -10,7 +10,15 @@ import {
   isObjectProperty,
 } from "@babel/types";
 
-const presetTypescript = require.resolve("@babel/preset-typescript");
+// ---------------------------------------------------------------------------
+// Bun.Transpiler singleton — strips TypeScript + JSX before Babel AST work.
+// Babel then only needs to parse plain JS, which is significantly faster
+// than parsing TSX through @babel/preset-typescript.
+// ---------------------------------------------------------------------------
+// Bun's default JSX factory is React.createElement / React.Fragment.
+const bunTranspiler = new Bun.Transpiler({
+  loader: "tsx",
+});
 
 const SERVER_ONLY_PROPERTIES = ["loader"];
 
@@ -137,9 +145,14 @@ function removeServerExports(ast: t.File): boolean {
 }
 
 export function transformForClient(code: string, filename: string): TransformResult {
-  const parseResult = transformSync(code, {
+  // Pass 1 — Bun.Transpiler: strip TypeScript + JSX → plain JS.
+  // Faster than @babel/preset-typescript and avoids Babel TSX parsing overhead.
+  const plainJs = bunTranspiler.transformSync(code);
+
+  // Pass 2 — Babel: parse plain JS to AST for server-property removal and DCE.
+  // No presets required since TypeScript and JSX are already handled above.
+  const parseResult = transformSync(plainJs, {
     filename,
-    presets: [[presetTypescript, { isTSX: true, allExtensions: true }]],
     plugins: [],
     sourceMaps: false,
     ast: true,

@@ -17,23 +17,27 @@ import {
   returnStatement,
 } from "@babel/types";
 
-const presetTypescript = require.resolve("@babel/preset-typescript");
-const presetReact = require.resolve("@babel/preset-react");
 const reactRefreshBabelPlugin = require.resolve("react-refresh/babel");
+
+// ---------------------------------------------------------------------------
+// Bun.Transpiler singleton — reused across calls (cheaper than recreating).
+// Handles TypeScript stripping + JSX → React.createElement in one native pass,
+// replacing @babel/preset-typescript + @babel/preset-react entirely.
+// trimUnusedImports removes type-only and structurally dead imports via the
+// native Bun parser (no regex needed).
+// ---------------------------------------------------------------------------
+// Bun's default JSX factory is React.createElement / React.Fragment,
+// so no explicit jsxFactory configuration is needed.
+const bunTranspiler = new Bun.Transpiler({
+  loader: "tsx",
+  trimUnusedImports: true,
+});
 
 // ---------------------------------------------------------------------------
 // Top-level regex constants (satisfies lint/performance/useTopLevelRegex)
 // ---------------------------------------------------------------------------
 const RELATIVE_IMPORT_RE = /^(import\b[^'"]*?from\s*)(["'])(\.\.?\/[^"']+)\2/gm;
-const IMPORT_LINE_RE = /^import\s+(.+?)\s+from\s*["'][^"']+["'];?\s*$/;
-const NAMED_IMPORTS_RE = /^\{([^}]+)\}$/;
-const DEFAULT_IMPORT_RE = /^(\w+)(?:\s*,\s*\{([^}]+)\})?$/;
-const NAMESPACE_IMPORT_RE = /^\*\s+as\s+(\w+)$/;
-const SINGLE_LINE_COMMENT_RE = /\/\/[^\n]*/g;
-const MULTI_LINE_COMMENT_RE = /\/\*[\s\S]*?\*\//g;
-const STRING_LITERAL_RE = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g;
 const IMPORT_META_HOT_RE = /if\s*\(import\.meta\.hot\)\s*\{/g;
-const AS_SPECIFIER_RE = /\s+as\s+/;
 
 // ---------------------------------------------------------------------------
 // Babel AST helpers
@@ -225,130 +229,6 @@ function rewriteRelativeImports(
 }
 
 // ---------------------------------------------------------------------------
-// Unused import removal — helpers reduce cognitive complexity
-// ---------------------------------------------------------------------------
-
-function parseNamedSpecifiers(specStr: string): string[] {
-  const namedMatch = specStr.match(NAMED_IMPORTS_RE);
-  if (!namedMatch?.[1]) {
-    return [];
-  }
-
-  const identifiers: string[] = [];
-  for (const spec of namedMatch[1].split(",")) {
-    const trimmed = spec.trim();
-    if (!trimmed) {
-      continue;
-    }
-    const parts = trimmed.split(AS_SPECIFIER_RE);
-    const localName = (parts.length > 1 ? parts[1] : parts[0])?.trim();
-    if (localName) {
-      identifiers.push(localName);
-    }
-  }
-  return identifiers;
-}
-
-function parseDefaultAndNamedSpecifiers(specStr: string): string[] {
-  const defaultMatch = specStr.match(DEFAULT_IMPORT_RE);
-  if (!defaultMatch?.[1]) {
-    return [];
-  }
-
-  const identifiers: string[] = [defaultMatch[1]];
-  if (defaultMatch[2]) {
-    for (const spec of defaultMatch[2].split(",")) {
-      const trimmed = spec.trim();
-      if (!trimmed) {
-        continue;
-      }
-      const parts = trimmed.split(AS_SPECIFIER_RE);
-      const localName = (parts.length > 1 ? parts[1] : parts[0])?.trim();
-      if (localName) {
-        identifiers.push(localName);
-      }
-    }
-  }
-  return identifiers;
-}
-
-function parseImportLine(line: string): string[] {
-  const match = line.match(IMPORT_LINE_RE);
-  if (!match?.[1]) {
-    return [];
-  }
-
-  const specStr = match[1];
-
-  // Named: { a, b as c }
-  if (NAMED_IMPORTS_RE.test(specStr)) {
-    return parseNamedSpecifiers(specStr);
-  }
-
-  // Namespace: * as Foo
-  const namespaceMatch = specStr.match(NAMESPACE_IMPORT_RE);
-  if (namespaceMatch?.[1]) {
-    return [namespaceMatch[1]];
-  }
-
-  // Default (with optional named): Foo, { bar }
-  return parseDefaultAndNamedSpecifiers(specStr);
-}
-
-function isIdentifierUsed(name: string, strippedCode: string): boolean {
-  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const regex = new RegExp(`\\b${escapedName}\\b`, "g");
-  const matches = strippedCode.match(regex);
-  return matches !== null && matches.length > 0;
-}
-
-function removeUnusedImports(code: string): string {
-  const lines = code.split("\n");
-  const importLines: Map<number, string[]> = new Map();
-  const allIdentifiers = new Set<string>();
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line) {
-      continue;
-    }
-
-    const identifiers = parseImportLine(line);
-    if (identifiers.length > 0) {
-      importLines.set(i, identifiers);
-      for (const id of identifiers) {
-        allIdentifiers.add(id);
-      }
-    }
-  }
-
-  const codeWithoutImports = lines.filter((_, i) => !importLines.has(i)).join("\n");
-
-  // Strip comments and string literals so identifiers inside them don't
-  // count as "used" (avoids false positives that prevent import removal)
-  const strippedCode = codeWithoutImports
-    .replace(SINGLE_LINE_COMMENT_RE, "")
-    .replace(MULTI_LINE_COMMENT_RE, "")
-    .replace(STRING_LITERAL_RE, '""');
-
-  const usedIdentifiers = new Set<string>();
-  for (const name of allIdentifiers) {
-    if (isIdentifierUsed(name, strippedCode)) {
-      usedIdentifiers.add(name);
-    }
-  }
-
-  for (const [index, identifiers] of importLines) {
-    const usedFromThisLine = identifiers.filter((id) => usedIdentifiers.has(id));
-    if (usedFromThisLine.length === 0) {
-      lines[index] = "";
-    }
-  }
-
-  return lines.join("\n");
-}
-
-// ---------------------------------------------------------------------------
 // Main transform entry point
 // ---------------------------------------------------------------------------
 
@@ -362,10 +242,18 @@ export function transformForReactRefresh(
   try {
     let extractedComponentName: string | null = null;
 
-    // Pass 1: Extract component from page() call
-    const extractResult = transformSync(code, {
+    // Pass 1 — Bun.Transpiler: TypeScript + JSX → plain JS (native, ~10-50× faster
+    // than Babel preset-typescript + preset-react). trimUnusedImports removes
+    // type-only and structurally-dead imports at parse time.
+    const plainJs = bunTranspiler.transformSync(code);
+
+    // Pass 2 — Babel (extraction only): strip server-only properties and lift
+    // the inline arrow component into a named function declaration.
+    // This must be a separate pass from react-refresh so that the newly inserted
+    // _ElysionPage function declaration is visible in the AST when Pass 3 runs.
+    // (Babel does not re-traverse nodes inserted during the current traversal.)
+    const extractResult = transformSync(plainJs, {
       filename,
-      presets: [[presetTypescript, { isTSX: true, allExtensions: true }]],
       plugins: [
         createExtractPlugin((name) => {
           extractedComponentName = name;
@@ -378,16 +266,17 @@ export function transformForReactRefresh(
       throw new Error("Extract transform failed");
     }
 
-    // Pass 2: Transform JSX and add React Refresh (TypeScript already stripped in Pass 1)
+    // Pass 3 — Babel (React Refresh only): instrument all visible function
+    // components, including the _ElysionPage extracted in Pass 2.
+    // No presets required — TS and JSX are already plain JS from Pass 1.
     const result = transformSync(extractResult.code, {
       filename,
-      presets: [[presetReact, { runtime: "classic" }]],
       plugins: [[reactRefreshBabelPlugin, { skipEnvCheck: true }]],
       sourceMaps: "inline",
     });
 
     if (!result?.code) {
-      throw new Error("JSX transform failed");
+      throw new Error("React Refresh transform failed");
     }
 
     let transformedCode = result.code;
@@ -400,7 +289,10 @@ export function transformForReactRefresh(
       });
     }
 
-    // Strip React imports
+    // Strip server-only imports that must never reach the browser.
+    // React: replaced by window.React global injected below.
+    // elysion/client + elysia: server-only APIs.
+    // CSS: handled separately by the CSS pipeline.
     transformedCode = transformedCode.replace(
       /^import\s+(?:\*\s+as\s+)?React\s*,?\s*(?:\{[^}]*\})?\s*from\s*["']react["'];?\s*$/gm,
       ""
@@ -413,24 +305,15 @@ export function transformForReactRefresh(
       /^import\s+(?:\*\s+as\s+)?React\s+from\s*["']react["'];?\s*$/gm,
       ""
     );
-
-    // Strip elysion/client imports
     transformedCode = transformedCode.replace(
       /^import\s+\{[^}]*\}\s*from\s*["']elysion\/client["'];?\s*$/gm,
       ""
     );
-
-    // Strip elysia imports (server-only)
     transformedCode = transformedCode.replace(
       /^import\s+\{[^}]*\}\s*from\s*["']elysia["'];?\s*$/gm,
       ""
     );
-
-    // Strip CSS imports
     transformedCode = transformedCode.replace(/^import\s+["'][^"']+\.css["'];?\s*$/gm, "");
-
-    // Remove unused imports (after loader removal)
-    transformedCode = removeUnusedImports(transformedCode);
 
     // Rewrite relative imports to /_modules/src/ absolute URLs so the browser
     // can fetch them through the HMR module server
