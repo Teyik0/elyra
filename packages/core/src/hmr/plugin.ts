@@ -29,7 +29,7 @@ function stopWatchers(): void {
   _cssWatcher = null;
 }
 
-function startWatchers(pagesDir: string, cssInputPath?: string): void {
+function startWatchers(pagesDir: string, cssInputPath?: string, debounceMs = 100): void {
   stopWatchers();
 
   // Trailing-edge debounce timers: process the change only after the file
@@ -98,7 +98,7 @@ function startWatchers(pagesDir: string, cssInputPath?: string): void {
         );
 
         console.log(`[hmr] Broadcast update to ${getHmrClients().size} client(s)`);
-      }, 50)
+      }, debounceMs)
     );
   });
 
@@ -132,7 +132,7 @@ function startWatchers(pagesDir: string, cssInputPath?: string): void {
           invalidateCssCache(absoluteCssPath);
           broadcastMessage(JSON.stringify({ type: "css-update", path: filename }));
           console.log(`[hmr] Broadcast css-update to ${getHmrClients().size} client(s)`);
-        }, 50)
+        }, debounceMs)
       );
     });
 
@@ -145,12 +145,12 @@ if (_pagesDir) {
   startWatchers(_pagesDir, _cssInputPath);
 }
 
-export function createHmrPlugin(pagesDir: string, cssInputPath?: string) {
+export function createHmrPlugin(pagesDir: string, cssInputPath?: string, debounceMs = 100) {
   // Persist config so it survives a hot reload of this module
   _pagesDir = pagesDir;
   _cssInputPath = cssInputPath;
 
-  startWatchers(pagesDir, cssInputPath);
+  startWatchers(pagesDir, cssInputPath, debounceMs);
 
   const srcDir = dirname(pagesDir);
 

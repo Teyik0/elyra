@@ -29,8 +29,10 @@ interface TestServer {
   url: string;
 }
 
+const DEBOUNCE_MS = 200;
+
 async function startHmrServer(pagesDir: string): Promise<TestServer> {
-  const plugin = createHmrPlugin(pagesDir);
+  const plugin = createHmrPlugin(pagesDir, undefined, DEBOUNCE_MS);
   const app = new Elysia().use(plugin);
   app.listen(0);
   // Give the OS a moment to bind the port and start the watcher.
@@ -53,7 +55,7 @@ async function startHmrServer(pagesDir: string): Promise<TestServer> {
 async function collectHmrMessages(
   serverUrl: string,
   action: () => void | Promise<void>,
-  waitMs = 300
+  waitMs = DEBOUNCE_MS * 3
 ): Promise<Record<string, unknown>[]> {
   const wsUrl = `${serverUrl.replace("http://", "ws://")}/__elysion/hmr`;
   const messages: Record<string, unknown>[] = [];
