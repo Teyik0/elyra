@@ -1,0 +1,53 @@
+name: Workflow - CD
+
+on:
+  release:
+    types: [published]
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  id-token: write
+
+jobs:
+  publish-npm:
+    name: Workflow - CD
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 'Checkout'
+        uses: actions/checkout@v6
+
+      - name: Cache bun
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lockb') }}
+
+      - name: 'Setup Bun'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install packages
+        run: bun install --frozen-lockfile
+
+      - name: Lint & Format Check
+        run: bun run ultracite check
+
+      - name: Type Check
+        run: bun run test:types
+
+      - name: Test
+        run: bun run test
+
+      - name: Build
+        run: bun run build
+
+      - name: Publish
+        working-directory: packages/core
+        run: bun publish
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
