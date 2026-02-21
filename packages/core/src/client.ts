@@ -27,7 +27,10 @@ type MergeSchema<TParent, TOwn> = [TParent] extends [Unset]
 type ConditionalParams<T> = [T] extends [Unset] ? {} : { params: T };
 type ConditionalQuery<T> = [T] extends [Unset] ? {} : { query: T };
 
-type RouteContext<TParams, TQuery> = ConditionalParams<TParams> & ConditionalQuery<TQuery>;
+// The incoming server Request is always available in loaders so they can
+// forward headers (e.g. Cookie) when making server-side HTTP calls.
+type RouteContext<TParams, TQuery> = ConditionalParams<TParams> &
+  ConditionalQuery<TQuery> & { request?: Request };
 
 type ResolveParent<T> =
   T extends RouteRef<infer D, infer P, infer Q>

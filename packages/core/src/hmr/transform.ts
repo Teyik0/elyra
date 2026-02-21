@@ -1,7 +1,10 @@
 import { dirname, relative, resolve } from "node:path";
 import type * as Babel from "@babel/core";
 import { transformSync } from "@babel/core";
+import generate from "@babel/generator";
 import type { NodePath } from "@babel/traverse";
+import traverseModule from "@babel/traverse";
+import type * as t from "@babel/types";
 import {
   blockStatement,
   functionDeclaration,
@@ -16,6 +19,7 @@ import {
   isProgram,
   returnStatement,
 } from "@babel/types";
+import { deadCodeElimination } from "../transform-client";
 
 const reactRefreshBabelPlugin = require.resolve("react-refresh/babel");
 
@@ -257,11 +261,13 @@ export function transformForReactRefresh(
     // type-only and structurally-dead imports at parse time.
     const plainJs = bunTranspiler.transformSync(code);
 
-    // Pass 2 — Babel (extraction only): strip server-only properties and lift
-    // the inline arrow component into a named function declaration.
-    // This must be a separate pass from react-refresh so that the newly inserted
-    // _ElysionPage function declaration is visible in the AST when Pass 3 runs.
-    // (Babel does not re-traverse nodes inserted during the current traversal.)
+    // Pass 2 — Babel (extraction + DCE): strip server-only properties (loader),
+    // lift the inline arrow component into a named function declaration, then
+    // remove any imports that became orphaned after loader removal (e.g. db.ts
+    // imported only by the loader must not reach the browser bundle).
+    //
+    // We request ast:true so we can apply deadCodeElimination on the same AST
+    // before generating code for Pass 3 — avoids a redundant parse/generate cycle.
     const extractResult = transformSync(plainJs, {
       filename,
       plugins: [
@@ -269,17 +275,37 @@ export function transformForReactRefresh(
           extractedComponentName = name;
         }),
       ],
+      ast: true,
+      code: false,
       sourceMaps: false,
     });
 
-    if (!extractResult?.code) {
+    if (!extractResult?.ast) {
       throw new Error("Extract transform failed");
     }
+
+    // Re-crawl the scope so Babel's binding references reflect the removed loader,
+    // then eliminate imports whose only consumer was the now-removed loader.
+    const extractedAst = extractResult.ast as t.File;
+    const traverse =
+      // @babel/traverse ships both a default export and a .default property
+      // depending on the module format — normalise to whichever is callable.
+      typeof traverseModule === "function"
+        ? traverseModule
+        : (traverseModule as { default: typeof traverseModule }).default;
+    traverse(extractedAst, {
+      Program(p) {
+        p.scope.crawl();
+      },
+    });
+    deadCodeElimination(extractedAst);
+
+    const cleanedCode = generate(extractedAst).code;
 
     // Pass 3 — Babel (React Refresh only): instrument all visible function
     // components, including the _ElysionPage extracted in Pass 2.
     // No presets required — TS and JSX are already plain JS from Pass 1.
-    const result = transformSync(extractResult.code, {
+    const result = transformSync(cleanedCode, {
       filename,
       plugins: [[reactRefreshBabelPlugin, { skipEnvCheck: true }]],
       sourceMaps: "inline",
