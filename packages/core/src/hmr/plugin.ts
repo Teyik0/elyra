@@ -3,6 +3,12 @@ import { basename, dirname, resolve } from "node:path";
 import { type AsyncSubscription, subscribe } from "@parcel/watcher";
 import { Elysia, t } from "elysia";
 import { getCachedCss, getCssConfig, invalidateCssCache } from "../css";
+import {
+  BACKSLASH_REGEX,
+  HMR_EXTENSIONS,
+  HMR_MODULE_PREFIX,
+  WINDOWS_PATH_REGEX,
+} from "./constants";
 import { REFRESH_SETUP_CODE } from "./refresh-setup";
 import {
   broadcastMessage,
@@ -10,6 +16,7 @@ import {
   getHmrClients,
   getTransformedModule,
   invalidateModuleCache,
+  removeFromDepGraph,
 } from "./watcher";
 
 // ─── Module-level watcher state ──────────────────────────────────────────────
@@ -19,14 +26,23 @@ import {
 let _pagesWatcher: AsyncSubscription | null = null;
 let _cssWatcher: AsyncSubscription | null = null;
 
-// Safely access import.meta.hot — may be undefined outside bun --hot.
-const hot = typeof import.meta.hot !== "undefined" ? import.meta.hot : null;
-const hmrData: Record<string, unknown> = hot?.data ?? {};
+interface PluginState {
+  cssInputPath?: string;
+  pagesDir?: string | null;
+}
+
+function getPluginState(): PluginState {
+  const data = import.meta.hot?.data as PluginState | undefined;
+  if (!data) {
+    return {};
+  }
+  return data;
+}
 
 // Config is persisted across hot reloads so watchers can be restarted
 // automatically when this module itself is hot-replaced.
-let _pagesDir: string | null = (hmrData.pagesDir ??= null) as string | null;
-let _cssInputPath: string | undefined = hmrData.cssInputPath as string | undefined;
+let _pagesDir: string | null = (getPluginState().pagesDir ??= null);
+let _cssInputPath: string | undefined = getPluginState().cssInputPath;
 
 async function stopWatchers(): Promise<void> {
   try {
@@ -43,6 +59,34 @@ async function stopWatchers(): Promise<void> {
     // Same as above
   }
   _cssWatcher = null;
+}
+
+function broadcastFileUpdate(
+  filename: string,
+  pagesDir: string,
+  normalizedPagesDir: string,
+  pagesDirName: string
+): void {
+  const relativePath = filename.slice(pagesDir.length + 1).replace(BACKSLASH_REGEX, "/");
+  const modulePath = `${HMR_MODULE_PREFIX}${pagesDirName}/${relativePath}`;
+
+  const affectedModulePaths = getAffectedModules(filename)
+    .filter((p) => p.startsWith(`${normalizedPagesDir}/`))
+    .map(
+      (p) =>
+        `${HMR_MODULE_PREFIX}${pagesDirName}/${p.slice(normalizedPagesDir.length + 1).replace(BACKSLASH_REGEX, "/")}`
+    );
+
+  broadcastMessage(
+    JSON.stringify({
+      type: "update",
+      path: modulePath,
+      modules: [modulePath, ...affectedModulePaths],
+      cssUpdate: true,
+    })
+  );
+
+  console.log(`[hmr] Broadcast update to ${getHmrClients().size} client(s)`);
 }
 
 async function startWatchers(pagesDir: string, cssInputPath?: string): Promise<void> {
@@ -64,15 +108,20 @@ async function startWatchers(pagesDir: string, cssInputPath?: string): Promise<v
 
     for (const event of events) {
       const filename = event.path;
-      if (![".tsx", ".ts", ".jsx", ".js"].some((ext) => filename.endsWith(ext))) {
+      if (!HMR_EXTENSIONS.some((ext) => filename.endsWith(ext))) {
         continue;
       }
 
       console.log(`[hmr] File ${event.type}: ${filename}`);
 
-      // Invalidate the per-file module version so the next SSR request
-      // imports the new file content instead of the stale cached module.
-      invalidateModuleCache(filename);
+      if (event.type === "delete") {
+        removeFromDepGraph(filename);
+        invalidateModuleCache(filename);
+      } else {
+        // Invalidate the per-file module version so the next SSR request
+        // imports the new file content instead of the stale cached module.
+        invalidateModuleCache(filename);
+      }
 
       // Invalidate CSS cache since Tailwind classes might have changed
       const cssConfig = getCssConfig();
@@ -80,30 +129,7 @@ async function startWatchers(pagesDir: string, cssInputPath?: string): Promise<v
         invalidateCssCache(resolve(process.cwd(), cssConfig.input));
       }
 
-      // event.path is absolute — derive the relative path from pagesDir.
-      const relative = filename.slice(pagesDir.length + 1).replace(/\\/g, "/");
-      const modulePath = `/src/${pagesDirName}/${relative}`;
-
-      // Expand modules array to include all pages that transitively import the changed file.
-      // Filters to files inside pagesDir since only those can be re-imported by the browser.
-      const affectedRaw = getAffectedModules(filename);
-      const affectedModulePaths = affectedRaw
-        .filter((p) => p.startsWith(`${normalizedPagesDir}/`))
-        .map(
-          (p) =>
-            `/src/${pagesDirName}/${p.slice(normalizedPagesDir.length + 1).replace(/\\/g, "/")}`
-        );
-
-      broadcastMessage(
-        JSON.stringify({
-          type: "update",
-          path: modulePath,
-          modules: [modulePath, ...affectedModulePaths],
-          cssUpdate: true,
-        })
-      );
-
-      console.log(`[hmr] Broadcast update to ${getHmrClients().size} client(s)`);
+      broadcastFileUpdate(filename, pagesDir, normalizedPagesDir, pagesDirName);
     }
   });
 
@@ -171,17 +197,23 @@ export function createHmrPlugin(pagesDir: string, cssInputPath?: string) {
     })
     .get("/_modules/src/*", async ({ path, set, status }) => {
       const relativePath = decodeURIComponent(path.replace("/_modules/src/", ""));
-      let fullPath = resolve(srcDir, relativePath);
 
-      if (!fullPath.startsWith(srcDir)) {
-        return status("Forbidden", `File does not exist at: ${fullPath}`);
+      // Reject path traversal attempts
+      if (
+        relativePath.includes("..") ||
+        relativePath.startsWith("/") ||
+        WINDOWS_PATH_REGEX.test(relativePath)
+      ) {
+        return status(400, "Invalid path");
       }
 
+      let fullPath = resolve(srcDir, relativePath);
+      const srcDirRealPath = realpathSync(srcDir);
+
       // Try with extensions if file doesn't exist
-      const extensions = [".tsx", ".ts", ".jsx", ".js"];
       const file = Bun.file(fullPath);
       if (!(await file.exists())) {
-        for (const ext of extensions) {
+        for (const ext of HMR_EXTENSIONS) {
           const pathWithExt = fullPath + ext;
           const fileWithExt = Bun.file(pathWithExt);
           if (await fileWithExt.exists()) {
@@ -189,6 +221,20 @@ export function createHmrPlugin(pagesDir: string, cssInputPath?: string) {
             break;
           }
         }
+      }
+
+      // Verify the resolved path is within srcDir (handles symlinks)
+      // Use try-catch because file might not exist yet
+      let finalRealPath: string;
+      try {
+        finalRealPath = realpathSync(fullPath);
+      } catch {
+        // File doesn't exist, check if the directory is within srcDir
+        finalRealPath = realpathSync(dirname(fullPath));
+      }
+
+      if (!finalRealPath.startsWith(`${srcDirRealPath}/`) && finalRealPath !== srcDirRealPath) {
+        return status(403, "Access denied");
       }
 
       set.headers["content-type"] = "application/javascript";
@@ -226,7 +272,7 @@ export function createHmrPlugin(pagesDir: string, cssInputPath?: string) {
 // ─── HMR lifecycle ────────────────────────────────────────────────────────────
 // Stop file watchers before this module is replaced; persist config so the
 // incoming version can restart them without being called by elysion() again.
-hot?.dispose(async (data) => {
+import.meta.hot.dispose(async (data) => {
   data.pagesDir = _pagesDir;
   data.cssInputPath = _cssInputPath;
   await stopWatchers();

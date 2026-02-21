@@ -251,13 +251,13 @@ describe("dependency graph — getAffectedModules", () => {
 // persistHmrState — saves module state for hot reload persistence
 // ---------------------------------------------------------------------------
 describe("persistHmrState", () => {
-  test("persists clients, moduleVersions, builtModuleCache, and depGraph to data object", () => {
+  test("persists clients, moduleVersions, forwardDepGraph, and depGraph to data object", () => {
     const data: Record<string, unknown> = {};
     persistHmrState(data);
 
     expect(data.clients).toBeInstanceOf(Set);
     expect(data.moduleVersions).toBeInstanceOf(Map);
-    expect(data.builtModuleCache).toBeInstanceOf(Map);
+    expect(data.forwardDepGraph).toBeInstanceOf(Map);
     expect(data.depGraph).toBeInstanceOf(Map);
   });
 });

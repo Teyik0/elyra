@@ -9,11 +9,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 - `bun run dev` — Run the example app with HMR
-- `bun run build` — Build the library to `dist/`
-- `bun run check` — Lint with ultracite (biome-based)
 - `bun run fix` — Auto-fix lint issues
-- `bun run tsc` — Type-check without emitting
-- `bun test` — Run tests
+- `bun run test` — Run tests
+- `bun run build` — Build the library to `dist/`
+- `bun run test:types` — Type-check without emitting
 
 ## Tooling
 
@@ -225,4 +224,29 @@ Use `InferProps` for external components:
 function MyLayout(props: InferProps<typeof route>) {
   // props.post, props.params, props.children all typed
 }
+```
+
+## import.meta.hot usage
+
+For this to work, Bun forces these APIs to be called without indirection. That means the following do not work:
+From the doc https://bun.com/docs/bundler/hot-reloading.md
+
+```ts
+// INVALID: Assigning `hot` to a variable
+const hot = import.meta.hot;
+hot.accept();
+
+// INVALID: Assigning `import.meta` to a variable
+const meta = import.meta;
+meta.hot.accept();
+console.log(meta.hot.data);
+
+// INVALID: Passing to a function
+doSomething(import.meta.hot.dispose);
+
+// OK: The full phrase "import.meta.hot.<API>" must be called directly:
+import.meta.hot.accept();
+
+// OK: `data` can be passed to functions:
+doSomething(import.meta.hot.data);
 ```
