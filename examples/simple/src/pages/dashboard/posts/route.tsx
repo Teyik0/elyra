@@ -23,5 +23,3 @@ export const route = createRoute({
     </div>
   ),
 });
-
-export default route;

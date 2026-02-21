@@ -44,7 +44,7 @@ export default route.page({
               <div>
                 <h4 className="font-medium text-gray-900">{post.title}</h4>
                 <p className="text-gray-500 text-sm">
-                  {new Date(post.createdAt).toLocaleDateString()}
+                  {new Date(post.createdAt).toLocaleDateString("en-CA")}
                 </p>
               </div>
               <div className="flex items-center gap-3">

@@ -1,10 +1,5 @@
-import { createRoute } from "elysion/client";
 import { useState } from "react";
-import { route as postsRoute } from "./route";
-
-export const route = createRoute({
-  parent: postsRoute,
-});
+import { route } from "./route";
 
 export default route.page({
   head: () => ({ meta: [{ title: "New Post - Dashboard" }] }),

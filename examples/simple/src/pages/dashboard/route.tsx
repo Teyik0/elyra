@@ -2,16 +2,22 @@ import { createRoute } from "elysion/client";
 import { client } from "../../client";
 
 export const route = createRoute({
-  loader: async () => {
-    const { data } = await client.api.me.get();
+  loader: async ({ request }) => {
+    const cookieHeader = request?.headers.get("Cookie") ?? "";
+    const { data } = await client.api.me.get({
+      fetch: { headers: cookieHeader ? { Cookie: cookieHeader } : {} },
+    });
     if (!data) {
       throw new Error("error");
     }
 
-    return data;
+    return {
+      ...data,
+      pathname: request ? new URL(request.url).pathname : "",
+    };
   },
 
-  layout: ({ children, user }) => {
+  layout: ({ children, user, pathname }) => {
     if (!user) {
       return (
         <div className="flex min-h-screen items-center justify-center bg-gray-50">
@@ -39,9 +45,24 @@ export const route = createRoute({
               </a>
             </div>
             <nav className="space-y-1 px-4">
-              <NavItem href="/dashboard" icon="home" label="Dashboard" />
-              <NavItem href="/dashboard/posts" icon="document" label="Posts" />
-              <NavItem href="/dashboard/settings" icon="settings" label="Settings" />
+              <NavItem
+                href="/dashboard"
+                icon="home"
+                label="Dashboard"
+                pathname={pathname as string}
+              />
+              <NavItem
+                href="/dashboard/posts"
+                icon="document"
+                label="Posts"
+                pathname={pathname as string}
+              />
+              <NavItem
+                href="/dashboard/settings"
+                icon="settings"
+                label="Settings"
+                pathname={pathname as string}
+              />
             </nav>
           </aside>
 
@@ -77,8 +98,18 @@ export const route = createRoute({
   },
 });
 
-function NavItem({ href, icon, label }: { href: string; icon: string; label: string }) {
-  const isActive = location.pathname === href;
+function NavItem({
+  href,
+  icon,
+  label,
+  pathname,
+}: {
+  href: string;
+  icon: string;
+  label: string;
+  pathname: string;
+}) {
+  const isActive = pathname === href;
 
   const icons: Record<string, React.ReactNode> = {
     home: (
