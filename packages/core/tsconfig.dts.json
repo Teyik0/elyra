@@ -1,8 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "module": "preserve",
-    "moduleResolution": "bundler",
+    "module": "preserve", // at some point will target node for compat
+    "moduleResolution": "bundler", // at some point will target node for compat
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "./dist",
