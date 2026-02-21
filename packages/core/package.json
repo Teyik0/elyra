@@ -2,14 +2,29 @@
   "name": "elysion",
   "version": "0.1.0",
   "type": "module",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "main": "./dist/elysion.js",
+  "module": "./dist/elysion.js",
+  "types": "./dist/elysion.d.ts",
   "exports": {
     ".": {
-      "default": "./src/elysion.ts"
+      "types": "./dist/elysion.d.ts",
+      "bun": "./src/elysion.ts",
+      "import": "./dist/elysion.js"
     },
     "./client": {
-      "types": "./src/client.ts",
-      "default": "./src/client.ts"
+      "types": "./dist/client.d.ts",
+      "bun": "./src/client.ts",
+      "import": "./dist/client.js"
     }
+  },
+  "scripts": {
+    "test": "bun test",
+    "test:types": "tsc --noEmit",
+    "build": "bun run build.ts"
   },
   "dependencies": {
     "@babel/core": "^7.26.0",
@@ -19,26 +34,32 @@
     "@babel/traverse": "^7.29.0",
     "@babel/types": "^7.29.0",
     "@elysiajs/static": "^1.4.7",
+    "@parcel/watcher": "^2.5.6",
     "postcss": "^8.5.3",
     "react-refresh": "^0.18.0"
   },
-  "peerDependencies": {
-    "elysia": "^1.4.25",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4"
-  },
   "devDependencies": {
     "@types/babel__core": "^7.20.5",
+    "@types/babel__generator": "^7.27.0",
     "@types/babel__traverse": "^7.28.0",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "expect-type": "^1.3.0",
     "tailwindcss": "4"
   },
-  "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target bun",
-    "dev": "bun run --watch example/src/server.ts",
-    "check": "ultracite check",
-    "fix": "ultracite fix",
-    "tsc": "tsc --noEmit",
-    "iup": "bun update --interactive --recursive"
+  "peerDependencies": {
+    "elysia": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "typescript": ">= 5.0.0",
+    "@types/bun": ">= 1.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@types/bun": {
+      "optional": true
+    },
+    "typescript": {
+      "optional": true
+    }
   }
 }

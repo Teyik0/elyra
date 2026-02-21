@@ -20,7 +20,10 @@ export default route.page({
       throw new Error("Post not found");
     }
     const comments = queries.getCommentsByPostId.all(post.id);
-    const postWithTags: PostWithParsedTags = { ...post, tags: parseTags(post.tags) };
+    const postWithTags: PostWithParsedTags = {
+      ...post,
+      tags: parseTags(post.tags),
+    };
     return { post: postWithTags, comments };
   },
 
@@ -37,7 +40,10 @@ export default route.page({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ postId: post.id, author, content }),
       });
-      const data = (await response.json()) as { success: boolean; comment: Comment };
+      const data = (await response.json()) as {
+        success: boolean;
+        comment: Comment;
+      };
       if (data.success) {
         setCommentList((prev) => [data.comment, ...prev]);
       }

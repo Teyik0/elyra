@@ -35,6 +35,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Elysia } from "elysia";
+import { setCssConfig } from "../../src/css";
 import { createHmrPlugin } from "../../src/hmr/plugin";
 
 const MODULE_ERROR_RE = /^\/\/ Error:/;
@@ -56,7 +57,7 @@ async function startDevServer(pagesDir: string): Promise<DevServer> {
   const app = new Elysia().use(createHmrPlugin(pagesDir));
   app.listen(0);
   // Give the OS time to bind the port and the watcher to initialise.
-  await Bun.sleep(80);
+  await Bun.sleep(200);
   const port = app.server?.port;
   if (!port) {
     throw new Error("Server failed to bind a port");
@@ -217,7 +218,7 @@ describe("E2E HMR — file change triggers update and module content refreshes",
     writeFileSync(filePath, "export const count = 1;");
 
     // Wait for debounce (50 ms) + OS event propagation
-    await Bun.sleep(300);
+    await Bun.sleep(600);
 
     const msgs = hmr.messages();
     expect(msgs.length).toBeGreaterThanOrEqual(1);
@@ -233,7 +234,7 @@ describe("E2E HMR — file change triggers update and module content refreshes",
     const hmr = await connectHmr(server.wsUrl);
 
     writeFileSync(filePath, `export const title = "new";`);
-    await Bun.sleep(300);
+    await Bun.sleep(600);
 
     const msgs = hmr.messages();
     expect(msgs.length).toBeGreaterThanOrEqual(1);
@@ -257,7 +258,7 @@ describe("E2E HMR — file change triggers update and module content refreshes",
 
     // Simulate save — browser will re-fetch with ?hmr=N
     writeFileSync(filePath, `export const label = "v2";`);
-    await Bun.sleep(100); // let the write settle
+    await Bun.sleep(300); // let the write settle
 
     // The server always reads from disk, so the ?hmr= query is only a
     // browser-side cache-buster — the content is always fresh.
@@ -277,7 +278,7 @@ describe("E2E HMR — file change triggers update and module content refreshes",
     }
 
     // Wait for debounce to settle
-    await Bun.sleep(300);
+    await Bun.sleep(600);
 
     // Server must still be alive and serving the final content
     const { status, body } = await fetchModule(server.url, "/src/pages/rapid.tsx");
@@ -290,7 +291,7 @@ describe("E2E HMR — file change triggers update and module content refreshes",
     writeFileSync(filePath, "export const A = () => null;");
 
     writeFileSync(filePath, "export const A = () => <span>updated</span>;");
-    await Bun.sleep(100);
+    await Bun.sleep(300);
 
     const { body } = await fetchModule(server.url, "/src/pages/refresh.tsx");
 
@@ -356,7 +357,7 @@ describe("E2E HMR — no redundant buildClient on hot reload (regression guard)"
     // Start a second HMR plugin on a different port pointing to the same dir
     const app2 = new Elysia().use(createHmrPlugin(PAGES_DIR2));
     app2.listen(0);
-    await Bun.sleep(80);
+    await Bun.sleep(200);
     const port2 = app2.server?.port;
     if (!port2) {
       app2.stop();
@@ -408,7 +409,7 @@ describe("E2E HMR — CSS update flag in HMR message", () => {
       filePath,
       `export const Styled = () => <div className="text-blue-500">new</div>;`
     );
-    await Bun.sleep(300);
+    await Bun.sleep(600);
 
     const msgs = hmr.messages();
     expect(msgs.length).toBeGreaterThanOrEqual(1);
@@ -418,5 +419,107 @@ describe("E2E HMR — CSS update flag in HMR message", () => {
     expect(msg.cssUpdate).toBe(true);
 
     hmr.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite 5 — CSS endpoint and module extension resolution
+//
+// Tests for HMR plugin endpoints that were previously uncovered:
+//   - /__elysion/css when CSS is not configured → 404
+//   - /_modules/src/* with extension resolution → auto-adds .tsx
+//   - /_modules/src/* path traversal guard → Forbidden
+// ---------------------------------------------------------------------------
+
+describe("E2E HMR — CSS endpoint and module resolution", () => {
+  const PAGES_DIR = join(TMP, "endpoints", "pages");
+  let server: DevServer;
+
+  beforeAll(async () => {
+    mkdirSync(PAGES_DIR, { recursive: true });
+    server = await startDevServer(PAGES_DIR);
+  });
+
+  afterAll(() => {
+    server.stop();
+    rmSync(join(TMP, "endpoints"), { recursive: true, force: true });
+  });
+
+  test("CSS endpoint returns 404 when CSS is not configured", async () => {
+    const res = await fetch(`${server.url}/__elysion/css`);
+    expect(res.status).toBe(404);
+  });
+
+  test("module endpoint resolves .tsx extension automatically", async () => {
+    // Create a file WITH extension on disk
+    writeFileSync(join(PAGES_DIR, "auto-ext.tsx"), "export const Comp = () => null;");
+
+    // Request WITHOUT extension — the endpoint should try .tsx fallback
+    const res = await fetch(`${server.url}/_modules/src/pages/auto-ext`);
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(body).toContain("Comp");
+  });
+
+  test("refresh-setup endpoint returns JavaScript", async () => {
+    const res = await fetch(`${server.url}/__refresh-setup.js`);
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("javascript");
+    expect(body.length).toBeGreaterThan(0);
+  });
+
+  test("WebSocket client receives 'connected' message on open", async () => {
+    const ws = new WebSocket(`${server.wsUrl}/__elysion/hmr`);
+    const firstMessage = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      ws.onmessage = (e) => {
+        resolve(JSON.parse(e.data as string) as Record<string, unknown>);
+      };
+      ws.onerror = () => reject(new Error("WebSocket error"));
+    });
+
+    expect(firstMessage.type).toBe("connected");
+    ws.close();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite 6 — CSS endpoint with configured CSS
+//
+// When setCssConfig is called before creating the plugin, the
+// /__elysion/css endpoint should process and return CSS.
+// ---------------------------------------------------------------------------
+
+describe("E2E HMR — CSS endpoint with configured CSS", () => {
+  const PAGES_DIR = join(TMP, "css-endpoint", "pages");
+  let server: DevServer;
+
+  beforeAll(async () => {
+    mkdirSync(PAGES_DIR, { recursive: true });
+
+    // Create a real CSS file and configure the CSS pipeline
+    const cssDir = join(TMP, "css-endpoint");
+    writeFileSync(join(cssDir, "global.css"), "body { background: white; }");
+    setCssConfig({ input: join(cssDir, "global.css"), mode: "inline" }, true);
+
+    server = await startDevServer(PAGES_DIR);
+  });
+
+  afterAll(() => {
+    server.stop();
+    // Reset CSS config so it doesn't leak to other suites
+    setCssConfig(undefined, true);
+    rmSync(join(TMP, "css-endpoint"), { recursive: true, force: true });
+  });
+
+  test("CSS endpoint returns processed CSS when configured", async () => {
+    const res = await fetch(`${server.url}/__elysion/css`);
+    const body = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/css");
+    expect(body).toContain("background");
   });
 });

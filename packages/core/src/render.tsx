@@ -80,7 +80,10 @@ function injectSuppressHydration(element: ReactNode): ReactNode {
   const props = el.props ?? {};
 
   if (type === "html" || type === "head" || type === "body") {
-    const newProps: Record<string, unknown> = { ...props, suppressHydrationWarning: true };
+    const newProps: Record<string, unknown> = {
+      ...props,
+      suppressHydrationWarning: true,
+    };
     if (props.children) {
       newProps.children = Array.isArray(props.children)
         ? props.children.map(injectSuppressHydration)

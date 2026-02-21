@@ -34,7 +34,14 @@ export const authPlugin = new Elysia({ name: "auth" })
       if (!(isAuthenticated && user)) {
         return { user: null };
       }
-      return { user: { id: user.id, name: user.name, email: user.email, role: user.role } };
+      return {
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        },
+      };
     },
     { isAuthenticated: true }
   )
@@ -51,7 +58,10 @@ export const authPlugin = new Elysia({ name: "auth" })
         session.maxAge = 7 * 86_400;
         session.path = "/";
       }
-      return { success: true, user: { id: user.id, name: user.name, role: user.role } };
+      return {
+        success: true,
+        user: { id: user.id, name: user.name, role: user.role },
+      };
     },
     {
       body: t.Object({

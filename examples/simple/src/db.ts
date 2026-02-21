@@ -65,9 +65,27 @@ db.run(`
 `);
 
 const users: User[] = [
-  { id: "1", email: "user@example.com", name: "John Doe", role: "user", avatar: "JD" },
-  { id: "2", email: "admin@example.com", name: "Admin User", role: "admin", avatar: "AU" },
-  { id: "3", email: "jane@example.com", name: "Jane Smith", role: "user", avatar: "JS" },
+  {
+    id: "1",
+    email: "user@example.com",
+    name: "John Doe",
+    role: "user",
+    avatar: "JD",
+  },
+  {
+    id: "2",
+    email: "admin@example.com",
+    name: "Admin User",
+    role: "admin",
+    avatar: "AU",
+  },
+  {
+    id: "3",
+    email: "jane@example.com",
+    name: "Jane Smith",
+    role: "user",
+    avatar: "JS",
+  },
 ];
 
 const posts: Post[] = [
@@ -383,7 +401,13 @@ export const queries = {
   ),
   createComment: db.prepare<
     Comment,
-    { $id: string; $postId: string; $author: string; $content: string; $createdAt: string }
+    {
+      $id: string;
+      $postId: string;
+      $author: string;
+      $content: string;
+      $createdAt: string;
+    }
   >(
     "INSERT INTO comments (id, postId, author, content, createdAt) VALUES ($id, $postId, $author, $content, $createdAt) RETURNING *"
   ),

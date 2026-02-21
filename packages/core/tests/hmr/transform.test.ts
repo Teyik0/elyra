@@ -334,7 +334,9 @@ describe("relative import rewriting", () => {
     // Inside srcDir but outside pagesDir — transform rewrites to /_modules/src/ URL.
     // Non-page files are handled separately (bundled via Bun.build) by getTransformedModule.
     const file = "/fake/project/src/pages/dashboard/index.tsx";
-    const result = transform(`import { db } from "../../db";\nexport { db };`, { file });
+    const result = transform(`import { db } from "../../db";\nexport { db };`, {
+      file,
+    });
     expect(result).not.toContain(`from "../../db"`);
     expect(result).toContain("/_modules/src/db");
   });

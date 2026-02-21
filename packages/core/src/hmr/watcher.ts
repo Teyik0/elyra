@@ -9,25 +9,29 @@ type HmrClient = ServerWebSocket<{
   validator?: TypeCheck<TSchema> | undefined;
 }>;
 
+// Safely access import.meta.hot — may be undefined outside bun --hot.
+const hot = typeof import.meta.hot !== "undefined" ? import.meta.hot : null;
+const hmrData: Record<string, unknown> = hot?.data ?? {};
+
 // WebSocket clients — persisted across hot reloads via import.meta.hot.data.
 // This is a true server singleton (live connections), not HMR infrastructure.
-const clients: Set<HmrClient> = (import.meta.hot.data.clients ??= new Set<HmrClient>());
+const clients: Set<HmrClient> = (hmrData.clients ??= new Set<HmrClient>()) as Set<HmrClient>;
 
 // Per-file version counters — persisted across hot reloads.
 // Incremented by the file watcher so SSR always uses the latest module version
 // without creating a new cache entry on every request (which would leak memory).
-const moduleVersions: Map<string, number> = (import.meta.hot.data.moduleVersions ??= new Map<
+const moduleVersions: Map<string, number> = (hmrData.moduleVersions ??= new Map<
   string,
   number
->());
+>()) as Map<string, number>;
 
 // Cache for pre-built non-page modules (e.g. src/client.ts that import npm packages).
 // Bun.build() can fail with EISDIR when resolving packages from Bun's .bun/ cache;
 // caching avoids repeated failed builds and expensive re-bundling per request.
-const builtModuleCache: Map<string, string> = (import.meta.hot.data.builtModuleCache ??= new Map<
+const builtModuleCache: Map<string, string> = (hmrData.builtModuleCache ??= new Map<
   string,
   string
->());
+>()) as Map<string, string>;
 
 export function getModuleVersion(absolutePath: string): number {
   return moduleVersions.get(absolutePath) ?? 0;
@@ -119,8 +123,10 @@ export async function getTransformedModule(
 }
 
 // HMR lifecycle — persist clients, module versions, and built module cache across hot reloads.
-import.meta.hot.dispose((data) => {
+export function persistHmrState(data: Record<string, unknown>): void {
   data.clients = clients;
   data.moduleVersions = moduleVersions;
   data.builtModuleCache = builtModuleCache;
-});
+}
+
+hot?.dispose(persistHmrState);

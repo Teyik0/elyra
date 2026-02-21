@@ -1,0 +1,9 @@
+[run]
+bun = true
+
+[test]
+root = "./tests"
+coverageThreshold = { lines = 0.8, functions = 0.8 }
+coverageReporter = ["text", "lcov"]
+coverage = true
+coveragePathIgnorePatterns = ["**/*.test.ts"]

@@ -1,0 +1,46 @@
+name: Workflow - CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: Workflow - CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Cache bun
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lockb') }}
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+            bun-version: latest
+
+      - name: Install packages
+        run: bun install --frozen-lockfile
+
+      - name: Lint & Format Check
+        run: bun run ultracite check
+
+      - name: Build
+        run: bun run build
+
+      - name: Type Check
+        run: bun run test:types
+
+      - name: Test
+        run: bun run test
+
+      - name: Publish Preview
+        working-directory: packages/core
+        if: github.event_name == 'pull_request'
+        run: bunx pkg-pr-new publish

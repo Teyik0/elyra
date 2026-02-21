@@ -3,9 +3,11 @@ import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  broadcastMessage,
   getModuleVersion,
   getTransformedModule,
   invalidateModuleCache,
+  persistHmrState,
 } from "../../src/hmr/watcher";
 
 // ---------------------------------------------------------------------------
@@ -121,5 +123,65 @@ describe("module version counter", () => {
     // (PATH_A was already incremented twice above, still 2)
     expect(getModuleVersion(PATH_A)).toBe(2);
     expect(getModuleVersion(PATH_B)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getTransformedModule — non-page files (Bun.build() branch)
+// Files outside pagesDir are bundled with Bun.build() instead of being
+// transformed with React Refresh.
+// ---------------------------------------------------------------------------
+describe("getTransformedModule — non-page files (Bun.build branch)", () => {
+  test("file outside pagesDir is bundled via Bun.build and returns ESM", async () => {
+    // Create a file at TMP_BASE/utils.ts — outside PAGES_DIR (TMP_BASE/pages/)
+    const utilsPath = join(TMP_BASE, "utils.ts");
+    await Bun.write(utilsPath, "export const helper = (x: number) => x * 2;");
+
+    const result = await getTransformedModule(utilsPath, SRC_DIR, PAGES_DIR);
+
+    expect(typeof result).toBe("string");
+    expect(result.length).toBeGreaterThan(0);
+    // Must contain the exported function (bundled as ESM)
+    expect(result).toContain("helper");
+  });
+
+  test("result is cached — second call returns the same code", async () => {
+    const utilsPath = join(TMP_BASE, "cached-util.ts");
+    await Bun.write(utilsPath, "export const add = (a: number, b: number) => a + b;");
+
+    const first = await getTransformedModule(utilsPath, SRC_DIR, PAGES_DIR);
+    const second = await getTransformedModule(utilsPath, SRC_DIR, PAGES_DIR);
+
+    expect(first).toBe(second);
+  });
+
+  test("throws when Bun.build fails for invalid syntax", async () => {
+    const badPath = join(TMP_BASE, "bad-syntax.ts");
+    await Bun.write(badPath, "export const x = {{{INVALID}}};");
+
+    expect(getTransformedModule(badPath, SRC_DIR, PAGES_DIR)).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// broadcastMessage — no-op when no clients are connected
+// ---------------------------------------------------------------------------
+describe("broadcastMessage", () => {
+  test("does not throw when no clients are connected", () => {
+    expect(() => broadcastMessage("test")).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// persistHmrState — saves module state for hot reload persistence
+// ---------------------------------------------------------------------------
+describe("persistHmrState", () => {
+  test("persists clients, moduleVersions, and builtModuleCache to data object", () => {
+    const data: Record<string, unknown> = {};
+    persistHmrState(data);
+
+    expect(data.clients).toBeInstanceOf(Set);
+    expect(data.moduleVersions).toBeInstanceOf(Map);
+    expect(data.builtModuleCache).toBeInstanceOf(Map);
   });
 });

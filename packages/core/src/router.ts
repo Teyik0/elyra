@@ -38,7 +38,10 @@ export function createRoutePlugin(
   const allQuery = routeChain.find((r) => r.query)?.query;
   if (allParams || allQuery) {
     plugins.push(
-      new Elysia().guard({ params: allParams as AnySchema, query: allQuery as AnySchema })
+      new Elysia().guard({
+        params: allParams as AnySchema,
+        query: allQuery as AnySchema,
+      })
     );
   }
 
@@ -115,7 +118,10 @@ async function scanRouteFiles(
     routeFileMap.set(root.route, root.path);
   }
   const routeGlob = new Glob("**/route.tsx");
-  for await (const absolutePath of routeGlob.scan({ cwd: pagesDir, absolute: true })) {
+  for await (const absolutePath of routeGlob.scan({
+    cwd: pagesDir,
+    absolute: true,
+  })) {
     const routeExport = await loadRouteModule(absolutePath);
     if (routeExport && isElysionRoute(routeExport)) {
       routeFileMap.set(routeExport, absolutePath);
@@ -131,7 +137,10 @@ async function scanPageFiles(
   const routes: ResolvedRoute[] = [];
   const glob = new Glob("**/*.tsx");
 
-  for await (const absolutePath of glob.scan({ cwd: pagesDir, absolute: true })) {
+  for await (const absolutePath of glob.scan({
+    cwd: pagesDir,
+    absolute: true,
+  })) {
     if (![".tsx", ".ts", ".jsx", ".js"].some((ext) => absolutePath.endsWith(ext))) {
       continue;
     }
