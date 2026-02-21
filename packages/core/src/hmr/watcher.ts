@@ -21,6 +21,14 @@ const moduleVersions: Map<string, number> = (import.meta.hot.data.moduleVersions
   number
 >());
 
+// Cache for pre-built non-page modules (e.g. src/client.ts that import npm packages).
+// Bun.build() can fail with EISDIR when resolving packages from Bun's .bun/ cache;
+// caching avoids repeated failed builds and expensive re-bundling per request.
+const builtModuleCache: Map<string, string> = (import.meta.hot.data.builtModuleCache ??= new Map<
+  string,
+  string
+>());
+
 export function getModuleVersion(absolutePath: string): number {
   return moduleVersions.get(absolutePath) ?? 0;
 }
@@ -62,12 +70,25 @@ export async function getTransformedModule(
   // cache which is not seekable by Bun.build() at runtime. The HMR hydrate
   // entry already exposes window.React = React, so page-side utilities that
   // use React can rely on that global instead of bundling a second copy.
+  //
+  // Results are cached per-file: Bun.build() can fail with EISDIR when
+  // resolving packages from Bun's .bun/ cache (a directory is read as a file).
+  // Caching avoids repeated failures and expensive re-bundling per request.
   if (relative(pagesDir, fullPath).startsWith("..")) {
+    const cached = builtModuleCache.get(fullPath);
+    if (cached) {
+      return cached;
+    }
+
     const result = await Bun.build({
       entrypoints: [fullPath],
       format: "esm",
       target: "browser",
-      conditions: ["browser"],
+      // Use the full browser conditions order to avoid Bun resolving packages
+      // from its .bun/ internal cache (where some entries are directories,
+      // not files, causing EISDIR errors).
+      conditions: ["browser", "import", "module", "default"],
+      splitting: false,
       minify: false,
       external: [
         "react",
@@ -88,15 +109,18 @@ export async function getTransformedModule(
       throw new Error(`Bun.build() produced no output for ${fullPath}`);
     }
 
-    return output.text();
+    const code = await output.text();
+    builtModuleCache.set(fullPath, code);
+    return code;
   }
 
   const source = await file.text();
   return transformForReactRefresh(source, fullPath, moduleId, srcDir, pagesDir);
 }
 
-// HMR lifecycle — persist clients and module versions across hot reloads.
+// HMR lifecycle — persist clients, module versions, and built module cache across hot reloads.
 import.meta.hot.dispose((data) => {
   data.clients = clients;
   data.moduleVersions = moduleVersions;
+  data.builtModuleCache = builtModuleCache;
 });

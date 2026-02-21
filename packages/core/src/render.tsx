@@ -160,13 +160,14 @@ async function runLoaders(
   params: Record<string, string>,
   query: Record<string, string>,
   rootLayout: RuntimeRoute | null,
-  rootPath: string | null
+  rootPath: string | null,
+  request?: Request
 ): Promise<Record<string, unknown>> {
   let data: Record<string, unknown> = {};
 
   // Run root loader first
   if (rootLayout?.loader) {
-    const result = await rootLayout.loader({ ...data, params, query });
+    const result = await rootLayout.loader({ ...data, params, query, request });
     data = { ...data, ...result };
   }
 
@@ -178,14 +179,14 @@ async function runLoaders(
     }
     const ancestor = route.routeChain[i];
     if (ancestor?.loader) {
-      const result = await ancestor.loader({ ...data, params, query });
+      const result = await ancestor.loader({ ...data, params, query, request });
       data = { ...data, ...result };
     }
   }
 
   // Run page loader
   if (route.page?.loader) {
-    const result = await route.page.loader({ ...data, params, query });
+    const result = await route.page.loader({ ...data, params, query, request });
     data = { ...data, ...result };
   }
 
@@ -197,14 +198,15 @@ async function renderAndProcess(
   params: Record<string, string>,
   query: Record<string, string>,
   root: RootLayout | null,
-  dev: boolean
+  dev: boolean,
+  request?: Request
 ): Promise<string> {
   await loadPageModule(route, dev);
 
   const rootLayout = root ? await loadRootModule(root, dev) : null;
   const rootPath = root?.path ?? null;
 
-  const data = await runLoaders(route, params, query, rootLayout, rootPath);
+  const data = await runLoaders(route, params, query, rootLayout, rootPath, request);
 
   // Get head data from page BEFORE building element
   const headData = route.page?.head?.({ ...data, params, query });
@@ -246,9 +248,10 @@ export function renderToHTML(
   params: Record<string, string>,
   query: Record<string, string>,
   root: RootLayout | null,
-  dev = false
+  dev = false,
+  request?: Request
 ) {
-  return renderAndProcess(route, params, query, root, dev);
+  return renderAndProcess(route, params, query, root, dev, request);
 }
 
 export async function renderToStream(
@@ -293,9 +296,10 @@ export async function renderSSR(
   ctx: { params?: Record<string, string>; query?: Record<string, string> },
   _config: StaticOptions<string>,
   root: RootLayout | null,
-  dev = false
+  dev = false,
+  request?: Request
 ): Promise<Response> {
-  const html = await renderToHTML(route, ctx.params ?? {}, ctx.query ?? {}, root, dev);
+  const html = await renderToHTML(route, ctx.params ?? {}, ctx.query ?? {}, root, dev, request);
 
   return new Response(html, {
     headers: {

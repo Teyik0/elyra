@@ -102,7 +102,7 @@ function pruneImportDeclaration(
   }
 }
 
-function deadCodeElimination(ast: t.File): void {
+export function deadCodeElimination(ast: t.File): void {
   traverse(ast, {
     Program(programPath) {
       const body = programPath.node.body;
