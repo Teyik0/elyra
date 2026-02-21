@@ -196,7 +196,52 @@ describe("HMR plugin — deduplication and extension filter", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Suite 2 — broadcast path uses basename(pagesDir), not a hardcoded string
+// Suite 2 — dep graph: changing a shared component notifies dependent pages
+// ---------------------------------------------------------------------------
+
+describe("HMR plugin — shared component change triggers dependent page update", () => {
+  const PAGES_DIR = join(TMP, "suite-depgraph", "pages");
+  let server: TestServer;
+
+  beforeAll(async () => {
+    mkdirSync(PAGES_DIR, { recursive: true });
+    server = await startHmrServer(PAGES_DIR);
+  });
+
+  afterAll(() => {
+    server.stop();
+    rmSync(join(TMP, "suite-depgraph"), { recursive: true, force: true });
+  });
+
+  test("modules array includes dependent pages when a shared component changes", async () => {
+    // Write the shared component and the page that imports it
+    const sharedPath = join(PAGES_DIR, "dg-button.tsx");
+    const pagePath = join(PAGES_DIR, "dg-page.tsx");
+    writeFileSync(sharedPath, "export const Button = () => null;");
+    writeFileSync(
+      pagePath,
+      `import { Button } from "./dg-button";\nexport const Page = () => null;`
+    );
+
+    // Fetch the page through the /_modules endpoint so the dep graph is populated
+    await fetch(`${server.url}/_modules/src/pages/dg-page.tsx`);
+
+    // Now change the shared component — the broadcast should include dg-page.tsx
+    const messages = await collectHmrMessages(server.url, () => {
+      writeFileSync(sharedPath, "export const Button = () => <span>v2</span>;");
+    });
+
+    expect(messages.length).toBeGreaterThanOrEqual(1);
+    const updateMsg = messages.find((m) => m.type === "update") as
+      | { modules: string[] }
+      | undefined;
+    expect(updateMsg).toBeDefined();
+    expect(updateMsg?.modules.some((m: string) => m.includes("dg-page.tsx"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suite 3 — broadcast path uses basename(pagesDir), not a hardcoded string
 // Uses a pagesDir named "routes" to catch the V3 regression.
 // ---------------------------------------------------------------------------
 

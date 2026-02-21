@@ -1,8 +1,13 @@
-import { relative } from "node:path";
+import { realpathSync } from "node:fs";
+import { dirname, relative } from "node:path";
 import type { TSchema } from "elysia";
 import type { TypeCheck } from "elysia/type-system";
 import type { ServerWebSocket } from "elysia/ws/bun";
 import { transformForReactRefresh } from "./transform";
+
+// Lightweight Bun.Transpiler singleton used only for scanImports().
+// Separate from transform.ts's bunTranspiler to avoid coupling.
+const scanTranspiler = new Bun.Transpiler({ loader: "tsx" });
 
 type HmrClient = ServerWebSocket<{
   id?: string | undefined;
@@ -33,12 +38,82 @@ const builtModuleCache: Map<string, string> = (hmrData.builtModuleCache ??= new 
   string
 >()) as Map<string, string>;
 
+// Reverse dependency graph: dep absolute path → Set of files that import it.
+// Built lazily in getTransformedModule() via scanImports(). Persisted across hot reloads
+// so the graph survives server restarts without requiring a full re-scan.
+const depGraph: Map<string, Set<string>> = (hmrData.depGraph ??= new Map<
+  string,
+  Set<string>
+>()) as Map<string, Set<string>>;
+
+/** Normalize a path to its real filesystem path (resolves symlinks). */
+function realpath(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
+/** Resolve a relative import path to a normalized absolute path, or null if not resolvable. */
+function resolveImportPath(importPath: string, fromFile: string): string | null {
+  if (!importPath.startsWith(".")) {
+    return null;
+  }
+  try {
+    // Bun.resolveSync already returns a real path on macOS (resolves /var → /private/var).
+    return Bun.resolveSync(importPath, dirname(fromFile));
+  } catch {
+    return null;
+  }
+}
+
+/** Scan a source file's imports and register them in the reverse dep graph. */
+function updateDepGraph(fullPath: string, source: string): void {
+  const normalizedFullPath = realpath(fullPath);
+  const imports = scanTranspiler.scanImports(source);
+  for (const { path: importPath } of imports) {
+    const resolved = resolveImportPath(importPath, normalizedFullPath);
+    if (!resolved) {
+      continue;
+    }
+    const normalizedResolved = realpath(resolved);
+    if (!depGraph.has(normalizedResolved)) {
+      depGraph.set(normalizedResolved, new Set());
+    }
+    depGraph.get(normalizedResolved)?.add(normalizedFullPath);
+  }
+}
+
 export function getModuleVersion(absolutePath: string): number {
   return moduleVersions.get(absolutePath) ?? 0;
 }
 
 export function invalidateModuleCache(absolutePath: string): void {
   moduleVersions.set(absolutePath, (moduleVersions.get(absolutePath) ?? 0) + 1);
+  // Cascade: bump version for all transitively-dependent modules so SSR re-fetches them.
+  for (const dep of getAffectedModules(absolutePath)) {
+    moduleVersions.set(dep, (moduleVersions.get(dep) ?? 0) + 1);
+  }
+}
+
+/** BFS over the reverse dep graph. Returns all files that (transitively) depend on changedFile. */
+export function getAffectedModules(changedFile: string): string[] {
+  const normalized = realpath(changedFile);
+  const visited = new Set<string>();
+  const queue = [normalized];
+  visited.add(normalized);
+  while (queue.length > 0) {
+    const current = queue.shift();
+    for (const dep of depGraph.get(current as string) ?? []) {
+      if (!visited.has(dep)) {
+        visited.add(dep);
+        queue.push(dep);
+      }
+    }
+  }
+  visited.delete(normalized);
+  return [...visited];
 }
 
 export function getHmrClients(): Set<HmrClient> {
@@ -119,6 +194,7 @@ export async function getTransformedModule(
   }
 
   const source = await file.text();
+  updateDepGraph(fullPath, source);
   return transformForReactRefresh(source, fullPath, moduleId, srcDir, pagesDir);
 }
 
@@ -127,6 +203,7 @@ export function persistHmrState(data: Record<string, unknown>): void {
   data.clients = clients;
   data.moduleVersions = moduleVersions;
   data.builtModuleCache = builtModuleCache;
+  data.depGraph = depGraph;
 }
 
 hot?.dispose(persistHmrState);

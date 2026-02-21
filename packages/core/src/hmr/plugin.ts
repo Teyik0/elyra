@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { type AsyncSubscription, subscribe } from "@parcel/watcher";
 import { Elysia, t } from "elysia";
@@ -5,6 +6,7 @@ import { getCachedCss, getCssConfig, invalidateCssCache } from "../css";
 import { REFRESH_SETUP_CODE } from "./refresh-setup";
 import {
   broadcastMessage,
+  getAffectedModules,
   getHmrClients,
   getTransformedModule,
   invalidateModuleCache,
@@ -35,6 +37,8 @@ async function stopWatchers(): Promise<void> {
 
 async function startWatchers(pagesDir: string, cssInputPath?: string): Promise<void> {
   await stopWatchers();
+
+  const normalizedPagesDir = realpathSync(pagesDir);
 
   // The basename of pagesDir relative to srcDir (e.g. "pages", "routes").
   // Used to build module URLs that match the /_modules/src/* route.
@@ -77,11 +81,21 @@ async function startWatchers(pagesDir: string, cssInputPath?: string): Promise<v
       const relative = filename.slice(pagesDir.length + 1).replace(/\\/g, "/");
       const modulePath = `/src/${pagesDirName}/${relative}`;
 
+      // Expand modules array to include all pages that transitively import the changed file.
+      // Filters to files inside pagesDir since only those can be re-imported by the browser.
+      const affectedRaw = getAffectedModules(filename);
+      const affectedModulePaths = affectedRaw
+        .filter((p) => p.startsWith(normalizedPagesDir))
+        .map(
+          (p) =>
+            `/src/${pagesDirName}/${p.slice(normalizedPagesDir.length + 1).replace(/\\/g, "/")}`
+        );
+
       broadcastMessage(
         JSON.stringify({
           type: "update",
           path: modulePath,
-          modules: [modulePath],
+          modules: [modulePath, ...affectedModulePaths],
           cssUpdate: true,
         })
       );

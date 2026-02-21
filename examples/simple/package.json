@@ -1,5 +1,5 @@
 {
-  "name": "@elysion/example-simple",
+  "name": "@teyik0/example-simple",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
@@ -12,7 +12,7 @@
     "@elysiajs/eden": "^1.4.8",
     "@tailwindcss/postcss": "^4.1.11",
     "elysia": "catalog:",
-    "elysion": "workspace:*",
+    "@teyik0/elysion": "workspace:*",
     "react": "catalog:",
     "react-dom": "catalog:",
     "tailwindcss": "^4.1.11"

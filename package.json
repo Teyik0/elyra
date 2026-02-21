@@ -1,5 +1,5 @@
 {
-  "name": "@elysion/root",
+  "name": "@teyik0/root",
   "workspaces": [
     "apps/*",
     "packages/*",

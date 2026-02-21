@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   broadcastMessage,
+  getAffectedModules,
   getModuleVersion,
   getTransformedModule,
   invalidateModuleCache,
@@ -173,15 +174,90 @@ describe("broadcastMessage", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Dependency graph — getAffectedModules
+// Verifies that the reverse dep graph built lazily by getTransformedModule
+// correctly identifies which pages must be re-fetched when a shared module changes.
+// ---------------------------------------------------------------------------
+describe("dependency graph — getAffectedModules", () => {
+  test("returns empty array for a file with no registered dependents", () => {
+    expect(getAffectedModules("/project/isolated.tsx")).toEqual([]);
+  });
+
+  test("records a direct dependency — importing page returned as affected module", async () => {
+    const buttonPath = await writePage("b1-button.tsx", "export const Button = () => null;");
+    const indexContent = `import { Button } from "./b1-button";\nexport const Page = () => null;`;
+    const indexPath = await writePage("b1-index.tsx", indexContent);
+
+    await getTransformedModule(indexPath, SRC_DIR, PAGES_DIR);
+
+    // getAffectedModules returns realpath-normalized paths; compare against realpath
+    expect(getAffectedModules(buttonPath)).toContain(realpathSync(indexPath));
+  });
+
+  test("resolves transitive deps: A imports B imports C — changing C returns A", async () => {
+    const cPath = await writePage("b3-c.tsx", "export const C = 1;");
+    const bPath = await writePage(
+      "b3-b.tsx",
+      `import { C } from "./b3-c";\nexport const B = () => null;`
+    );
+    const aPath = await writePage(
+      "b3-a.tsx",
+      `import { B } from "./b3-b";\nexport const A = () => null;`
+    );
+
+    await getTransformedModule(bPath, SRC_DIR, PAGES_DIR); // records: c → {b}
+    await getTransformedModule(aPath, SRC_DIR, PAGES_DIR); // records: b → {a}
+
+    expect(getAffectedModules(cPath)).toContain(realpathSync(aPath));
+  });
+
+  test("returns all pages that import the same shared component", async () => {
+    const sharedPath = await writePage("b4-shared.tsx", "export const S = () => null;");
+    const p1Path = await writePage(
+      "b4-p1.tsx",
+      `import { S } from "./b4-shared";\nexport const P1 = () => null;`
+    );
+    const p2Path = await writePage(
+      "b4-p2.tsx",
+      `import { S } from "./b4-shared";\nexport const P2 = () => null;`
+    );
+
+    await getTransformedModule(p1Path, SRC_DIR, PAGES_DIR);
+    await getTransformedModule(p2Path, SRC_DIR, PAGES_DIR);
+
+    const affected = getAffectedModules(sharedPath);
+    expect(affected).toContain(realpathSync(p1Path));
+    expect(affected).toContain(realpathSync(p2Path));
+    expect(affected).toHaveLength(2);
+  });
+
+  test("invalidateModuleCache cascades version bump to dependent pages", async () => {
+    const compPath = await writePage("b5-comp.tsx", "export const C = () => null;");
+    const pagePath = await writePage(
+      "b5-page.tsx",
+      `import { C } from "./b5-comp";\nexport const P = () => null;`
+    );
+
+    await getTransformedModule(pagePath, SRC_DIR, PAGES_DIR); // records: comp → {page}
+
+    const versionBefore = getModuleVersion(realpathSync(pagePath));
+    invalidateModuleCache(compPath);
+
+    expect(getModuleVersion(realpathSync(pagePath))).toBe(versionBefore + 1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // persistHmrState — saves module state for hot reload persistence
 // ---------------------------------------------------------------------------
 describe("persistHmrState", () => {
-  test("persists clients, moduleVersions, and builtModuleCache to data object", () => {
+  test("persists clients, moduleVersions, builtModuleCache, and depGraph to data object", () => {
     const data: Record<string, unknown> = {};
     persistHmrState(data);
 
     expect(data.clients).toBeInstanceOf(Set);
     expect(data.moduleVersions).toBeInstanceOf(Map);
     expect(data.builtModuleCache).toBeInstanceOf(Map);
+    expect(data.depGraph).toBeInstanceOf(Map);
   });
 });

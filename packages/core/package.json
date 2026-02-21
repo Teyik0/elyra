@@ -1,6 +1,6 @@
 {
-  "name": "elysion",
-  "version": "0.1.0",
+  "name": "@teyik0/elysion",
+  "version": "0.1.0-alpha.1",
   "type": "module",
   "files": [
     "dist",
