@@ -341,12 +341,14 @@ export function transformForReactRefresh(
       /^import\s+(?:\*\s+as\s+)?React\s+from\s*["']react["'];?\s*$/gm,
       ""
     );
+    // Match elysion/client and @scope/elysion/client (scoped packages)
     transformedCode = transformedCode.replace(
-      /^import\s+\{[^}]*\}\s*from\s*["']elysion\/client["'];?\s*$/gm,
+      /^import\s+\{[^}]*\}\s*from\s*["'](?:@[\w-]+\/)?elysion\/client["'];?\s*$/gm,
       ""
     );
+    // Match elysia and @scope/elysia (scoped packages)
     transformedCode = transformedCode.replace(
-      /^import\s+\{[^}]*\}\s*from\s*["']elysia["'];?\s*$/gm,
+      /^import\s+(?:\*\s+as\s+\w+\s*,?\s*)?(?:\{[^}]*\})?\s*from\s*["'](?:@[\w-]+\/)?elysia["'];?\s*$/gm,
       ""
     );
     transformedCode = transformedCode.replace(/^import\s+["'][^"']+\.css["'];?\s*$/gm, "");

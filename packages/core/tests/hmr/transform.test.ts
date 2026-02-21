@@ -61,14 +61,55 @@ describe("server import stripping", () => {
     expect(result).not.toMatch(REACT_IMPORT_RE);
   });
 
-  test("strips elysion/client import", () => {
+  test("strips elysion/client import (unscoped)", () => {
     const result = transform(`import { createRoute } from "elysion/client";\nexport const x = 1;`);
     expect(result).not.toMatch(ELYSION_CLIENT_IMPORT_RE);
   });
 
-  test("strips elysia import", () => {
+  test("strips @teyik0/elysion/client import (scoped) - regression test", () => {
+    const result = transform(
+      `import { createRoute } from "@teyik0/elysion/client";\nexport const x = 1;`
+    );
+    expect(result).not.toContain('from "@teyik0/elysion/client"');
+    expect(result).not.toContain('from "elysion/client"');
+    // Should inject the global instead
+    expect(result).toContain("const { createRoute } = window.__ELYSION__");
+  });
+
+  test("strips @scope/elysion/client import (any scoped) - regression test", () => {
+    const result = transform(
+      `import { createRoute } from "@my-org/elysion/client";\nexport const x = 1;`
+    );
+    expect(result).not.toContain('from "@my-org/elysion/client"');
+    expect(result).toContain("const { createRoute } = window.__ELYSION__");
+  });
+
+  test("strips elysia import (unscoped)", () => {
     const result = transform(`import { t } from "elysia";\nexport const x = 1;`);
     expect(result).not.toMatch(ELYSIA_IMPORT_RE);
+  });
+
+  test("strips @teyik0/elysia import (scoped) - regression test", () => {
+    const result = transform(`import { t } from "@teyik0/elysia";\nexport const x = 1;`);
+    expect(result).not.toContain('from "@teyik0/elysia"');
+    expect(result).not.toContain('from "elysia"');
+  });
+
+  test("no duplicate createRoute declaration when using scoped package - regression test", () => {
+    // This is the key regression test: ensure scoped imports don't cause
+    // "Identifier 'createRoute' has already been declared" error
+    const result = transform(`
+      import { createRoute } from "@teyik0/elysion/client";
+      export const route = createRoute({
+        layout: ({ children }) => <div>{children}</div>
+      });
+    `);
+    // Count occurrences of "createRoute" - should be:
+    // 1. In the global injection (const { createRoute } = window.__ELYSION__)
+    // 2. In the usage (createRoute({...}))
+    // Should NOT have duplicate declarations
+    const createRouteDeclarations = result.match(/const\s+\{[^}]*createRoute[^}]*\}\s*=/g) || [];
+    expect(createRouteDeclarations.length).toBe(1);
   });
 
   test("strips CSS import", () => {
