@@ -116,6 +116,50 @@ describe("server import stripping", () => {
     const result = transform(`import "./styles.css";\nexport const x = 1;`);
     expect(result).not.toContain(".css");
   });
+
+  test("strips bun:sqlite import - regression test", () => {
+    const result = transform(`
+      import { Database } from "bun:sqlite";
+      export const x = 1;
+    `);
+    expect(result).not.toContain("bun:sqlite");
+    expect(result).not.toContain("Database");
+  });
+
+  test("strips bun:* builtin imports - regression test", () => {
+    const result = transform(`
+      import { serve } from "bun";
+      import { sql } from "bun:sqlite";
+      export const x = 1;
+    `);
+    expect(result).not.toContain('from "bun"');
+    expect(result).not.toContain("bun:sqlite");
+  });
+
+  test("strips node:* builtin imports - regression test", () => {
+    const result = transform(`
+      import { readFileSync } from "node:fs";
+      import { join } from "node:path";
+      export const x = 1;
+    `);
+    expect(result).not.toContain("node:fs");
+    expect(result).not.toContain("node:path");
+    expect(result).not.toContain("readFileSync");
+  });
+
+  test("strips unused imports after loader removal - regression test", () => {
+    // This tests the critical bug where db.ts imports bun:sqlite
+    // The loader uses queries but the component doesn't
+    const result = transform(`
+      import { queries } from "./db";
+      export default route.page({
+        loader: async () => ({ data: queries.getData() }),
+        component: () => React.createElement("div", null, "hello")
+      });
+    `);
+    expect(result).not.toContain("queries");
+    expect(result).toContain("_ElysionPage");
+  });
 });
 
 // ---------------------------------------------------------------------------
