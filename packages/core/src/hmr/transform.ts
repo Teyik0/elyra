@@ -1,52 +1,6 @@
 import { dirname, relative, resolve } from "node:path";
-import type * as Babel from "@babel/core";
-import { transformSync } from "@babel/core";
-import generate from "@babel/generator";
-import type { NodePath } from "@babel/traverse";
-import traverseModule from "@babel/traverse";
-import type * as t from "@babel/types";
-import {
-  blockStatement,
-  functionDeclaration,
-  isArrowFunctionExpression,
-  isBlockStatement,
-  isCallExpression,
-  isFunctionExpression,
-  isIdentifier,
-  isMemberExpression,
-  isObjectExpression,
-  isObjectProperty,
-  isProgram,
-  returnStatement,
-} from "@babel/types";
+import { parseSync as oxcParseSync } from "oxc-parser";
 import { transformSync as oxcTransformSync } from "oxc-transform";
-import { deadCodeElimination } from "../transform-client";
-
-const reactRefreshBabelPlugin = require.resolve("react-refresh/babel");
-
-// ---------------------------------------------------------------------------
-// Bun.Transpiler singleton — reused across calls (cheaper than recreating).
-// Handles TypeScript stripping + JSX → React.createElement in one native pass,
-// replacing @babel/preset-typescript + @babel/preset-react entirely.
-// trimUnusedImports removes type-only and structurally dead imports via the
-// native Bun parser (no regex needed).
-// ---------------------------------------------------------------------------
-// The project tsconfig uses "jsx": "react-jsx" (automatic runtime), which
-// makes Bun.Transpiler emit jsxDEV / jsx calls from react/jsx-dev-runtime.
-// Those imports are then stripped by our server-import regex, leaving
-// undefined references at runtime. Override via the tsconfig option to force
-// the classic transform (React.createElement) that the HMR globals provide.
-const bunTranspiler = new Bun.Transpiler({
-  loader: "tsx",
-  trimUnusedImports: true,
-  tsconfig: {
-    compilerOptions: {
-      jsx: "react",
-      jsxFactory: "React.createElement",
-      jsxFragmentFactory: "React.Fragment",
-    },
-  },
-});
 
 // ---------------------------------------------------------------------------
 // Top-level regex constants (satisfies lint/performance/useTopLevelRegex)
@@ -134,167 +88,216 @@ function transformFastPath(
   return wrapWithHMR(withGlobals, moduleId);
 }
 
-// ---------------------------------------------------------------------------
-// Babel AST helpers
-// ---------------------------------------------------------------------------
+type ESTreeNode = Record<string, unknown>;
 
-function findObjectProperty(
-  obj: Babel.types.ObjectExpression,
-  name: string
-): Babel.types.ObjectProperty | undefined {
-  return obj.properties.find(
-    (p): p is Babel.types.ObjectProperty => isObjectProperty(p) && isIdentifier(p.key, { name })
-  );
+function isPageCall(callee: ESTreeNode): boolean {
+  if (callee?.type === "Identifier" && (callee as { name: string }).name === "page") {
+    return true;
+  }
+  if (callee?.type === "MemberExpression") {
+    const prop = (callee as { property: ESTreeNode }).property;
+    return prop?.type === "Identifier" && (prop as { name: string }).name === "page";
+  }
+  return false;
 }
 
-function removeServerProperties(obj: Babel.types.ObjectExpression, properties: string[]): boolean {
-  let removed = false;
-  for (const name of properties) {
-    const prop = findObjectProperty(obj, name);
-    if (prop) {
-      const idx = obj.properties.indexOf(prop);
-      if (idx !== -1) {
-        obj.properties.splice(idx, 1);
-        removed = true;
+function findComponentProperty(properties: ESTreeNode[]): ESTreeNode | null {
+  for (const prop of properties) {
+    if (prop.type === "Property") {
+      const key = (prop as { key: ESTreeNode }).key;
+      if (key?.type === "Identifier" && (key as { name: string }).name === "component") {
+        return prop;
       }
     }
   }
-  return removed;
+  return null;
 }
 
-function findComponentProperty(arg: Babel.types.Expression): Babel.types.ObjectProperty | null {
-  if (!isObjectExpression(arg)) {
-    return null;
-  }
-  const prop = arg.properties.find(
-    (p): p is Babel.types.ObjectProperty =>
-      isObjectProperty(p) && isIdentifier(p.key, { name: "component" })
-  );
-  return prop ?? null;
-}
+function extractComponentCode(code: string, compValue: ESTreeNode): string {
+  const compParams = ((compValue as { params: ESTreeNode[] }).params || [])
+    .map((p: ESTreeNode) => {
+      const range = p.range as [number, number];
+      return code.slice(range[0], range[1]);
+    })
+    .join(", ");
 
-function shouldExtractComponent(value: Babel.types.Node): boolean {
-  if (isIdentifier(value)) {
-    return false;
-  }
-  return isArrowFunctionExpression(value) || isFunctionExpression(value);
-}
+  const compBodyNode = (compValue as { body: ESTreeNode }).body;
+  const compBodyRange = compBodyNode.range as [number, number];
+  let compBody = code.slice(compBodyRange[0], compBodyRange[1]);
 
-function createNamedFunctionFromArrow(
-  params: Babel.types.ArrowFunctionExpression["params"],
-  body: Babel.types.ArrowFunctionExpression["body"],
-  name: Babel.types.Identifier
-): Babel.types.FunctionDeclaration {
-  const functionBody = isBlockStatement(body) ? body : blockStatement([returnStatement(body)]);
-  return functionDeclaration(name, params, functionBody);
-}
-
-function insertFunctionBeforeExport(
-  path: NodePath<Babel.types.ExportDefaultDeclaration>,
-  fn: Babel.types.FunctionDeclaration
-): void {
-  const program = path.parentPath;
-  if (!(program && isProgram(program.node))) {
-    return;
-  }
-  path.insertBefore(fn);
-}
-
-const SERVER_ONLY_PROPERTIES = ["loader"];
-
-// ---------------------------------------------------------------------------
-// Component extraction from page() calls
-// ---------------------------------------------------------------------------
-
-function handlePageCallExtraction(
-  path: NodePath<Babel.types.ExportDefaultDeclaration>,
-  arg: Babel.types.Expression,
-  onExtract: (name: string) => void
-): void {
-  if (!isObjectExpression(arg)) {
-    return;
+  if (compBodyNode.type !== "BlockStatement") {
+    compBody = `{ return ${compBody}; }`;
   }
 
-  removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
+  return `function _ElysionPage(${compParams}) ${compBody}`;
+}
 
-  const componentProp = findComponentProperty(arg);
+function transformSlowPathOxc(
+  code: string,
+  filename: string,
+  moduleId: string,
+  srcDir: string,
+  pagesDir: string
+): string {
+  const parseResult = oxcParseSync(filename, code, { astType: "ts", range: true });
+
+  if (parseResult.errors.length > 0) {
+    const errorMsg = parseResult.errors.map((e: { message: string }) => e.message).join("\n");
+    throw new Error(`Parse error: ${errorMsg}`);
+  }
+
+  const program = parseResult.program as unknown as { body: ESTreeNode[] };
+
+  const imports = program.body.filter((n: ESTreeNode) => n.type === "ImportDeclaration");
+  const importCode = imports
+    .map((imp: ESTreeNode) => {
+      const range = imp.range as [number, number];
+      return code.slice(range[0], range[1]);
+    })
+    .join("\n");
+
+  const exportDecl = program.body.find((n: ESTreeNode) => n.type === "ExportDefaultDeclaration");
+  if (!exportDecl) {
+    return code;
+  }
+
+  const callExpr = exportDecl.declaration as ESTreeNode;
+  if (callExpr?.type !== "CallExpression") {
+    return code;
+  }
+
+  const callee = callExpr.callee as ESTreeNode;
+  if (!isPageCall(callee)) {
+    return code;
+  }
+
+  const args = callExpr.arguments as ESTreeNode[];
+  const objArg = args[0];
+  if (!objArg || objArg.type !== "ObjectExpression") {
+    return code;
+  }
+
+  const properties = (objArg as { properties: ESTreeNode[] }).properties;
+  const componentProp = findComponentProperty(properties);
   if (!componentProp) {
-    return;
+    return code;
   }
 
-  const componentValue = componentProp.value;
-  if (!shouldExtractComponent(componentValue)) {
-    return;
+  const compValue = (componentProp as { value: ESTreeNode }).value;
+  const isInline =
+    compValue?.type === "ArrowFunctionExpression" || compValue?.type === "FunctionExpression";
+  if (!isInline) {
+    return code;
   }
 
-  const extractedName = path.scope.generateUidIdentifier("ElysionPage");
-  onExtract(extractedName.name);
+  const namedFunc = extractComponentCode(code, compValue);
 
-  if (isArrowFunctionExpression(componentValue) || isFunctionExpression(componentValue)) {
-    const namedFunction = createNamedFunctionFromArrow(
-      componentValue.params,
-      componentValue.body,
-      extractedName
-    );
-    componentProp.value = extractedName;
-    insertFunctionBeforeExport(path, namedFunction);
+  let modifiedCode = importCode;
+  if (importCode) {
+    modifiedCode += "\n\n";
   }
-}
+  modifiedCode += `${namedFunc}\nexport default route.page({ component: _ElysionPage });`;
 
-function createExtractPlugin(onExtract: (name: string) => void): Babel.PluginObj {
-  return {
-    name: "extract-page-component",
-    visitor: {
-      ExportDefaultDeclaration(path) {
-        const decl = path.node.declaration;
-
-        if (!isCallExpression(decl)) {
-          return;
-        }
-
-        const arg = decl.arguments[0];
-        const callee = decl.callee;
-
-        if (isIdentifier(callee, { name: "page" })) {
-          handlePageCallExtraction(path, arg as Babel.types.Expression, onExtract);
-          return;
-        }
-
-        if (isMemberExpression(callee) && isIdentifier(callee.property, { name: "page" })) {
-          handlePageCallExtraction(path, arg as Babel.types.Expression, onExtract);
-          return;
-        }
-
-        if (isIdentifier(callee, { name: "createRoute" }) && isObjectExpression(arg)) {
-          removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
-        }
-      },
-
-      CallExpression(path) {
-        const node = path.node;
-        const parent = path.parent;
-
-        if (parent?.type === "ExportDefaultDeclaration") {
-          return;
-        }
-
-        const callee = node.callee;
-        const arg = node.arguments[0];
-
-        if (isIdentifier(callee, { name: "page" })) {
-          if (isObjectExpression(arg)) {
-            removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
-          }
-        } else if (isMemberExpression(callee) && isIdentifier(callee.property, { name: "page" })) {
-          if (isObjectExpression(arg)) {
-            removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
-          }
-        } else if (isIdentifier(callee, { name: "createRoute" }) && isObjectExpression(arg)) {
-          removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
-        }
+  const transformResult = oxcTransformSync(filename, modifiedCode, {
+    jsx: {
+      runtime: "classic",
+      pragma: "React.createElement",
+      pragmaFrag: "React.Fragment",
+      development: true,
+      refresh: {
+        refreshReg: "$RefreshReg$",
+        refreshSig: "$RefreshSig$",
+        emitFullSignatures: true,
       },
     },
-  };
+    sourcemap: true,
+  });
+
+  if (transformResult.errors.length > 0) {
+    const errorMsg = transformResult.errors.map((e: { message: string }) => e.message).join("\n");
+    throw new Error(`Transform error: ${errorMsg}`);
+  }
+
+  let output = transformResult.code;
+
+  if (transformResult.map) {
+    const mapBase64 = Buffer.from(JSON.stringify(transformResult.map)).toString("base64");
+    output += `\n//# sourceMappingURL=data:application/json;charset=utf-8;base64,${mapBase64}`;
+  }
+
+  output = removeUnusedImportsOxc(output);
+  output = stripServerImports(output);
+  output = rewriteRelativeImports(output, filename, srcDir, pagesDir);
+  output = stripImportMetaHotBlocks(output);
+  output += '\n$RefreshReg$(_ElysionPage, "_ElysionPage");';
+
+  const withGlobals = injectGlobals(output);
+  return wrapWithHMR(withGlobals, moduleId);
+}
+
+function removeUnusedImportsOxc(code: string): string {
+  const result = oxcParseSync("temp.js", code, { astType: "js", range: true });
+  if (result.errors.length > 0) {
+    return code;
+  }
+
+  const program = result.program as unknown as { body: ESTreeNode[] };
+  const imports: { range: [number, number]; specifiers: { name: string }[] }[] = [];
+  const usedIdentifiers = new Set<string>();
+
+  for (const node of program.body) {
+    if (node.type === "ImportDeclaration") {
+      const specs = ((node as { specifiers: ESTreeNode[] }).specifiers || [])
+        .map((s: ESTreeNode) => ({
+          name: (s as { local?: { name: string } }).local?.name,
+        }))
+        .filter((s): s is { name: string } => !!s.name);
+
+      imports.push({
+        range: node.range as [number, number],
+        specifiers: specs,
+      });
+    } else {
+      collectIdentifiersOxc(node, usedIdentifiers);
+    }
+  }
+
+  const toRemove: [number, number][] = imports
+    .filter((imp) => !imp.specifiers.some((s) => usedIdentifiers.has(s.name)))
+    .map((imp) => imp.range);
+
+  toRemove.sort((a, b) => b[0] - a[0]);
+
+  let modified = code;
+  for (const range of toRemove) {
+    modified = modified.slice(0, range[0]) + modified.slice(range[1]);
+  }
+
+  return modified.replace(/\n\s*\n/g, "\n");
+}
+
+function collectIdentifiersOxc(node: ESTreeNode, set: Set<string>): void {
+  if (!node || typeof node !== "object") {
+    return;
+  }
+
+  if (node.type === "Identifier") {
+    const name = (node as { name?: string }).name;
+    if (name) {
+      set.add(name);
+    }
+  }
+
+  for (const key of Object.keys(node)) {
+    const val = node[key as keyof typeof node];
+    if (Array.isArray(val)) {
+      for (const v of val) {
+        collectIdentifiersOxc(v as ESTreeNode, set);
+      }
+    } else if (val && typeof val === "object") {
+      collectIdentifiersOxc(val as ESTreeNode, set);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -337,88 +340,7 @@ export function transformForReactRefresh(
       return transformFastPath(code, filename, moduleId, srcDir, pagesDir);
     }
 
-    let extractedComponentName: string | null = null;
-
-    // Pass 1 — Bun.Transpiler: TypeScript + JSX → plain JS (native, ~10-50× faster
-    // than Babel preset-typescript + preset-react). trimUnusedImports removes
-    // type-only and structurally-dead imports at parse time.
-    const plainJs = bunTranspiler.transformSync(code);
-
-    // Pass 2 — Babel (extraction + DCE): strip server-only properties (loader),
-    // lift the inline arrow component into a named function declaration, then
-    // remove any imports that became orphaned after loader removal (e.g. db.ts
-    // imported only by the loader must not reach the browser bundle).
-    //
-    // We request ast:true so we can apply deadCodeElimination on the same AST
-    // before generating code for Pass 3 — avoids a redundant parse/generate cycle.
-    const extractResult = transformSync(plainJs, {
-      filename,
-      plugins: [
-        createExtractPlugin((name) => {
-          extractedComponentName = name;
-        }),
-      ],
-      ast: true,
-      code: false,
-      sourceMaps: false,
-    });
-
-    if (!extractResult?.ast) {
-      throw new Error("Extract transform failed");
-    }
-
-    // Re-crawl the scope so Babel's binding references reflect the removed loader,
-    // then eliminate imports whose only consumer was the now-removed loader.
-    const extractedAst = extractResult.ast as t.File;
-    const traverse =
-      // @babel/traverse ships both a default export and a .default property
-      // depending on the module format — normalise to whichever is callable.
-      typeof traverseModule === "function"
-        ? traverseModule
-        : (traverseModule as { default: typeof traverseModule }).default;
-    traverse(extractedAst, {
-      Program(p) {
-        p.scope.crawl();
-      },
-    });
-    deadCodeElimination(extractedAst);
-
-    const cleanedCode = generate(extractedAst).code;
-
-    // Pass 3 — Babel (React Refresh only): instrument all visible function
-    // components, including the _ElysionPage extracted in Pass 2.
-    // No presets required — TS and JSX are already plain JS from Pass 1.
-    const result = transformSync(cleanedCode, {
-      filename,
-      plugins: [[reactRefreshBabelPlugin, { skipEnvCheck: true }]],
-      sourceMaps: "inline",
-    });
-
-    if (!result?.code) {
-      throw new Error("React Refresh transform failed");
-    }
-
-    let transformedCode = result.code;
-
-    // Add manual registration for extracted component
-    if (extractedComponentName) {
-      const functionEndPattern = new RegExp(`(_s\\(${extractedComponentName},[^;]+\\);?)`, "g");
-      transformedCode = transformedCode.replace(functionEndPattern, (match: string) => {
-        return `${match}\n$RefreshReg$(${extractedComponentName}, "${extractedComponentName}");`;
-      });
-    }
-
-    transformedCode = stripServerImports(transformedCode);
-
-    // Rewrite relative imports to /_modules/src/ absolute URLs so the browser
-    // can fetch them through the HMR module server
-    transformedCode = rewriteRelativeImports(transformedCode, filename, srcDir, pagesDir);
-
-    // Strip import.meta.hot blocks (handles nested braces)
-    transformedCode = stripImportMetaHotBlocks(transformedCode);
-
-    const withGlobals = injectGlobals(transformedCode);
-    return wrapWithHMR(withGlobals, moduleId);
+    return transformSlowPathOxc(code, filename, moduleId, srcDir, pagesDir);
   } catch (error) {
     console.error(`[hmr:transform] Error transforming ${filename}:`, error);
     throw error;
