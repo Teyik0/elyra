@@ -151,6 +151,49 @@ describe("transformClientComponent", () => {
     expect(result).toContain("onSubmit");
     expect(result).toContain("onChange");
   });
+
+  test("strips loader assignment without async", () => {
+    const code = `
+      export function Component() {
+        return <div>Test</div>;
+      }
+      
+      Component.loader = someLoader;
+    `;
+
+    const analysis: ModuleAnalysis = {
+      path: "/components/Component.tsx",
+      type: "client",
+      exports: [{ name: "Component", type: "client" }],
+      clientFeatures: [],
+    };
+
+    const result = transformClientComponent(code, analysis);
+
+    expect(result).not.toContain("Component.loader");
+    expect(result).toContain("Test");
+  });
+
+  test("strips loader assignment with function call", () => {
+    const code = `
+      export function Page() {
+        return <div>Page</div>;
+      }
+      
+      Page.loader = createLoader();
+    `;
+
+    const analysis: ModuleAnalysis = {
+      path: "/pages/Page.tsx",
+      type: "client",
+      exports: [{ name: "Page", type: "client" }],
+      clientFeatures: [],
+    };
+
+    const result = transformClientComponent(code, analysis);
+
+    expect(result).not.toContain("Page.loader");
+  });
 });
 
 describe("createClientReference", () => {

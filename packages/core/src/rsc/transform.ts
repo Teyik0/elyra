@@ -1,4 +1,4 @@
-import type { ClientManifest, ClientReference, ModuleAnalysis } from "./types";
+import type { ClientReference, ModuleAnalysis } from "./types";
 
 const CLIENT_REFERENCE_SYMBOL = Symbol.for("react.client.reference");
 const IMPORT_PATTERN = /import\s+(?:\{([^}]+)\}|(\w+))\s+from\s+["']([^"']+)["']/g;
@@ -18,25 +18,6 @@ export function createClientReference(
     $$name: name,
     $$bundles: chunks,
   };
-}
-
-export function createManifestEntry(
-  moduleId: string,
-  exportName: string,
-  chunks: string[]
-): ClientManifest[string] {
-  return {
-    id: `${moduleId}#${exportName}`,
-    name: exportName,
-    chunks,
-  };
-}
-
-export function resolveClientReference(
-  id: string,
-  manifest: ClientManifest
-): ClientManifest[string] | undefined {
-  return manifest[id];
 }
 
 export function transformServerComponent(
@@ -112,44 +93,4 @@ export function transformClientComponent(
   result = result.replace(/\n{3,}/g, "\n\n");
 
   return result;
-}
-
-export interface BuildOutput {
-  moduleIds?: string[];
-  path: string;
-}
-
-export function generateClientManifest(
-  analyses: ModuleAnalysis[],
-  outputs: BuildOutput[]
-): ClientManifest {
-  const manifest: ClientManifest = {};
-
-  for (const analysis of analyses) {
-    if (analysis.type !== "client") continue;
-
-    for (const exp of analysis.exports) {
-      if (exp.type !== "client") continue;
-
-      const moduleId = `${analysis.path}#${exp.name}`;
-      const chunks = findChunksForModule(analysis.path, outputs);
-
-      manifest[moduleId] = {
-        id: moduleId,
-        name: exp.name,
-        chunks,
-      };
-    }
-  }
-
-  return manifest;
-}
-
-function findChunksForModule(modulePath: string, outputs: BuildOutput[]): string[] {
-  for (const output of outputs) {
-    if (output.moduleIds?.includes(modulePath)) {
-      return [output.path];
-    }
-  }
-  return [];
 }
