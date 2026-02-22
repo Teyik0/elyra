@@ -19,6 +19,7 @@ import {
   isProgram,
   returnStatement,
 } from "@babel/types";
+import { transformSync as oxcTransformSync } from "oxc-transform";
 import { deadCodeElimination } from "../transform-client";
 
 const reactRefreshBabelPlugin = require.resolve("react-refresh/babel");
@@ -52,6 +53,86 @@ const bunTranspiler = new Bun.Transpiler({
 // ---------------------------------------------------------------------------
 const RELATIVE_IMPORT_RE = /^(import\b[^'"]*?from\s*)(["'])(\.\.?\/[^"']+)\2/gm;
 const IMPORT_META_HOT_RE = /if\s*\(import\.meta\.hot\)\s*\{/g;
+
+const NAMED_COMPONENT_RE = /component\s*:\s*[A-Z][A-Za-z0-9_]*/;
+const INLINE_COMPONENT_RE = /component\s*:\s*(?:\(|async\s*\(|function\b)/;
+const PAGE_CALL_RE = /\bpage\s*\(|\bcreateRoute\s*\(/;
+
+const REACT_DEFAULT_IMPORT_RE =
+  /^import\s+(?:\*\s+as\s+)?React\s*,?\s*(?:\{[^}]*\})?\s*from\s*["']react["'];?\s*$/gm;
+const REACT_NAMED_IMPORT_RE = /^import\s+\{[^}]*\}\s*from\s*["']react["'];?\s*$/gm;
+const REACT_NAMESPACE_IMPORT_RE = /^import\s+(?:\*\s+as\s+)?React\s+from\s*["']react["'];?\s*$/gm;
+const ELYSION_CLIENT_IMPORT_RE =
+  /^import\s+\{[^}]*\}\s*from\s*["'](?:@[\w-]+\/)?elysion\/client["'];?\s*$/gm;
+const ELYSIA_IMPORT_RE =
+  /^import\s+(?:\*\s+as\s+\w+\s*,?\s*)?(?:\{[^}]*\})?\s*from\s*["'](?:@[\w-]+\/)?elysia["'];?\s*$/gm;
+const CSS_IMPORT_RE = /^import\s+["'][^"']+\.css["'];?\s*$/gm;
+
+export function detectFastPath(source: string): boolean {
+  if (!PAGE_CALL_RE.test(source)) {
+    return true;
+  }
+  if (NAMED_COMPONENT_RE.test(source)) {
+    return true;
+  }
+  if (INLINE_COMPONENT_RE.test(source)) {
+    return false;
+  }
+  return true;
+}
+
+function stripServerImports(code: string): string {
+  let result = code;
+  result = result.replace(REACT_DEFAULT_IMPORT_RE, "");
+  result = result.replace(REACT_NAMED_IMPORT_RE, "");
+  result = result.replace(REACT_NAMESPACE_IMPORT_RE, "");
+  result = result.replace(ELYSION_CLIENT_IMPORT_RE, "");
+  result = result.replace(ELYSIA_IMPORT_RE, "");
+  result = result.replace(CSS_IMPORT_RE, "");
+  return result;
+}
+
+function transformFastPath(
+  code: string,
+  filename: string,
+  moduleId: string,
+  srcDir: string,
+  pagesDir: string
+): string {
+  const result = oxcTransformSync(filename, code, {
+    jsx: {
+      runtime: "classic",
+      pragma: "React.createElement",
+      pragmaFrag: "React.Fragment",
+      development: true,
+      refresh: {
+        refreshReg: "$RefreshReg$",
+        refreshSig: "$RefreshSig$",
+        emitFullSignatures: true,
+      },
+    },
+    sourcemap: true,
+  });
+
+  if (result.errors.length > 0) {
+    const errorMessage = result.errors.map((e) => e.message).join("\n");
+    throw new Error(`Transform error: ${errorMessage}`);
+  }
+
+  let transformedCode = result.code;
+
+  if (result.map) {
+    const mapBase64 = Buffer.from(JSON.stringify(result.map)).toString("base64");
+    transformedCode += `\n//# sourceMappingURL=data:application/json;charset=utf-8;base64,${mapBase64}`;
+  }
+
+  transformedCode = stripServerImports(transformedCode);
+  transformedCode = rewriteRelativeImports(transformedCode, filename, srcDir, pagesDir);
+  transformedCode = stripImportMetaHotBlocks(transformedCode);
+
+  const withGlobals = injectGlobals(transformedCode);
+  return wrapWithHMR(withGlobals, moduleId);
+}
 
 // ---------------------------------------------------------------------------
 // Babel AST helpers
@@ -180,9 +261,7 @@ function createExtractPlugin(onExtract: (name: string) => void): Babel.PluginObj
         }
 
         if (isMemberExpression(callee) && isIdentifier(callee.property, { name: "page" })) {
-          if (isObjectExpression(arg)) {
-            removeServerProperties(arg, SERVER_ONLY_PROPERTIES);
-          }
+          handlePageCallExtraction(path, arg as Babel.types.Expression, onExtract);
           return;
         }
 
@@ -254,6 +333,10 @@ export function transformForReactRefresh(
   pagesDir: string
 ): string {
   try {
+    if (detectFastPath(code)) {
+      return transformFastPath(code, filename, moduleId, srcDir, pagesDir);
+    }
+
     let extractedComponentName: string | null = null;
 
     // Pass 1 — Bun.Transpiler: TypeScript + JSX → plain JS (native, ~10-50× faster
@@ -325,33 +408,7 @@ export function transformForReactRefresh(
       });
     }
 
-    // Strip server-only imports that must never reach the browser.
-    // React: replaced by window.React global injected below.
-    // elysion/client + elysia: server-only APIs.
-    // CSS: handled separately by the CSS pipeline.
-    transformedCode = transformedCode.replace(
-      /^import\s+(?:\*\s+as\s+)?React\s*,?\s*(?:\{[^}]*\})?\s*from\s*["']react["'];?\s*$/gm,
-      ""
-    );
-    transformedCode = transformedCode.replace(
-      /^import\s+\{[^}]*\}\s*from\s*["']react["'];?\s*$/gm,
-      ""
-    );
-    transformedCode = transformedCode.replace(
-      /^import\s+(?:\*\s+as\s+)?React\s+from\s*["']react["'];?\s*$/gm,
-      ""
-    );
-    // Match elysion/client and @scope/elysion/client (scoped packages)
-    transformedCode = transformedCode.replace(
-      /^import\s+\{[^}]*\}\s*from\s*["'](?:@[\w-]+\/)?elysion\/client["'];?\s*$/gm,
-      ""
-    );
-    // Match elysia and @scope/elysia (scoped packages)
-    transformedCode = transformedCode.replace(
-      /^import\s+(?:\*\s+as\s+\w+\s*,?\s*)?(?:\{[^}]*\})?\s*from\s*["'](?:@[\w-]+\/)?elysia["'];?\s*$/gm,
-      ""
-    );
-    transformedCode = transformedCode.replace(/^import\s+["'][^"']+\.css["'];?\s*$/gm, "");
+    transformedCode = stripServerImports(transformedCode);
 
     // Rewrite relative imports to /_modules/src/ absolute URLs so the browser
     // can fetch them through the HMR module server
