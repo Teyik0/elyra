@@ -11,7 +11,7 @@ const isrCache = new Map<string, { html: string; generatedAt: number; revalidate
 
 const ssgCache = new Map<string, string>();
 
-async function streamToString(stream: ReadableStream): Promise<string> {
+export async function streamToString(stream: ReadableStream): Promise<string> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let html = "";
@@ -30,7 +30,7 @@ async function streamToString(stream: ReadableStream): Promise<string> {
 
 const CLIENT_JS_PATH = "/_client/_hydrate.js";
 
-async function loadPageModule(route: ResolvedRoute, dev: boolean) {
+export async function loadPageModule(route: ResolvedRoute, dev: boolean) {
   if (!dev && route.page) {
     return route.page;
   }
@@ -53,7 +53,7 @@ async function loadPageModule(route: ResolvedRoute, dev: boolean) {
   return route.page;
 }
 
-async function loadRootModule(root: RootLayout, _dev: boolean): Promise<RuntimeRoute> {
+export async function loadRootModule(root: RootLayout, _dev: boolean): Promise<RuntimeRoute> {
   if (!_dev) {
     return root.route;
   }
@@ -71,7 +71,7 @@ async function loadRootModule(root: RootLayout, _dev: boolean): Promise<RuntimeR
   }
 }
 
-function injectSuppressHydration(element: ReactNode): ReactNode {
+export function injectSuppressHydration(element: ReactNode): ReactNode {
   if (!element || typeof element !== "object") {
     return element;
   }
@@ -103,7 +103,7 @@ function injectSuppressHydration(element: ReactNode): ReactNode {
   return element;
 }
 
-function buildElement(
+export function buildElement(
   route: ResolvedRoute,
   data: Record<string, unknown>,
   rootLayout: RuntimeRoute | null,
@@ -137,7 +137,7 @@ function buildElement(
   return element;
 }
 
-async function runLoaders(
+export async function runLoaders(
   route: ResolvedRoute,
   params: Record<string, string>,
   query: Record<string, string>,

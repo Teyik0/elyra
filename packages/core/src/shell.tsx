@@ -1,6 +1,6 @@
 import type { HeadOptions, MetaDescriptor } from "./client";
 
-function extractTitle(meta?: MetaDescriptor[]): string | undefined {
+export function extractTitle(meta?: MetaDescriptor[]): string | undefined {
   if (!meta) {
     return undefined;
   }
@@ -12,7 +12,7 @@ function extractTitle(meta?: MetaDescriptor[]): string | undefined {
   return undefined;
 }
 
-function isMetaTag(entry: MetaDescriptor): boolean {
+export function isMetaTag(entry: MetaDescriptor): boolean {
   return !(
     "title" in entry ||
     "charSet" in entry ||
@@ -21,7 +21,7 @@ function isMetaTag(entry: MetaDescriptor): boolean {
   );
 }
 
-function escapeHtml(str: string): string {
+export function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -30,7 +30,7 @@ function escapeHtml(str: string): string {
     .replace(/'/g, "&#039;");
 }
 
-function renderAttrs(obj: Record<string, string | undefined>): string {
+export function renderAttrs(obj: Record<string, string | undefined>): string {
   return Object.entries(obj)
     .filter(([, v]) => v !== undefined)
     .map(([k, v]) => `${k}="${escapeHtml(String(v))}"`)
@@ -46,7 +46,7 @@ export interface CssContext {
 // Head injection helpers — extracted to stay under complexity budget
 // ---------------------------------------------------------------------------
 
-function buildMetaParts(meta: MetaDescriptor[]): string[] {
+export function buildMetaParts(meta: MetaDescriptor[]): string[] {
   const parts: string[] = [];
   const title = extractTitle(meta);
   if (title) {
@@ -65,7 +65,7 @@ function buildMetaParts(meta: MetaDescriptor[]): string[] {
   return parts;
 }
 
-function buildCssPart(cssContext: CssContext | null): string {
+export function buildCssPart(cssContext: CssContext | null): string {
   if (cssContext?.mode === "inline" && cssContext.code) {
     return `<style id="__elysion_css__">${cssContext.code}</style>`;
   }
@@ -75,11 +75,11 @@ function buildCssPart(cssContext: CssContext | null): string {
   return "";
 }
 
-function buildLinkParts(links: NonNullable<HeadOptions["links"]>): string[] {
+export function buildLinkParts(links: NonNullable<HeadOptions["links"]>): string[] {
   return links.map((link) => `<link ${renderAttrs(link)} />`);
 }
 
-function buildScriptParts(scripts: NonNullable<HeadOptions["scripts"]>): string[] {
+export function buildScriptParts(scripts: NonNullable<HeadOptions["scripts"]>): string[] {
   return scripts.map((script) => {
     const { children, ...rest } = script;
     const attrs = renderAttrs(rest as Record<string, string | undefined>);
@@ -90,7 +90,7 @@ function buildScriptParts(scripts: NonNullable<HeadOptions["scripts"]>): string[
   });
 }
 
-function buildStyleParts(styles: NonNullable<HeadOptions["styles"]>): string[] {
+export function buildStyleParts(styles: NonNullable<HeadOptions["styles"]>): string[] {
   return styles.map((style) => {
     const typeAttr = style.type ? ` type="${escapeHtml(style.type)}"` : "";
     return `<style${typeAttr}>${style.children}</style>`;

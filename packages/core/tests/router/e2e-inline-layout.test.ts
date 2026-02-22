@@ -3,34 +3,20 @@ import { join } from "node:path";
 import { scanPages } from "../../src/router";
 import { collectRouteChain } from "../../src/utils";
 
-const EXAMPLE_PAGES_DIR = join(import.meta.dirname, "../../../../examples/simple/src/pages");
+const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
 
 describe("E2E: route chain works without routeFilePaths", () => {
-  test("scanPages correctly builds route chain for dashboard", async () => {
-    const result = await scanPages(EXAMPLE_PAGES_DIR);
+  test("scanPages correctly builds route chain for nested page", async () => {
+    const result = await scanPages(FIXTURES_DIR);
 
     expect(result.root).not.toBeNull();
     expect(result.routes.length).toBeGreaterThan(0);
 
-    const dashboardRoute = result.routes.find((r) => r.pattern === "/dashboard");
-    expect(dashboardRoute).toBeDefined();
-    expect(dashboardRoute?.page).toBeDefined();
+    const nestedRoute = result.routes.find((r) => r.pattern === "/nested");
+    expect(nestedRoute).toBeDefined();
+    expect(nestedRoute?.page).toBeDefined();
 
-    const chain = collectRouteChain(dashboardRoute?.page);
-
-    expect(chain.length).toBeGreaterThanOrEqual(2);
-    expect(chain[0]?.layout).toBeDefined();
-    expect(chain[1]?.layout).toBeDefined();
-  });
-
-  test("scanPages handles nested layouts correctly", async () => {
-    const result = await scanPages(EXAMPLE_PAGES_DIR);
-
-    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
-    expect(blogRoute).toBeDefined();
-    expect(blogRoute?.page).toBeDefined();
-
-    const chain = collectRouteChain(blogRoute?.page);
+    const chain = collectRouteChain(nestedRoute?.page);
 
     expect(chain.length).toBeGreaterThanOrEqual(2);
     expect(chain[0]?.layout).toBeDefined();
@@ -38,13 +24,13 @@ describe("E2E: route chain works without routeFilePaths", () => {
   });
 
   test("scanPages handles deeply nested layouts (3 levels)", async () => {
-    const result = await scanPages(EXAMPLE_PAGES_DIR);
+    const result = await scanPages(FIXTURES_DIR);
 
-    const postsNewRoute = result.routes.find((r) => r.pattern === "/dashboard/posts/new");
-    expect(postsNewRoute).toBeDefined();
-    expect(postsNewRoute?.page).toBeDefined();
+    const deepRoute = result.routes.find((r) => r.pattern === "/nested/deep");
+    expect(deepRoute).toBeDefined();
+    expect(deepRoute?.page).toBeDefined();
 
-    const chain = collectRouteChain(postsNewRoute?.page);
+    const chain = collectRouteChain(deepRoute?.page);
 
     expect(chain).toHaveLength(3);
     expect(chain[0]?.layout).toBeDefined();
@@ -52,8 +38,35 @@ describe("E2E: route chain works without routeFilePaths", () => {
     expect(chain[2]?.layout).toBeDefined();
   });
 
+  test("scanPages supports inline layout (no route.tsx needed)", async () => {
+    const result = await scanPages(FIXTURES_DIR);
+
+    const inlineRoute = result.routes.find((r) => r.pattern === "/inline-layout");
+    expect(inlineRoute).toBeDefined();
+    expect(inlineRoute?.page).toBeDefined();
+
+    const chain = collectRouteChain(inlineRoute?.page);
+
+    expect(chain).toHaveLength(2);
+    expect(chain[0]?.layout).toBeDefined();
+    expect(chain[1]?.layout).toBeDefined();
+  });
+
+  test("scanPages supports skipping layouts (level 3 uses root directly)", async () => {
+    const result = await scanPages(FIXTURES_DIR);
+
+    const skipRoute = result.routes.find((r) => r.pattern === "/skip-layout");
+    expect(skipRoute).toBeDefined();
+    expect(skipRoute?.page).toBeDefined();
+
+    const chain = collectRouteChain(skipRoute?.page);
+
+    expect(chain).toHaveLength(1);
+    expect(chain[0]).toBe(result.root?.route);
+  });
+
   test("all routes have root in their chain", async () => {
-    const result = await scanPages(EXAMPLE_PAGES_DIR);
+    const result = await scanPages(FIXTURES_DIR);
 
     for (const route of result.routes) {
       if (route.page) {

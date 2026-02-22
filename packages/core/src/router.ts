@@ -72,16 +72,7 @@ export function createRoutePlugin(
   return plugins.reduce((app, plugin) => app.use(plugin), new Elysia());
 }
 
-async function loadPageModule(pagePath: string): Promise<RuntimePage> {
-  const mod = await import(pagePath);
-  return mod.default;
-}
-
-// ---------------------------------------------------------------------------
-// scanPages helpers
-// ---------------------------------------------------------------------------
-
-async function scanRootLayout(pagesDir: string): Promise<RootLayout | null> {
+export async function scanRootLayout(pagesDir: string): Promise<RootLayout | null> {
   const rootPath = `${pagesDir}/root.tsx`;
   const rootFile = Bun.file(rootPath);
   if (!(await rootFile.exists())) {
@@ -100,6 +91,11 @@ async function scanRootLayout(pagesDir: string): Promise<RootLayout | null> {
     );
   }
   return { path: rootPath, route: rootExport };
+}
+
+async function loadPageModule(pagePath: string): Promise<RuntimePage> {
+  const mod = await import(pagePath);
+  return mod.default;
 }
 
 async function scanPageFiles(pagesDir: string, root: RootLayout | null): Promise<ResolvedRoute[]> {
@@ -159,7 +155,7 @@ export async function scanPages(
   return { root, routes };
 }
 
-function resolveMode(page: RuntimePage, routeChain: RuntimeRoute[]): "ssr" | "ssg" | "isr" {
+export function resolveMode(page: RuntimePage, routeChain: RuntimeRoute[]): "ssr" | "ssg" | "isr" {
   const routeConfig = page._route;
 
   if (routeConfig.mode) {
@@ -179,7 +175,7 @@ function resolveMode(page: RuntimePage, routeChain: RuntimeRoute[]): "ssr" | "ss
   return "ssr";
 }
 
-function filePathToPattern(path: string): string {
+export function filePathToPattern(path: string): string {
   const parts = path.split("/");
   const segments: string[] = [];
 
