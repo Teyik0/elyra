@@ -1,198 +1,242 @@
-import { transformSync } from "@babel/core";
-import generate from "@babel/generator";
-import traverse, { type NodePath } from "@babel/traverse";
-import type * as t from "@babel/types";
-import {
-  isCallExpression,
-  isIdentifier,
-  isMemberExpression,
-  isObjectExpression,
-  isObjectProperty,
-} from "@babel/types";
+import { parseSync as oxcParseSync } from "oxc-parser";
 
-// ---------------------------------------------------------------------------
-// Bun.Transpiler singleton — strips TypeScript + JSX before Babel AST work.
-// Babel then only needs to parse plain JS, which is significantly faster
-// than parsing TSX through @babel/preset-typescript.
-// ---------------------------------------------------------------------------
-// Force classic JSX transform (React.createElement) regardless of the
-// project tsconfig's "jsx": "react-jsx" setting — the Bun.build() step
-// that consumes this output handles the automatic runtime itself.
-const bunTranspiler = new Bun.Transpiler({
-  loader: "tsx",
-  tsconfig: {
-    compilerOptions: {
-      jsx: "react",
-      jsxFactory: "React.createElement",
-      jsxFragmentFactory: "React.Fragment",
-    },
-  },
-});
+type ESTreeNode = Record<string, unknown>;
 
 const SERVER_ONLY_PROPERTIES = ["loader"];
+const WHITESPACE_COMMA_RE = /[\s,]/;
 
 interface TransformResult {
   code: string;
-  map: ReturnType<typeof generate>["map"] | null;
+  map: null;
   removedServerCode: boolean;
 }
 
-function isCreateRouteCall(node: t.Node | null | undefined): boolean {
-  if (!isCallExpression(node)) {
-    return false;
-  }
-  return isIdentifier(node.callee, { name: "createRoute" });
-}
-
-function isRoutePageCall(node: t.Node | null | undefined): boolean {
-  if (!isCallExpression(node)) {
-    return false;
-  }
-  const callee = node.callee;
-  if (isIdentifier(callee, { name: "page" })) {
+function isPageCall(callee: ESTreeNode): boolean {
+  if (callee?.type === "Identifier" && (callee as { name: string }).name === "page") {
     return true;
   }
-  if (isMemberExpression(callee) && isIdentifier(callee.property, { name: "page" })) {
-    return true;
+  if (callee?.type === "MemberExpression") {
+    const prop = (callee as { property: ESTreeNode }).property;
+    return prop?.type === "Identifier" && (prop as { name: string }).name === "page";
   }
   return false;
 }
 
-function findObjectProperty(obj: t.ObjectExpression, name: string): t.ObjectProperty | undefined {
-  return obj.properties.find(
-    (p): p is t.ObjectProperty => isObjectProperty(p) && isIdentifier(p.key, { name })
-  );
+function isCreateRouteCall(callee: ESTreeNode): boolean {
+  return callee?.type === "Identifier" && (callee as { name: string }).name === "createRoute";
 }
 
-function removeServerProperties(obj: t.ObjectExpression, properties: string[]): boolean {
-  let removed = false;
-  for (const name of properties) {
-    const prop = findObjectProperty(obj, name);
-    if (prop) {
-      const idx = obj.properties.indexOf(prop);
-      if (idx !== -1) {
-        obj.properties.splice(idx, 1);
-        removed = true;
-      }
-    }
+function expandRangeToIncludeComma(code: string, range: [number, number]): [number, number] {
+  let start = range[0];
+  let end = range[1];
+
+  while (start > 0 && WHITESPACE_COMMA_RE.test(code[start - 1] ?? "")) {
+    start--;
   }
-  return removed;
+  if (code[start] === ",") {
+    start++;
+  }
+
+  while (end < code.length && WHITESPACE_COMMA_RE.test(code[end] ?? "")) {
+    end++;
+  }
+  if (code[end] === ",") {
+    end++;
+  }
+
+  return [start, end];
 }
 
-function pruneImportDeclaration(
-  node: t.ImportDeclaration,
-  index: number,
-  body: t.Statement[],
-  programPath: NodePath<t.Program>
-): void {
-  const { specifiers } = node;
-  if (!specifiers || specifiers.length === 0) {
+function findLoaderPropertyRanges(code: string, properties: ESTreeNode[]): [number, number][] {
+  const ranges: [number, number][] = [];
+
+  for (const prop of properties) {
+    if (prop?.type !== "Property") {
+      continue;
+    }
+
+    const key = (prop as { key: ESTreeNode }).key;
+    if (key?.type !== "Identifier") {
+      continue;
+    }
+
+    const keyName = (key as { name: string }).name;
+    if (!SERVER_ONLY_PROPERTIES.includes(keyName)) {
+      continue;
+    }
+
+    const propRange = prop.range as [number, number];
+    const expandedRange = expandRangeToIncludeComma(code, propRange);
+    ranges.push(expandedRange);
+  }
+
+  return ranges;
+}
+
+function collectUsedIdentifiers(node: ESTreeNode, set: Set<string>): void {
+  if (!node || typeof node !== "object") {
     return;
   }
 
-  const newSpecifiers = specifiers.filter((spec) => {
-    const binding = programPath.scope.getBinding(spec.local.name);
-    return binding?.referenced;
-  });
+  if (node.type === "Identifier") {
+    const name = (node as { name?: string }).name;
+    if (name) {
+      set.add(name);
+    }
+  }
 
-  if (newSpecifiers.length === 0) {
-    body.splice(index, 1);
-  } else if (newSpecifiers.length !== specifiers.length) {
-    node.specifiers = newSpecifiers;
+  for (const key of Object.keys(node)) {
+    if (key === "ImportDeclaration") {
+      continue;
+    }
+    const val = node[key as keyof typeof node];
+    if (Array.isArray(val)) {
+      for (const v of val) {
+        collectUsedIdentifiers(v as ESTreeNode, set);
+      }
+    } else if (val && typeof val === "object") {
+      collectUsedIdentifiers(val as ESTreeNode, set);
+    }
   }
 }
 
-export function deadCodeElimination(ast: t.File): void {
-  traverse(ast, {
-    Program(programPath) {
-      const body = programPath.node.body;
-      for (let i = body.length - 1; i >= 0; i--) {
-        const node = body[i] as t.Statement;
-        if (node.type === "ImportDeclaration") {
-          pruneImportDeclaration(node, i, body, programPath);
-        }
-      }
-    },
-  });
+function removeUnusedImports(code: string, program: { body: ESTreeNode[] }): string {
+  const imports: { range: [number, number]; specifiers: { name: string }[] }[] = [];
+  const usedIdentifiers = new Set<string>();
+
+  for (const node of program.body) {
+    if (node.type === "ImportDeclaration") {
+      const specs = ((node as { specifiers: ESTreeNode[] }).specifiers || [])
+        .map((s: ESTreeNode) => ({
+          name: (s as { local?: { name: string } }).local?.name,
+        }))
+        .filter((s): s is { name: string } => !!s.name);
+
+      imports.push({
+        range: node.range as [number, number],
+        specifiers: specs,
+      });
+    } else {
+      collectUsedIdentifiers(node, usedIdentifiers);
+    }
+  }
+
+  const toRemove: [number, number][] = imports
+    .filter((imp) => !imp.specifiers.some((s) => usedIdentifiers.has(s.name)))
+    .map((imp) => imp.range);
+
+  toRemove.sort((a, b) => b[0] - a[0]);
+
+  let modified = code;
+  for (const range of toRemove) {
+    modified = modified.slice(0, range[0]) + modified.slice(range[1]);
+  }
+
+  return modified.replace(/\n\s*\n/g, "\n");
 }
 
-function removeServerExports(ast: t.File): boolean {
-  let removedServerCode = false;
+function extractCallExpressionArgs(node: ESTreeNode): ESTreeNode[] | null {
+  if (node.type !== "CallExpression") {
+    return null;
+  }
 
-  traverse(ast, {
-    CallExpression(path) {
-      const node = path.node;
+  const callee = (node as { callee: ESTreeNode }).callee;
+  if (!(isPageCall(callee) || isCreateRouteCall(callee))) {
+    return null;
+  }
 
-      if (isRoutePageCall(node)) {
-        const arg = node.arguments[0];
-        if (isObjectExpression(arg) && removeServerProperties(arg, SERVER_ONLY_PROPERTIES)) {
-          removedServerCode = true;
-        }
-      }
+  const args = (node as { arguments?: ESTreeNode[] }).arguments;
+  return args ?? null;
+}
 
-      if (isCreateRouteCall(node)) {
-        const arg = node.arguments[0];
-        if (isObjectExpression(arg) && removeServerProperties(arg, SERVER_ONLY_PROPERTIES)) {
-          removedServerCode = true;
-        }
-      }
-    },
+function processCallExpression(code: string, node: ESTreeNode): [number, number][] {
+  const args = extractCallExpressionArgs(node);
+  if (!args) {
+    return [];
+  }
 
-    ExportDefaultDeclaration(path) {
-      const decl = path.node.declaration;
+  const arg = args[0];
+  if (arg?.type !== "ObjectExpression") {
+    return [];
+  }
 
-      if (isCallExpression(decl) && (isRoutePageCall(decl) || isCreateRouteCall(decl))) {
-        const arg = decl.arguments[0];
-        if (isObjectExpression(arg) && removeServerProperties(arg, SERVER_ONLY_PROPERTIES)) {
-          removedServerCode = true;
-        }
-      }
-    },
-  });
+  return findLoaderPropertyRanges(code, (arg as { properties: ESTreeNode[] }).properties);
+}
 
-  return removedServerCode;
+function processVariableDeclaration(code: string, node: ESTreeNode): [number, number][] {
+  const decls = (node as { declarations?: ESTreeNode[] }).declarations || [];
+  const ranges: [number, number][] = [];
+
+  for (const decl of decls) {
+    const init = (decl as { init?: ESTreeNode }).init;
+    if (init) {
+      ranges.push(...processCallExpression(code, init));
+    }
+  }
+
+  return ranges;
+}
+
+function findServerPropertyRanges(code: string, node: ESTreeNode): [number, number][] {
+  if (node.type === "ExportDefaultDeclaration") {
+    const decl = (node as { declaration?: ESTreeNode }).declaration;
+    if (decl) {
+      return processCallExpression(code, decl);
+    }
+  }
+
+  if (node.type === "CallExpression") {
+    return processCallExpression(code, node);
+  }
+
+  if (node.type === "VariableDeclaration") {
+    return processVariableDeclaration(code, node);
+  }
+
+  return [];
 }
 
 export function transformForClient(code: string, filename: string): TransformResult {
-  // Pass 1 — Bun.Transpiler: strip TypeScript + JSX → plain JS.
-  // Faster than @babel/preset-typescript and avoids Babel TSX parsing overhead.
-  const plainJs = bunTranspiler.transformSync(code);
+  const parseResult = oxcParseSync(filename, code, { astType: "ts", range: true });
 
-  // Pass 2 — Babel: parse plain JS to AST for server-property removal and DCE.
-  // No presets required since TypeScript and JSX are already handled above.
-  const parseResult = transformSync(plainJs, {
-    filename,
-    plugins: [],
-    sourceMaps: false,
-    ast: true,
-    code: false,
-  });
-
-  if (!parseResult?.ast) {
-    throw new Error(`Failed to parse ${filename}`);
+  const firstError = parseResult.errors[0];
+  if (firstError) {
+    throw new Error(`Failed to parse ${filename}: ${firstError.message}`);
   }
 
-  const ast = parseResult.ast as t.File;
+  const program = parseResult.program as unknown as { body: ESTreeNode[] };
 
-  const removedServerCode = removeServerExports(ast);
+  const serverPropertyRanges: [number, number][] = [];
+  for (const node of program.body) {
+    serverPropertyRanges.push(...findServerPropertyRanges(code, node));
+  }
+
+  const removedServerCode = serverPropertyRanges.length > 0;
+
+  let output = code;
 
   if (removedServerCode) {
-    traverse(ast, {
-      Program(programPath) {
-        programPath.scope.crawl();
-      },
-    });
-    deadCodeElimination(ast);
+    serverPropertyRanges.sort((a, b) => b[0] - a[0]);
+
+    for (const range of serverPropertyRanges) {
+      output = output.slice(0, range[0]) + output.slice(range[1]);
+    }
+
+    output = output.replace(/,\s*([})])/g, "$1");
+    output = output.replace(/([{[])\s*,/g, "$1");
+
+    const reparseResult = oxcParseSync(filename, output, { astType: "ts", range: true });
+    if (reparseResult.errors.length === 0) {
+      output = removeUnusedImports(
+        output,
+        reparseResult.program as unknown as { body: ESTreeNode[] }
+      );
+    }
   }
 
-  const result = generate(ast, {
-    sourceMaps: true,
-    sourceFileName: filename,
-  });
-
   return {
-    code: result.code,
-    map: result.map,
+    code: output,
+    map: null,
     removedServerCode,
   };
 }
