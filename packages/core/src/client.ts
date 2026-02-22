@@ -27,7 +27,8 @@ type MergeSchema<TParent, TOwn> = [TParent] extends [Unset]
 
 type NormalizeUnset<T> = [T] extends [Unset] ? {} : T;
 
-export interface RouteContext<TParams = {}, TQuery = {}> {
+// biome-ignore lint/style/useConsistentTypeDefinitions: Type required for conditional type inference with NormalizeUnset
+export type RouteContext<TParams = {}, TQuery = {}> = {
   cookie: Record<string, Cookie<unknown>>;
   headers: Record<string, string | undefined>;
   params: NormalizeUnset<TParams>;
@@ -39,7 +40,7 @@ export interface RouteContext<TParams = {}, TQuery = {}> {
     headers: HTTPHeaders;
     status?: number | keyof StatusMap;
   };
-}
+};
 
 type ResolveParent<T> =
   T extends RouteRef<infer D, infer P, infer Q>
