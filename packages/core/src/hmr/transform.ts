@@ -148,14 +148,6 @@ function transformSlowPathOxc(
 
   const program = parseResult.program as unknown as { body: ESTreeNode[] };
 
-  const imports = program.body.filter((n: ESTreeNode) => n.type === "ImportDeclaration");
-  const importCode = imports
-    .map((imp: ESTreeNode) => {
-      const range = imp.range as [number, number];
-      return code.slice(range[0], range[1]);
-    })
-    .join("\n");
-
   const exportDecl = program.body.find((n: ESTreeNode) => n.type === "ExportDefaultDeclaration");
   if (!exportDecl) {
     return code;
@@ -192,8 +184,30 @@ function transformSlowPathOxc(
 
   const namedFunc = extractComponentCode(code, compValue);
 
-  let modifiedCode = importCode;
-  if (importCode) {
+  const preservedNodes = program.body.filter((n: ESTreeNode) => {
+    if (n.type === "ExportDefaultDeclaration") {
+      return false;
+    }
+    return (
+      n.type === "ImportDeclaration" ||
+      n.type === "FunctionDeclaration" ||
+      n.type === "VariableDeclaration" ||
+      n.type === "ClassDeclaration" ||
+      n.type === "TSTypeAliasDeclaration" ||
+      n.type === "TSInterfaceDeclaration" ||
+      n.type === "TSEnumDeclaration"
+    );
+  });
+
+  const preservedCode = preservedNodes
+    .map((n: ESTreeNode) => {
+      const range = n.range as [number, number];
+      return code.slice(range[0], range[1]);
+    })
+    .join("\n\n");
+
+  let modifiedCode = preservedCode;
+  if (preservedCode) {
     modifiedCode += "\n\n";
   }
   modifiedCode += `${namedFunc}\nexport default route.page({ component: _ElysionPage });`;
