@@ -11,4 +11,5 @@ coveragePathIgnorePatterns = [
   "**/fixtures/**/*",
   "**/private/var/**",  # macOS temp files
   "**/var/folders/**", # macOS temp files (symlink)
+  "**/tmp/**" # linux CI temp files
 ]
