@@ -68,6 +68,9 @@ describe("analyzeModule", () => {
     const result = await analyzeModule(filePath);
 
     expect(result.type).toBe("client");
+    expect(result.exports).toHaveLength(1);
+    expect(result.exports[0]?.name).toBe("Button");
+    expect(result.exports[0]?.type).toBe("client");
   });
 
   test("respects .server.tsx suffix", async () => {
@@ -118,6 +121,75 @@ describe("analyzeModule", () => {
 
     expect(result.type).toBe("server");
     expect(result.exports).toHaveLength(0);
+  });
+
+  test("detects default export function with name", async () => {
+    const filePath = join(tmpDir, "Page.tsx");
+    await writeFile(
+      filePath,
+      `
+      export default function Page() {
+        return <div>Page</div>;
+      }
+    `
+    );
+
+    const result = await analyzeModule(filePath);
+
+    expect(result.exports.some((e) => e.name === "Page")).toBe(true);
+  });
+
+  test("detects anonymous default export as 'default'", async () => {
+    const filePath = join(tmpDir, "Anonymous.tsx");
+    await writeFile(
+      filePath,
+      `
+      export default () => {
+        return <div>Anonymous</div>;
+      };
+    `
+    );
+
+    const result = await analyzeModule(filePath);
+
+    expect(result.exports.some((e) => e.name === "default")).toBe(true);
+  });
+
+  test("detects default export expression as 'default'", async () => {
+    const filePath = join(tmpDir, "Component.tsx");
+    await writeFile(
+      filePath,
+      `
+      const Component = () => <div>Component</div>;
+      export default Component;
+    `
+    );
+
+    const result = await analyzeModule(filePath);
+
+    expect(result.exports.some((e) => e.name === "default")).toBe(true);
+  });
+
+  test("detects multiple exports including default", async () => {
+    const filePath = join(tmpDir, "Mixed.tsx");
+    await writeFile(
+      filePath,
+      `
+      export function Named() {
+        return <div>Named</div>;
+      }
+      
+      export default function Page() {
+        return <div>Page</div>;
+      }
+    `
+    );
+
+    const result = await analyzeModule(filePath);
+
+    expect(result.exports.some((e) => e.name === "Named")).toBe(true);
+    expect(result.exports.some((e) => e.name === "Page")).toBe(true);
+    expect(result.exports).toHaveLength(2);
   });
 });
 

@@ -23,9 +23,10 @@ describe("generateClientManifest", () => {
 
     const manifest = generateClientManifest(analyses, outputs);
 
-    expect(manifest["/src/components/Counter.tsx"]).toBeDefined();
-    expect(manifest["/src/components/Counter.tsx"]?.name).toBe("Counter");
-    expect(manifest["/src/components/Counter.tsx"]?.chunks).toContain("Counter.a1b2.js");
+    // Key should be path#name format
+    expect(manifest["/src/components/Counter.tsx#Counter"]).toBeDefined();
+    expect(manifest["/src/components/Counter.tsx#Counter"]?.name).toBe("Counter");
+    expect(manifest["/src/components/Counter.tsx#Counter"]?.chunks).toContain("Counter.a1b2.js");
   });
 
   test("generates manifest for multiple client components", () => {
@@ -52,8 +53,8 @@ describe("generateClientManifest", () => {
     const manifest = generateClientManifest(analyses, outputs);
 
     expect(Object.keys(manifest)).toHaveLength(2);
-    expect(manifest["/src/components/Counter.tsx"]).toBeDefined();
-    expect(manifest["/src/components/Button.tsx"]).toBeDefined();
+    expect(manifest["/src/components/Counter.tsx#Counter"]).toBeDefined();
+    expect(manifest["/src/components/Button.tsx#Button"]).toBeDefined();
   });
 
   test("skips server components", () => {
@@ -108,7 +109,7 @@ describe("createManifestEntry", () => {
       ["Counter.a1b2.js"]
     );
 
-    expect(entry.id).toBe("Counter.tsx#Counter");
+    expect(entry.id).toBe("/src/Counter.tsx#Counter");
     expect(entry.name).toBe("Counter");
     expect(entry.chunks).toEqual(["Counter.a1b2.js"]);
   });
@@ -120,7 +121,7 @@ describe("createManifestEntry", () => {
       ["Page.js"]
     );
 
-    expect(entry.id).toBe("Page.tsx#default");
+    expect(entry.id).toBe("/src/Page.tsx#default");
     expect(entry.name).toBe("default");
   });
 });
@@ -128,14 +129,14 @@ describe("createManifestEntry", () => {
 describe("resolveClientReference", () => {
   test("resolves reference from manifest", () => {
     const manifest: ClientManifest = {
-      "/src/Counter.tsx": {
-        id: "Counter.tsx",
+      "/src/Counter.tsx#Counter": {
+        id: "/src/Counter.tsx#Counter",
         name: "Counter",
         chunks: ["Counter.a1b2.js"],
       },
     };
 
-    const ref = resolveClientReference("/src/Counter.tsx", manifest);
+    const ref = resolveClientReference("/src/Counter.tsx#Counter", manifest);
 
     expect(ref).toBeDefined();
     expect(ref?.name).toBe("Counter");
@@ -143,7 +144,7 @@ describe("resolveClientReference", () => {
 
   test("returns undefined for missing reference", () => {
     const manifest: ClientManifest = {};
-    const ref = resolveClientReference("/src/missing.tsx", manifest);
+    const ref = resolveClientReference("/src/missing.tsx#Missing", manifest);
     expect(ref).toBeUndefined();
   });
 });

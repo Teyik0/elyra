@@ -5,7 +5,6 @@ const IMPORT_PATTERN = /import\s+(?:\{([^}]+)\}|(\w+))\s+from\s+["']([^"']+)["']
 const LOADER_PATTERN = /\.loader\s*=\s*async/;
 
 const CLIENT_SUFFIX = ".client";
-const SERVER_SUFFIX = ".server";
 
 export function createClientReference(
   id: string,
@@ -38,7 +37,7 @@ export function transformServerComponent(
       const importPath = importMatch[3] ?? "";
 
       if (
-        (importPath.endsWith(CLIENT_SUFFIX) || importPath.endsWith(SERVER_SUFFIX)) &&
+        importPath.endsWith(CLIENT_SUFFIX) &&
         clientReferences.has(importPath)
       ) {
         transformedLine = transformedLine.replace(importMatch[0], "");

@@ -15,26 +15,16 @@ export function generateClientManifest(
     if (analysis.type !== "client") continue;
 
     const chunks = findChunksForModule(analysis.path, outputs);
-
     const clientExports = analysis.exports.filter((e) => e.type === "client");
 
-    if (clientExports.length === 1) {
-      const exp = clientExports[0];
-      const key = analysis.path;
+    // Always use path#exportName format for consistency
+    for (const exp of clientExports) {
+      const key = `${analysis.path}#${exp.name}`;
       manifest[key] = {
-        id: `${analysis.path.split("/").pop()}#${exp?.name}`,
-        name: exp?.name ?? "",
+        id: key,
+        name: exp.name,
         chunks,
       };
-    } else {
-      for (const exp of clientExports) {
-        const moduleId = `${analysis.path}#${exp.name}`;
-        manifest[moduleId] = {
-          id: moduleId,
-          name: exp.name,
-          chunks,
-        };
-      }
     }
   }
 
@@ -56,9 +46,8 @@ export function createManifestEntry(
   exportName: string,
   chunks: string[]
 ): ClientManifest[string] {
-  const id = moduleId.split("/").pop() ?? moduleId;
   return {
-    id: `${id}#${exportName}`,
+    id: `${moduleId}#${exportName}`,
     name: exportName,
     chunks,
   };

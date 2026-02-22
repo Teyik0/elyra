@@ -266,7 +266,7 @@ describe("detectClientFeatures — edge cases", () => {
     expect(result.isClient).toBe(false);
   });
 
-  test("does not detect useSomething that is not a React hook", () => {
+  test("detects custom hooks (useXxx pattern) as client features", () => {
     const code = "const result = useCustomThing();";
     const result = detectClientFeatures(code);
     expect(result.isClient).toBe(true);

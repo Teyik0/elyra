@@ -91,6 +91,38 @@ describe("transformServerComponent", () => {
 
     expect(result).toContain("Hello World");
   });
+
+  test("does not transform .server imports", () => {
+    const code = `
+      import { ServerComponent } from './Server.server';
+      
+      export default function Page() {
+        return <ServerComponent />;
+      }
+    `;
+
+    const analysis: ModuleAnalysis = {
+      path: "/pages/index.tsx",
+      type: "server",
+      exports: [{ name: "default", type: "server" }],
+      clientFeatures: [],
+    };
+
+    const clientReferences = new Map<string, ClientReference>();
+    // Even if accidentally added, should not transform
+    clientReferences.set("./Server.server", {
+      $$typeof: Symbol.for("react.client.reference"),
+      $$id: "Server.server.tsx",
+      $$name: "ServerComponent",
+      $$bundles: ["Server.server.js"],
+    });
+
+    const result = transformServerComponent(code, analysis, clientReferences);
+
+    // Server imports should be preserved
+    expect(result).toContain("import { ServerComponent }");
+    expect(result).not.toContain("createClientReference");
+  });
 });
 
 describe("transformClientComponent", () => {
