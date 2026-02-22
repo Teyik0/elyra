@@ -5,8 +5,15 @@ import { type AnyElysia, Elysia } from "elysia";
 import type { AnySchema } from "elysia/types";
 import type { RuntimePage, RuntimeRoute } from "./client";
 import { handleISR, prerenderSSG, renderSSR } from "./render";
+import { analyzeModule } from "./rsc/analyze";
 import type { ModuleAnalysis } from "./rsc/types";
-import { collectRouteChain, isElysionPage, isElysionRoute, validateRouteChain } from "./utils";
+import {
+  collectRouteChain,
+  isElysionPage,
+  isElysionRoute,
+  validatePathWithinDir,
+  validateRouteChain,
+} from "./utils";
 
 export interface ResolvedRoute {
   isrCache?: { html: string; generatedAt: number; revalidate: number };
@@ -92,6 +99,8 @@ export async function scanRootLayout(pagesDir: string): Promise<RootLayout | nul
     return null;
   }
 
+  validatePathWithinDir(rootPath, pagesDir);
+
   const mod = await import(rootPath);
   const rootExport = mod.route ?? mod.default;
   if (!(rootExport && isElysionRoute(rootExport))) {
@@ -106,7 +115,8 @@ export async function scanRootLayout(pagesDir: string): Promise<RootLayout | nul
   return { path: rootPath, route: rootExport };
 }
 
-async function loadPageModule(pagePath: string): Promise<RuntimePage> {
+async function loadPageModule(pagePath: string, pagesDir: string): Promise<RuntimePage> {
+  validatePathWithinDir(pagePath, pagesDir);
   const mod = await import(pagePath);
   return mod.default;
 }
@@ -131,7 +141,7 @@ async function scanPageFiles(pagesDir: string, root: RootLayout | null): Promise
       continue;
     }
 
-    const page = await loadPageModule(absolutePath);
+    const page = await loadPageModule(absolutePath, pagesDir);
     if (!isElysionPage(page)) {
       console.warn(
         `[elysion] Skipping ${relativePath}: no valid createRoute().page() export found`
@@ -143,13 +153,26 @@ async function scanPageFiles(pagesDir: string, root: RootLayout | null): Promise
 
     validateRouteChain(routeChain, root?.route ?? null, relativePath);
 
+    // Analyze module for RSC mode detection
+    const analysis = await analyzeModule(absolutePath);
+    const mode = resolveMode(page, routeChain, analysis);
+
     routes.push({
       pattern: filePathToPattern(relativePath),
       page,
       pagePath: absolutePath,
       path: absolutePath,
       routeChain,
-      mode: resolveMode(page, routeChain),
+      mode,
+      rsc:
+        mode === "rsc"
+          ? {
+              type: analysis.type,
+              clientComponents: analysis.exports
+                .filter((e) => e.type === "client")
+                .map((e) => e.name),
+            }
+          : undefined,
     });
   }
 

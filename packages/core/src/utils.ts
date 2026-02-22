@@ -1,4 +1,13 @@
+import { resolve } from "node:path";
 import type { RuntimePage, RuntimeRoute } from "./client";
+
+export function validatePathWithinDir(path: string, dir: string): void {
+  const resolvedPath = resolve(path);
+  const resolvedDir = resolve(dir);
+  if (!resolvedPath.startsWith(resolvedDir)) {
+    throw new Error(`Path traversal detected: ${path} is outside ${dir}`);
+  }
+}
 
 export function isElysionPage(value: unknown): value is RuntimePage {
   return (

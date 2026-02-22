@@ -21,78 +21,8 @@ export async function buildClient(
   routes: ResolvedRoute[],
   options: BuildClientOptions = {}
 ): Promise<void> {
-  const { outDir = "./.elysion", dev = false, rootPath = null } = options;
-  const buildDir = outDir;
-  const clientDir = join(outDir, "client");
-
-  if (!existsSync(buildDir)) {
-    mkdirSync(buildDir, { recursive: true });
-  }
-  if (!existsSync(clientDir)) {
-    mkdirSync(clientDir, { recursive: true });
-  }
-
-  const hydrateCode = dev
-    ? generateDevHydrateEntry(routes, rootPath)
-    : generateHydrateEntry(routes, rootPath);
-  const hydratePath = join(buildDir, "_hydrate.tsx");
-  writeFileSync(hydratePath, hydrateCode);
-
-  console.log(`[elysion] Building client bundle (${dev ? "dev" : "production"})...`);
-
-  const transformPlugin: Bun.BunPlugin = {
-    name: "elysion-transform-client",
-    setup(build) {
-      build.onLoad({ filter: TS_FILE_FILTER }, async (args) => {
-        const path = args.path;
-        if (path.includes("node_modules")) {
-          return undefined;
-        }
-
-        const file = Bun.file(path);
-        const code = await file.text();
-
-        try {
-          const result = transformForClient(code, path);
-          return {
-            contents: result.code,
-            loader: path.endsWith(".tsx") ? "tsx" : "ts",
-          };
-        } catch (error) {
-          console.error(`[elysion] Transform error for ${path}:`, error);
-          return undefined;
-        }
-      });
-    },
-  };
-
-  const result = await Bun.build({
-    entrypoints: [hydratePath],
-    outdir: clientDir,
-    target: "browser",
-    format: "esm",
-    splitting: !dev,
-    minify: !dev,
-    naming: "[name].[ext]",
-    plugins: dev ? [] : [transformPlugin],
-    define: {
-      "process.env.NODE_ENV": JSON.stringify(dev ? "development" : "production"),
-    },
-  });
-
-  if (!result.success) {
-    console.error("[elysion] Client build failed:");
-    for (const log of result.logs) {
-      console.error(log);
-    }
-    throw new Error("Client build failed");
-  }
-
-  for (const output of result.outputs) {
-    console.log(`[elysion]   ${output.path} (${(output.size / 1024).toFixed(1)}KB)`);
-  }
-
-  console.log("[elysion] Client build complete");
+  // Delegate to buildClientWithRSC with empty analyses for backward compatibility
+  await buildClientWithRSC(routes, new Map(), options);
 }
 
 export async function buildClientWithRSC(
@@ -168,11 +98,10 @@ export async function buildClientWithRSC(
   });
 
   if (!result.success) {
-    console.error("[elysion] Client build failed:");
-    for (const log of result.logs) {
-      console.error(log);
-    }
-    throw new Error("Client build failed");
+    const errorMessages = result.logs.map(String).join("\n");
+    throw new Error(
+      `[elysion] Client build failed for ${routes.length} routes (${clientRoutes.length} client):\n${errorMessages}`
+    );
   }
 
   for (const output of result.outputs) {
