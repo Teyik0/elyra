@@ -39,7 +39,7 @@
     "@babel/traverse": "^7.29.0",
     "@babel/types": "^7.29.0",
     "@elysiajs/static": "^1.4.7",
-    "node-mocks-http": "^1.17.2"
+    "fetch-to-node": "^2.1.0"
   },
   "devDependencies": {
     "@types/babel__core": "^7.20.5",
