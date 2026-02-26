@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { toFetchResponse, toReqRes } from "fetch-to-node";
 import { createServer as createViteServer } from "vite";
 import { elysionPlugin } from "./plugin";
+import { shouldHandleByVite } from "./routing";
 
 // Path the browser uses to connect for HMR.
 // Vite's /@vite/client will be configured to use this path via hmr.path.
@@ -117,21 +118,5 @@ export async function createVitePlugin(pagesDir: string) {
           wsStates.delete(ws);
         },
       })
-  );
-}
-
-export function shouldHandleByVite(pathname: string): boolean {
-  return (
-    pathname.startsWith("/@vite/") ||
-    pathname.startsWith("/@fs/") ||
-    pathname.startsWith("/@id/") ||
-    pathname.startsWith("/node_modules/.vite/") ||
-    pathname.startsWith("/src/") ||
-    pathname.endsWith(".tsx") ||
-    pathname.endsWith(".ts") ||
-    pathname.endsWith(".jsx") ||
-    pathname.endsWith(".js") ||
-    pathname.endsWith(".css") ||
-    pathname.endsWith(".html")
   );
 }

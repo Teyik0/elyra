@@ -326,14 +326,12 @@ describe("shell.tsx", () => {
       expect(result).toContain('"count":42');
     });
 
-    test("includes refresh setup in dev mode", () => {
-      const result = buildBodyInjection({}, "/_client/hydrate.js", true);
-      expect(result).toContain("/__refresh-setup.js");
-    });
-
-    test("excludes refresh setup in prod mode", () => {
-      const result = buildBodyInjection({}, "/_client/hydrate.js", false);
-      expect(result).not.toContain("/__refresh-setup.js");
+    test("does not include refresh setup (Vite handles React Refresh)", () => {
+      // /__refresh-setup.js was removed — Vite handles React Refresh via its own HMR client
+      const resultDev = buildBodyInjection({}, "/_client/hydrate.js", true);
+      const resultProd = buildBodyInjection({}, "/_client/hydrate.js", false);
+      expect(resultDev).not.toContain("/__refresh-setup.js");
+      expect(resultProd).not.toContain("/__refresh-setup.js");
     });
 
     test("includes client script", () => {
