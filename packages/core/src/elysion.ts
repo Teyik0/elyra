@@ -29,7 +29,7 @@ export async function elysion({ pagesDir = "./src/pages", staticOptions }: Elysi
   }
 
   const baseApp = isDev
-    ? new Elysia({ name: "elysion-dev" }).use((app) => createVitePlugin(app, resolvedPagesDir))
+    ? new Elysia({ name: "elysion-dev" }).use(await createVitePlugin(resolvedPagesDir))
     : new Elysia({ name: "elysion-prod" })
         .use(
           await staticPlugin({

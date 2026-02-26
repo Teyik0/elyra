@@ -21,6 +21,7 @@
     "@types/babel__core": "^7.20.5",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "playwright": "^1.52.0",
     "tailwindcss": "^4.2.1",
     "vite": "npm:rolldown-vite@latest",
     "vite-tsconfig-paths": "^6.1.1"
