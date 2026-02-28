@@ -165,8 +165,12 @@ export function transformForClient(code: string, filename: string): TransformRes
 
   // Pass 2 — Babel: parse plain JS to AST for server-property removal and DCE.
   // No presets required since TypeScript and JSX are already handled above.
+  // configFile/babelrc disabled so Babel never searches for external configs
+  // that could reference @babel/preset-typescript (not installed).
   const parseResult = transformSync(plainJs, {
     filename,
+    configFile: false,
+    babelrc: false,
     plugins: [],
     sourceMaps: false,
     ast: true,
