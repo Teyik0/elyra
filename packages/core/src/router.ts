@@ -57,7 +57,8 @@ export function createRoutePlugin(
         case "ssg": {
           ctx.set.headers["content-type"] = "text/html; charset=utf-8";
           ctx.set.headers["cache-control"] = "public, max-age=0, must-revalidate";
-          return await prerenderSSG(route, ctx.params ?? {}, config, root, dev);
+          const origin = new URL(ctx.request.url).origin;
+          return await prerenderSSG(route, ctx.params ?? {}, config, root, dev, origin);
         }
 
         case "isr":

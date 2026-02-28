@@ -1,80 +1,72 @@
-import { existsSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { staticPlugin } from "@elysiajs/static";
 import type { StaticOptions } from "@elysiajs/static/types";
-import { type AnyElysia, Elysia } from "elysia";
+import type { AnyElysia } from "elysia";
 import { buildClient, writeDevFiles } from "./build";
 import { registerBunStripPlugin } from "./bun-strip-plugin";
-import { type CssOptions, getCachedCss, setCssConfig } from "./css";
 import { createRoutePlugin, scanPages } from "./router";
 
 export interface ElysionProps {
-  css?: CssOptions;
   dev?: boolean;
   pagesDir?: string;
   staticOptions: StaticOptions<string>;
-}
-
-async function buildExternalCss(cwd: string): Promise<void> {
-  const result = await getCachedCss(cwd);
-  if (!result || result.mode !== "external") return;
-
-  const clientDir = resolve(cwd, ".elysion", "client");
-  if (!existsSync(clientDir)) mkdirSync(clientDir, { recursive: true });
-  await Bun.write(resolve(clientDir, "styles.css"), result.code);
-  console.log("[elysion] CSS built: /_client/styles.css");
 }
 
 /**
  * Main Elysion plugin.
  *
  * Returns a callback plugin `(app: Elysia) => Elysia` instead of an Elysia
- * instance, so it can inject `/_bun_entry` into Bun's native `serve.routes`
- * before `listen()` is called.  The call-site is unchanged:
+ * instance, so it integrates cleanly with the parent app.
  *
- *   app.use(await elysion({ … }))
+ * ## Dev mode (Bun native HMR)
  *
- * In dev mode Bun's HTML bundler owns JS bundling, file watching, HMR
- * WebSocket, and React Refresh.  The server self-fetches /_bun_entry on the
- * first request to obtain the content-hashed <script> URLs for SSR injection.
+ * The user's server.ts must statically import `.elysion/index.html` and
+ * register it in serve.routes — this is what triggers Bun's HTML bundler,
+ * module graph, HMR WebSocket, and React Fast Refresh.
  *
- * In production mode the standard Bun.build() pipeline is used.
+ * ```ts
+ * // server.ts
+ * import elysionHtml from "../.elysion/index.html";
+ *
+ * new Elysia({ serve: { routes: { "/_bun_entry": elysionHtml } } })
+ *   .use(await elysion({ ... }))
+ *   .listen(3000);
+ * ```
+ *
+ * Run `bun run scripts/generate.ts` before starting the server to generate
+ * `.elysion/_hydrate.tsx`.  The `dev` package.json script handles this:
+ * `"dev": "bun run scripts/generate.ts && bun --hot src/server.ts"`
+ *
+ * ## Production mode
+ *
+ * `elysion()` runs `Bun.build()` to produce `.elysion/client/index.html`
+ * (the SSR template) plus hashed JS/CSS chunks.  No static import needed.
  */
 export async function elysion({
   pagesDir,
   staticOptions,
   dev = process.env.NODE_ENV !== "production",
-  css,
 }: ElysionProps): Promise<(app: AnyElysia) => AnyElysia> {
   const cwd = process.cwd();
   const resolvedPagesDir = resolve(cwd, pagesDir ?? "./src/pages");
-
-  setCssConfig(css, dev);
-
-  if (css?.input) {
-    const result = await getCachedCss(cwd);
-    if (result) {
-      if (result.mode === "external") {
-        await buildExternalCss(cwd);
-      } else {
-        console.log("[elysion] CSS inline mode enabled");
-      }
-    }
-  }
 
   const { root, routes } = await scanPages(resolvedPagesDir, dev);
 
   if (!root) {
     console.warn(
       "[elysion] No root.tsx found. Create a root.tsx in your pages directory " +
-        "with <html>, <head>, and <body> tags."
+        "with a layout component."
     );
   }
 
-  console.log(`[elysion] Configuration: ${routes.length} page(s) — ${dev ? "dev (Bun HMR)" : "production"}`);
+  console.log(
+    `[elysion] Configuration: ${routes.length} page(s) — ${dev ? "dev (Bun HMR)" : "production"}`
+  );
   for (const route of routes) {
     const hasLayout = route.routeChain.some((r) => r.layout);
-    console.log(`  ${route.mode.toUpperCase().padEnd(4)} ${route.pattern}${hasLayout ? " + layout" : ""}`);
+    console.log(
+      `  ${route.mode.toUpperCase().padEnd(4)} ${route.pattern}${hasLayout ? " + layout" : ""}`
+    );
   }
 
   // ── Dev: Bun native HMR ──────────────────────────────────────────────────
@@ -82,37 +74,20 @@ export async function elysion({
     const elysionDir = resolve(cwd, ".elysion");
 
     // 1. Register the Bun build plugin that strips server-only code from pages
-    //    and stubs elysia.  Must happen BEFORE the HTML import below so Bun
-    //    uses the plugin when it first processes the HTML bundle.
+    //    and stubs elysia.  Must happen before the static HTML import in the
+    //    user's server.ts is evaluated (works because elysion() is awaited at
+    //    module top-level before the import is resolved by Bun).
     registerBunStripPlugin(resolvedPagesDir);
 
-    // 2. Generate .elysion/_hydrate.tsx + .elysion/index.html
+    // 2. Regenerate .elysion/_hydrate.tsx with the current page list.
+    //    Only writes when content changed so Bun --hot doesn't reload needlessly.
     writeDevFiles(routes, { outDir: elysionDir, rootPath: root?.path ?? null });
-
-    // 3. Dynamically import the generated index.html so Bun:
-    //    - Bundles _hydrate.tsx and all its page dependencies.
-    //    - Sets up the HMR WebSocket and React Refresh.
-    //    - Registers content-hashed chunk routes under /_bun/*.
-    const htmlEntry = resolve(elysionDir, "index.html");
-    const { default: htmlBundle } = await import(htmlEntry);
 
     const userStaticPlugin = await staticPlugin(staticOptions);
 
-    const routePlugins = routes.map((route) =>
-      createRoutePlugin(route, staticOptions, root, dev)
-    );
+    const routePlugins = routes.map((route) => createRoutePlugin(route, staticOptions, root, dev));
 
-    // 4. Return a callback plugin so we can inject htmlBundle into the parent
-    //    Elysia instance's serve.routes before listen() calls Bun.serve().
     return function elysionDevPlugin(app: AnyElysia): AnyElysia {
-      // Inject the HTML bundle into Bun's native routes.
-      // Bun routes take priority over the fetch handler, so /_bun/* chunk
-      // requests and the HMR WebSocket are handled by Bun, not Elysia.
-      (app.config as Record<string, unknown>).serve ??= {};
-      const serve = (app.config as { serve: Record<string, unknown> }).serve;
-      serve.routes ??= {};
-      (serve.routes as Record<string, unknown>)["/_bun_entry"] = htmlBundle;
-
       let result = app.use(userStaticPlugin);
       for (const plugin of routePlugins) {
         result = result.use(plugin);
@@ -130,9 +105,7 @@ export async function elysion({
     prefix: "/_client",
   });
   const userStaticPlugin = await staticPlugin(staticOptions);
-  const routePlugins = routes.map((route) =>
-    createRoutePlugin(route, staticOptions, root, dev)
-  );
+  const routePlugins = routes.map((route) => createRoutePlugin(route, staticOptions, root, dev));
 
   return function elysionProdPlugin(app: AnyElysia): AnyElysia {
     let result = app.use(clientStaticPlugin).use(userStaticPlugin);

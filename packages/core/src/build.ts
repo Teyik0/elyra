@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ResolvedRoute } from "./router";
 import { transformForClient } from "./transform-client";
 
@@ -10,14 +10,16 @@ export interface BuildClientOptions {
 }
 
 const TS_FILE_FILTER = /\.(tsx|ts)$/;
+const REACT_IMPORT_RE = /import\s+React\b/;
 
-// ── Hydrate entry (shared between dev and prod) ────────────────────────────
+// ── Hydrate entry ──────────────────────────────────────────────────────────
 
 /**
  * Generates the client hydration entry.
- * - Imports page components via static imports (Bun bundles them natively).
- * - In dev Bun's HTML bundler handles HMR and React Refresh automatically.
- * - In prod Bun.build() produces the optimised static bundle.
+ *
+ * Renders into <div id="root"> (the SSR outlet element) and retains the React
+ * root across hot reloads via import.meta.hot.data.root so React Fast Refresh
+ * applies in-place instead of remounting.
  */
 function generateHydrateEntry(routes: ResolvedRoute[], rootPath: string | null): string {
   const imports: string[] = [];
@@ -41,43 +43,10 @@ function generateHydrateEntry(routes: ResolvedRoute[], rootPath: string | null):
   }
 
   return `import React from "react";
-import { hydrateRoot } from "react-dom/client";
+import { hydrateRoot, createRoot } from "react-dom/client";
 import { createElement } from "react";
 
 ${imports.join("\n")}
-
-function collectLayouts(route) {
-  const layouts = [];
-  let current = route;
-  while (current) {
-    if (current.layout) layouts.unshift(current.layout);
-    current = current.parent;
-  }
-  return layouts;
-}
-
-function injectSuppressHydration(element) {
-  if (!element || typeof element !== "object") return element;
-  const type = element.type;
-  const props = element.props || {};
-  if (type === "html" || type === "head" || type === "body") {
-    const newProps = { ...props, suppressHydrationWarning: true };
-    if (props.children) {
-      newProps.children = Array.isArray(props.children)
-        ? props.children.map(injectSuppressHydration)
-        : injectSuppressHydration(props.children);
-    }
-    return Object.assign({}, element, { props: newProps });
-  }
-  if (props.children) {
-    const newProps = { ...props };
-    newProps.children = Array.isArray(props.children)
-      ? props.children.map(injectSuppressHydration)
-      : injectSuppressHydration(props.children);
-    return Object.assign({}, element, { props: newProps });
-  }
-  return element;
-}
 
 const routes = [
 ${routeEntries.join(",\n")}
@@ -89,11 +58,17 @@ const match = routes.find((r) => r.regex.test(pathname));
 if (match) {
   const dataEl = document.getElementById("__ELYSION_DATA__");
   const loaderData = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
-  const rootEl = ${hasRoot ? "document" : "document.documentElement"};
+  const rootEl = document.getElementById("root");
 
   let element = createElement(match.component, loaderData);
 
-  const allLayouts = collectLayouts(match.pageRoute);
+  // Collect layout chain from the matched route upward (skip root at index 0)
+  const allLayouts = [];
+  let current = match.pageRoute;
+  while (current) {
+    if (current.layout) allLayouts.unshift(current.layout);
+    current = current.parent;
+  }
   const layouts = ${hasRoot ? "allLayouts.slice(1)" : "allLayouts"};
 
   for (let i = layouts.length - 1; i >= 0; i--) {
@@ -109,9 +84,17 @@ if (match) {
       : ""
   }
 
-  element = injectSuppressHydration(element);
-
-  hydrateRoot(rootEl, element);
+  if (import.meta.hot) {
+    // Retain React root across hot reloads so Fast Refresh applies in-place.
+    const hotRoot = (import.meta.hot.data.root ??= rootEl.innerHTML.trim()
+      ? hydrateRoot(rootEl, element)
+      : createRoot(rootEl));
+    hotRoot.render(element);
+  } else if (rootEl.innerHTML.trim()) {
+    hydrateRoot(rootEl, element);
+  } else {
+    createRoot(rootEl).render(element);
+  }
 } else {
   console.warn("[elysion] No matching route for", pathname);
 }
@@ -121,18 +104,25 @@ if (match) {
 // ── Dev: write files for Bun's native HTML bundler ────────────────────────
 
 /**
- * Generates the minimal HTML entry that Bun's HTML bundler uses to:
- *  - Bundle `_hydrate.tsx` and all its dependencies.
- *  - Set up the HMR WebSocket and React Refresh automatically.
+ * The fixed HTML shell used both in dev (for Bun's HTML bundler) and as the
+ * base for the production build entrypoint.  This content never changes —
+ * commit it to the repository so the static import in server.ts always works.
  *
- * The resulting /_bun_entry route is never shown to users; it's self-fetched
- * server-side to extract the content-hashed <script> URLs for SSR injection.
+ * Bun's HTML bundler:
+ *  - Replaces `<script src="./_hydrate.tsx">` with content-hashed chunk tags.
+ *  - Injects the HMR WebSocket client into <head>.
+ *  - Preserves <!--ssr-head--> and <!--ssr-outlet--> comments for SSR injection.
  */
-function generateIndexHtml(): string {
+export function generateIndexHtml(): string {
   return `<!DOCTYPE html>
-<html>
-  <head></head>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--ssr-head-->
+  </head>
   <body>
+    <div id="root"><!--ssr-outlet--></div>
     <script type="module" src="./_hydrate.tsx"></script>
   </body>
 </html>
@@ -140,29 +130,47 @@ function generateIndexHtml(): string {
 }
 
 /**
- * Writes _hydrate.tsx + index.html to outDir/.elysion for dev (Bun HMR) mode.
- * No Bun.build() call — the native HTML bundler handles everything.
+ * Writes _hydrate.tsx + index.html to outDir for dev (Bun HMR) mode.
+ *
+ * Only rewrites a file when its content has actually changed so Bun's --hot
+ * watcher does not trigger a spurious reload on every server restart.
  */
-export function writeDevFiles(
-  routes: ResolvedRoute[],
-  options: BuildClientOptions = {}
-): void {
+export function writeDevFiles(routes: ResolvedRoute[], options: BuildClientOptions = {}): void {
   const { outDir = "./.elysion", rootPath = null } = options;
 
-  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+  if (!existsSync(outDir)) {
+    mkdirSync(outDir, { recursive: true });
+  }
 
   const hydrateCode = generateHydrateEntry(routes, rootPath);
-  writeFileSync(join(outDir, "_hydrate.tsx"), hydrateCode);
-  writeFileSync(join(outDir, "index.html"), generateIndexHtml());
+  const hydratePath = join(outDir, "_hydrate.tsx");
+  const existingHydrate = existsSync(hydratePath) ? readFileSync(hydratePath, "utf8") : "";
+  if (hydrateCode !== existingHydrate) {
+    writeFileSync(hydratePath, hydrateCode);
+  }
+
+  const indexHtml = generateIndexHtml();
+  const indexPath = join(outDir, "index.html");
+  const existingIndex = existsSync(indexPath) ? readFileSync(indexPath, "utf8") : "";
+  if (indexHtml !== existingIndex) {
+    writeFileSync(indexPath, indexHtml);
+  }
 
   console.log("[elysion] Dev files written (.elysion/_hydrate.tsx + .elysion/index.html)");
 }
 
-// ── Prod: full Bun.build() ─────────────────────────────────────────────────
+// ── Prod: full Bun.build() via HTML entrypoint ────────────────────────────
 
 /**
- * Builds the production client bundle via Bun.build().
- * transformForClient strips server-only code (loader, head) from page files.
+ * Builds the production client bundle via Bun.build() using the generated
+ * index.html as the HTML entrypoint.  Bun produces:
+ *   .elysion/client/index.html  — processed template with hashed chunk paths
+ *   .elysion/client/chunk-*.js  — code-split bundles
+ *   .elysion/client/styles.css  — CSS (if imported)
+ *
+ * The output index.html is NOT served to browsers directly.  The server reads
+ * it as an SSR template, injects the pre-rendered React HTML into
+ * <!--ssr-outlet-->, and sends the complete page.
  */
 export async function buildClient(
   routes: ResolvedRoute[],
@@ -171,12 +179,20 @@ export async function buildClient(
   const { outDir = "./.elysion", rootPath = null } = options;
   const clientDir = join(outDir, "client");
 
-  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
-  if (!existsSync(clientDir)) mkdirSync(clientDir, { recursive: true });
+  if (!existsSync(outDir)) {
+    mkdirSync(outDir, { recursive: true });
+  }
+  if (!existsSync(clientDir)) {
+    mkdirSync(clientDir, { recursive: true });
+  }
 
   const hydrateCode = generateHydrateEntry(routes, rootPath);
   const hydratePath = join(outDir, "_hydrate.tsx");
   writeFileSync(hydratePath, hydrateCode);
+
+  const indexHtml = generateIndexHtml();
+  const indexPath = join(outDir, "index.html");
+  writeFileSync(indexPath, indexHtml);
 
   console.log("[elysion] Building production client bundle…");
 
@@ -185,18 +201,17 @@ export async function buildClient(
     setup(build) {
       build.onLoad({ filter: TS_FILE_FILTER }, async (args) => {
         const { path } = args;
-        if (path.includes("node_modules")) return undefined;
+        if (path.includes("node_modules")) {
+          return undefined;
+        }
 
         const code = await Bun.file(path).text();
         try {
           const result = transformForClient(code, path);
           let transformed = result.code;
 
-          if (
-            transformed.includes("React.createElement") &&
-            !/import\s+React\b/.test(transformed)
-          ) {
-            transformed = 'import React from "react";\n' + transformed;
+          if (transformed.includes("React.createElement") && !REACT_IMPORT_RE.test(transformed)) {
+            transformed = `import React from "react";\n${transformed}`;
           }
 
           return {
@@ -212,13 +227,12 @@ export async function buildClient(
   };
 
   const result = await Bun.build({
-    entrypoints: [hydratePath],
+    entrypoints: [indexPath],
     outdir: clientDir,
     target: "browser",
     format: "esm",
     splitting: true,
     minify: true,
-    naming: "[name].[ext]",
     plugins: [transformPlugin],
     define: {
       "process.env.NODE_ENV": JSON.stringify("production"),
@@ -227,7 +241,9 @@ export async function buildClient(
 
   if (!result.success) {
     console.error("[elysion] Client build failed:");
-    for (const log of result.logs) console.error(log);
+    for (const log of result.logs) {
+      console.error(log);
+    }
     throw new Error("Client build failed");
   }
 
@@ -236,11 +252,4 @@ export async function buildClient(
   }
 
   console.log("[elysion] Production client build complete");
-}
-
-// Keep for backward compat (used in some tests)
-function findPagesDir(pagePath: string, _pattern: string): string {
-  const pagesIdx = pagePath.lastIndexOf("/pages/");
-  if (pagesIdx !== -1) return pagePath.substring(0, pagesIdx + "/pages".length);
-  return pagePath.substring(0, pagePath.lastIndexOf("/"));
 }

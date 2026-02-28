@@ -2,6 +2,9 @@ import { plugin } from "bun";
 import { transformForClient } from "./transform-client";
 
 const TS_FILE_FILTER = /\.(tsx|ts)$/;
+const ELYSIA_FILTER = /^elysia$/;
+const ANY_FILTER = /.*/;
+const REACT_IMPORT_FILTER = /import\s+React\b/;
 
 // Persisted across bun --hot reloads so we don't re-register the plugin
 // on every file-change-triggered re-evaluation of this module.
@@ -29,23 +32,27 @@ export default {};
  *  2. Strips server-only code (loader, head) from page files before they are
  *     bundled into the client entry by Bun's native HTML bundler.
  *
- * Must be called before the first `import(…/index.html)` so Bun uses the
- * plugin when it processes the HTML entry.
+ * Must be called before the server module is evaluated so Bun uses the plugin
+ * when it processes the HTML entry referenced by the static import.
  */
 export function registerBunStripPlugin(pagesDir: string): void {
-  if (_hmrData?.pluginRegistered) return;
-  if (_hmrData) _hmrData.pluginRegistered = true;
+  if (_hmrData?.pluginRegistered) {
+    return;
+  }
+  if (_hmrData) {
+    _hmrData.pluginRegistered = true;
+  }
 
   plugin({
     name: "elysion-strip-server",
     setup(build) {
       // ── elysia browser stub ──────────────────────────────────────────────
-      build.onResolve({ filter: /^elysia$/ }, () => ({
+      build.onResolve({ filter: ELYSIA_FILTER }, () => ({
         path: "elysia-stub",
         namespace: "elysion-stubs",
       }));
 
-      build.onLoad({ namespace: "elysion-stubs", filter: /.*/ }, () => ({
+      build.onLoad({ namespace: "elysion-stubs", filter: ANY_FILTER }, () => ({
         contents: ELYSIA_STUB,
         loader: "js",
       }));
@@ -68,8 +75,8 @@ export function registerBunStripPlugin(pagesDir: string): void {
           // transformForClient uses the classic JSX factory (React.createElement),
           // but doesn't add the React import for files that didn't import it
           // explicitly. Add it when needed so React is always in scope.
-          if (code.includes("React.createElement") && !/import\s+React\b/.test(code)) {
-            code = 'import React from "react";\n' + code;
+          if (code.includes("React.createElement") && !REACT_IMPORT_FILTER.test(code)) {
+            code = `import React from "react";\n${code}`;
           }
 
           return { contents: code, loader: "js" };
@@ -82,31 +89,39 @@ export function registerBunStripPlugin(pagesDir: string): void {
   });
 }
 
-// ── Self-fetch helpers ──────────────────────────────────────────────────────
+// ── Dev template helpers ────────────────────────────────────────────────────
 
 /**
- * Lazily fetches the Bun-processed /_bun_entry HTML and extracts all <script>
- * tags. These are the content-hashed bundle paths + the HMR client script
- * that Bun injects. Cached for the lifetime of the server process.
+ * Lazily fetches the Bun-processed /_bun_entry HTML and caches it.
  *
- * Must be called from within a request handler (after the server is listening).
+ * The fetched HTML is used as the SSR template: it contains the
+ * content-hashed chunk paths and HMR WebSocket client that Bun injected,
+ * plus our <!--ssr-head--> and <!--ssr-outlet--> placeholders which Bun
+ * preserves as-is.
+ *
+ * Must be called from within a request handler (after the server is listening
+ * and serve.routes["/_bun_entry"] is registered).
+ *
+ * @param origin - The server origin, e.g. "http://localhost:3000".
+ *                 Derived from ctx.request.url in request handlers.
  */
-let _devScriptsPromise: Promise<string> | null = null;
+let _devTemplatePromise: Promise<string> | null = null;
 
-export function getDevBunScripts(serverOrigin: string): Promise<string> {
-  _devScriptsPromise ??= fetch(`${serverOrigin}/_bun_entry`)
-    .then((r) => r.text())
-    .then((html) => {
-      const tags = html.match(/<script\b[^>]*>[^<]*<\/script>/g) ?? [];
-      return tags.join("\n");
+export function getDevTemplate(origin: string): Promise<string> {
+  _devTemplatePromise ??= fetch(`${origin}/_bun_entry`)
+    .then((r) => {
+      if (!r.ok) {
+        throw new Error(`/_bun_entry returned ${r.status}`);
+      }
+      return r.text();
     })
     .catch((err) => {
-      _devScriptsPromise = null;
+      _devTemplatePromise = null;
       throw err;
     });
-  return _devScriptsPromise;
+  return _devTemplatePromise;
 }
 
-export function resetDevBunScripts(): void {
-  _devScriptsPromise = null;
+export function resetDevTemplate(): void {
+  _devTemplatePromise = null;
 }

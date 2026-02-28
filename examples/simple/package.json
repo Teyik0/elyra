@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "bun --hot src/server.ts",
+    "dev": "bun run scripts/generate.ts && bun --hot src/server.ts",
     "test:types": "tsc --noEmit",
     "start": "NODE_ENV=production bun src/index.ts",
     "test:e2e": "bun run ./tests/hmr.ts"

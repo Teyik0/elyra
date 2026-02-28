@@ -8,17 +8,27 @@
   ],
   "main": "./dist/elysion.js",
   "module": "./dist/elysion.js",
-  "types": "./dist/elysion.d.ts",
+  "types": "./src/elysion.ts",
   "exports": {
     ".": {
-      "types": "./dist/elysion.d.ts",
+      "types": "./src/elysion.ts",
       "bun": "./src/elysion.ts",
       "import": "./dist/elysion.js"
     },
     "./client": {
-      "types": "./dist/client.d.ts",
+      "types": "./src/client.ts",
       "bun": "./src/client.ts",
       "import": "./dist/client.js"
+    },
+    "./build": {
+      "types": "./src/build.ts",
+      "bun": "./src/build.ts",
+      "import": "./dist/build.js"
+    },
+    "./router": {
+      "types": "./src/router.ts",
+      "bun": "./src/router.ts",
+      "import": "./dist/router.js"
     }
   },
   "scripts": {
@@ -31,8 +41,7 @@
     "@babel/generator": "^7.29.1",
     "@babel/traverse": "^7.29.0",
     "@babel/types": "^7.29.0",
-    "@elysiajs/static": "^1.4.7",
-    "postcss": "^8.5.3"
+    "@elysiajs/static": "^1.4.7"
   },
   "devDependencies": {
     "@types/babel__core": "^7.20.5",
