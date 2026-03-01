@@ -145,6 +145,8 @@ export interface RouterProviderProps {
   defaultPreloadStaleTime?: number;
   initialData: Record<string, unknown>;
   initialMatch: ClientRoute;
+  /** Maximum number of prefetch cache entries. Oldest entry is evicted when exceeded. Default: 50. */
+  prefetchCacheSize?: number;
   root: RuntimeRoute | null;
   routes: ClientRoute[];
 }
@@ -152,6 +154,7 @@ export interface RouterProviderProps {
 interface RouterState {
   data: Record<string, unknown>;
   match: ClientRoute;
+  title?: string;
 }
 
 /** @internal */
@@ -211,6 +214,7 @@ export function RouterProvider({
   defaultPreload = "intent",
   defaultPreloadDelay = 50,
   defaultPreloadStaleTime = 30_000,
+  prefetchCacheSize = 50,
 }: RouterProviderProps): React.ReactElement {
   const [state, setState] = useState<RouterState>({
     match: initialMatch,
@@ -232,14 +236,10 @@ export function RouterProvider({
         const html = await res.text();
         const doc = new DOMParser().parseFromString(html, "text/html");
 
-        if (doc.title) {
-          document.title = doc.title;
-        }
-
         const dataEl = doc.getElementById("__ELYSION_DATA__");
         const data = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
 
-        return { match, data };
+        return { match, data, title: doc.title };
       } catch {
         return null;
       }
@@ -258,8 +258,13 @@ export function RouterProvider({
         promise: fetchPageState(href),
         createdAt: Date.now(),
       });
+      // Evict the oldest entry when the cap is exceeded
+      if (prefetchCache.current.size > prefetchCacheSize) {
+        const oldest = prefetchCache.current.keys().next().value as string;
+        prefetchCache.current.delete(oldest);
+      }
     },
-    [fetchPageState, defaultPreloadStaleTime]
+    [fetchPageState, defaultPreloadStaleTime, prefetchCacheSize]
   );
 
   const navigate = useCallback(
@@ -273,6 +278,9 @@ export function RouterProvider({
           return;
         }
         setState(newState);
+        if (newState.title) {
+          document.title = newState.title;
+        }
         if (opts?.replace) {
           window.history.replaceState(null, "", href);
         } else {
@@ -286,15 +294,31 @@ export function RouterProvider({
     [prefetch]
   );
 
+  const handlePopState = useCallback(async () => {
+    const href = window.location.pathname + window.location.search;
+    setIsNavigating(true);
+    try {
+      const newState = await fetchPageState(href);
+      if (!newState) {
+        window.location.reload();
+        return;
+      }
+      setState(newState);
+      if (newState.title) {
+        document.title = newState.title;
+      }
+      // No scrollTo(0, 0) — browser handles scroll restoration
+      // No history.pushState/replaceState — URL already updated by browser
+    } finally {
+      setIsNavigating(false);
+    }
+  }, [fetchPageState]);
+
   // Handle browser back/forward
   useEffect(() => {
-    const handler = () =>
-      navigate(window.location.pathname + window.location.search, {
-        replace: true,
-      });
-    window.addEventListener("popstate", handler);
-    return () => window.removeEventListener("popstate", handler);
-  }, [navigate]);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [handlePopState]);
 
   return createElement(
     RouterContext.Provider,
@@ -382,6 +406,10 @@ export function Link<To extends RouteTo>({
     }
     // Let browser handle modifier+click (new tab, etc.)
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+      return;
+    }
+    // Let browser handle non-self targets (e.g. target="_blank")
+    if (anchorProps.target && anchorProps.target !== "_self") {
       return;
     }
     // Let browser handle external links

@@ -1,5 +1,6 @@
 import type { RouteContext } from "../client";
 import type { buildHeadInjection } from "../shell";
+import { safeJson } from "../shell";
 
 export type LoaderContext = RouteContext<Record<string, string>, Record<string, string>>;
 
@@ -45,22 +46,6 @@ export async function streamToString(stream: ReadableStream): Promise<string> {
   return html;
 }
 
-/**
- * Template structure (after Bun processes index.html):
- *   <html>
- *     <head>
- *       ...static meta...
- *       <!--ssr-head-->          ← page-specific title/meta injected here
- *       <script src="/_bun/..."> ← Bun injects hashed chunk + HMR WS client
- *     </head>
- *     <body>
- *       <div id="root">
- *         <!--ssr-outlet-->      ← React SSR HTML injected here
- *       </div>
- *       <script src="/_bun/..."> ← if Bun places scripts in body
- *     </body>
- *   </html>
- */
 export interface SplitTemplate {
   bodyPost: string;
   bodyPre: string;
@@ -82,7 +67,7 @@ export function assembleHTML(
   const { headPre, bodyPre, bodyPost } = splitTemplate(template);
 
   const dataScript = data
-    ? `<script id="__ELYSION_DATA__" type="application/json">${JSON.stringify(data)}</script>`
+    ? `<script id="__ELYSION_DATA__" type="application/json">${safeJson(data)}</script>`
     : "";
 
   return headPre + headData + bodyPre + reactHtml + dataScript + bodyPost;

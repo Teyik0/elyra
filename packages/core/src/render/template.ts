@@ -29,7 +29,7 @@ let _prodTemplate: string | null = null;
  * The template is .elysion/client/index.html produced by buildClient().
  */
 export function getProdTemplate(): string {
-  if (_prodTemplate) {
+  if (_prodTemplate !== null) {
     return _prodTemplate;
   }
   const templatePath = resolve(process.cwd(), ".elysion", "client", "index.html");

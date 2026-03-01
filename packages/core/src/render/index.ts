@@ -1,6 +1,6 @@
 import { renderToReadableStream } from "react-dom/server";
 import type { RootLayout } from "../router";
-import { buildHeadInjection } from "../shell";
+import { buildHeadInjection, safeJson } from "../shell";
 import {
   assembleHTML,
   createSSGContext,
@@ -162,7 +162,7 @@ export async function renderSSR(
 
     // Phase 2: split template around placeholders
     const { headPre, bodyPre, bodyPost } = splitTemplate(template);
-    const dataScript = `<script id="__ELYSION_DATA__" type="application/json">${JSON.stringify(data)}</script>`;
+    const dataScript = `<script id="__ELYSION_DATA__" type="application/json">${safeJson(data)}</script>`;
 
     // Phase 3: start React render without awaiting allReady
     const element = buildElement(route, componentProps, rootLayout);

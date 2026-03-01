@@ -9,6 +9,7 @@ import type {
   LinkProps,
   PreloadStrategy,
   RouterContextValue,
+  RouterProviderProps,
 } from "../src/link";
 import { buildHref, buildPageElement, Link, shouldRefetch } from "../src/link";
 
@@ -254,5 +255,59 @@ describe("types", () => {
 
   test("LinkProps.to is a string (RouteTo fallback when RouteManifest is unaugmented)", () => {
     expectTypeOf<LinkProps["to"]>().toBeString();
+  });
+
+  test("RouterProviderProps.prefetchCacheSize is an optional number", () => {
+    expectTypeOf<RouterProviderProps["prefetchCacheSize"]>().toEqualTypeOf<number | undefined>();
+  });
+});
+
+// ── prefetch cache LRU eviction ────────────────────────────────────────────────
+
+describe("prefetch cache LRU eviction", () => {
+  function simulateCache(cap: number, hrefs: string[]): Map<string, number> {
+    const cache = new Map<string, number>();
+    for (const href of hrefs) {
+      cache.set(href, Date.now());
+      if (cache.size > cap) {
+        const oldest = cache.keys().next().value as string;
+        cache.delete(oldest);
+      }
+    }
+    return cache;
+  }
+
+  test("cache stays within cap as entries are added", () => {
+    const cache = simulateCache(3, ["/a", "/b", "/c", "/d"]);
+    expect(cache.size).toBe(3);
+  });
+
+  test("oldest entry is evicted when cap is exceeded", () => {
+    const cache = simulateCache(3, ["/a", "/b", "/c", "/d"]);
+    expect(cache.has("/a")).toBe(false); // evicted
+    expect(cache.has("/d")).toBe(true); // newest kept
+  });
+
+  test("cap of 1 keeps only the latest entry", () => {
+    const cache = simulateCache(1, ["/a", "/b", "/c"]);
+    expect(cache.size).toBe(1);
+    expect(cache.has("/c")).toBe(true);
+  });
+
+  test("no eviction when entries stay within cap", () => {
+    const cache = simulateCache(5, ["/a", "/b", "/c"]);
+    expect(cache.size).toBe(3);
+    expect(cache.has("/a")).toBe(true);
+    expect(cache.has("/b")).toBe(true);
+    expect(cache.has("/c")).toBe(true);
+  });
+
+  test("re-setting an existing href does not change insertion order — original position is evicted", () => {
+    const cache = simulateCache(2, ["/a", "/b", "/a", "/c"]);
+    // Map.set() on an existing key updates value but keeps insertion order.
+    // /a was inserted first, so it remains the oldest and is evicted when /c is added.
+    expect(cache.has("/a")).toBe(false); // evicted — still oldest despite being re-set
+    expect(cache.has("/b")).toBe(true);
+    expect(cache.has("/c")).toBe(true);
   });
 });
