@@ -34,6 +34,11 @@
       "types": "./src/adapter/bun-plugin.ts",
       "bun": "./src/adapter/bun-plugin.ts",
       "import": "./dist/adapter/bun-plugin.js"
+    },
+    "./link": {
+      "types": "./src/link.tsx",
+      "bun": "./src/link.tsx",
+      "import": "./dist/link.js"
     }
   },
   "scripts": {
