@@ -1,48 +1,6 @@
 import type { ReactNode } from "react";
 import type { RuntimeRoute } from "../client";
-import type { ResolvedRoute, RootLayout } from "../router";
-
-export async function loadPageModule(route: ResolvedRoute, dev: boolean) {
-  if (!dev && route.page) {
-    return route.page;
-  }
-
-  if (dev) {
-    // In bun --hot mode Bun invalidates its module registry when watched files
-    // change, so a plain import() always returns the current version.
-    try {
-      const mod = await import(route.pagePath);
-      route.page = mod.default;
-      return route.page;
-    } catch (error) {
-      if (!route.page) {
-        throw error;
-      }
-      console.error(`[elysion] Failed to load page ${route.pagePath}:`, error);
-      return route.page;
-    }
-  }
-
-  return route.page;
-}
-
-export async function loadRootModule(root: RootLayout, dev: boolean): Promise<RuntimeRoute> {
-  if (!dev) {
-    return root.route;
-  }
-
-  try {
-    const mod = await import(root.path);
-    const rootRoute = mod.route ?? mod.default;
-    if (rootRoute?.__type === "ELYSION_ROUTE") {
-      return rootRoute;
-    }
-    return root.route;
-  } catch (error) {
-    console.error(`[elysion] Failed to load root layout ${root.path}:`, error);
-    return root.route;
-  }
-}
+import type { ResolvedRoute } from "../router";
 
 export function buildElement(
   route: ResolvedRoute,
@@ -51,7 +9,7 @@ export function buildElement(
 ): ReactNode {
   const page = route.page;
   if (!page) {
-    return <div>Loading; ...</div>;
+    return <div>Loading...</div>;
   }
 
   const Component = page.component;

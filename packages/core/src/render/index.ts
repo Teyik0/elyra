@@ -1,17 +1,25 @@
 import { renderToReadableStream } from "react-dom/server";
 import type { RootLayout } from "../router";
 import { buildHeadInjection } from "../shell";
-import { assembleHTML, createSSGContext, resolvePath, streamToString } from "./assemble";
+import {
+  assembleHTML,
+  createSSGContext,
+  resolvePath,
+  splitTemplate,
+  streamToString,
+} from "./assemble";
 import { isrCache, ssgCache } from "./cache";
-import { buildElement, loadPageModule, loadRootModule } from "./element";
+import { buildElement } from "./element";
 import { runLoaders } from "./loaders";
+import { loadPageModule, loadRootModule } from "./module-loader";
 import { getDevTemplate, getProdTemplate } from "./template";
 
 // ── Re-exports (public API) ──────────────────────────────────────────────────
 // biome-ignore lint/performance/noBarrelFile: acnowledged
 export { type LoaderContext, streamToString } from "./assemble";
-export { buildElement, loadPageModule, loadRootModule } from "./element";
+export { buildElement } from "./element";
 export { type LoaderResult, runLoaders } from "./loaders";
+export { loadPageModule, loadRootModule } from "./module-loader";
 export { _setProdTemplate } from "./template";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -98,12 +106,11 @@ export async function renderToStream(
   root: RootLayout | null,
   dev = false
 ): Promise<ReadableStream | Response> {
-  try {
-    const result = await renderToHTML(route, ctx, root, dev);
-    return new Response(result.html).body ?? new ReadableStream();
-  } catch (err) {
-    return catchRedirect(err);
+  const response = await renderSSR(route, ctx, root, dev);
+  if (!response.ok) {
+    return response;
   }
+  return response.body ?? new ReadableStream();
 }
 
 export async function prerenderSSG(
@@ -136,13 +143,55 @@ export async function renderSSR(
   dev = false
 ): Promise<Response> {
   try {
-    const result = await renderToHTML(route, ctx, root, dev);
+    // Phase 1: modules + loaders (blocking — needed to build head injection)
+    await loadPageModule(route, dev);
+    const rootLayout = root ? await loadRootModule(root, dev) : null;
 
-    return new Response(result.html, {
+    const loaderResult = await runLoaders(route, ctx, rootLayout);
+    if (loaderResult.type === "redirect") {
+      return loaderResult.response;
+    }
+
+    const { data, headers } = loaderResult;
+    const componentProps = { ...data, params: ctx.params, query: ctx.query, path: ctx.path };
+
+    const headData = buildHeadInjection(route.page?.head?.(componentProps));
+    const template = dev
+      ? await getDevTemplate(new URL(ctx.request.url).origin)
+      : getProdTemplate();
+
+    // Phase 2: split template around placeholders
+    const { headPre, bodyPre, bodyPost } = splitTemplate(template);
+    const dataScript = `<script id="__ELYSION_DATA__" type="application/json">${JSON.stringify(data)}</script>`;
+
+    // Phase 3: start React render without awaiting allReady
+    const element = buildElement(route, componentProps, rootLayout);
+    const reactStream = await renderToReadableStream(element);
+
+    // Phase 4: pipe head + React stream + tail into a single ReadableStream
+    const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+    const writer = writable.getWriter();
+    const enc = new TextEncoder();
+
+    (async () => {
+      await writer.write(enc.encode(headPre + headData + bodyPre));
+      const reader = reactStream.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        await writer.write(value);
+      }
+      await writer.write(enc.encode(dataScript + bodyPost));
+      await writer.close();
+    })().catch((err) => writer.abort(err));
+
+    return new Response(readable, {
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-cache, no-store, must-revalidate",
-        ...result.headers,
+        ...headers,
       },
     });
   } catch (err) {

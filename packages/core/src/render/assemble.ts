@@ -46,9 +46,6 @@ export async function streamToString(stream: ReadableStream): Promise<string> {
 }
 
 /**
- * Splits the HTML template on the <!--ssr-head--> and <!--ssr-outlet-->
- * placeholders and assembles the final SSR page.
- *
  * Template structure (after Bun processes index.html):
  *   <html>
  *     <head>
@@ -64,14 +61,25 @@ export async function streamToString(stream: ReadableStream): Promise<string> {
  *     </body>
  *   </html>
  */
+export interface SplitTemplate {
+  bodyPost: string;
+  bodyPre: string;
+  headPre: string;
+}
+
+export function splitTemplate(template: string): SplitTemplate {
+  const [headPre, afterHead = ""] = template.split("<!--ssr-head-->");
+  const [bodyPre, bodyPost = ""] = afterHead.split("<!--ssr-outlet-->");
+  return { headPre, bodyPre, bodyPost } as SplitTemplate;
+}
+
 export function assembleHTML(
   template: string,
   headData: ReturnType<typeof buildHeadInjection>,
   reactHtml: string,
   data: Record<string, unknown> | undefined
 ): string {
-  const [headPre, afterHead = ""] = template.split("<!--ssr-head-->");
-  const [bodyPre, bodyPost = ""] = afterHead.split("<!--ssr-outlet-->");
+  const { headPre, bodyPre, bodyPost } = splitTemplate(template);
 
   const dataScript = data
     ? `<script id="__ELYSION_DATA__" type="application/json">${JSON.stringify(data)}</script>`

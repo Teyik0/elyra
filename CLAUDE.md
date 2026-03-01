@@ -37,15 +37,6 @@ Monorepo structure with framework in `packages/core/` and example app in `exampl
 | `build.ts` | Client bundle generation via `Bun.build()`. Generates hydrate entry, includes React Refresh in dev. |
 | `types.ts` | Runtime type guards: `isElysionPage()`, `isElysionRoute()`, `collectRouteChain()`. |
 
-### HMR (`packages/core/src/hmr/`)
-
-| File | Purpose |
-|------|---------|
-| `plugin.ts` | Elysia plugin for HMR. WebSocket endpoint `/__elysion/hmr`, module serving `/_modules/pages/*`, client bundle `/__elysion/client.js`. |
-| `watcher.ts` | File watcher with `fs.watch`. Debounces events, invalidates module cache, increments version for SSR, broadcasts via WebSocket. |
-| `transform.ts` | Babel transform for React Fast Refresh. TypeScript → JSX → React Refresh, extracts component from `page()` calls. |
-| `refresh-setup.ts` | DevTools hook setup script. Creates `__REACT_DEVTOOLS_GLOBAL_HOOK__` before React DOM loads. |
-
 ### Example App (`examples/simple/`)
 
 ```
