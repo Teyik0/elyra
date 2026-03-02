@@ -536,7 +536,7 @@ Create a route with loader, layout, and options. Import from `"elyra/client"`.
 - `revalidate?: number` - ISR revalidation interval (seconds)
 - `params?: TSchema` - Elysia schema for URL parameters
 - `query?: TSchema` - Elysia schema for query parameters
-- `loader?: (ctx, deps?) => data` - Data fetching function (ctx has typed query/params/loader data from parent). The optional `deps(routeRef)` second argument returns a typed `Promise` for another route's loader data, enabling parallel execution without a waterfall.
+- `loader?: (ctx, deps?) => data` - Data fetching function (ctx has typed params/query + root context). Use `deps(routeRef)` to read ancestor loader data while preserving parallel execution.
 - `layout?: (props) => JSX` - React layout component (receives children, loader data, params, query)
 
 **Returns:** `Route` - A route object with a `page()` method
