@@ -91,7 +91,7 @@ export interface PageConfig<
   head?: (ctx: ComponentProps<TParams, TQuery> & TParentData & TPageLoaderData) => HeadOptions;
   loader?: (
     ctx: RouteContext<TParams, TQuery> & TParentData,
-    deps?: TypedDeps
+    deps: TypedDeps
   ) => Promise<TPageLoaderData> | TPageLoaderData;
   staticParams?: () => Promise<NormalizeUnset<TParams>[]> | NormalizeUnset<TParams>[];
 }
@@ -101,7 +101,7 @@ export interface RuntimeRoute {
   layout?: React.FC<Record<string, unknown> & { children: React.ReactNode }>;
   loader?(
     ctx: Record<string, unknown>,
-    deps?: LoaderDeps
+    deps: LoaderDeps
   ): Promise<Record<string, unknown>> | Record<string, unknown>;
   mode?: "ssr" | "ssg" | "isr";
   params?: unknown;
@@ -117,7 +117,7 @@ export interface RuntimePage {
   head?(ctx: Record<string, unknown>): HeadOptions;
   loader?(
     ctx: Record<string, unknown>,
-    deps?: LoaderDeps
+    deps: LoaderDeps
   ): Promise<Record<string, unknown>> | Record<string, unknown>;
   staticParams?(): Promise<Record<string, string>[]> | Record<string, string>[];
 }
@@ -143,7 +143,7 @@ interface PageResult<
   head?: (ctx: ComponentProps<TParams, TQuery> & TData & TPageLoaderData) => HeadOptions;
   loader?: (
     ctx: RouteContext<TParams, TQuery> & TData,
-    deps?: TypedDeps
+    deps: TypedDeps
   ) => Promise<TPageLoaderData> | TPageLoaderData;
 }
 
@@ -152,7 +152,7 @@ export interface Route<TParentData extends Record<string, unknown>, TParams, TQu
   layout?: React.FC<TParentData & { children: React.ReactNode } & ComponentProps<TParams, TQuery>>;
   loader?(
     ctx: RouteContext<TParams, TQuery> & TParentData,
-    deps?: TypedDeps
+    deps: TypedDeps
   ): Promise<TParentData> | TParentData;
   mode?: "ssr" | "ssg" | "isr";
 
@@ -192,7 +192,7 @@ export function createRoute<
       Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema>["query"]
     > &
       ResolveParent<TParentRef>["data"],
-    deps?: TypedDeps
+    deps: TypedDeps
   ) => Promise<TLoaderData> | TLoaderData;
   layout?: React.FC<
     Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema>["data"] & {

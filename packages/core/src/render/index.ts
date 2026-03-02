@@ -12,7 +12,7 @@ import { isrCache, ssgCache } from "./cache";
 import { buildElement } from "./element";
 import { runLoaders } from "./loaders";
 import { loadPageModule, loadRootModule } from "./module-loader";
-import { getDevTemplate, getProdTemplate } from "./template";
+import { getDevTemplate } from "./template";
 
 // ── Re-exports (public API) ──────────────────────────────────────────────────
 // biome-ignore lint/performance/noBarrelFile: acnowledged
@@ -20,10 +20,10 @@ export { type LoaderContext, streamToString } from "./assemble";
 export { buildElement } from "./element";
 export { type LoaderResult, runLoaders } from "./loaders";
 export { loadPageModule, loadRootModule } from "./module-loader";
-export { _setProdTemplate } from "./template";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+import { generateIndexHtml } from "../build";
 import type { ResolvedRoute } from "../router";
 import type { LoaderContext } from "./assemble";
 
@@ -90,7 +90,9 @@ export async function renderToHTML(
   // Dev: self-fetch /_bun_hmr_entry (once, then cached) to get the Bun-processed
   // HTML template with content-hashed chunk paths and HMR WebSocket client.
   // Prod: read .elysion/client/index.html from disk.
-  const template = dev ? await getDevTemplate(new URL(ctx.request.url).origin) : getProdTemplate();
+  const template = dev
+    ? await getDevTemplate(new URL(ctx.request.url).origin)
+    : generateIndexHtml();
 
   return {
     html: assembleHTML(template, headData, reactHtml, data),
@@ -158,7 +160,7 @@ export async function renderSSR(
     const headData = buildHeadInjection(route.page?.head?.(componentProps));
     const template = dev
       ? await getDevTemplate(new URL(ctx.request.url).origin)
-      : getProdTemplate();
+      : generateIndexHtml();
 
     // Phase 2: split template around placeholders
     const { headPre, bodyPre, bodyPost } = splitTemplate(template);

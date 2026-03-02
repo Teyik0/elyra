@@ -31,7 +31,7 @@ const bunTranspiler = new Bun.Transpiler({
 
 // loader: data fetching (runs on server only)
 // query / params: Elysia TypeBox schemas — validated server-side, not used in browser
-const SERVER_ONLY_PROPERTIES = ["loader", "query", "params"];
+const SERVER_ONLY_PROPERTIES = ["loader", "query", "params", "staticParams"];
 
 interface TransformResult {
   code: string;

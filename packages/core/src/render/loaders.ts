@@ -15,8 +15,16 @@ export async function runLoaders(
     // Step 1: root loader runs first — provides global context (user, auth, etc.)
     // Root data is merged into ctxWithRoot so all subsequent loaders receive it
     // automatically (backward-compatible with the previous waterfall behaviour).
+    //
+    // deps is defined here so it can be passed to the root loader too.
+    // The root has no ancestors, so deps always returns an empty resolved promise.
+    const loaderMap = new Map<RuntimeRoute, Promise<Record<string, unknown>>>();
+
+    const deps: LoaderDeps = (routeRef) =>
+      loaderMap.get(routeRef as RuntimeRoute) ?? Promise.resolve({});
+
     const rootData: Record<string, unknown> = rootLayout?.loader
-      ? ((await rootLayout.loader({ ...ctx })) ?? {})
+      ? ((await rootLayout.loader({ ...ctx }, deps)) ?? {})
       : {};
     const ctxWithRoot = { ...ctx, ...rootData };
 
@@ -27,10 +35,6 @@ export async function runLoaders(
     // Loaders are inserted in chain order (index 1, 2, 3 …) so when loader N
     // calls `await deps(routeAtIndexM)` where M < N, the Promise is already
     // present in the map — no deadlock is possible for backward dependencies.
-    const loaderMap = new Map<RuntimeRoute, Promise<Record<string, unknown>>>();
-
-    const deps: LoaderDeps = (routeRef) =>
-      loaderMap.get(routeRef as RuntimeRoute) ?? Promise.resolve({});
 
     for (let i = 1; i < route.routeChain.length; i++) {
       const ancestor = route.routeChain[i];

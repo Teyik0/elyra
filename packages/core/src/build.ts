@@ -200,7 +200,7 @@ ${entries.join(";\n")};
  *  - Injects the HMR WebSocket client into <head>.
  *  - Preserves <!--ssr-head--> and <!--ssr-outlet--> comments for SSR injection.
  */
-export function generateIndexHtml(): string {
+export function generateIndexHtml(conf: "prod" | "dev" = "dev"): string {
   return `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -210,7 +210,7 @@ export function generateIndexHtml(): string {
   </head>
   <body>
     <div id="root"><!--ssr-outlet--></div>
-    <script type="module" src="./_hydrate.tsx"></script>
+    <script type="module" src="${conf === "dev" ? "./_hydrate.tsx" : "/virtual/_hydrate.tsx"}"></script>
   </body>
 </html>
 `;

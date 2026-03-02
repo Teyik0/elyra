@@ -1,10 +1,9 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import type { Cookie } from "elysia";
 import type { HTTPHeaders } from "elysia/types";
 import type { RuntimeRoute } from "../src/client";
 import {
-  _setProdTemplate,
   buildElement,
   handleISR,
   type LoaderContext,
@@ -23,23 +22,6 @@ import type { ResolvedRoute } from "../src/router";
 import { scanPages } from "../src/router";
 
 const FIXTURES_DIR = join(import.meta.dirname, "fixtures/pages");
-
-// Provide a minimal SSR template so renderToHTML/renderSSR work without disk I/O.
-// The placeholders match the real template produced by generateIndexHtml().
-const TEST_TEMPLATE = `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <!--ssr-head-->
-  </head>
-  <body>
-    <div id="root"><!--ssr-outlet--></div>
-  </body>
-</html>`;
-
-beforeAll(() => {
-  _setProdTemplate(TEST_TEMPLATE);
-});
 
 function createMockLoaderContext(overrides: Partial<LoaderContext> = {}): LoaderContext {
   return {
