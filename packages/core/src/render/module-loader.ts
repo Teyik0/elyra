@@ -24,7 +24,7 @@ export async function loadPageModule(route: ResolvedRoute) {
       if (!route.page) {
         throw error;
       }
-      console.error(`[elysion] Failed to load page ${route.pagePath}:`, error);
+      console.error(`[elyra] Failed to load page ${route.pagePath}:`, error);
       return route.page;
     }
   }
@@ -49,7 +49,7 @@ export async function loadRootModule(root: RootLayout): Promise<RuntimeRoute> {
     }
     return root.route;
   } catch (error) {
-    console.error(`[elysion] Failed to load root layout ${root.path}:`, error);
+    console.error(`[elyra] Failed to load root layout ${root.path}:`, error);
     return root.route;
   }
 }

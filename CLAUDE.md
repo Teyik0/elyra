@@ -30,18 +30,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **./packages/core/src/client.ts**: The whole typesafe DX lie in this file.
 - **./packages/core/src/elyra.ts**: Main lib export, your frontend served as an Elysia plugin. WinterCG compliant out of the box. Serve as much Elyra plugin you need with different pagesDir.
 
-## Elysia best practises
+## Elysia best practices
 
 - Always chain Elysia instances, using reduces for example.
 - Elysia order instances matter.
 
-## Coding best practises
+## Coding best practices
 
 ### Plan mode
 
 - Always show architecture decision with alternative
 - Always show the code you want to implement when architecture is validated
-- Always give recommandation regarding the best approach
+- Always give recommendation regarding the best approach
 - Always propose to eliminate / rebuild from scratch code that you think not enought flexible to integrate the new feature
 - Always rethink architecture and pattern to make the best maintainable choice
 - Always check how is the competitor doing, compare and give the best answer
@@ -51,6 +51,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Avoid default values for function parameter
 - Avoid null | undefined for function parameter, they should exist (i.e string | undefined)
-- Always run bun fix && bun run test && bun test:types when work is done
+- Always run bun fix && bun run test && bun run test:types when work is done
 - Always run git hook when commiting or pushing to github
 - Always fix any lint, type and tests error

@@ -40,12 +40,20 @@ interface AstNode {
 }
 
 interface Property extends AstNode {
-  key: AstNode & { name?: string };
+  // Identifier key: { loader: fn }  →  key.name === "loader"
+  // Literal key:    { "loader": fn } →  key.value === "loader"
+  key: AstNode & { name?: string; value?: unknown };
   type: "Property";
 }
 
+interface SpreadElement extends AstNode {
+  argument: AstNode;
+  type: "SpreadElement";
+}
+
 interface ObjectExpression extends AstNode {
-  properties: Property[];
+  // properties may include SpreadElement nodes, e.g. { ...spread, loader: fn }
+  properties: Array<Property | SpreadElement>;
   type: "ObjectExpression";
 }
 
@@ -112,9 +120,25 @@ function isTargetCall(node: CallExpression): boolean {
 // Returns true if any property was removed.
 // ---------------------------------------------------------------------------
 function removeServerProperties(s: MagicString, source: string, obj: ObjectExpression): boolean {
-  const toRemove = obj.properties.filter(
-    (p) => p.key.type === "Identifier" && p.key.name && SERVER_ONLY_PROPERTIES.has(p.key.name)
-  );
+  const toRemove = obj.properties.filter((p): p is Property => {
+    // Skip spread elements — they have no key.
+    if (p.type !== "Property") {
+      return false;
+    }
+    const { key } = p;
+    // Static identifier key: { loader: fn }
+    if (p.computed) {
+      return false;
+    }
+    if (key.type === "Identifier" && typeof key.name === "string") {
+      return SERVER_ONLY_PROPERTIES.has(key.name);
+    }
+    // Quoted string key: { "loader": fn }
+    if (key.type === "Literal" && typeof key.value === "string") {
+      return SERVER_ONLY_PROPERTIES.has(key.value);
+    }
+    return false;
+  });
   if (toRemove.length === 0) {
     return false;
   }
@@ -161,15 +185,44 @@ function removeServerProperties(s: MagicString, source: string, obj: ObjectExpre
 }
 
 // ---------------------------------------------------------------------------
-// Collect all Identifier names referenced in the AST (excluding imports)
+// Collect all Identifier names referenced in the AST (excluding imports).
+// Skips identifiers that appear as static (non-computed) property keys or
+// as static member-expression properties (both require computed=false),
+// because those positions are not identifier *references* and including them
+// would prevent DCE of same-named imports.
+// Computed keys like `{ [someVar]: v }` are left in — they ARE references.
 // ---------------------------------------------------------------------------
 function collectReferencedNames(program: AstNode): Set<string> {
   const refs = new Set<string>();
+  // Nodes that occupy a non-reference Identifier position.
+  const excluded = new Set<unknown>();
+
   for (const stmt of program.body ?? []) {
     if (stmt.type === "ImportDeclaration") {
       continue;
     }
+    // Pass 1 — mark non-reference identifier positions.
+    // Only exclude *static* keys (computed=false); computed keys like
+    // `{ [someVar]: v }` are genuine identifier references.
     walk(stmt, (node) => {
+      if (node.type === "Property" && !node.computed) {
+        excluded.add(node.key);
+      }
+      if (node.type === "MemberExpression" && !node.computed) {
+        excluded.add(node.property);
+      }
+    });
+  }
+
+  for (const stmt of program.body ?? []) {
+    if (stmt.type === "ImportDeclaration") {
+      continue;
+    }
+    // Pass 2 — collect genuine identifier references.
+    walk(stmt, (node) => {
+      if (excluded.has(node)) {
+        return;
+      }
       if (
         node.type === "Identifier" &&
         typeof (node as AstNode & { name: string }).name === "string"
@@ -178,6 +231,7 @@ function collectReferencedNames(program: AstNode): Set<string> {
       }
     });
   }
+
   return refs;
 }
 
@@ -217,14 +271,22 @@ function removeUnusedSpecifiers(
 // ---------------------------------------------------------------------------
 // Dead code elimination: remove import specifiers that are no longer
 // referenced after server property removal.
+//
+// A fresh MagicString is created from s.toString() so that the AST offsets
+// produced by re-parsing the *current* output agree with the string positions
+// operated on by MagicString.remove() — the original MagicString always uses
+// original-source positions, which diverge from output positions whenever
+// earlier passes have removed content.
 // ---------------------------------------------------------------------------
-export function deadCodeElimination(s: MagicString): void {
+export function deadCodeElimination(s: MagicString): MagicString {
   const code = s.toString();
   const { program, errors } = parseSync("dce.js", code);
   if (errors.length > 0) {
-    return;
+    console.error("[elyra] DCE: failed to parse transformed output:", errors[0]?.message);
+    return s;
   }
 
+  const fresh = new MagicString(code);
   const programNode = program as unknown as AstNode;
   const refs = collectReferencedNames(programNode);
 
@@ -245,11 +307,13 @@ export function deadCodeElimination(s: MagicString): void {
     const usedCount = decl.specifiers.filter((spec) => refs.has(spec.local.name)).length;
 
     if (usedCount === 0) {
-      removeEntireImport(s, code, decl);
+      removeEntireImport(fresh, code, decl);
     } else if (usedCount < decl.specifiers.length) {
-      removeUnusedSpecifiers(s, code, decl, refs);
+      removeUnusedSpecifiers(fresh, code, decl, refs);
     }
   }
+
+  return fresh;
 }
 
 // ---------------------------------------------------------------------------
@@ -290,12 +354,14 @@ export function transformForClient(code: string, filename: string): TransformRes
   }
 
   // Pass 3 — MagicString: surgically remove server-only properties.
-  const s = new MagicString(plainJs);
+  let s = new MagicString(plainJs);
   const removedServerCode = removeServerExports(s, plainJs, program as unknown as AstNode);
 
   // Pass 4 — DCE: prune imports that are no longer referenced.
+  // deadCodeElimination returns a fresh MagicString keyed on the current
+  // output so its internal AST offsets remain consistent.
   if (removedServerCode) {
-    deadCodeElimination(s);
+    s = deadCodeElimination(s);
   }
 
   return {

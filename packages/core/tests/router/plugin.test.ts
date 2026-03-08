@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { __setDevMode, IS_DEV } from "../../src/elyra";
 import { createRoutePlugin, scanPages } from "../../src/router";
 
 const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
@@ -67,10 +68,17 @@ describe("createRoutePlugin", () => {
   });
 
   test("handles dev mode", async () => {
-    const { route, root } = await getRoute("/ssg-page");
+    const originalDevMode = IS_DEV;
+    __setDevMode(true);
+    try {
+      const { route, root } = await getRoute("/ssg-page");
 
-    const plugin = createRoutePlugin(route, root);
+      const plugin = createRoutePlugin(route, root);
 
-    expect(plugin).toBeDefined();
+      expect(plugin).toBeDefined();
+      expect(typeof plugin.use).toBe("function");
+    } finally {
+      __setDevMode(originalDevMode);
+    }
   });
 });

@@ -21,7 +21,7 @@ const app = new Elysia()
   })
   .onAfterResponse(({ path, request }) => {
     const startedAt = requestStartTimes.get(request) ?? performance.now();
-    console.log(`${formattedDate()} - ${path}- ${(performance.now() - startedAt).toFixed(2)} ms`);
+    console.log(`${formattedDate()} - ${path} - ${(performance.now() - startedAt).toFixed(2)} ms`);
     requestStartTimes.delete(request);
   })
   .use(api)

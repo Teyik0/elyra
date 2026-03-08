@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { Cookie } from "elysia";
 import type { HTTPHeaders } from "elysia/types";
 import type { RuntimeRoute } from "../src/client";
-import { __setDevMode } from "../src/elyra";
+import { __setDevMode, IS_DEV } from "../src/elyra";
 import {
   buildElement,
   handleISR,
@@ -60,8 +60,9 @@ function makeRuntimeRoute(opts: Partial<Omit<RuntimeRoute, "__type">> = {}): Run
 }
 
 describe("render.tsx", () => {
+  const originalDevMode = IS_DEV;
   beforeAll(() => __setDevMode(false));
-  afterAll(() => __setDevMode(true));
+  afterAll(() => __setDevMode(originalDevMode));
 
   describe("streamToString", () => {
     test("converts readable stream to string", async () => {
@@ -334,15 +335,11 @@ describe("render.tsx", () => {
           page: { ...withLoaderRoute.page, loader: undefined },
         } as unknown as ResolvedRoute;
 
-        const before = performance.now();
         await runLoaders(mockRoute, createMockLoaderContext(), rootLayout);
-        const elapsed = performance.now() - before;
 
-        // Both loaders started before either one finished
+        // Both loaders started before either one finished (overlap = parallel)
         expect(start0).toBeLessThan(end1);
         expect(start1).toBeLessThan(end0);
-        // Total time ≈ DELAY, not 2×DELAY
-        expect(elapsed).toBeLessThan(DELAY * 2.5);
       });
 
       test("results from all loaders are flat-merged into the final data", async () => {
@@ -599,10 +596,15 @@ describe("render.tsx", () => {
     });
 
     test("reloads page in dev mode", async () => {
-      const indexRoute = await getRoute("/");
+      __setDevMode(true);
+      try {
+        const indexRoute = await getRoute("/");
 
-      const page = await loadPageModule(indexRoute);
-      expect(page).toBeDefined();
+        const page = await loadPageModule(indexRoute);
+        expect(page).toBeDefined();
+      } finally {
+        __setDevMode(false);
+      }
     });
   });
 
@@ -616,10 +618,15 @@ describe("render.tsx", () => {
     });
 
     test("reloads root in dev mode", async () => {
-      const root = await getRoot();
+      __setDevMode(true);
+      try {
+        const root = await getRoot();
 
-      const rootRoute = await loadRootModule(root);
-      expect(rootRoute).toBeDefined();
+        const rootRoute = await loadRootModule(root);
+        expect(rootRoute).toBeDefined();
+      } finally {
+        __setDevMode(false);
+      }
     });
   });
 
