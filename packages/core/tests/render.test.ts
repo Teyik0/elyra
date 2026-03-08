@@ -599,10 +599,15 @@ describe("render.tsx", () => {
     });
 
     test("reloads page in dev mode", async () => {
-      const indexRoute = await getRoute("/");
+      __setDevMode(true);
+      try {
+        const indexRoute = await getRoute("/");
 
-      const page = await loadPageModule(indexRoute);
-      expect(page).toBeDefined();
+        const page = await loadPageModule(indexRoute);
+        expect(page).toBeDefined();
+      } finally {
+        __setDevMode(false);
+      }
     });
   });
 
@@ -616,10 +621,15 @@ describe("render.tsx", () => {
     });
 
     test("reloads root in dev mode", async () => {
-      const root = await getRoot();
+      __setDevMode(true);
+      try {
+        const root = await getRoot();
 
-      const rootRoute = await loadRootModule(root);
-      expect(rootRoute).toBeDefined();
+        const rootRoute = await loadRootModule(root);
+        expect(rootRoute).toBeDefined();
+      } finally {
+        __setDevMode(false);
+      }
     });
   });
 

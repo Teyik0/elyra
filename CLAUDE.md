@@ -51,6 +51,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Avoid default values for function parameter
 - Avoid null | undefined for function parameter, they should exist (i.e string | undefined)
-- Always run bun fix && bun run test && bun test:types when work is done
+- Always run bun fix && bun run test && bun run test:types when work is done
 - Always run git hook when commiting or pushing to github
 - Always fix any lint, type and tests error

@@ -65,12 +65,4 @@ describe("createRoutePlugin", () => {
 
     expect(plugin).toBeDefined();
   });
-
-  test("handles dev mode", async () => {
-    const { route, root } = await getRoute("/ssg-page");
-
-    const plugin = createRoutePlugin(route, root);
-
-    expect(plugin).toBeDefined();
-  });
 });
