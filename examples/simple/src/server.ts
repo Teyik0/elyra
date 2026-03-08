@@ -28,12 +28,6 @@ const app = new Elysia()
   .use(
     await elyra({
       pagesDir: `${import.meta.dir}/pages`,
-      staticOptions: {
-        assets: `${import.meta.dir}/../public`,
-        prefix: "/public",
-        staticLimit: 1024,
-        alwaysStatic: process.env.NODE_ENV === "production",
-      },
     })
   )
   .listen(3000);

@@ -1,6 +1,5 @@
 import { resolve } from "node:path";
 import { staticPlugin } from "@elysiajs/static";
-import type { StaticOptions } from "@elysiajs/static/types";
 import { Elysia } from "elysia";
 import { buildClient, writeDevFiles } from "./build";
 import { warmSSGCache } from "./render/index";
@@ -8,7 +7,6 @@ import { createRoutePlugin, scanPages } from "./router";
 
 export interface ElysionProps {
   pagesDir?: string;
-  staticOptions: StaticOptions<string>;
 }
 
 export let IS_DEV = process.env.NODE_ENV !== "production";
@@ -43,9 +41,9 @@ export function __setDevMode(val: boolean): void {
  * (the SSR template) plus hashed JS/CSS chunks.  No static import needed.
  * Routes with `staticParams` are pre-rendered on server start via `onStart`.
  */
-export async function elyra({ pagesDir, staticOptions }: ElysionProps) {
+export async function elyra({ pagesDir }: ElysionProps) {
   const cwd = process.cwd();
-  const resolvedPagesDir = resolve(cwd, pagesDir ?? "/src/pages");
+  const resolvedPagesDir = resolve(cwd, pagesDir ?? "src/pages");
 
   const { root, routes } = await scanPages(resolvedPagesDir);
 
@@ -80,7 +78,7 @@ export async function elyra({ pagesDir, staticOptions }: ElysionProps) {
           prefix: "/_bun_hmr_entry",
         })
       )
-      .use(await staticPlugin(staticOptions));
+      .use(await staticPlugin());
 
     for (const route of routes) {
       instance = instance.use(createRoutePlugin(route, root));
@@ -100,7 +98,7 @@ export async function elyra({ pagesDir, staticOptions }: ElysionProps) {
         prefix: "/_client",
       })
     )
-    .use(await staticPlugin(staticOptions));
+    .use(await staticPlugin());
 
   for (const route of routes) {
     instance = instance.use(createRoutePlugin(route, root));
