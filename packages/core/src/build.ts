@@ -68,6 +68,14 @@ export interface TypegenOptions {
 
 const TS_FILE_FILTER = /\.(tsx|ts)$/;
 const REACT_IMPORT_RE = /import\s+React\b/;
+const CLIENT_MODULE_PATH = resolve(import.meta.dir, "client.ts").replace(/\\/g, "/");
+const LINK_MODULE_PATH = resolve(import.meta.dir, "link.tsx").replace(/\\/g, "/");
+type BunBuildAliasConfig = Bun.BuildConfig & {
+  alias?: Record<string, string>;
+  outfile?: string;
+  packages?: "bundle" | "external";
+  write?: boolean;
+};
 
 const DEFAULT_BUILD_ROOT = ".elyra/build";
 
@@ -100,7 +108,7 @@ function generateHydrateEntry(routes: ResolvedRoute[], rootPath: string): string
 
   return `import { hydrateRoot, createRoot } from "react-dom/client";
 import { createElement } from "react";
-import { RouterProvider } from "elyra/link";
+import { RouterProvider } from "${resolve(import.meta.dir, "link.tsx").replace(/\\/g, "/")}";
 import { route as root } from "${rootPath.replace(/\\/g, "/")}";
 
 const routes = [
@@ -142,6 +150,14 @@ if (_match) {
   console.warn("[elyra] No matching route for", pathname);
 }
 `;
+}
+
+function rewriteFrameworkImports(source: string): string {
+  return source
+    .replaceAll(`"elyra/client"`, JSON.stringify(CLIENT_MODULE_PATH))
+    .replaceAll(`'elyra/client'`, JSON.stringify(CLIENT_MODULE_PATH))
+    .replaceAll(`"elyra/link"`, JSON.stringify(LINK_MODULE_PATH))
+    .replaceAll(`'elyra/link'`, JSON.stringify(LINK_MODULE_PATH));
 }
 
 /** @internal Exported for unit testing only. */
@@ -337,6 +353,8 @@ export async function buildClient(
             transformed = `import React from "react";\n${transformed}`;
           }
 
+          transformed = rewriteFrameworkImports(transformed);
+
           return {
             contents: transformed,
             loader: path.endsWith(".tsx") ? "tsx" : "ts",
@@ -349,7 +367,7 @@ export async function buildClient(
     },
   };
 
-  const result = await Bun.build({
+  const clientBuildConfig: BunBuildAliasConfig = {
     entrypoints: [indexPath],
     outdir: clientDir,
     target: "browser",
@@ -357,10 +375,16 @@ export async function buildClient(
     splitting: true,
     minify: true,
     plugins: [transformPlugin],
+    alias: {
+      "elyra/client": CLIENT_MODULE_PATH,
+      "elyra/link": LINK_MODULE_PATH,
+    },
     define: {
       "process.env.NODE_ENV": JSON.stringify("production"),
     },
-  });
+  };
+
+  const result = await Bun.build(clientBuildConfig);
 
   if (!result.success) {
     console.error("[elyra] Client build failed:");
@@ -642,39 +666,62 @@ async function buildNodeTarget(
   writeFileSync(runtimeEntryPath, generateNodeRuntimeModule(routes, rootPath, targetDir));
   writeFileSync(serverEntryPath, generateNodeServerEntry(targetDir));
 
-  const command = [
-    "bun",
-    "build",
-    serverEntryPath,
-    "--outfile",
-    outputServerPath,
-    "--target",
-    "node",
-    "--format",
-    "esm",
-  ];
+  const nodeRuntimePlugin: Bun.BunPlugin = {
+    name: "elyra-rewrite-framework-imports",
+    setup(build) {
+      build.onLoad({ filter: TS_FILE_FILTER }, async (args) => {
+        const { path } = args;
+        if (path.includes("node_modules")) {
+          return undefined;
+        }
 
-  if (options.minify ?? true) {
-    command.push("--minify");
-  }
-
-  if (options.sourcemap ?? false) {
-    command.push("--sourcemap");
-  }
-
-  const cliBuild = Bun.spawnSync(command, {
-    cwd: rootDir,
-    env: {
-      ...process.env,
-      NODE_ENV: "production",
+        const code = await Bun.file(path).text();
+        return {
+          contents: rewriteFrameworkImports(code),
+          loader: path.endsWith(".tsx") ? "tsx" : "ts",
+        };
+      });
     },
-    stderr: "pipe",
-    stdout: "pipe",
-  });
+  };
 
-  if (cliBuild.exitCode !== 0) {
-    const errorOutput = new TextDecoder().decode(cliBuild.stderr);
+  const serverBuildConfig: BunBuildAliasConfig = {
+    entrypoints: [serverEntryPath],
+    outfile: outputServerPath,
+    write: false,
+    target: "node",
+    format: "esm",
+    packages: "external",
+    minify: options.minify ?? true,
+    sourcemap: (options.sourcemap ?? false) ? "external" : "none",
+    plugins: [nodeRuntimePlugin],
+    alias: {
+      "elyra/client": CLIENT_MODULE_PATH,
+      "elyra/link": LINK_MODULE_PATH,
+    },
+    define: {
+      "process.env.NODE_ENV": JSON.stringify("production"),
+    },
+  };
+
+  const serverBuild = await Bun.build(serverBuildConfig);
+
+  if (!serverBuild.success) {
+    const errorOutput = serverBuild.logs.map((log) => log.message).join("\n");
     throw new Error(`[elyra] Node server build failed\n${errorOutput}`.trim());
+  }
+
+  const serverOutput = serverBuild.outputs.find((output) =>
+    output.type.startsWith("text/javascript")
+  );
+  if (!serverOutput) {
+    throw new Error("[elyra] Node server build did not emit a JavaScript bundle");
+  }
+
+  writeFileSync(outputServerPath, await serverOutput.text());
+
+  const sourceMapOutput = serverBuild.outputs.find((output) => output.type.includes("json"));
+  if (sourceMapOutput && (options.sourcemap ?? false)) {
+    writeFileSync(`${outputServerPath}.map`, await sourceMapOutput.text());
   }
 
   targetManifest.serverPath = toPosixPath(relative(rootDir, outputServerPath));
