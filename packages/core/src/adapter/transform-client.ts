@@ -40,12 +40,20 @@ interface AstNode {
 }
 
 interface Property extends AstNode {
-  key: AstNode & { name?: string };
+  // Identifier key: { loader: fn }  →  key.name === "loader"
+  // Literal key:    { "loader": fn } →  key.value === "loader"
+  key: AstNode & { name?: string; value?: unknown };
   type: "Property";
 }
 
+interface SpreadElement extends AstNode {
+  argument: AstNode;
+  type: "SpreadElement";
+}
+
 interface ObjectExpression extends AstNode {
-  properties: Property[];
+  // properties may include SpreadElement nodes, e.g. { ...spread, loader: fn }
+  properties: Array<Property | SpreadElement>;
   type: "ObjectExpression";
 }
 
@@ -112,9 +120,22 @@ function isTargetCall(node: CallExpression): boolean {
 // Returns true if any property was removed.
 // ---------------------------------------------------------------------------
 function removeServerProperties(s: MagicString, source: string, obj: ObjectExpression): boolean {
-  const toRemove = obj.properties.filter(
-    (p) => p.key.type === "Identifier" && p.key.name && SERVER_ONLY_PROPERTIES.has(p.key.name)
-  );
+  const toRemove = obj.properties.filter((p): p is Property => {
+    // Skip spread elements — they have no key.
+    if (p.type !== "Property") {
+      return false;
+    }
+    const { key } = p;
+    // Static identifier key: { loader: fn }
+    if (key.type === "Identifier" && typeof key.name === "string") {
+      return SERVER_ONLY_PROPERTIES.has(key.name);
+    }
+    // Quoted string key: { "loader": fn }
+    if (key.type === "Literal" && typeof key.value === "string") {
+      return SERVER_ONLY_PROPERTIES.has(key.value);
+    }
+    return false;
+  });
   if (toRemove.length === 0) {
     return false;
   }
@@ -162,10 +183,11 @@ function removeServerProperties(s: MagicString, source: string, obj: ObjectExpre
 
 // ---------------------------------------------------------------------------
 // Collect all Identifier names referenced in the AST (excluding imports).
-// Skips identifiers that appear as static property keys (Property.key) or
-// as static member-expression properties (MemberExpression.property with
-// computed=false), because those are not identifier *references* and
-// including them would prevent DCE of same-named imports.
+// Skips identifiers that appear as static (non-computed) property keys or
+// as static member-expression properties (both require computed=false),
+// because those positions are not identifier *references* and including them
+// would prevent DCE of same-named imports.
+// Computed keys like `{ [someVar]: v }` are left in — they ARE references.
 // ---------------------------------------------------------------------------
 function collectReferencedNames(program: AstNode): Set<string> {
   const refs = new Set<string>();
@@ -177,8 +199,10 @@ function collectReferencedNames(program: AstNode): Set<string> {
       continue;
     }
     // Pass 1 — mark non-reference identifier positions.
+    // Only exclude *static* keys (computed=false); computed keys like
+    // `{ [someVar]: v }` are genuine identifier references.
     walk(stmt, (node) => {
-      if (node.type === "Property") {
+      if (node.type === "Property" && !node.computed) {
         excluded.add(node.key);
       }
       if (node.type === "MemberExpression" && !node.computed) {

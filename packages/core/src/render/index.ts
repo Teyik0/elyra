@@ -246,10 +246,18 @@ export async function handleISR(
 
 // ── SSG warm-up ──────────────────────────────────────────────────────────────
 
+/** Maximum number of concurrent `prerenderSSG` calls during SSG warm-up. */
+const SSG_WARM_CONCURRENCY = 4;
+
 /**
  * Pre-renders all SSG routes that declare `staticParams` and populates the
  * in-memory cache before the first real request arrives.
  * Should be called from the Elysia `onStart` hook (production only).
+ *
+ * Uses a bounded worker pool (SSG_WARM_CONCURRENCY slots) so large sites
+ * with many routes × param sets cannot exhaust memory or CPU during startup.
+ * Failures are isolated per (route, params) pair and logged without aborting
+ * the rest of the warm-up.
  */
 export async function warmSSGCache(
   routes: ResolvedRoute[],
@@ -258,20 +266,40 @@ export async function warmSSGCache(
 ): Promise<void> {
   const targets = routes.filter((r) => r.mode === "ssg" && r.page?.staticParams);
 
-  await Promise.allSettled(
-    targets.map(async (route) => {
-      try {
-        // biome-ignore lint/style/noNonNullAssertion: route.page has been filtered
-        const paramSets = await route.page!.staticParams?.();
-        await Promise.allSettled(
-          // biome-ignore lint/style/noNonNullAssertion: route.page.paramSets has been filtered
-          paramSets!.map((params) => prerenderSSG(route, params, root, origin))
-        );
-      } catch (err) {
-        console.error(`[elyra] SSG warm-up failed for ${route.pattern}:`, err);
-      }
-    })
-  );
+  // Collect all (route, params) render tasks, handling per-route errors early.
+  const tasks: Array<() => Promise<void>> = [];
+  for (const route of targets) {
+    let paramSets: Record<string, string>[];
+    try {
+      // biome-ignore lint/style/noNonNullAssertion: route.page has been filtered
+      paramSets = (await route.page!.staticParams?.()) ?? [];
+    } catch (err) {
+      console.error(`[elyra] SSG warm-up failed for ${route.pattern}:`, err);
+      continue;
+    }
+    for (const params of paramSets) {
+      tasks.push(async () => {
+        try {
+          await prerenderSSG(route, params, root, origin);
+        } catch (err) {
+          console.error(`[elyra] SSG prerender failed for ${route.pattern}:`, err);
+        }
+      });
+    }
+  }
+
+  if (tasks.length === 0) {
+    return;
+  }
+
+  // Drain the task queue with a fixed-size worker pool.
+  const queue = [...tasks];
+  const workers = Array.from({ length: Math.min(SSG_WARM_CONCURRENCY, tasks.length) }, async () => {
+    while (queue.length > 0) {
+      await queue.shift()?.();
+    }
+  });
+  await Promise.all(workers);
 }
 
 function revalidateInBackground(

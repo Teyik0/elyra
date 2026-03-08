@@ -23,28 +23,33 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateIndexHtml } from "../build";
 
-let _prodTemplate: string | null = null;
+// Keyed by the resolved absolute path so different outDirs are cached
+// independently and don't clobber each other.
+const _prodTemplateCache = new Map<string, string>();
 
 /**
  * Returns the production HTML template.
  * Reads the Bun.build()-processed `.elyra/client/index.html` (which contains
- * content-hashed JS/CSS asset tags) and caches it in memory.
+ * content-hashed JS/CSS asset tags) and caches it in memory, keyed by the
+ * resolved path so multiple outDir values remain independent.
  * Falls back to the raw `generateIndexHtml()` shell when the file is absent
  * (e.g. in unit tests that run without a prior `bun run build`).
  */
 export function readProdTemplate(outDir = ".elyra"): string {
-  if (_prodTemplate !== null) {
-    return _prodTemplate;
-  }
   const path = join(process.cwd(), outDir, "client", "index.html");
+  const cached = _prodTemplateCache.get(path);
+  if (cached !== undefined) {
+    return cached;
+  }
   if (existsSync(path)) {
-    _prodTemplate = readFileSync(path, "utf8");
-    return _prodTemplate;
+    const template = readFileSync(path, "utf8");
+    _prodTemplateCache.set(path, template);
+    return template;
   }
   return generateIndexHtml();
 }
 
-/** @internal test-only — clears the cached prod template so tests are isolated. */
+/** @internal test-only — clears the cached prod templates so tests are isolated. */
 export function resetProdTemplate(): void {
-  _prodTemplate = null;
+  _prodTemplateCache.clear();
 }
