@@ -12,7 +12,7 @@ import { isrCache, ssgCache } from "./cache";
 import { buildElement } from "./element";
 import { runLoaders } from "./loaders";
 import { loadPageModule, loadRootModule } from "./module-loader";
-import { getDevTemplate } from "./template";
+import { getDevTemplate, readProdTemplate } from "./template";
 
 // ── Re-exports (public API) ──────────────────────────────────────────────────
 // biome-ignore lint/performance/noBarrelFile: acnowledged
@@ -23,7 +23,6 @@ export { loadPageModule, loadRootModule } from "./module-loader";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-import { generateIndexHtml } from "../build";
 import { IS_DEV } from "../elyra";
 import type { ResolvedRoute } from "../router";
 import type { LoaderContext } from "./assemble";
@@ -91,7 +90,7 @@ export async function renderToHTML(
   // Prod: read .elysion/client/index.html from disk.
   const template = IS_DEV
     ? await getDevTemplate(new URL(ctx.request.url).origin)
-    : generateIndexHtml();
+    : readProdTemplate();
 
   return {
     html: assembleHTML(template, headData, reactHtml, data),
@@ -156,7 +155,7 @@ export async function renderSSR(
     const headData = buildHeadInjection(route.page?.head?.(componentProps));
     const template = IS_DEV
       ? await getDevTemplate(new URL(ctx.request.url).origin)
-      : generateIndexHtml();
+      : readProdTemplate();
 
     // Phase 2: split template around placeholders
     const { headPre, bodyPre, bodyPost } = splitTemplate(template);
@@ -259,14 +258,18 @@ export async function warmSSGCache(
 ): Promise<void> {
   const targets = routes.filter((r) => r.mode === "ssg" && r.page?.staticParams);
 
-  await Promise.all(
+  await Promise.allSettled(
     targets.map(async (route) => {
-      // biome-ignore lint/style/noNonNullAssertion: route.page has been filtered
-      const paramSets = await route.page!.staticParams?.();
-      await Promise.all(
-        // biome-ignore lint/style/noNonNullAssertion: route.page.paramSets has been filtered
-        paramSets!.map((params) => prerenderSSG(route, params, root, origin))
-      );
+      try {
+        // biome-ignore lint/style/noNonNullAssertion: route.page has been filtered
+        const paramSets = await route.page!.staticParams?.();
+        await Promise.allSettled(
+          // biome-ignore lint/style/noNonNullAssertion: route.page.paramSets has been filtered
+          paramSets!.map((params) => prerenderSSG(route, params, root, origin))
+        );
+      } catch (err) {
+        console.error(`[elyra] SSG warm-up failed for ${route.pattern}:`, err);
+      }
     })
   );
 }
