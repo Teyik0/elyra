@@ -12,7 +12,7 @@ export const route = createRoute({
           <div className="flex h-16 justify-between">
             <div className="flex">
               <Link className="flex items-center font-bold text-indigo-600 text-xl" to="/">
-                Elyra Blog
+                Elyra
               </Link>
               <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
                 <Link

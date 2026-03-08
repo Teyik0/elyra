@@ -105,8 +105,8 @@ describe("render.tsx", () => {
       const nestedRoute = await getRoute("/nested");
       const root = await getRoot();
 
-      await loadPageModule(nestedRoute, false);
-      const rootLayout = await loadRootModule(root, false);
+      await loadPageModule(nestedRoute);
+      const rootLayout = await loadRootModule(root);
 
       const element = buildElement(nestedRoute, {}, rootLayout);
       expect(element).toBeDefined();
@@ -116,8 +116,8 @@ describe("render.tsx", () => {
       const deepRoute = await getRoute("/nested/deep");
       const root = await getRoot();
 
-      await loadPageModule(deepRoute, false);
-      const rootLayout = await loadRootModule(root, false);
+      await loadPageModule(deepRoute);
+      const rootLayout = await loadRootModule(root);
 
       const element = buildElement(deepRoute, {}, rootLayout);
       expect(element).toBeDefined();
@@ -127,8 +127,8 @@ describe("render.tsx", () => {
       const nestedRoute = await getRoute("/nested");
       const root = await getRoot();
 
-      await loadPageModule(nestedRoute, false);
-      const rootLayout = await loadRootModule(root, false);
+      await loadPageModule(nestedRoute);
+      const rootLayout = await loadRootModule(root);
 
       const element = buildElement(nestedRoute, {}, rootLayout);
       expect(element).toBeDefined();
@@ -150,8 +150,8 @@ describe("render.tsx", () => {
       const withLoaderRoute = await getRoute("/with-loader");
       const root = await getRoot();
 
-      await loadPageModule(withLoaderRoute, false);
-      const rootLayout = await loadRootModule(root, false);
+      await loadPageModule(withLoaderRoute);
+      const rootLayout = await loadRootModule(root);
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
       const result = await runLoaders(withLoaderRoute, ctx, rootLayout);
@@ -167,8 +167,8 @@ describe("render.tsx", () => {
       const deepRoute = await getRoute("/nested/deep");
       const root = await getRoot();
 
-      await loadPageModule(deepRoute, false);
-      const rootLayout = await loadRootModule(root, false);
+      await loadPageModule(deepRoute);
+      const rootLayout = await loadRootModule(root);
 
       const ctx = createMockLoaderContext({ path: "/nested/deep" });
       const result = await runLoaders(deepRoute, ctx, rootLayout);
@@ -179,8 +179,8 @@ describe("render.tsx", () => {
       const withLoaderRoute = await getRoute("/with-loader");
       const root = await getRoot();
 
-      await loadPageModule(withLoaderRoute, false);
-      const rootLayout = await loadRootModule(root, false);
+      await loadPageModule(withLoaderRoute);
+      const rootLayout = await loadRootModule(root);
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
       const result = await runLoaders(withLoaderRoute, ctx, rootLayout);
@@ -196,8 +196,8 @@ describe("render.tsx", () => {
       const withLoaderRoute = await getRoute("/with-loader");
       const root = await getRoot();
 
-      await loadPageModule(withLoaderRoute, false);
-      const rootLayout = await loadRootModule(root, false);
+      await loadPageModule(withLoaderRoute);
+      const rootLayout = await loadRootModule(root);
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
       const result = await runLoaders(withLoaderRoute, ctx, rootLayout);
@@ -212,8 +212,8 @@ describe("render.tsx", () => {
       const withLoaderRoute = await getRoute("/with-loader");
       const root = await getRoot();
 
-      await loadPageModule(withLoaderRoute, false);
-      const rootLayout = await loadRootModule(root, false);
+      await loadPageModule(withLoaderRoute);
+      const rootLayout = await loadRootModule(root);
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
       const result = await runLoaders(withLoaderRoute, ctx, rootLayout);
@@ -228,8 +228,8 @@ describe("render.tsx", () => {
       const withLoaderRoute = await getRoute("/with-loader");
       const root = await getRoot();
 
-      await loadPageModule(withLoaderRoute, false);
-      const rootLayout = await loadRootModule(root, false);
+      await loadPageModule(withLoaderRoute);
+      const rootLayout = await loadRootModule(root);
 
       const ctx = createMockLoaderContext({
         path: "/with-loader",
@@ -267,7 +267,7 @@ describe("render.tsx", () => {
           },
         });
         const withLoaderRoute = await getRoute("/with-loader");
-        const rootLayout = await loadRootModule(await getRoot(), false);
+        const rootLayout = await loadRootModule(await getRoot());
         const mockRoute = {
           ...withLoaderRoute,
           routeChain: [withLoaderRoute.routeChain[0], ancestor],
@@ -289,7 +289,7 @@ describe("render.tsx", () => {
           },
         });
         const withLoaderRoute = await getRoute("/with-loader");
-        const rootLayout = await loadRootModule(await getRoot(), false);
+        const rootLayout = await loadRootModule(await getRoot());
         const mockRoute = {
           ...withLoaderRoute,
           routeChain: [withLoaderRoute.routeChain[0], ancestor1, ancestor2],
@@ -323,7 +323,7 @@ describe("render.tsx", () => {
           },
         });
         const withLoaderRoute = await getRoute("/with-loader");
-        const rootLayout = await loadRootModule(await getRoot(), false);
+        const rootLayout = await loadRootModule(await getRoot());
         const mockRoute = {
           ...withLoaderRoute,
           routeChain: [withLoaderRoute.routeChain[0], a1, a2],
@@ -345,7 +345,7 @@ describe("render.tsx", () => {
         const a1 = makeRuntimeRoute({ loader: async () => ({ keyA: "valueA" }) });
         const a2 = makeRuntimeRoute({ loader: async () => ({ keyB: "valueB" }) });
         const withLoaderRoute = await getRoute("/with-loader");
-        const rootLayout = await loadRootModule(await getRoot(), false);
+        const rootLayout = await loadRootModule(await getRoot());
         const mockRoute = {
           ...withLoaderRoute,
           routeChain: [withLoaderRoute.routeChain[0], a1, a2],
@@ -371,7 +371,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/nested" });
-      const result = await renderToHTML(nestedRoute, ctx, root, false);
+      const result = await renderToHTML(nestedRoute, ctx, root);
 
       // Template provides <html>, page content appears in the outlet
       expect(result.html).toContain("<html");
@@ -383,7 +383,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
-      const result = await renderToHTML(withLoaderRoute, ctx, root, false);
+      const result = await renderToHTML(withLoaderRoute, ctx, root);
 
       expect(result.html).toContain("__ELYSION_DATA__");
     });
@@ -393,7 +393,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/ssg-page" });
-      const result = await renderToHTML(ssgRoute, ctx, root, false);
+      const result = await renderToHTML(ssgRoute, ctx, root);
 
       expect(result.html).toContain("<title>SSG Test Page</title>");
     });
@@ -403,7 +403,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/nested" });
-      const result = await renderToHTML(nestedRoute, ctx, root, false);
+      const result = await renderToHTML(nestedRoute, ctx, root);
 
       // The outlet comment is replaced by React-rendered content
       expect(result.html).not.toContain("<!--ssr-outlet-->");
@@ -416,8 +416,8 @@ describe("render.tsx", () => {
       const indexRoute = await getRoute("/");
       const root = await getRoot();
 
-      const html1 = await prerenderSSG(indexRoute, {}, root, false);
-      const html2 = await prerenderSSG(indexRoute, {}, root, false);
+      const html1 = await prerenderSSG(indexRoute, {}, root);
+      const html2 = await prerenderSSG(indexRoute, {}, root);
 
       expect(html1).toBe(html2);
     });
@@ -426,7 +426,7 @@ describe("render.tsx", () => {
       const indexRoute = await getRoute("/");
       const root = await getRoot();
 
-      const html = await prerenderSSG(indexRoute, {}, root, false);
+      const html = await prerenderSSG(indexRoute, {}, root);
       expect(html).toContain("<html");
     });
 
@@ -434,8 +434,8 @@ describe("render.tsx", () => {
       const indexRoute = await getRoute("/");
       const root = await getRoot();
 
-      const html1 = await prerenderSSG(indexRoute, {}, root, false);
-      const html2 = await prerenderSSG(indexRoute, {}, root, false);
+      const html1 = await prerenderSSG(indexRoute, {}, root);
+      const html2 = await prerenderSSG(indexRoute, {}, root);
 
       expect(html1).toBe(html2);
     });
@@ -447,7 +447,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/ssr-page" });
-      const response = await renderSSR(ssrRoute, ctx, root, false);
+      const response = await renderSSR(ssrRoute, ctx, root);
 
       expect(response).toBeInstanceOf(Response);
       const html = await response.text();
@@ -459,7 +459,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/ssr-page" });
-      const response = await renderSSR(ssrRoute, ctx, root, false);
+      const response = await renderSSR(ssrRoute, ctx, root);
 
       expect(response.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
       expect(response.headers.get("Cache-Control")).toBe("no-cache, no-store, must-revalidate");
@@ -470,7 +470,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
-      const response = await renderSSR(withLoaderRoute, ctx, root, false);
+      const response = await renderSSR(withLoaderRoute, ctx, root);
 
       expect(response.headers.get("x-loader-ran")).toBe("true");
     });
@@ -497,7 +497,7 @@ describe("render.tsx", () => {
         },
       } as ResolvedRoute;
 
-      const response = await renderSSR(customRoute, ctx, root, false);
+      const response = await renderSSR(customRoute, ctx, root);
 
       expect(response.status).toBe(302);
       expect(response.headers.get("Location")).toBe("/login");
@@ -509,7 +509,7 @@ describe("render.tsx", () => {
         const root = await getRoot();
 
         const ctx = createMockLoaderContext({ path: "/suspense-page" });
-        const response = await renderSSR(suspenseRoute, ctx, root, false);
+        const response = await renderSSR(suspenseRoute, ctx, root);
 
         expect(response.body).toBeInstanceOf(ReadableStream);
       });
@@ -519,7 +519,7 @@ describe("render.tsx", () => {
         const root = await getRoot();
 
         const ctx = createMockLoaderContext({ path: "/suspense-page" });
-        const response = await renderSSR(suspenseRoute, ctx, root, false);
+        const response = await renderSSR(suspenseRoute, ctx, root);
         const html = await response.text();
 
         // The resolved Suspense content must appear — either inline (if React
@@ -533,7 +533,7 @@ describe("render.tsx", () => {
         const root = await getRoot();
 
         const ctx = createMockLoaderContext({ path: "/suspense-page" });
-        const response = await renderSSR(suspenseRoute, ctx, root, false);
+        const response = await renderSSR(suspenseRoute, ctx, root);
         const html = await response.text();
 
         expect(html).toContain("<html");
@@ -551,7 +551,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/isr-page" });
-      const response = await handleISR(isrRoute, ctx, root, false);
+      const response = await handleISR(isrRoute, ctx, root);
       const html = await response.text();
 
       expect(html).toContain("<html");
@@ -563,7 +563,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/isr-page" });
-      const response = await handleISR(isrRoute, ctx, root, false);
+      const response = await handleISR(isrRoute, ctx, root);
 
       const cacheControl = response.headers.get("Cache-Control");
       expect(cacheControl).toContain("public");
@@ -575,10 +575,10 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/isr-page" });
-      const response1 = await handleISR(isrRoute, ctx, root, false);
+      const response1 = await handleISR(isrRoute, ctx, root);
       const html1 = await response1.text();
 
-      const response2 = await handleISR(isrRoute, ctx, root, false);
+      const response2 = await handleISR(isrRoute, ctx, root);
       const html2 = await response2.text();
 
       expect(html1).toBe(html2);
@@ -589,7 +589,7 @@ describe("render.tsx", () => {
     test("returns cached page in production mode", async () => {
       const indexRoute = await getRoute("/");
 
-      const page = await loadPageModule(indexRoute, false);
+      const page = await loadPageModule(indexRoute);
       expect(page).toBeDefined();
       expect(page?.component).toBeDefined();
     });
@@ -597,7 +597,7 @@ describe("render.tsx", () => {
     test("reloads page in dev mode", async () => {
       const indexRoute = await getRoute("/");
 
-      const page = await loadPageModule(indexRoute, true);
+      const page = await loadPageModule(indexRoute);
       expect(page).toBeDefined();
     });
   });
@@ -606,7 +606,7 @@ describe("render.tsx", () => {
     test("returns cached root in production mode", async () => {
       const root = await getRoot();
 
-      const rootRoute = await loadRootModule(root, false);
+      const rootRoute = await loadRootModule(root);
       expect(rootRoute).toBeDefined();
       expect(rootRoute.layout).toBeDefined();
     });
@@ -614,7 +614,7 @@ describe("render.tsx", () => {
     test("reloads root in dev mode", async () => {
       const root = await getRoot();
 
-      const rootRoute = await loadRootModule(root, true);
+      const rootRoute = await loadRootModule(root);
       expect(rootRoute).toBeDefined();
     });
   });
@@ -624,8 +624,8 @@ describe("render.tsx", () => {
       const withLoaderRoute = await getRoute("/with-loader");
       const root = await getRoot();
 
-      await loadPageModule(withLoaderRoute, false);
-      const rootLayout = await loadRootModule(root, false);
+      await loadPageModule(withLoaderRoute);
+      const rootLayout = await loadRootModule(root);
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });
 
@@ -646,8 +646,8 @@ describe("render.tsx", () => {
       const route = await getRoute("/");
       const root = await getRoot();
 
-      await loadPageModule(route, false);
-      const rootLayout = await loadRootModule(root, false);
+      await loadPageModule(route);
+      const rootLayout = await loadRootModule(root);
 
       const ctx = createMockLoaderContext({
         path: "/",
@@ -752,7 +752,7 @@ describe("render.tsx", () => {
       const indexRoute = await getRoute("/");
       const root = await getRoot();
 
-      const html = await prerenderSSG(indexRoute, {}, root, false);
+      const html = await prerenderSSG(indexRoute, {}, root);
       expect(html).toContain("<html");
     });
   });
@@ -763,7 +763,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/ssr-page" });
-      const result = await renderToStream(ssrRoute, ctx, root, false);
+      const result = await renderToStream(ssrRoute, ctx, root);
 
       expect(result).toBeInstanceOf(ReadableStream);
     });
@@ -790,7 +790,7 @@ describe("render.tsx", () => {
         },
       } as ResolvedRoute;
 
-      const result = await renderToStream(customRoute, ctx, root, false);
+      const result = await renderToStream(customRoute, ctx, root);
 
       expect(result).toBeInstanceOf(Response);
       if (result instanceof Response) {

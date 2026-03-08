@@ -16,19 +16,12 @@ const formattedDate = () =>
 const requestStartTimes = new WeakMap<Request, number>();
 
 const app = new Elysia()
-  .onTransform(({ body, params, path, request }) => {
+  .onTransform(({ request }) => {
     requestStartTimes.set(request, performance.now());
-    console.log(`${formattedDate()} - ${request.method} ${path}`, {
-      body,
-      params,
-    });
   })
-  .onAfterResponse(({ path, set, request }) => {
+  .onAfterResponse(({ path, request }) => {
     const startedAt = requestStartTimes.get(request) ?? performance.now();
-    console.log(`${formattedDate()} - RESPONSE ${path}`, {
-      performance: `${(performance.now() - startedAt).toFixed(2)} ms`,
-      status: set.status,
-    });
+    console.log(`${formattedDate()} - ${path}- ${(performance.now() - startedAt).toFixed(2)} ms`);
     requestStartTimes.delete(request);
   })
   .use(api)

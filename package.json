@@ -20,7 +20,9 @@
     "@commitlint/cli": "^20.4.1",
     "@commitlint/config-conventional": "^20.4.1",
     "@types/bun": "1.3.9",
+    "knip": "^5.86.0",
     "lefthook": "^2.1.1",
+    "react-doctor": "^0.0.30",
     "typescript": "^5.9.3",
     "ultracite": "7.2.4"
   },

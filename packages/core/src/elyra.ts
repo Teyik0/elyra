@@ -12,6 +12,8 @@ export interface ElysionProps {
   staticOptions: StaticOptions<string>;
 }
 
+export const IS_DEV = process.env.NODE_ENV !== "production";
+
 /**
  * Main Elyra plugin.
  *
@@ -38,40 +40,35 @@ export interface ElysionProps {
  * (the SSR template) plus hashed JS/CSS chunks.  No static import needed.
  * Routes with `staticParams` are pre-rendered on server start via `onStart`.
  */
-export async function elyra({
-  pagesDir,
-  staticOptions,
-  dev = process.env.NODE_ENV !== "production",
-}: ElysionProps) {
+export async function elyra({ pagesDir, staticOptions }: ElysionProps) {
   const cwd = process.cwd();
   const resolvedPagesDir = resolve(cwd, pagesDir ?? "/src/pages");
 
-  const { root, routes } = await scanPages(resolvedPagesDir, dev);
+  const { root, routes } = await scanPages(resolvedPagesDir);
 
   if (!root) {
-    console.warn(
-      "[elyra] No root.tsx found. Create a root.tsx in your pages directory " +
-        "with a layout component."
+    throw new Error(
+      "[elyra] No root.tsx found. Create a root.tsx in your pages directory with a layout component."
     );
   }
 
-  console.log(
-    `[elyra] Configuration: ${routes.length} page(s) — ${dev ? "dev (Bun HMR)" : "production"}`
+  console.info(
+    `[elyra] Configuration: ${routes.length} page(s) — ${IS_DEV ? "dev (Bun HMR)" : "production"}`
   );
   for (const route of routes) {
     const hasLayout = route.routeChain.some((r) => r.layout);
-    console.log(
+    console.info(
       `  ${route.mode.toUpperCase().padEnd(4)} ${route.pattern}${hasLayout ? " + layout" : ""}`
     );
   }
 
   // ── Dev: Bun native HMR ────────────────────────────────────────────────
-  if (dev) {
+  if (IS_DEV) {
     const elysionDir = resolve(cwd, ".elyra");
 
     // Regenerate .elyra/_hydrate.tsx with the current page list.
     // Only writes when content changed so Bun --hot doesn't reload needlessly.
-    writeDevFiles(routes, { outDir: elysionDir, rootPath: root?.path ?? null });
+    writeDevFiles(routes, { outDir: elysionDir, rootPath: root.path });
 
     let instance = new Elysia()
       .use(
@@ -83,7 +80,7 @@ export async function elyra({
       .use(await staticPlugin(staticOptions));
 
     for (const route of routes) {
-      instance = instance.use(createRoutePlugin(route, root, dev));
+      instance = instance.use(createRoutePlugin(route, root));
     }
 
     return instance;
@@ -91,7 +88,7 @@ export async function elyra({
 
   // ── Production ──────────────────────────────────────────────────────────
   const elysionDir = resolve(cwd, ".elyra");
-  await buildClient(routes, { dev: false, outDir: elysionDir, rootPath: root?.path ?? null });
+  await buildClient(routes, { dev: false, outDir: elysionDir, rootPath: root.path ?? null });
 
   let instance = new Elysia()
     .use(
@@ -103,7 +100,7 @@ export async function elyra({
     .use(await staticPlugin(staticOptions));
 
   for (const route of routes) {
-    instance = instance.use(createRoutePlugin(route, root, dev));
+    instance = instance.use(createRoutePlugin(route, root));
   }
 
   // Pre-render SSG routes with staticParams before the first request arrives.
@@ -119,5 +116,3 @@ export async function elyra({
 
   return instance;
 }
-
-import.meta.hot?.accept();
