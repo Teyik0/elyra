@@ -1,4 +1,4 @@
-import type { HeadOptions, MetaDescriptor } from "./client";
+import type { HeadOptions, MetaDescriptor } from "../client";
 
 export function extractTitle(meta?: MetaDescriptor[]): string | undefined {
   if (!meta) {
@@ -109,4 +109,20 @@ export function buildHeadInjection(headData: HeadOptions | undefined): string {
   }
 
   return parts.length > 0 ? `\n  ${parts.join("\n  ")}\n` : "";
+}
+
+export function generateIndexHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!--ssr-head-->
+  </head>
+  <body>
+    <div id="root"><!--ssr-outlet--></div>
+    <script type="module" src="./_hydrate.tsx"></script>
+  </body>
+</html>
+`;
 }

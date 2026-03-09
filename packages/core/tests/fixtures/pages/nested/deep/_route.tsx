@@ -1,5 +1,5 @@
 import { createRoute } from "../../../../../src/client";
-import { route as nestedRoute } from "../route";
+import { route as nestedRoute } from "../_route";
 
 export const route = createRoute({
   parent: nestedRoute,

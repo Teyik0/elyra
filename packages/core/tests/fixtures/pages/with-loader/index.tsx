@@ -1,4 +1,4 @@
-import { route } from "./route";
+import { route } from "./_route";
 
 export default route.page({
   // Page loader only returns its own data.

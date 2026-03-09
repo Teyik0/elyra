@@ -11,7 +11,7 @@ import {
   isMetaTag,
   renderAttrs,
   safeJson,
-} from "../src/shell";
+} from "../src/render/shell";
 
 describe("shell.tsx", () => {
   describe("safeJson", () => {

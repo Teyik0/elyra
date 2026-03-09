@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { transformForClient } from "../src/adapter/transform-client";
+import { transformForClient } from "../src/plugin/transform-client";
 
 // ---------------------------------------------------------------------------
 // Top-level regex constants (satisfies lint/performance/useTopLevelRegex)

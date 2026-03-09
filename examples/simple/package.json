@@ -6,7 +6,8 @@
     "dev": "bun --hot src/server.ts",
     "test:types": "tsc --noEmit",
     "start": "NODE_ENV=production bun src/server.ts",
-    "test:e2e": "bun run ./tests/hmr.ts"
+    "test:e2e": "bun run ./tests/hmr.ts",
+    "build": "bun run ../../packages/core/src/cli/index.ts build --target bun"
   },
   "dependencies": {
     "@elysiajs/eden": "^1.4.8",
@@ -17,7 +18,6 @@
     "react-dom": "catalog:"
   },
   "devDependencies": {
-    "@types/babel__core": "^7.20.5",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "tailwindcss": "^4.2.1",

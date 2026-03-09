@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { __setDevMode, IS_DEV } from "../../src/elyra";
 import { createRoutePlugin, scanPages } from "../../src/router";
+import { __setDevMode, IS_DEV } from "../../src/runtime-env";
 
 const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
 
@@ -59,10 +59,10 @@ describe("createRoutePlugin", () => {
     expect(plugin).toBeDefined();
   });
 
-  test("handles null root", async () => {
-    const { route } = await getRoute("/ssg-page");
+  test("works with root layout", async () => {
+    const { route, root } = await getRoute("/ssg-page");
 
-    const plugin = createRoutePlugin(route, null);
+    const plugin = createRoutePlugin(route, root);
 
     expect(plugin).toBeDefined();
   });

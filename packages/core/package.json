@@ -1,6 +1,6 @@
 {
   "name": "elyra",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "type": "module",
   "files": [
     "dist",
@@ -9,6 +9,9 @@
   "main": "./dist/elyra.js",
   "module": "./dist/elyra.js",
   "types": "./src/elyra.ts",
+  "bin": {
+    "elyra": "./dist/cli/index.js"
+  },
   "exports": {
     ".": {
       "types": "./src/elyra.ts",
@@ -21,9 +24,14 @@
       "import": "./dist/client.js"
     },
     "./build": {
-      "types": "./src/build.ts",
-      "bun": "./src/build.ts",
-      "import": "./dist/build.js"
+      "types": "./src/build/index.ts",
+      "bun": "./src/build/index.ts",
+      "import": "./dist/build/index.js"
+    },
+    "./config": {
+      "types": "./src/config.ts",
+      "bun": "./src/config.ts",
+      "import": "./dist/config.js"
     },
     "./router": {
       "types": "./src/router.ts",
@@ -31,9 +39,9 @@
       "import": "./dist/router.js"
     },
     "./strip-plugin": {
-      "types": "./src/adapter/bun-plugin.ts",
-      "bun": "./src/adapter/bun-plugin.ts",
-      "import": "./dist/adapter/bun-plugin.js"
+      "types": "./src/plugin/index.ts",
+      "bun": "./src/plugin/index.ts",
+      "import": "./dist/plugin/index.js"
     },
     "./link": {
       "types": "./src/link.tsx",
