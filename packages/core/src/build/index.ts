@@ -1,7 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { buildBunTarget } from "../adapter/bun";
-import { buildNodeTarget } from "../adapter/node";
 import type { BuildTarget } from "../config";
 import { scanPages } from "../router";
 import { writeRouteTypes } from "./route-types";
@@ -112,15 +111,6 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
         );
         break;
       case "node":
-        manifest.targets.node = await buildNodeTarget(
-          routes,
-          rootDir,
-          buildRoot,
-          root.path,
-          serverEntry,
-          options
-        );
-        break;
       case "vercel":
       case "cloudflare":
         throw new Error(

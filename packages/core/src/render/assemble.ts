@@ -12,23 +12,6 @@ export function resolvePath(pattern: string, params: Record<string, string>): st
   return path;
 }
 
-export function createSSGContext(
-  params: Record<string, string>,
-  resolvedPath: string,
-  origin: string
-): LoaderContext {
-  return {
-    params,
-    query: {},
-    request: new Request(`${origin}${resolvedPath}`),
-    headers: {},
-    cookie: {},
-    redirect: (url, status = 302) => new Response(null, { status, headers: { Location: url } }),
-    set: { headers: {} },
-    path: resolvedPath,
-  };
-}
-
 export async function streamToString(stream: ReadableStream): Promise<string> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
