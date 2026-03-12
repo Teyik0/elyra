@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildApp } from "../src/build";
+import type { TargetBuildManifest } from "../src/build";
 import { generateCompileEntry } from "../src/build/compile-entry";
+import { runCli } from "./helpers/run-cli";
 import { createTmpApp, removeAppPath } from "./helpers/tmp-app";
 
 const tmpApps: Array<{ cleanup: () => void }> = [];
@@ -19,35 +20,40 @@ afterEach(() => {
 });
 
 describe.serial("compile: embed", () => {
-  test('buildApp({ compile: "embed" }) without serverEntry throws a clear error', async () => {
+  // Compile tests use runCli (subprocess) to avoid Bun.build({ compile }) EISDIR race
+
+  test("CLI build --compile embed without server entry fails with clear error", () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
     removeAppPath(app.path, "src/server.ts");
 
-    await expect(buildApp({ rootDir: app.path, target: "bun", compile: "embed" })).rejects.toThrow(
-      "compile"
-    );
+    const result = runCli(["build", "--compile", "embed"], { cwd: app.path });
+
+    expect(result.exitCode).toBeGreaterThan(0);
+    expect(result.stderr + result.stdout).toContain("compile");
   });
 
-  test('buildApp({ compile: "embed" }) writes a single server binary', async () => {
+  test("CLI build --compile embed writes a single server binary", () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
 
-    const result = await buildApp({ rootDir: app.path, target: "bun", compile: "embed" });
+    const result = runCli(["build", "--compile", "embed"], { cwd: app.path });
 
-    const bunManifest = result.targets.bun;
-    expect(bunManifest).toBeDefined();
-    const targetDir = join(app.path, bunManifest?.targetDir ?? "");
+    expect(result.exitCode).toBe(0);
+    const targetDir = join(app.path, ".elyra/build/bun");
     const serverBin = existsSync(join(targetDir, "server"))
       ? join(targetDir, "server")
       : join(targetDir, "server.exe");
 
     expect(existsSync(serverBin)).toBe(true);
-    expect(bunManifest?.serverPath).not.toBeNull();
+
+    const manifest = JSON.parse(
+      readFileSync(join(targetDir, "manifest.json"), "utf8")
+    ) as TargetBuildManifest;
+    expect(manifest.serverPath).not.toBeNull();
   });
 
   test("generateCompileEntry with embed produces file imports and __setCompileContext", () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
 
-    // Create a fake clientDir with some assets
     const clientDir = join(app.path, "fake-client");
     mkdirSync(clientDir, { recursive: true });
     writeFileSync(join(clientDir, "index.html"), "<html></html>");
@@ -64,15 +70,10 @@ describe.serial("compile: embed", () => {
     expect(existsSync(entryPath)).toBe(true);
     const content = readFileSync(entryPath, "utf8");
 
-    // Must use Bun's native embed import attribute
     expect(content).toContain('with { type: "file" }');
-    // Must call __setCompileContext (not the old registerEmbeddedApp)
     expect(content).toContain("__setCompileContext");
-    // Must contain embedded block
     expect(content).toContain("embedded:");
-    // Must contain modules block
     expect(content).toContain("modules:");
-    // Must dynamically import the server entry
     expect(content).toContain("import(");
   });
 

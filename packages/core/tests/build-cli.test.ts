@@ -122,7 +122,6 @@ describe.serial("CLI/build Bun feature", () => {
     expect(result.stderr + result.stdout).toContain('Unsupported build target "wat"');
   });
 
-  // RED: compile: "split" without serverEntry must throw a clear error
   test('buildApp({ compile: "split" }) without serverEntry throws a clear error', async () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
     removeAppPath(app.path, "src/server.ts");
@@ -132,7 +131,6 @@ describe.serial("CLI/build Bun feature", () => {
     );
   });
 
-  // RED: compile: "split" must produce a server binary alongside the client assets
   test('buildApp({ compile: "split" }) writes a server binary in the target dir', async () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
 
@@ -141,7 +139,6 @@ describe.serial("CLI/build Bun feature", () => {
     const bunManifest = result.targets.bun;
     expect(bunManifest).toBeDefined();
     const targetDir = join(app.path, bunManifest?.targetDir ?? "");
-    // The binary can be "server" (unix) or "server.exe" (windows)
     const serverBin = existsSync(join(targetDir, "server"))
       ? join(targetDir, "server")
       : join(targetDir, "server.exe");
