@@ -23,7 +23,7 @@ function resolveCompileMode(
     return flag;
   }
   if (flag !== undefined) {
-    return "split"; // --compile with no value or unrecognised → split
+    bail(`Invalid compile mode "${flag}". Valid: split, embed`);
   }
   return configCompile;
 }

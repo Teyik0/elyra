@@ -51,9 +51,9 @@ function buildEmbedInstance(
     "/_client/*",
     ({ params }) => {
       const filePath = assets[`/_client/${params["*"]}`];
-      if (filePath) {
-        return new Response(Bun.file(filePath));
-      }
+      return filePath
+        ? new Response(Bun.file(filePath))
+        : new Response("Not Found", { status: 404 });
     }
   ) as unknown as Elysia;
 }

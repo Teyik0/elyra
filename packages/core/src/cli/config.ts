@@ -86,6 +86,12 @@ export async function loadCliConfig(
   // Extract plugins before TypeBox validation: functions cannot be JSON-schema validated
   const { plugins, ...configToValidate } = rawConfig;
 
+  if (plugins !== undefined && !Array.isArray(plugins)) {
+    throw new Error(
+      `[elyra] Invalid config at ${configPath}: "plugins" must be an array of BunPlugin objects`
+    );
+  }
+
   if (!compiledConfigSchema.Check(configToValidate)) {
     const [firstError] = compiledConfigSchema.Errors(configToValidate);
     throw new Error(

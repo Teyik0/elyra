@@ -47,11 +47,6 @@
       "types": "./src/link.tsx",
       "bun": "./src/link.tsx",
       "import": "./dist/link.js"
-    },
-    "./internal": {
-      "types": "./src/internal.ts",
-      "bun": "./src/internal.ts",
-      "import": "./dist/internal.js"
     }
   },
   "scripts": {

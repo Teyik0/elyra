@@ -5,7 +5,10 @@ import { scanElyraInstances } from "../src/build/scan-server";
 
 // Helpers — write a temp file, scan it, clean up
 async function withTmpFile(content: string, fn: (path: string) => void): Promise<void> {
-  const path = join(import.meta.dir, `_scan-tmp-${Date.now()}.ts`);
+  const path = join(
+    import.meta.dir,
+    `_scan-tmp-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.ts`
+  );
   await Bun.write(path, content);
   try {
     fn(path);
