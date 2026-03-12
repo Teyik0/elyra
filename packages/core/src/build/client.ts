@@ -5,7 +5,7 @@ import { generateIndexHtml } from "../render/shell";
 import type { ResolvedRoute } from "../router";
 import { generateHydrateEntry } from "./hydrate";
 import { writeRouteTypes } from "./route-types";
-import { CLIENT_MODULE_PATH, LINK_MODULE_PATH, rewriteFrameworkImports } from "./shared";
+import { CLIENT_MODULE_PATH, LINK_MODULE_PATH } from "./shared";
 import type { BunBuildAliasConfig, BuildClientOptions } from "./types";
 
 const TS_FILE_FILTER = /\.(tsx|ts)$/;
@@ -24,7 +24,7 @@ const REACT_IMPORT_RE = /import\s+React\b/;
  */
 export async function buildClient(
   routes: ResolvedRoute[],
-  {outDir, rootLayout}: BuildClientOptions
+  { outDir, rootLayout, minify, sourcemap, plugins }: BuildClientOptions
 ): Promise<void> {
   const clientDir = join(outDir, "client");
 
@@ -65,7 +65,11 @@ export async function buildClient(
             transformed = `import React from "react";\n${transformed}`;
           }
 
-          transformed = rewriteFrameworkImports(transformed);
+          transformed = transformed
+            .replaceAll(`"elyra/client"`, JSON.stringify(CLIENT_MODULE_PATH))
+            .replaceAll(`'elyra/client'`, JSON.stringify(CLIENT_MODULE_PATH))
+            .replaceAll(`"elyra/link"`, JSON.stringify(LINK_MODULE_PATH))
+            .replaceAll(`'elyra/link'`, JSON.stringify(LINK_MODULE_PATH));
 
           return {
             contents: transformed,
@@ -85,8 +89,12 @@ export async function buildClient(
     target: "browser",
     format: "esm",
     splitting: true,
-    minify: true,
-    plugins: [transformPlugin],
+    minify: minify ?? true,
+    sourcemap: sourcemap ? "linked" : undefined,
+    // Absolute public path so SSR template asset URLs resolve on any route
+    publicPath: "/_client/",
+    // User plugins run before the internal transform so they pre-process files first
+    plugins: [...(plugins ?? []), transformPlugin],
     alias: {
       "elyra/client": CLIENT_MODULE_PATH,
       "elyra/link": LINK_MODULE_PATH,

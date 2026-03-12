@@ -1,14 +1,14 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { buildBunTarget } from "../adapter/bun";
-import type { BuildTarget } from "../config";
+import { BUILD_TARGETS, type BuildTarget } from "../config";
+import { resolveServerEntrypoint } from "../cli/config";
 import { scanPages } from "../router";
 import { writeRouteTypes } from "./route-types";
+import { scanElyraInstances } from "./scan-server";
 import {
-  assertBuildTarget,
   ensureDir,
   resolveBuildRoot,
-  resolveServerEntry,
   toBuildRouteManifestEntry,
   toPosixPath,
   writeJsonFile,
@@ -31,6 +31,7 @@ export type {
 } from "./types";
 export { buildClient } from "./client";
 export { writeDevFiles } from "./hydrate";
+export { readTargetBuildManifest } from "./manifest";
 export { patternToTypeString, schemaToTypeString, writeRouteTypes } from "./route-types";
 
 const IMPLEMENTED_TARGETS = ["bun", "node"] as const satisfies BuildTarget[];
@@ -48,32 +49,38 @@ export async function generateTypes(options: TypegenOptions): Promise<string> {
   return join(typesDir, "routes.d.ts");
 }
 
-export function readTargetBuildManifest(
-  rootDir: string,
-  target: BuildTarget,
-  outDir?: string
-): import("./types").TargetBuildManifest | null {
-  const buildRoot = resolveBuildRoot(rootDir, outDir);
-  const path = join(buildRoot, target, "manifest.json");
-  if (!existsSync(path)) {
-    return null;
-  }
 
-  return JSON.parse(readFileSync(path, "utf8")) as import("./types").TargetBuildManifest;
+function resolvePagesDirFromServer(serverEntry: string | null, rootDir: string): string | null {
+  if (!serverEntry) return null;
+  const detected = scanElyraInstances(serverEntry);
+  if (detected.length === 0) return null;
+  // Use the first detected pagesDir relative to rootDir
+  return resolve(rootDir, detected[0] as string);
 }
 
 export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult> {
   const rootDir = resolve(options.rootDir ?? process.cwd());
-  const pagesDir = resolve(rootDir, options.pagesDir ?? "src/pages");
+  const serverEntry = (() => {
+    if (options.serverEntry) {
+      const resolved = resolve(rootDir, options.serverEntry);
+      if (existsSync(resolved)) return resolved;
+    }
+    return resolveServerEntrypoint(rootDir);
+  })();
+  // Priority: explicit config > auto-detected from server entry > default
+  const rawPagesDir =
+    options.pagesDir ?? resolvePagesDirFromServer(serverEntry, rootDir) ?? "src/pages";
+  const pagesDir = resolve(rootDir, rawPagesDir);
   const buildRoot = resolveBuildRoot(rootDir, options.outDir);
   const sharedDir = join(buildRoot, "shared");
-  const serverEntry = resolveServerEntry(rootDir, options.serverEntry);
   const requestedTargets =
     options.target === "all"
       ? [...IMPLEMENTED_TARGETS]
       : [options.target].map((target) => {
-          assertBuildTarget(target);
-          return target;
+          if (!(BUILD_TARGETS as readonly string[]).includes(target)) {
+            throw new Error(`[elyra] Unsupported build target "${target}"`);
+          }
+          return target as BuildTarget;
         });
 
   const { root, routes } = await scanPages(pagesDir);

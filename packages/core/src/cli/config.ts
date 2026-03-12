@@ -6,6 +6,7 @@ import { TypeCompiler } from "elysia/type-system";
 import { BUILD_TARGETS, type BuildTarget, type ElyraConfig } from "../config";
 
 const buildTargetSchema = t.Union(BUILD_TARGETS.map((v) => t.Literal(v)));
+const compileTargetSchema = t.Union([t.Literal("split"), t.Literal("embed")]);
 
 const configSchema = t.Object({
   rootDir: t.Optional(t.String()),
@@ -21,9 +22,11 @@ const configSchema = t.Object({
   ),
   bun: t.Optional(
     t.Object({
-      compile: t.Optional(t.Boolean()),
+      compile: t.Optional(compileTargetSchema),
     })
   ),
+  // plugins is intentionally omitted: TypeBox cannot validate Bun.BunPlugin[]
+  // (functions are not JSON-serializable). We extract it before validation.
 });
 
 const compiledConfigSchema = TypeCompiler.Compile(configSchema);
@@ -37,6 +40,7 @@ const DEFAULT_CONFIG_FILENAMES = [
 interface ResolvedCliConfig extends ElyraConfig {
   configPath: string | null;
   pagesDir: string;
+  plugins?: Bun.BunPlugin[];
   rootDir: string;
 }
 
@@ -77,20 +81,30 @@ export async function loadCliConfig(
   }
 
   const imported = await import(pathToFileURL(configPath).href);
-  const config: ElyraConfig = imported.default ?? imported;
+  const rawConfig: ElyraConfig = imported.default ?? imported;
 
-  if (!compiledConfigSchema.Check(config)) {
-    const [firstError] = compiledConfigSchema.Errors(config);
+  // Extract plugins before TypeBox validation: functions cannot be JSON-schema validated
+  const { plugins, ...configToValidate } = rawConfig;
+
+  if (plugins !== undefined && !Array.isArray(plugins)) {
+    throw new Error(
+      `[elyra] Invalid config at ${configPath}: "plugins" must be an array of BunPlugin objects`
+    );
+  }
+
+  if (!compiledConfigSchema.Check(configToValidate)) {
+    const [firstError] = compiledConfigSchema.Errors(configToValidate);
     throw new Error(
       `[elyra] Invalid config at ${configPath}: ${firstError?.message ?? "unknown error"} (path: ${firstError?.path ?? "/"})`
     );
   }
 
-  const resolvedRootDir = resolve(rootDir, config.rootDir ?? ".");
+  const resolvedRootDir = resolve(rootDir, configToValidate.rootDir ?? ".");
   return {
-    ...config,
+    ...configToValidate,
+    plugins,
     configPath,
     rootDir: resolvedRootDir,
-    pagesDir: resolve(resolvedRootDir, config.pagesDir ?? "src/pages"),
+    pagesDir: resolve(resolvedRootDir, configToValidate.pagesDir ?? "src/pages"),
   };
 }

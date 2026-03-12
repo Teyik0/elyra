@@ -15,6 +15,19 @@ function bail(msg: string): never {
   process.exit(1);
 }
 
+function resolveCompileMode(
+  flag: string | undefined,
+  configCompile: "split" | "embed" | undefined
+): "split" | "embed" | undefined {
+  if (flag === "split" || flag === "embed") {
+    return flag;
+  }
+  if (flag !== undefined) {
+    bail(`Invalid compile mode "${flag}". Valid: split, embed`);
+  }
+  return configCompile;
+}
+
 if (command === "build") {
   const { values: rawValues } = parseArgs({
     args: argv.slice(1),
@@ -23,7 +36,7 @@ if (command === "build") {
       outDir: { type: "string" },
       pagesDir: { type: "string" },
       config: { type: "string" },
-      compile: { type: "boolean" },
+      compile: { type: "string" },
     },
     strict: false,
   });
@@ -33,7 +46,7 @@ if (command === "build") {
     outDir?: string;
     pagesDir?: string;
     config?: string;
-    compile?: boolean;
+    compile?: string;
   };
 
   const target = values.target ?? "bun";
@@ -52,13 +65,14 @@ if (command === "build") {
 
   const result = await buildApp({
     target: target as BuildTarget | "all",
-    compile: values.compile ?? config.bun?.compile,
+    compile: resolveCompileMode(values.compile, config.bun?.compile),
     rootDir: config.rootDir,
     pagesDir: values.pagesDir ?? config.pagesDir,
     outDir: values.outDir ?? config.outDir,
     minify: config.client?.minify,
     sourcemap: config.client?.sourcemap,
     serverEntry: config.serverEntry ?? serverEntry ?? undefined,
+    plugins: config.plugins,
   });
 
   const built = Object.keys(result.targets).join(", ") || "none";
@@ -74,7 +88,7 @@ OPTIONS
   --outDir    Output directory                     (default: .elyra/build)
   --pagesDir  Pages directory
   --config    Config file path
-  --compile   Compile to binary (bun only)
+  --compile   split | embed  Compile to binary (bun only, default: split)
 `
   );
 } else {

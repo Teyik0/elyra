@@ -77,4 +77,47 @@ describe("CLI config resolution", () => {
 
     expect(resolveServerEntrypoint(app.path, "bun")).toBeNull();
   });
+
+  // RED: plugins must survive TypeBox validation and be returned
+  test("loadCliConfig preserves plugins array through TypeBox validation", async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+    writeAppFile(
+      app.path,
+      "elyra.config.ts",
+      [
+        'import { defineConfig } from "elyra/config";',
+        'const mockPlugin: import("elyra/config").BunPlugin = { name: "test-plugin", setup() {} };',
+        "export default defineConfig({ plugins: [mockPlugin] });",
+      ].join("\n")
+    );
+
+    const result = await loadCliConfig(app.path);
+
+    expect(result.plugins).toHaveLength(1);
+    expect((result.plugins ?? [])[0]?.name).toBe("test-plugin");
+  });
+
+  // RED: plugins alongside other fields must not break validation
+  test("loadCliConfig preserves plugins alongside other config fields", async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+    writeAppFile(
+      app.path,
+      "elyra.config.ts",
+      [
+        'import { defineConfig } from "elyra/config";',
+        'const p: import("elyra/config").BunPlugin = { name: "p", setup() {} };',
+        "export default defineConfig({",
+        '  outDir: ".out",',
+        "  client: { minify: false },",
+        "  plugins: [p],",
+        "});",
+      ].join("\n")
+    );
+
+    const result = await loadCliConfig(app.path);
+
+    expect(result.outDir).toBe(".out");
+    expect(result.client?.minify).toBe(false);
+    expect((result.plugins ?? [])[0]?.name).toBe("p");
+  });
 });

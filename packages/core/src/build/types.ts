@@ -2,9 +2,12 @@ import type { BuildTarget } from "../config";
 import type { ResolvedRoute } from "../router";
 
 export interface BuildClientOptions {
+  minify?: boolean;
   outDir: string;
   pagesDir?: string;
+  plugins?: Bun.BunPlugin[];
   rootLayout: string;
+  sourcemap?: boolean;
 }
 
 export interface BuildRouteManifestEntry {
@@ -40,10 +43,11 @@ export interface BuildManifest {
 }
 
 export interface BuildAppOptions {
-  compile?: boolean;
+  compile?: "split" | "embed";
   minify?: boolean;
   outDir?: string;
   pagesDir?: string;
+  plugins?: Bun.BunPlugin[];
   rootDir?: string;
   serverEntry?: string;
   sourcemap?: boolean;

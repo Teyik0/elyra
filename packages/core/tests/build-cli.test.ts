@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type BuildManifest,
@@ -120,5 +120,66 @@ describe.serial("CLI/build Bun feature", () => {
 
     expect(result.exitCode).toBeGreaterThan(0);
     expect(result.stderr + result.stdout).toContain('Unsupported build target "wat"');
+  });
+
+  test('buildApp({ compile: "split" }) without serverEntry throws a clear error', async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+    removeAppPath(app.path, "src/server.ts");
+
+    await expect(buildApp({ rootDir: app.path, target: "bun", compile: "split" })).rejects.toThrow(
+      "compile"
+    );
+  });
+
+  test('buildApp({ compile: "split" }) writes a server binary in the target dir', async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+
+    const result = await buildApp({ rootDir: app.path, target: "bun", compile: "split" });
+
+    const bunManifest = result.targets.bun;
+    expect(bunManifest).toBeDefined();
+    const targetDir = join(app.path, bunManifest?.targetDir ?? "");
+    const serverBin = existsSync(join(targetDir, "server"))
+      ? join(targetDir, "server")
+      : join(targetDir, "server.exe");
+
+    expect(existsSync(serverBin)).toBe(true);
+    expect(bunManifest?.serverPath).not.toBeNull();
+  });
+
+  // RED: minify: false must produce larger output than minify: true (currently ignored → same size)
+  test("buildApp({ minify: false }) produces non-minified (larger) client output", async () => {
+    const app1 = rememberTmpApp(createTmpApp("cli-app"));
+    const app2 = rememberTmpApp(createTmpApp("cli-app"));
+
+    await buildApp({ rootDir: app1.path, target: "bun" }); // minify: true (default)
+    await buildApp({ rootDir: app2.path, target: "bun", minify: false });
+
+    const clientDir1 = join(app1.path, ".elyra/build/bun/client");
+    const clientDir2 = join(app2.path, ".elyra/build/bun/client");
+
+    const jsSize = (dir: string) =>
+      readdirSync(dir)
+        .filter((f) => f.endsWith(".js"))
+        .reduce((sum, f) => sum + readFileSync(join(dir, f)).length, 0);
+
+    expect(jsSize(clientDir2)).toBeGreaterThan(jsSize(clientDir1));
+  });
+
+  // RED: plugins passed to buildApp must have their setup() called by Bun.build()
+  test("buildApp passes user plugins to the client Bun.build() call", async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+    let setupWasCalled = false;
+
+    const trackingPlugin: Bun.BunPlugin = {
+      name: "tracking-plugin",
+      setup(_build) {
+        setupWasCalled = true;
+      },
+    };
+
+    await buildApp({ rootDir: app.path, target: "bun", plugins: [trackingPlugin] });
+
+    expect(setupWasCalled).toBe(true);
   });
 });

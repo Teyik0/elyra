@@ -4,6 +4,7 @@ import { join, parse } from "node:path";
 import { type AnyElysia, Elysia } from "elysia";
 import type { AnySchema } from "elysia/types";
 import type { RuntimePage, RuntimeRoute } from "./client";
+import { getCompileContext } from "./internal";
 import { handleISR, prerenderSSG, renderSSR } from "./render";
 import { collectRouteChainFromRoute, isElyraPage, isElyraRoute, validateRouteChain } from "./utils";
 
@@ -62,11 +63,12 @@ export function createRoutePlugin(route: ResolvedRoute, root: RootLayout): AnyEl
 
 export async function scanRootLayout(pagesDir: string): Promise<RootLayout> {
   const rootPath = `${pagesDir}/root.tsx`;
-  if (!existsSync(rootPath)) {
+  const ctx = getCompileContext();
+  if (!(existsSync(rootPath) || ctx?.modules[rootPath])) {
     throw new Error("[elyra] root.tsx: not found.");
   }
 
-  const mod = await import(rootPath);
+  const mod = (ctx?.modules[rootPath] ?? (await import(rootPath))) as Record<string, unknown>;
   const rootExport = mod.route ?? mod.default;
   if (!(rootExport && isElyraRoute(rootExport))) {
     throw new Error("[elyra] root.tsx: createRoute() export not found.");
@@ -78,14 +80,21 @@ export async function scanRootLayout(pagesDir: string): Promise<RootLayout> {
   return { path: rootPath, route: rootExport };
 }
 
-async function collectPageFilePaths(dir: string): Promise<string[]> {
+async function collectPageFilePaths(dir: string, pagesDir: string): Promise<string[]> {
+  // In compiled binaries, the filesystem may not be accessible.
+  // Use the pre-registered path list if available.
+  const ctx = getCompileContext();
+  if (ctx) {
+    return ctx.pagePaths;
+  }
+
   const files: string[] = [];
 
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const absolutePath = join(dir, entry.name);
 
     if (entry.isDirectory()) {
-      files.push(...(await collectPageFilePaths(absolutePath)));
+      files.push(...(await collectPageFilePaths(absolutePath, pagesDir)));
       continue;
     }
 
@@ -100,7 +109,7 @@ async function collectPageFilePaths(dir: string): Promise<string[]> {
 async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<ResolvedRoute[]> {
   const routes: ResolvedRoute[] = [];
 
-  for (const absolutePath of await collectPageFilePaths(pagesDir)) {
+  for (const absolutePath of await collectPageFilePaths(pagesDir, pagesDir)) {
     if (![".tsx", ".ts", ".jsx", ".js"].some((ext) => absolutePath.endsWith(ext))) {
       continue;
     }
@@ -113,7 +122,11 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
       continue;
     }
 
-    const page: RuntimePage = (await import(absolutePath)).default;
+    const ctx = getCompileContext();
+    const pageMod = (ctx?.modules[absolutePath] ?? (await import(absolutePath))) as {
+      default: RuntimePage;
+    };
+    const page: RuntimePage = pageMod.default;
     if (!isElyraPage(page)) {
       throw new Error(`[elyra] ${relativePath}: no valid createRoute().page() export found`);
     }
