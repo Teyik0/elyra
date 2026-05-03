@@ -91,6 +91,7 @@
   "dependencies": {
     "@elysiajs/static": "^1.4.10",
     "magic-string": "^0.30.21",
+    "seroval": "^1.5.2",
     "yuku-parser": "^0.4.6"
   },
   "devDependencies": {

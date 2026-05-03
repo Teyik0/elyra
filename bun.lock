@@ -107,13 +107,14 @@
     },
     "packages/core": {
       "name": "@teyik0/furin",
-      "version": "0.1.0-alpha.12",
+      "version": "0.1.0-alpha.13",
       "bin": {
-        "furin": "./src/cli/index.ts",
+        "furin": "./dist/cli/index.js",
       },
       "dependencies": {
         "@elysiajs/static": "^1.4.10",
         "magic-string": "^0.30.21",
+        "seroval": "^1.5.2",
         "yuku-parser": "^0.4.6",
       },
       "devDependencies": {
@@ -1163,6 +1164,8 @@
     "scheduler": ["scheduler@0.27.0", "", {}, "sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q=="],
 
     "semver": ["semver@7.7.4", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-vFKC2IEtQnVhpT78h1Yp8wzwrf8CM+MzKMHGJZfBtzhZNycRFnXsHk6E5TxIkkMsgNS7mdX3AGB7x2QM2di4lA=="],
+
+    "seroval": ["seroval@1.5.2", "", {}, "sha512-xcRN39BdsnO9Tf+VzsE7b3JyTJASItIV1FVFewJKCFcW4s4haIKS3e6vj8PGB9qBwC7tnuOywQMdv5N4qkzi7Q=="],
 
     "shebang-command": ["shebang-command@2.0.0", "", { "dependencies": { "shebang-regex": "^3.0.0" } }, "sha512-kHxr2zZpYtdmrN1qDjrrX/Z1rR1kG8Dx+gkpK1G4eXmvXswmcE1hTWBWYUzlraYw1/yZp6YuDY77YtvbN0dmDA=="],
 

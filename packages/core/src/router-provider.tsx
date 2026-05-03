@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import type { RuntimeRoute } from "./client";
+import { parseDeferredNdjson } from "./deferred-ndjson";
 import type { ErrorComponent } from "./error";
 import type { NotFoundComponent } from "./not-found";
 import { FurinErrorBoundary, FurinNotFoundBoundary } from "./render/boundaries.tsx";
@@ -934,6 +935,7 @@ export function RouterProvider({
   }, [routes]);
 
   const fetchPageState = useCallback(
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: SPA navigation orchestrator — multiple response shapes (not-found, redirect, stale-deploy, deferred) require this depth
     async (rawLogicalHref: string): Promise<RouterState | null> => {
       // Normalize trailing slashes so "/docs/routing/" matches the route
       // pattern "/docs/routing" — static hosts (GitHub Pages, Netlify) often
@@ -979,9 +981,12 @@ export function RouterProvider({
           };
         }
 
-        // Parallelize HTML data fetch + JS chunk load for this route.
-        // The browser module cache makes match.load() near-instant for already-loaded pages.
-        const [res, loadedMod] = await Promise.all([fetch(physicalHref), match.load()]);
+        // ── NDJSON data endpoint + JS chunk load (parallel) ──────────────────
+        // Fetch loader data from /_furin/data (NDJSON, supports deferred Promises)
+        // and load the JS module concurrently. The browser module cache makes
+        // match.load() near-instant for already-loaded pages.
+        const dataEndpoint = `${_basePath}/_furin/data?path=${encodeURIComponent(logicalHref)}`;
+        const [res, loadedMod] = await Promise.all([fetch(dataEndpoint), match.load()]);
 
         // Stale-deploy detection: if the server reports a different buildId, the client
         // bundle is outdated and SPA navigation would mount wrong components / stale code.
@@ -991,18 +996,32 @@ export function RouterProvider({
           return null;
         }
 
-        // Parse the HTML payload BEFORE deciding whether to bail on !res.ok.
-        // Slice 8: a 404 response still carries a valid __FURIN_DATA__ with a
-        // `__furinStatus: 404` signal, which lets us render the not-found UI
-        // inline instead of doing a jarring full-page reload. Any other
-        // non-2xx still bails out (see `classifySpaResponse`).
-        const { data, finalHref, title } = await parsePageResponse(res, _basePath);
-
-        const kind = classifySpaResponse(res.status, data);
-        if (kind.kind === "bail") {
+        if (!res.ok && res.status !== 404) {
           log.warn({ action: "navigate_server_error", href: physicalHref, status: res.status });
           return null;
         }
+
+        const body = res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() });
+        const { syncData, deferredPromises } = await parseDeferredNdjson(body);
+
+        // Special fields injected by the server into syncData:
+        //   __furinStatus   — 404 signal
+        //   __furinNotFound — not-found payload
+        //   __furinRedirect — server-side redirect target (logical path)
+        //   __furinError    — error digest
+        const { __furinStatus, __furinNotFound, __furinRedirect, ...cleanSyncData } = syncData as {
+          __furinStatus?: number;
+          __furinNotFound?: { data?: unknown; message?: string };
+          __furinRedirect?: string;
+          [key: string]: unknown;
+        };
+
+        const finalHref: string | undefined =
+          typeof __furinRedirect === "string" ? __furinRedirect : undefined;
+
+        // Merge sync data + deferred Promises. The component receives Promise
+        // values for deferred fields — wrapped in <Await> for suspension.
+        const data = { ...cleanSyncData, ...deferredPromises };
 
         const loadedMatch: LoadedClientRoute = {
           ...match,
@@ -1010,23 +1029,17 @@ export function RouterProvider({
           pageRoute: loadedMod.default._route,
         };
 
-        if (kind.kind === "not-found") {
-          // Strip the server-injected signals from `data` before handing it to
-          // the component — the NotFound payload is surfaced via `state.notFound`
-          // instead, and leaking __furinStatus into component props would be
-          // noise. The caller (RouterProvider render) ignores `data` when
-          // `notFound` is set anyway, but we keep it tidy for devtools.
-          const { __furinStatus, __furinNotFound, ...cleanData } = data ?? {};
+        if (__furinStatus === 404) {
           return {
             match: loadedMatch,
-            data: cleanData,
-            title,
+            data,
+            title: "",
             finalHref,
-            notFound: kind.error,
+            notFound: (__furinNotFound as { data?: unknown; message?: string }) ?? {},
           };
         }
 
-        return { match: loadedMatch, data: data ?? {}, title, finalHref };
+        return { match: loadedMatch, data, title: "", finalHref };
       } catch (err: unknown) {
         log.error({ action: "navigate_failed", href: _basePath + logicalHref, error: String(err) });
         return null;

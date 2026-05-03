@@ -150,8 +150,8 @@ describe("render.tsx", () => {
 
       expect(result.type).toBe("data");
       if (result.type === "data") {
-        expect(result.data.layoutData).toBe("from-layout");
-        expect(result.data.pageData).toBe("from-page");
+        expect(result.syncData.layoutData).toBe("from-layout");
+        expect(result.syncData.pageData).toBe("from-page");
       }
     });
 
@@ -173,8 +173,8 @@ describe("render.tsx", () => {
 
       expect(result.type).toBe("data");
       if (result.type === "data") {
-        expect(result.data.pageData).toBe("from-page");
-        expect(result.data.layoutData).toBe("from-layout");
+        expect(result.syncData.pageData).toBe("from-page");
+        expect(result.syncData.layoutData).toBe("from-layout");
       }
     });
 
@@ -187,7 +187,7 @@ describe("render.tsx", () => {
 
       expect(result.type).toBe("data");
       if (result.type === "data") {
-        expect(Object.keys(result.data).length).toBeGreaterThanOrEqual(2);
+        expect(Object.keys(result.syncData).length).toBeGreaterThanOrEqual(2);
       }
     });
 
@@ -380,7 +380,7 @@ describe("render.tsx", () => {
         const res = await runLoaders(mockRoute, createMockLoaderContext(), rootLayout);
         expect(capturedFromPage).toBe("alice");
         if (res.type === "data") {
-          expect(res.data.result).toBe("alice");
+          expect(res.syncData.result).toBe("alice");
         }
       });
 
@@ -464,9 +464,9 @@ describe("render.tsx", () => {
         const result = await runLoaders(mockRoute, createMockLoaderContext(), rootLayout);
         expect(result.type).toBe("data");
         if (result.type === "data") {
-          expect(result.data.keyA).toBe("valueA");
-          expect(result.data.keyB).toBe("valueB");
-          expect(result.data.keyC).toBe("valueC");
+          expect(result.syncData.keyA).toBe("valueA");
+          expect(result.syncData.keyB).toBe("valueB");
+          expect(result.syncData.keyC).toBe("valueC");
         }
       });
     });

@@ -276,3 +276,44 @@ export type InferProps<T> = T extends {
   : T extends Route<infer D, infer P, infer Q>
     ? D & { children: React.ReactNode } & ComponentProps<P, Q>
     : never;
+
+// ── Deferred data ──────────────────────────────────────────────────────────────
+
+/**
+ * Brand key that marks an object as deferred. Using a `const` string avoids
+ * a `unique symbol` that would complicate cross-module inference.
+ */
+const DEFERRED_BRAND = "__isDeferred" as const;
+
+/**
+ * A loader return value that contains a mix of synchronous scalar fields and
+ * lazy `Promise<T>` fields. Scalar fields are serialised into the initial HTML
+ * shell; Promise fields are streamed as late `<script>` resolution chunks.
+ *
+ * @example
+ * loader: () => defer({
+ *   title: "My Board",          // synchronous — available immediately
+ *   stats: fetchStats(),         // Promise — streamed when it resolves
+ * })
+ */
+export type DeferredData<T extends Record<string, unknown>> = T & {
+  readonly [DEFERRED_BRAND]: true;
+};
+
+/**
+ * Wraps loader data so that Promise-valued fields are streamed lazily while
+ * scalar fields are embedded in the initial HTML shell immediately.
+ *
+ * Use inside a page loader only (not in route / layout loaders — v1 restriction).
+ */
+export function defer<T extends Record<string, unknown>>(data: T): DeferredData<T> {
+  return { ...data, [DEFERRED_BRAND]: true } as DeferredData<T>;
+}
+
+/**
+ * Type guard for DeferredData. Used by the render pipeline to distinguish a
+ * plain loader return from a deferred one.
+ */
+export function isDeferred(v: unknown): v is DeferredData<Record<string, unknown>> {
+  return typeof v === "object" && v !== null && DEFERRED_BRAND in v;
+}

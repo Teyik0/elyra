@@ -1,5 +1,61 @@
+import type { toCrossJSON } from "seroval";
 import type { buildHeadInjection } from "./shell";
 import { safeJson } from "./shell";
+
+// ── Deferred streaming helpers ─────────────────────────────────────────────────
+
+/**
+ * Generates the `window.__FURIN_DEFERRED__` registry script that is injected
+ * BEFORE the React stream starts. It carries the synchronous data immediately
+ * and sets up the resolve/reject/getPromise API for late chunks.
+ *
+ * Client-side `<Await>` components call `getPromise(key)` to obtain a Promise
+ * they can pass to React 19's `use()`. The late resolution scripts call
+ * `resolve(key, chunk)` / `reject(key, chunk)` to settle those Promises.
+ *
+ * CSP note: this is an inline `<script>` — nonce support is a v2 concern.
+ */
+export function buildDeferredScript(syncData: Record<string, unknown>): string {
+  const dataJson = safeJson(syncData);
+  return `<script id="__FURIN_DEFERRED__">
+window.__FURIN_DEFERRED__ = {
+  _data: ${dataJson},
+  _chunks: {},
+  _resolvers: {},
+  resolve(key, chunk) {
+    this._chunks[key] = { a: 0, v: chunk };
+  },
+  reject(key, chunk) {
+    this._chunks[key] = { a: 1, v: chunk };
+  },
+  getPromise(key) {
+    if (!this._resolvers[key]) {
+      var res, rej;
+      var p = new Promise(function(resolve, reject) { res = resolve; rej = reject; });
+      this._resolvers[key] = { resolve: res, reject: rej, promise: p };
+    }
+    return this._resolvers[key].promise;
+  }
+};
+</script>`;
+}
+
+/**
+ * Generates a late `<script>` that settles one deferred Promise on the client.
+ * The `chunk` must be a seroval CrossJSON value produced by `toCrossJSON(value)`.
+ *
+ * @param key    - The Promise key (matches what `getPromise(key)` was called with)
+ * @param chunk  - The already-serialised CrossJSON value
+ * @param action - "resolve" (default) or "reject"
+ */
+export function buildDeferredResolution(
+  key: string,
+  chunk: ReturnType<typeof toCrossJSON>,
+  action: "resolve" | "reject" = "resolve"
+): string {
+  const chunkJson = JSON.stringify(chunk);
+  return `<script>window.__FURIN_DEFERRED__.${action}(${JSON.stringify(key)},${chunkJson})</script>`;
+}
 
 /** Minimal context passed to background / synthetic render helpers — only `request` is needed. */
 export interface LoaderContext {

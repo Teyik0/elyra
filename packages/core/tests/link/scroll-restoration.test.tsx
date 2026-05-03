@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
+import { toCrossJSON } from "seroval";
 import { Link, RouterProvider } from "../../src/link";
 import type { ClientRoute } from "../../src/router-provider";
 
@@ -34,15 +35,10 @@ function makeRoute(path: string, content: string, linkTo?: string): ClientRoute 
   };
 }
 
-function makeHtmlResponse(data: Record<string, unknown>, title: string): Response {
-  const html = `<!DOCTYPE html>
-<html>
-<head><title>${title}</title></head>
-<body>
-  <script id="__FURIN_DATA__" type="application/json">${JSON.stringify(data)}</script>
-</body>
-</html>`;
-  return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
+/** Returns a single-line NDJSON response (CrossJSON-serialised) for the /_furin/data endpoint. */
+function makeNdjsonResponse(data: Record<string, unknown>): Response {
+  const ndjson = JSON.stringify(toCrossJSON(data));
+  return new Response(ndjson, { status: 200, headers: { "Content-Type": "application/x-ndjson" } });
 }
 
 function waitFor(predicate: () => boolean, timeout = 2000, interval = 10): Promise<void> {
@@ -174,24 +170,25 @@ describe("scroll restoration on browser back", () => {
       }
     }) as typeof win.scrollTo;
 
-    // Mock fetch to return valid HTML with loader data
+    // Mock fetch to return valid NDJSON with loader data for /_furin/data
     globalThis.fetch = mock((input: RequestInfo | URL) => {
       const url = new URL(
         input.toString(),
         (globalThis as unknown as Window & typeof globalThis).location.origin
       );
-      const path = url.pathname;
+      const logicalPath =
+        url.pathname === "/_furin/data" ? (url.searchParams.get("path") ?? "") : url.pathname;
 
-      if (path === "/page-a") {
-        return makeHtmlResponse({ message: "page-a" }, "Page A");
+      if (logicalPath === "/page-a") {
+        return makeNdjsonResponse({ message: "page-a" });
       }
-      if (path === "/page-b") {
-        return makeHtmlResponse({ message: "page-b" }, "Page B");
+      if (logicalPath === "/page-b") {
+        return makeNdjsonResponse({ message: "page-b" });
       }
-      if (path === "/page-c") {
-        return makeHtmlResponse({ message: "page-c" }, "Page C");
+      if (logicalPath === "/page-c") {
+        return makeNdjsonResponse({ message: "page-c" });
       }
-      return new Response("Not found", { status: 404 });
+      return new Response(null, { status: 404 });
     }) as unknown as typeof globalThis.fetch;
   });
 

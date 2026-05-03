@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
+import { toCrossJSON } from "seroval";
 import { Link, RouterProvider } from "../../src/link";
 import type { ClientRoute } from "../../src/router-provider";
 
@@ -30,15 +31,10 @@ function makeRoute(path: string, linkTo: string): ClientRoute {
   };
 }
 
-function makeHtmlResponse(data: Record<string, unknown>, title: string): Response {
-  const html = `<!DOCTYPE html>
-<html>
-<head><title>${title}</title></head>
-<body>
-  <script id="__FURIN_DATA__" type="application/json">${JSON.stringify(data)}</script>
-</body>
-</html>`;
-  return new Response(html, { status: 200, headers: { "Content-Type": "text/html" } });
+/** Returns a single-line NDJSON response (CrossJSON-serialised) for the /_furin/data endpoint. */
+function makeNdjsonResponse(data: Record<string, unknown>): Response {
+  const ndjson = JSON.stringify(toCrossJSON(data));
+  return new Response(ndjson, { status: 200, headers: { "Content-Type": "application/x-ndjson" } });
 }
 
 interface RenderRouterResult {
@@ -123,12 +119,13 @@ describe("RouterProvider click interception", () => {
 
     globalThis.fetch = mock((input: RequestInfo | URL) => {
       const url = new URL(input.toString(), window.location.origin);
-      const path = url.pathname;
+      const logicalPath =
+        url.pathname === "/_furin/data" ? (url.searchParams.get("path") ?? "") : url.pathname;
 
-      if (path === "/page-b") {
-        return Promise.resolve(makeHtmlResponse({ message: "page-b" }, "Page B"));
+      if (logicalPath === "/page-b") {
+        return Promise.resolve(makeNdjsonResponse({ message: "page-b" }));
       }
-      return Promise.resolve(new Response("Not found", { status: 404 }));
+      return Promise.resolve(new Response(null, { status: 404 }));
     }) as unknown as typeof globalThis.fetch;
 
     window.history.pushState = mock(

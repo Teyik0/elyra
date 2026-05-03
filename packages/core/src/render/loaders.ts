@@ -1,11 +1,25 @@
 import type { Context } from "elysia";
-import type { RuntimeRoute } from "../client";
+import { isDeferred, type RuntimeRoute } from "../client";
 import { useLogger } from "../context-logger.ts";
 import { type FurinNotFoundError, isNotFoundError } from "../not-found.ts";
 import type { ResolvedRoute } from "../router";
 
 export type LoaderResult =
-  | { type: "data"; data: Record<string, unknown>; headers: Record<string, string> }
+  | {
+      type: "data";
+      /**
+       * Synchronous (JSON-serialisable) loader fields. Injected into the initial
+       * HTML shell as `__FURIN_DATA__` / the deferred registry's `_data` object.
+       */
+      syncData: Record<string, unknown>;
+      /**
+       * Promise-valued fields from a `defer()` return. `undefined` when the page
+       * loader did not call `defer()`. Streamed as late `<script>` resolution
+       * chunks (SSR) or as NDJSON chunks via `/_furin/data` (SPA nav).
+       */
+      deferredPromises: Record<string, Promise<unknown>> | undefined;
+      headers: Record<string, string>;
+    }
   | { type: "redirect"; response: Response }
   | { type: "not-found"; error: FurinNotFoundError; headers: Record<string, string> }
   | { type: "error"; error: unknown; headers: Record<string, string> };
@@ -51,6 +65,41 @@ function createLoaderCtx(
       return entry;
     },
   });
+}
+
+/**
+ * Splits a `defer()` page result into sync scalars and deferred Promises,
+ * then merges in the already-resolved route-chain loader data.
+ */
+function splitDeferredResult(
+  pageResult: Record<string, unknown>,
+  routeChainData: Record<string, unknown>
+): {
+  syncData: Record<string, unknown>;
+  deferredPromises: Record<string, Promise<unknown>> | undefined;
+} {
+  const syncData: Record<string, unknown> = {};
+  const deferredPromises: Record<string, Promise<unknown>> = {};
+
+  for (const [key, value] of Object.entries(pageResult)) {
+    if (key === "__isDeferred") {
+      continue;
+    }
+    if (value instanceof Promise) {
+      deferredPromises[key] = value;
+    } else {
+      syncData[key] = value;
+    }
+  }
+
+  for (const [key, value] of Object.entries(routeChainData)) {
+    syncData[key] = value;
+  }
+
+  return {
+    syncData,
+    deferredPromises: Object.keys(deferredPromises).length > 0 ? deferredPromises : undefined,
+  };
 }
 
 // TODO: remove _rootLayout parameter in next refactor (unused; routeChain[0] is root layout)
@@ -104,13 +153,28 @@ export async function runLoaders(
       ? Promise.resolve(route.page.loader(pageCtx)).then((r) => r ?? {})
       : Promise.resolve({});
 
-    // Await everything in parallel, then flat-merge (same contract as before).
+    // Await everything in parallel, then flat-merge.
     const results = await Promise.all([...loaderMap.values(), pagePromise]);
-    const data = Object.assign({}, ...results);
+    const merged = Object.assign({}, ...results);
     const headers: Record<string, string> = {};
     Object.assign(headers, ctx.set.headers);
 
-    return { type: "data", data, headers };
+    // When the page loader returned a `defer()` object, split its fields:
+    // - Promise-valued fields → deferredPromises (streamed lazily)
+    // - Scalar fields + all route-chain data → syncData (injected into the HTML shell)
+    //
+    // Route-chain loaders (layouts) are never deferred in v1; their data always
+    // lands in syncData. Only the page loader's own `defer()` fields are split.
+    const pageResult = await pagePromise;
+    if (isDeferred(pageResult)) {
+      const routeOnlyResults = await Promise.all([...loaderMap.values()]);
+      const routeMerged = Object.assign({}, ...routeOnlyResults) as Record<string, unknown>;
+      const { syncData, deferredPromises } = splitDeferredResult(pageResult, routeMerged);
+      return { type: "data", syncData, deferredPromises, headers };
+    }
+
+    // No defer() — all data is synchronous
+    return { type: "data", syncData: merged, deferredPromises: undefined, headers };
   } catch (err) {
     if (isNotFoundError(err)) {
       const headers: Record<string, string> = {};

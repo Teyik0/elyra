@@ -15,7 +15,7 @@ import {
 } from "./render/cache.ts";
 import { renderRootNotFound, warmSSGCache } from "./render/index.ts";
 import { setProductionTemplateContent, setProductionTemplatePath } from "./render/template.ts";
-import { createRoutePlugin, loadProdRoutes } from "./router.ts";
+import { createDataEndpoint, createRoutePlugin, loadProdRoutes } from "./router.ts";
 import { IS_DEV } from "./runtime-env.ts";
 
 function resolveClientDirFromArgv(): string {
@@ -277,6 +277,7 @@ export async function furin({
           : () => new Response(null, { status: 404 })
       )
       .use(createDevInspectorPlugin())
+      .use(createDataEndpoint(routes, root))
       .use((app) => {
         for (const route of routes) {
           app.use(createRoutePlugin(route, root));
@@ -363,6 +364,7 @@ export async function furin({
         return app;
       })()
     )
+    .use(createDataEndpoint(routes, root))
     .use((app) => {
       for (const route of routes) {
         app.use(createRoutePlugin(route, root, prodBuildId));
@@ -374,6 +376,9 @@ export async function furin({
 
 // ── Public API re-export ──────────────────────────────────────────────────────
 // biome-ignore-start lint/performance/noBarrelFile: intentional — furin.ts is the public package entry
+export { Await, useAsyncError, useAsyncValue } from "./await.tsx";
+export type { DeferredData } from "./client.ts";
+export { defer, isDeferred } from "./client.ts";
 export type { ErrorComponent, ErrorProps } from "./error.ts";
 export type {
   NotFoundComponent,
