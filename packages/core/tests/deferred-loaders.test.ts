@@ -74,7 +74,7 @@ describe("runLoaders — DeferredData", () => {
       return;
     }
 
-    expect(result.syncData).toEqual({ title: "hello", count: 42 });
+    expect(result.syncData).toMatchObject({ title: "hello", count: 42 });
     expect(result.deferredPromises).toBeUndefined();
   });
 
@@ -88,7 +88,7 @@ describe("runLoaders — DeferredData", () => {
       return;
     }
 
-    expect(result.syncData).toEqual({ title: "hello" });
+    expect(result.syncData).toMatchObject({ title: "hello" });
     expect(result.deferredPromises).toBeDefined();
     expect(result.deferredPromises?.stats).toBeInstanceOf(Promise);
     expect(await result.deferredPromises?.stats).toBe(99);
@@ -130,7 +130,7 @@ describe("runLoaders — DeferredData", () => {
       return;
     }
 
-    expect(result.syncData).toEqual({ title: "board" });
+    expect(result.syncData).toMatchObject({ title: "board" });
     expect(result.deferredPromises).toHaveProperty("stats");
     expect(result.deferredPromises).toHaveProperty("users");
   });

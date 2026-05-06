@@ -6,15 +6,39 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+- **`defer()` and `<Await>`** — Streaming loader data with deferred promises. Loaders can return `defer({ slow: slowPromise })` and the page renders immediately with a fallback. `<Await resolve={slow} fallback={<Loading />}>` unwraps the promise when it resolves. Uses NDJSON streaming for SSR/ISR with automatic client-side hydration of deferred chunks.
+- `useAsyncError()` and `useAsyncValue()` hooks for reading deferred promise states inside `<Await>` error boundaries and children.
+
+## [0.1.0-alpha.13] — 2026-05-03
+
+### Added
+- Scaffolder build process now uses the `yuku` parser instead of `oxc-parser` for faster server/build scanning and template transformation.
+
+### Fixed
+- `scan-server` now correctly detects `.d.ts` files, pre-transpiles TS/TSX with `Bun.Transpiler` before parsing, and surfaces the first actual error diagnostic instead of treating warnings as errors.
+- `transform-client` no longer logs warnings as errors when using `deadCodeElimination` or `transformForClient`.
+- `<Link>` active-state comparison now normalizes both sides with `normalizeHref` and skips `isActive` for absolute URLs.
+- `normalizeHref` is now applied to SSR `currentHref` assignments, preventing hydration mismatches between server and client.
+- Build process now emits `dist/internal.js` and `dist/runtime-env.js` as standalone bundles so compile-entry imports succeed at runtime.
+- Build process now ensures `dist/render` and `dist/build` directories exist via `mkdirSync` before copying, removing a fragile implicit dependency on tsc `.d.ts` emission order.
+- Windows path normalization in build entry template so `endsWith` checks and module paths work correctly on Windows.
+- `.d.ts` files are now skipped entirely during server scanning instead of being misclassified as JavaScript.
+
+## [0.1.0-alpha.12] — 2026-05-03
+
 ### Fixed
 - Trailing-slash regex in generated hydration entry now strips multiple consecutive trailing slashes (`///`) instead of just one.
 - `MdxLink` wrapper in docs app now correctly treats relative MDX links as internal and enforces `rel="noopener noreferrer"` on external anchors.
 - `revalidatePath` signature restored to accept a single argument (default `"page"`) for backward compatibility.
+- `<Link>` now handles absolute URLs correctly and prevents navigation on disabled links.
 - `shouldInterceptClick` test helpers no longer rely on implicit default parameters.
+- Cache invalidator registration is now re-registered after `__resetCacheState()` and `__resetDevLoaderCacheState()` to prevent cache leaks in test environments.
 
 ### Changed
 - Router provider extracted into its own module (`refactor: extract router provider`).
 - Unified cache invalidation logic — root path is always included in CDN purge set alongside descendant paths.
+- `RouterProvider` props (`autoRefresh`, `basePath`, `defaultPreload`, `defaultPreloadDelay`, `defaultPreloadStaleTime`, `prefetchCacheSize`) are now required instead of optional.
 
 ## [0.1.0-alpha.11] — 2026-04-30
 
@@ -150,7 +174,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `writeRouteTypes()` generating `furin-env.d.ts` for per-route type inference
 - Bun-native HMR with React Fast Refresh — single process, no Vite
 
-[Unreleased]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.11...HEAD
+[Unreleased]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.13...HEAD
+[0.1.0-alpha.13]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.12...v0.1.0-alpha.13
+[0.1.0-alpha.12]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.11...v0.1.0-alpha.12
 [0.1.0-alpha.11]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.10...v0.1.0-alpha.11
 [0.1.0-alpha.10]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.9...v0.1.0-alpha.10
 [0.1.0-alpha.9]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.8...v0.1.0-alpha.9

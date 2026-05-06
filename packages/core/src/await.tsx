@@ -6,7 +6,7 @@ import { Component, createContext, createElement, type ReactNode, use, useContex
  * Context used to pass the caught error from `AsyncErrorBoundary` down to
  * `errorElement` children so they can read it via `useAsyncError()`.
  */
-const AsyncErrorContext = createContext<unknown>(undefined);
+export const AsyncErrorContext = createContext<unknown>(undefined);
 
 /**
  * Inside an `<Await errorElement={...}>`, returns the error that caused the

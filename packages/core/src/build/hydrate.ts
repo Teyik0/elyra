@@ -158,19 +158,27 @@ if (__deferred && __deferred._chunks) {
       __deferred._chunks[key] = { a: 1, v: chunk };
     }
   };
-  for (const key of Object.keys(__deferred._chunks)) {
-    const entry = __deferred._chunks[key] as { a: 0 | 1; v: SerovalNode };
-    const p = __deferred.getPromise(key) as Promise<unknown>;
-    const resolver = __deferred._resolvers[key];
-    const value = fromCrossJSON(entry.v, {});
-    if (entry.a === 0) {
-      resolver.resolve(value);
-    } else {
-      resolver.reject(value);
+    for (const key of Object.keys(__deferred._chunks)) {
+      const entry = __deferred._chunks[key] as { a: 0 | 1; v: SerovalNode };
+      const p = __deferred.getPromise(key) as Promise<unknown>;
+      const resolver = __deferred._resolvers[key];
+      const value = fromCrossJSON(entry.v, {});
+      if (entry.a === 0) {
+        resolver.resolve(value);
+      } else {
+        resolver.reject(value);
+      }
+      deferredData[key] = p;
     }
-    deferredData[key] = p;
+    // Keys that have a resolver (getPromise was called by <Await>) but no
+    // chunk yet (the late <script> hasn't arrived) still need a Promise entry
+    // so the hydration data record is complete.
+    for (const key of Object.keys(__deferred._resolvers ?? {})) {
+      if (!(key in deferredData)) {
+        deferredData[key] = __deferred.getPromise(key) as Promise<unknown>;
+      }
+    }
   }
-}
 const rootEl = document.getElementById("root") as HTMLElement;
 
 // Eagerly load only the current page module for initial hydration.

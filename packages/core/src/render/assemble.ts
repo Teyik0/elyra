@@ -46,12 +46,12 @@ window.__FURIN_DEFERRED__ = {
  *
  * @param key    - The Promise key (matches what `getPromise(key)` was called with)
  * @param chunk  - The already-serialised CrossJSON value
- * @param action - "resolve" (default) or "reject"
+ * @param action - "resolve" or "reject"
  */
 export function buildDeferredResolution(
   key: string,
   chunk: ReturnType<typeof toCrossJSON>,
-  action: "resolve" | "reject" = "resolve"
+  action: "resolve" | "reject"
 ): string {
   const chunkJson = JSON.stringify(chunk);
   return `<script>window.__FURIN_DEFERRED__.${action}(${JSON.stringify(key)},${chunkJson})</script>`;

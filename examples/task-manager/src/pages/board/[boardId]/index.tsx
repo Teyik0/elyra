@@ -1,3 +1,4 @@
+import { notFound } from "@teyik0/furin";
 import { useCallback, useRef, useState } from "react";
 import type { BoardStats } from "@/api/modules/boards/service";
 import { computeBoardStats, getBoardData } from "@/api/modules/boards/service";
@@ -100,7 +101,7 @@ export default route.page({
   loader: ({ params }) => {
     const data = getBoardData(params.boardId);
     if (!data) {
-      throw new Response("Board not found", { status: 404 });
+      notFound({ message: "Board not found" });
     }
     // Stats are computed server-side from the cards we already loaded —
     // no second DB roundtrip — and shipped through __FURIN_DATA__.

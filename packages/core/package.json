@@ -1,6 +1,6 @@
 {
   "name": "@teyik0/furin",
-  "version": "0.1.0-alpha.13",
+  "version": "0.2.0-beta.1",
   "description": "React meta-framework powered by Elysia and Bun with file-based routing, SSR, SSG, and ISR.",
   "license": "MIT",
   "author": "teyik0",
@@ -38,7 +38,7 @@
   "module": "./dist/furin.js",
   "types": "./dist/furin.d.ts",
   "bin": {
-    "furin": "./dist/cli/index.js"
+    "furin": "./src/cli/index.ts"
   },
   "exports": {
     ".": {
@@ -91,8 +91,8 @@
   "dependencies": {
     "@elysiajs/static": "^1.4.10",
     "magic-string": "^0.30.21",
-    "seroval": "^1.5.2",
-    "yuku-parser": "^0.4.6"
+    "seroval": "^1.5.4",
+    "yuku-parser": "^0.5.0"
   },
   "devDependencies": {
     "@types/react": "catalog:",

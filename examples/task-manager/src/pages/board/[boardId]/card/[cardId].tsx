@@ -1,3 +1,4 @@
+import { notFound } from "@teyik0/furin";
 import { Link, useRouter } from "@teyik0/furin/link";
 import { ArrowLeft, ChevronRight, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -12,13 +13,13 @@ export default route.page({
     const card = getCard(params.cardId);
 
     if (!board) {
-      throw new Response("Board not found", { status: 404 });
+      notFound({ message: "Board not found" });
     }
     if (!card) {
-      throw new Response("Card not found", { status: 404 });
+      notFound({ message: "Card not found" });
     }
     if (card.boardId !== params.boardId) {
-      throw new Response("Card not found", { status: 404 });
+      notFound({ message: "Card not found" });
     }
 
     const renderedAt = new Date().toLocaleTimeString("en-US", {

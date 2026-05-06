@@ -16,12 +16,49 @@ GlobalRegistrator.register();
 // happy-dom@20.9.0 omits window.SyntaxError, breaking CSS selector parsing
 // inside its querySelector engine. Must be set AFTER register() because
 // GlobalRegistrator replaces globalThis with its own window object.
-(globalThis as Window & { SyntaxError?: typeof SyntaxError }).SyntaxError = SyntaxError;
-const docWithView = globalThis.document as Document & {
-  defaultView?: Window & { SyntaxError?: typeof SyntaxError };
-};
-if (docWithView.defaultView) {
-  docWithView.defaultView.SyntaxError = SyntaxError;
+function patchSyntaxError(): void {
+  (globalThis as Window & { SyntaxError?: typeof SyntaxError }).SyntaxError = SyntaxError;
+  const win = globalThis as Window & { SyntaxError?: typeof SyntaxError };
+  if (!win.SyntaxError) {
+    win.SyntaxError = SyntaxError;
+  }
+  const docWithView = globalThis.document as Document & {
+    defaultView?: Window & { SyntaxError?: typeof SyntaxError };
+  };
+  if (docWithView.defaultView && !docWithView.defaultView.SyntaxError) {
+    docWithView.defaultView.SyntaxError = SyntaxError;
+  }
+}
+
+patchSyntaxError();
+
+// Ensure window.open exists — happy-dom sometimes omits it in isolated scopes.
+if (typeof window.open === "undefined") {
+  (window as Window & { open: typeof window.open }).open = () => null;
+}
+
+// Ensure window.history exists with the minimal API surface tests rely on.
+if (typeof window.history === "undefined") {
+  (window as Window & { history: History }).history = {
+    length: 1,
+    scrollRestoration: "auto",
+    state: null,
+    back: () => {
+      /* noop */
+    },
+    forward: () => {
+      /* noop */
+    },
+    go: () => {
+      /* noop */
+    },
+    pushState: () => {
+      /* noop */
+    },
+    replaceState: () => {
+      /* noop */
+    },
+  } as History;
 }
 
 // Restore native Web APIs — happy-dom's polyfills break Bun's server-side
@@ -50,10 +87,43 @@ if (nativeWritableStream) {
 }
 
 beforeEach(() => {
+  // Re-apply SyntaxError patch before every test — bun --isolate may reset
+  // the global scope between test files, stripping the happy-dom patch.
+  patchSyntaxError();
+
+  // Re-ensure window APIs exist in case --isolate created a fresh scope.
+  if (typeof window !== "undefined" && typeof window.open === "undefined") {
+    (window as Window & { open: typeof window.open }).open = () => null;
+  }
+  if (typeof window !== "undefined" && typeof window.history === "undefined") {
+    (window as Window & { history: History }).history = {
+      length: 1,
+      scrollRestoration: "auto",
+      state: null,
+      back: () => {
+        /* noop */
+      },
+      forward: () => {
+        /* noop */
+      },
+      go: () => {
+        /* noop */
+      },
+      pushState: () => {
+        /* noop */
+      },
+      replaceState: () => {
+        /* noop */
+      },
+    } as History;
+  }
+
   // Ensure a valid origin for every test. happy-dom defaults to about:blank
   // with a null origin, which breaks isInternal() in <Link> and any code
   // that resolves relative URLs against window.location.
-  window.location.href = "http://localhost:3000/";
+  if (typeof window !== "undefined" && typeof window.location !== "undefined") {
+    window.location.href = "http://localhost:3000/";
+  }
 });
 
 afterEach(() => {

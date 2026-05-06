@@ -351,6 +351,7 @@ describe("Link SSR path", () => {
 
 describe("LinkInteractive — client-side behaviour", () => {
   let originalOpen: typeof window.open | undefined;
+  let originalHrefDescriptor: PropertyDescriptor | undefined;
 
   beforeEach(() => {
     MockIntersectionObserver.cleanup();
@@ -362,15 +363,42 @@ describe("LinkInteractive — client-side behaviour", () => {
     // errors (missing SyntaxError, disabled module loading, etc.) and bleed
     // into the next test. We stub window.open so browser-level navigation
     // is suppressed while React handlers still run for SPA routing asserts.
-    originalOpen = window.open;
-    window.open = () => null;
+    originalOpen =
+      typeof window !== "undefined" && typeof window.open !== "undefined" ? window.open : undefined;
+    if (typeof window !== "undefined") {
+      (window as Window & { open?: typeof window.open }).open = () => null;
+    }
+
+    // Also freeze window.location.href so happy-dom can't navigate away
+    // on anchor clicks — React's synthetic-event preventDefault() doesn't
+    // reliably stop native navigation in happy-dom.
+    originalHrefDescriptor =
+      typeof window !== "undefined" && typeof window.location !== "undefined"
+        ? Object.getOwnPropertyDescriptor(window.location, "href")
+        : undefined;
+    Object.defineProperty(window.location, "href", {
+      configurable: true,
+      get: () => "http://localhost:3000/",
+      set: () => {
+        /* no-op */
+      },
+    });
   });
 
   afterEach(() => {
     globalThis.IntersectionObserver = OriginalIntersectionObserver;
     MockIntersectionObserver.cleanup();
-    if (originalOpen) {
+    if (originalOpen && typeof window !== "undefined") {
       window.open = originalOpen;
+    }
+    if (typeof window !== "undefined" && typeof window.location !== "undefined") {
+      if (originalHrefDescriptor) {
+        Object.defineProperty(window.location, "href", originalHrefDescriptor);
+      } else {
+        // href lives on the Location prototype — delete our own-property override
+        // biome-ignore lint/performance/noDelete: removing an own property to restore prototype accessor behavior
+        delete (window.location as unknown as Record<string, unknown>).href;
+      }
     }
   });
 
@@ -978,6 +1006,14 @@ describe("LinkInteractive — client-side behaviour", () => {
   // ── useRouter fallback (no provider) ─────────────────────────────────────────
 
   test("without RouterProvider, click falls back to window.location.href", () => {
+    // Temporarily restore the real href setter so the fallback navigation works.
+    if (originalHrefDescriptor) {
+      Object.defineProperty(window.location, "href", originalHrefDescriptor);
+    } else {
+      // biome-ignore lint/performance/noDelete: removing an own property to restore prototype accessor behavior
+      delete (window.location as unknown as Record<string, unknown>).href;
+    }
+
     const originalHref = window.location.href;
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), undefined);
 

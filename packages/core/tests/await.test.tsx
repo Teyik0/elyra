@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createElement, Suspense } from "react";
 import { renderToReadableStream } from "react-dom/server";
-import { Await, useAsyncError } from "../src/await";
+import { AsyncErrorContext, Await, useAsyncError } from "../src/await";
 
 async function renderToString(element: React.ReactNode): Promise<string> {
   const stream = await renderToReadableStream(element);
@@ -129,17 +129,29 @@ describe("<Await>", () => {
 });
 
 describe("useAsyncError()", () => {
-  test("est exportée et retourne undefined hors d'un boundary d'erreur", () => {
-    // useAsyncError() est un hook React — on vérifie juste qu'il est bien exporté
-    // et qu'il retourne undefined hors contexte (context = undefined par défaut).
-    // Le comportement complet (erreur dans errorElement) est un comportement client.
-    expect(typeof useAsyncError).toBe("function");
+  test("retourne undefined hors d'un boundary d'erreur", async () => {
+    function OutsideBoundary() {
+      const error = useAsyncError();
+      return createElement("span", null, String(error));
+    }
+
+    const html = await renderToString(createElement(OutsideBoundary));
+    expect(html).toContain("undefined");
   });
 
-  test("AsyncErrorBoundary transmet l'erreur via context pour useAsyncError", () => {
-    // Simule une rejection déjà résolue — React 19 peut rendre le errorElement
-    // si le component peut produire un nœud statique.
-    // On vérifie que le composant AsyncErrorBoundary exporte useAsyncError correctement.
-    expect(useAsyncError).toBeDefined();
+  test("retourne l'erreur propagée à l'intérieur du errorElement d'Await", async () => {
+    function ErrorDisplay() {
+      const error = useAsyncError();
+      return createElement("span", null, error instanceof Error ? error.message : String(error));
+    }
+
+    const html = await renderToString(
+      createElement(
+        AsyncErrorContext.Provider,
+        { value: new Error("boundary error") },
+        createElement(ErrorDisplay)
+      )
+    );
+    expect(html).toContain("boundary error");
   });
 });

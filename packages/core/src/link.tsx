@@ -175,6 +175,12 @@ function LinkInteractive<To extends RouteTo>({
       return;
     }
     e.preventDefault();
+    // When there is no RouterProvider, fall back to a full-page navigation so
+    // the link is still functional (e.g. in storybooks or third-party pages).
+    if (typeof window !== "undefined" && router.navigate === SSR_FALLBACK_ROUTER.navigate) {
+      window.location.href = href;
+      return;
+    }
     // navigate() expects the logical href (no basePath prefix).
     router.navigate(logicalHref, { replace, resetScroll: resetScroll ?? true });
   };

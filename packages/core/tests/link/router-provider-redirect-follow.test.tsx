@@ -105,19 +105,19 @@ async function renderRouterWithLink(
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe("RouterProvider click interception", () => {
+describe("RouterProvider server-side redirect follow", () => {
   let originalFetch: typeof globalThis.fetch;
-  let originalPushState: typeof window.history.pushState | undefined;
-  let pushStateCalls: Array<{ url: string }> = [];
+  let originalReplaceState: typeof window.history.replaceState | undefined;
+  let replaceStateCalls: Array<{ url: string }> = [];
   let currentCleanup: (() => void) | undefined;
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
-    originalPushState =
+    originalReplaceState =
       typeof window !== "undefined" && typeof window.history !== "undefined"
-        ? window.history.pushState
+        ? window.history.replaceState
         : undefined;
-    pushStateCalls = [];
+    replaceStateCalls = [];
     currentCleanup = undefined;
 
     globalThis.fetch = mock((input: RequestInfo | URL) => {
@@ -126,32 +126,38 @@ describe("RouterProvider click interception", () => {
         url.pathname === "/_furin/data" ? (url.searchParams.get("path") ?? "") : url.pathname;
 
       if (logicalPath === "/page-b") {
-        return Promise.resolve(makeNdjsonResponse({ message: "page-b" }));
+        // Simulate a server-side redirect: /page-b -> /page-c
+        return Promise.resolve(
+          makeNdjsonResponse({ __furinRedirect: "/page-c", message: "redirected" })
+        );
+      }
+      if (logicalPath === "/page-c") {
+        return Promise.resolve(makeNdjsonResponse({ message: "page-c" }));
       }
       return Promise.resolve(new Response(null, { status: 404 }));
     }) as unknown as typeof globalThis.fetch;
 
     if (typeof window !== "undefined" && typeof window.history !== "undefined") {
-      (window as Window & { history: History }).history.pushState = mock(
+      (window as Window & { history: History }).history.replaceState = mock(
         (_state: unknown, _unused: string, url?: string | URL | null) => {
           if (url) {
-            pushStateCalls.push({ url: String(url) });
+            replaceStateCalls.push({ url: String(url) });
             const win = globalThis as unknown as Window & typeof globalThis;
             win.location.href = `http://localhost:3000${url}`;
           }
         }
-      ) as typeof window.history.pushState;
+      ) as typeof window.history.replaceState;
     }
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
     if (
-      originalPushState &&
+      originalReplaceState &&
       typeof window !== "undefined" &&
       typeof window.history !== "undefined"
     ) {
-      window.history.pushState = originalPushState;
+      window.history.replaceState = originalReplaceState;
     }
     currentCleanup?.();
     currentCleanup = undefined;
@@ -159,38 +165,47 @@ describe("RouterProvider click interception", () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
-    if (originalPushState) {
-      window.history.pushState = originalPushState;
+    if (originalReplaceState) {
+      window.history.replaceState = originalReplaceState;
     }
     currentCleanup?.();
     currentCleanup = undefined;
   });
 
-  test("click on Furin Link triggers history.pushState exactly once", async () => {
-    const routes = [makeRoute("/page-a", "/page-b"), makeRoute("/page-b", "/page-a")];
-    const { container, cleanup } = await renderRouterWithLink(routes, "/page-a");
-    currentCleanup = cleanup;
+  test(
+    "follows server-side redirect via __furinRedirect without crashing",
+    async () => {
+      const routes = [
+        makeRoute("/page-a", "/page-b"),
+        makeRoute("/page-b", "/page-a"),
+        makeRoute("/page-c", "/page-a"),
+      ];
+      const { container, cleanup } = await renderRouterWithLink(routes, "/page-a");
+      currentCleanup = cleanup;
 
-    const anchor = container.querySelector("a") as HTMLAnchorElement;
-    expect(anchor).not.toBeNull();
+      const anchor = container.querySelector("a") as HTMLAnchorElement;
+      expect(anchor).not.toBeNull();
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      // Clicking /page-b triggers a server redirect to /page-c.
+      // Before the fix, the navigate callback reassigned a const variable
+      // (newState), causing a ReferenceError that surfaced as a 500.
+      anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-    // Wait deterministically for pushState to be called
-    await new Promise<void>((resolve, reject) => {
-      const start = Date.now();
-      const interval = setInterval(() => {
-        if (pushStateCalls.length === 1 || window.location.pathname === "/page-b") {
-          clearInterval(interval);
-          resolve();
-        } else if (Date.now() - start > 2000) {
-          clearInterval(interval);
-          reject(new Error("Timed out waiting for navigation"));
-        }
-      }, 10);
-    });
+      await new Promise<void>((resolve, reject) => {
+        const start = Date.now();
+        const interval = setInterval(() => {
+          if (window.location.pathname === "/page-c") {
+            clearInterval(interval);
+            resolve();
+          } else if (Date.now() - start > 2000) {
+            clearInterval(interval);
+            reject(new Error("Timed out waiting for redirect navigation"));
+          }
+        }, 10);
+      });
 
-    expect(pushStateCalls.length).toBe(1);
-    expect(pushStateCalls[0]?.url).toBe("/page-b");
-  });
+      expect(window.location.pathname).toBe("/page-c");
+    },
+    { timeout: 5000 }
+  );
 });
