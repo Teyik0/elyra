@@ -17,6 +17,7 @@ import type { ErrorComponent } from "./error";
 import type { NotFoundComponent } from "./not-found";
 import { FurinErrorBoundary, FurinNotFoundBoundary } from "./render/boundaries.tsx";
 import { DefaultNotFoundScreen } from "./render/default-screens.tsx";
+import { FurinServerError } from "./server-error.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -380,6 +381,15 @@ export interface RouterProviderProps {
 
 interface RouterState {
   data: Record<string, unknown>;
+  /**
+   * Set when the server's NDJSON payload carried an `__furinError` sentinel
+   * (loader threw a non-redirect `Response`, or an `Error`). The provider's
+   * render path injects a `<RouteErrorThrower>` in place of the page so the
+   * nearest `<FurinErrorBoundary>` catches a `FurinServerError` carrying the
+   * server's digest + status. Mirrors the `__furinError` channel that already
+   * exists for SSR digest correlation.
+   */
+  error?: { digest: string; message: string; status: number };
   /** The canonical href after server-side redirects (e.g. query-default redirect). */
   finalHref?: string;
   /**
@@ -459,23 +469,42 @@ function normalizePath(path: string): string {
  * - `ok` — 2xx response with usable loader data; render normally.
  * - `not-found` — server signalled `__FURIN_DATA__.__furinStatus === 404`; the
  *   caller should render the not-found UI inline (no full-page reload).
- * - `bail` — any other non-2xx (5xx, stale-deploy, unparseable payload…);
- *   the caller falls back to a full-page navigation so the browser picks up
- *   whatever the server wants to send (could be an error page, redirect, etc.).
+ * - `error` — server signalled `__FURIN_DATA__.__furinError` (loader threw a
+ *   non-redirect `Response` or an `Error`). The caller surfaces this through
+ *   the nearest `error.tsx` inline by throwing a `FurinServerError` during
+ *   render so the existing `FurinErrorBoundary` catches it.
+ * - `bail` — any other non-2xx without sentinels (stale-deploy, unparseable
+ *   payload, opaque crash…); the caller falls back to a full-page navigation
+ *   so the browser shows whatever the server actually sent.
  *
  * @internal Exported for unit testing only.
  */
 export type SpaResponseKind =
   | { kind: "ok" }
   | { kind: "not-found"; error: { data?: unknown; message?: string } }
+  | { kind: "error"; error: { digest: string; message: string; status: number } }
   | { kind: "bail" };
+
+function isFurinErrorPayload(
+  value: unknown
+): value is { digest: string; message: string; status: number } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const v = value as { digest?: unknown; message?: unknown; status?: unknown };
+  return (
+    typeof v.digest === "string" && typeof v.message === "string" && typeof v.status === "number"
+  );
+}
 
 /**
  * Pure classifier for an SPA-nav fetch result. Takes the HTTP status and the
- * already-parsed `__FURIN_DATA__` payload. The 404 signal is trusted over the
- * HTTP status (guards against proxies that rewrite status but preserve body),
- * while any other non-ok HTTP status triggers a bail even if the payload is
- * well-formed.
+ * already-parsed `__FURIN_DATA__` payload.
+ *
+ * Sentinels (`__furinError`, `__furinStatus`) are trusted over the raw HTTP
+ * status — proxies / CDNs sometimes rewrite the status code but pass the body
+ * through untouched. A non-2xx response without any sentinel triggers a bail
+ * so the browser handles it (could be an error page, redirect, etc.).
  *
  * @internal Exported for unit testing only.
  */
@@ -485,6 +514,9 @@ export function classifySpaResponse(
 ): SpaResponseKind {
   if (!data) {
     return { kind: "bail" };
+  }
+  if (isFurinErrorPayload(data.__furinError)) {
+    return { kind: "error", error: data.__furinError };
   }
   if (((status >= 200 && status < 300) || status === 404) && data.__furinStatus === 404) {
     const notFound = data.__furinNotFound as { data?: unknown; message?: string } | undefined;
@@ -664,9 +696,9 @@ export function buildRouterTree(
   options: RootBoundaryOptions
 ): React.ReactElement {
   return (
-    <FurinErrorBoundary {...options}>
-      <RouterContext.Provider value={context}>{pageElement}</RouterContext.Provider>
-    </FurinErrorBoundary>
+    <RouterContext.Provider value={context}>
+      <FurinErrorBoundary {...options}>{pageElement}</FurinErrorBoundary>
+    </RouterContext.Provider>
   );
 }
 
@@ -725,14 +757,43 @@ function wrapPageBoundaries(
   return wrapped;
 }
 
+/**
+ * Internal helper component that throws a `FurinServerError` during render
+ * so the nearest `<FurinErrorBoundary>` catches it and renders the user's
+ * `error.tsx` (or the built-in default) — without forcing a full-page reload.
+ *
+ * Used by `buildPageElement` when the server signalled `__furinError` for the
+ * SPA-nav target. The thrown error carries the server's digest + status so:
+ *   - `FurinErrorBoundary.getDerivedStateFromError` honours the server digest
+ *     (matches the id the server already logged) instead of recomputing one
+ *     from a synthetic stack.
+ *   - The user's `error.tsx` receives `error.status` from the original
+ *     loader-thrown `Response.status`.
+ */
+function RouteErrorThrower({
+  error,
+}: {
+  error: { digest: string; message: string; status: number };
+}): React.ReactElement {
+  throw new FurinServerError(error);
+}
+
 /** @internal Exported for unit testing only. */
 export function buildPageElement(
   match: LoadedClientRoute,
   root: RuntimeRoute | null,
   data: Record<string, unknown>,
-  options: BoundaryOptions | undefined
+  options: BoundaryOptions | undefined,
+  error: { digest: string; message: string; status: number } | undefined
 ): React.ReactNode {
-  let element: React.ReactNode = createElement(match.component, data);
+  // When the server signalled `__furinError`, the page component's loader
+  // failed — there is no real `data` for it. Replace the page with a
+  // throw-on-render shim so the deepest `<FurinErrorBoundary>` (set up by
+  // wrapPageBoundaries below) catches a `FurinServerError` carrying the
+  // server's digest + status.
+  let element: React.ReactNode = error
+    ? createElement(RouteErrorThrower, { error })
+    : createElement(match.component, data);
 
   // Collect non-root layouts from the route chain (bottom-up)
   const allLayouts: React.ComponentType<Record<string, unknown> & { children: React.ReactNode }>[] =
@@ -874,12 +935,6 @@ export function RouterProvider({
   defaultPreloadStaleTime,
   prefetchCacheSize,
 }: RouterProviderProps): React.ReactElement {
-  const _autoRefresh = autoRefresh ?? true;
-  const _basePath = basePath ?? "";
-  const _defaultPreload = defaultPreload ?? "intent";
-  const _defaultPreloadDelay = defaultPreloadDelay ?? 50;
-  const _defaultPreloadStaleTime = defaultPreloadStaleTime ?? 30_000;
-  const _prefetchCacheSize = prefetchCacheSize ?? 50;
   // Initial state. When `initialMatch` is `null`, `initialNotFound` MUST be set —
   // the provider boots into the inline not-found UI (see `initialNotFound` JSDoc).
   // `notFoundBoundaries` is left undefined so the render path can fall through to
@@ -896,7 +951,7 @@ export function RouterProvider({
     if (typeof window === "undefined") {
       return "/";
     }
-    return normalizeHref(toLogical(window.location.pathname, _basePath)) + window.location.search;
+    return normalizeHref(toLogical(window.location.pathname, basePath)) + window.location.search;
   });
   const prefetchCache = useRef(new Map<string, CacheEntry>());
   /** Monotonic counter to discard stale navigations (race condition guard). */
@@ -944,10 +999,10 @@ export function RouterProvider({
       try {
         // Physical href: what the browser/server actually receives.
         // For basePath deployments: fetch("/furin/docs/routing") not fetch("/docs/routing").
-        const physicalHref = _basePath + logicalHref;
+        const physicalHref = basePath + logicalHref;
         const url = new URL(physicalHref, window.location.origin);
         // Route matching always uses the LOGICAL pathname (basePath stripped).
-        const logicalPathname = toLogical(url.pathname, _basePath);
+        const logicalPathname = toLogical(url.pathname, basePath);
         const match = routes.find((r) => r.regex.test(logicalPathname));
         if (!match) {
           // No client-side route matched — the server will call renderRootNotFound.
@@ -959,7 +1014,7 @@ export function RouterProvider({
             window.location.href = physicalHref;
             return null;
           }
-          const { data, finalHref, title } = await parsePageResponse(res, _basePath);
+          const { data, finalHref, title } = await parsePageResponse(res, basePath);
           const kind = classifySpaResponse(res.status, data);
           if (kind.kind !== "not-found") {
             // Non-404 server response for an unmatched URL (e.g. 5xx) — bail to
@@ -985,7 +1040,7 @@ export function RouterProvider({
         // Fetch loader data from /_furin/data (NDJSON, supports deferred Promises)
         // and load the JS module concurrently. The browser module cache makes
         // match.load() near-instant for already-loaded pages.
-        const dataEndpoint = `${_basePath}/_furin/data?path=${encodeURIComponent(logicalHref)}`;
+        const dataEndpoint = `${basePath}/_furin/data?path=${encodeURIComponent(logicalHref)}`;
         const [res, loadedMod] = await Promise.all([fetch(dataEndpoint), match.load()]);
 
         // Stale-deploy detection: if the server reports a different buildId, the client
@@ -996,25 +1051,42 @@ export function RouterProvider({
           return null;
         }
 
-        if (!res.ok && res.status !== 404) {
-          log.warn({ action: "navigate_server_error", href: physicalHref, status: res.status });
+        // Non-2xx without an error sentinel? Bail to full reload. We always
+        // try to parse the body first because non-2xx responses now carry the
+        // `__furinError` NDJSON sentinel for non-redirect Response throws.
+        // Truly opaque non-2xx responses (server crash, proxy interjection)
+        // have no body we can deserialise → bail.
+        const body = res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() });
+        let parsed: {
+          syncData: Record<string, unknown>;
+          deferredPromises: Record<string, Promise<unknown>>;
+        };
+        try {
+          parsed = await parseDeferredNdjson(body);
+        } catch (parseErr) {
+          log.warn({
+            action: "navigate_server_error",
+            href: physicalHref,
+            status: res.status,
+            error: String(parseErr),
+          });
           return null;
         }
-
-        const body = res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() });
-        const { syncData, deferredPromises } = await parseDeferredNdjson(body);
+        const { syncData, deferredPromises } = parsed;
 
         // Special fields injected by the server into syncData:
         //   __furinStatus   — 404 signal
         //   __furinNotFound — not-found payload
         //   __furinRedirect — server-side redirect target (logical path)
-        //   __furinError    — error digest
-        const { __furinStatus, __furinNotFound, __furinRedirect, ...cleanSyncData } = syncData as {
-          __furinStatus?: number;
-          __furinNotFound?: { data?: unknown; message?: string };
-          __furinRedirect?: string;
-          [key: string]: unknown;
-        };
+        //   __furinError    — error sentinel (digest, message, status)
+        const { __furinStatus, __furinNotFound, __furinRedirect, __furinError, ...cleanSyncData } =
+          syncData as {
+            __furinStatus?: number;
+            __furinNotFound?: { data?: unknown; message?: string };
+            __furinRedirect?: string;
+            __furinError?: { digest: string; message: string; status: number };
+            [key: string]: unknown;
+          };
 
         const finalHref: string | undefined =
           typeof __furinRedirect === "string" ? __furinRedirect : undefined;
@@ -1023,29 +1095,60 @@ export function RouterProvider({
         // values for deferred fields — wrapped in <Await> for suspension.
         const data = { ...cleanSyncData, ...deferredPromises };
 
+        const title =
+          (syncData.title as string | undefined) ??
+          (syncData.__furinTitle as string | undefined) ??
+          "";
+
         const loadedMatch: LoadedClientRoute = {
           ...match,
           component: loadedMod.default.component,
           pageRoute: loadedMod.default._route,
         };
 
+        // Loader threw a non-redirect Response (or an Error). Render the
+        // route's segment-level error.tsx inline by surfacing the sentinel
+        // through state.error — RouterProvider's render path injects a
+        // `RouteErrorThrower` at the page slot.
+        if (__furinError) {
+          return {
+            match: loadedMatch,
+            data: {},
+            title,
+            finalHref,
+            error: __furinError,
+          };
+        }
+
+        // Non-2xx without sentinel and not 404 → opaque server error. Bail to
+        // full-page reload so the browser shows whatever the server sent.
+        if (!res.ok && res.status !== 404) {
+          log.warn({ action: "navigate_server_error", href: physicalHref, status: res.status });
+          return null;
+        }
+
         if (__furinStatus === 404) {
           return {
             match: loadedMatch,
             data,
-            title: "",
+            title,
             finalHref,
             notFound: (__furinNotFound as { data?: unknown; message?: string }) ?? {},
           };
         }
 
-        return { match: loadedMatch, data, title: "", finalHref };
+        // Server-side redirect: do not mount the pre-redirect route.
+        if (finalHref) {
+          return { match: null, data, title, finalHref };
+        }
+
+        return { match: loadedMatch, data, title, finalHref };
       } catch (err: unknown) {
-        log.error({ action: "navigate_failed", href: _basePath + logicalHref, error: String(err) });
+        log.error({ action: "navigate_failed", href: basePath + logicalHref, error: String(err) });
         return null;
       }
     },
-    [routes, _basePath, rootBoundaries]
+    [routes, basePath, rootBoundaries]
   );
 
   const invalidatePrefetch = useCallback((path: string, type: "page" | "layout" = "page") => {
@@ -1075,7 +1178,7 @@ export function RouterProvider({
 
   const prefetch = useCallback(
     (href: string, opts?: { staleTime?: number }) => {
-      const staleTime = opts?.staleTime ?? _defaultPreloadStaleTime;
+      const staleTime = opts?.staleTime ?? defaultPreloadStaleTime;
       const existing = prefetchCache.current.get(href);
       if (existing && !shouldRefetch(existing)) {
         return;
@@ -1086,15 +1189,32 @@ export function RouterProvider({
         staleTime,
       });
       // Evict the oldest entry when the cap is exceeded
-      if (prefetchCache.current.size > _prefetchCacheSize) {
+      if (prefetchCache.current.size > prefetchCacheSize) {
         const oldest = prefetchCache.current.keys().next().value as string;
         prefetchCache.current.delete(oldest);
       }
     },
-    [fetchPageState, _defaultPreloadStaleTime, _prefetchCacheSize]
+    [fetchPageState, defaultPreloadStaleTime, prefetchCacheSize]
   );
 
+  /** Loads the RouterState for a redirect target, respecting the nav version. */
+  async function resolveRedirectState(
+    redirectLogical: string,
+    myVersion: number
+  ): Promise<RouterState | null> {
+    const cached = prefetchCache.current.get(redirectLogical);
+    const state =
+      cached && !shouldRefetch(cached)
+        ? await cached.promise
+        : await fetchPageState(redirectLogical);
+    if (navVersion.current !== myVersion) {
+      return null;
+    }
+    return state;
+  }
+
   const navigate = useCallback(
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: SPA navigation orchestrator — redirect follow, history management, and scroll handling require this depth
     async (rawLogicalHref: string, opts?: { replace?: boolean; resetScroll?: boolean }) => {
       // Normalize trailing slashes so the prefetch cache key and route
       // matching stay consistent regardless of how the href was formed.
@@ -1105,7 +1225,7 @@ export function RouterProvider({
       const myVersion = ++navVersion.current;
       setIsNavigating(true);
       try {
-        const newState = await prefetchCache.current.get(logicalHref)?.promise;
+        let newState = await prefetchCache.current.get(logicalHref)?.promise;
         // Discard if a newer navigation was started while we were waiting
         if (navVersion.current !== myVersion) {
           return;
@@ -1117,18 +1237,43 @@ export function RouterProvider({
             reason: "prefetch_returned_null",
           });
           // Fall back to full-page navigation using the physical URL.
-          window.location.href = _basePath + logicalHref;
+          window.location.href = basePath + logicalHref;
           return;
         }
+
+        // Server-side redirect: replace current history entry and load target
+        let redirectLogical: string | undefined;
+        if (newState.finalHref && !newState.match && !newState.notFound) {
+          redirectLogical = normalizeHref(newState.finalHref);
+          const redirectPhysical = basePath + redirectLogical;
+          window.history.replaceState(
+            {
+              ...((history.state as object) ?? {}),
+              _furinKey: getHistoryKey(history.state) ?? generateHistoryKey(),
+            },
+            "",
+            redirectPhysical
+          );
+          setCurrentHref(redirectLogical);
+          const redirectState = await resolveRedirectState(redirectLogical, myVersion);
+          if (!redirectState) {
+            if (navVersion.current === myVersion) {
+              window.location.href = redirectPhysical;
+            }
+            return;
+          }
+          newState = redirectState;
+        }
+
         currentMatchRef.current = newState.match;
         setState(newState);
         if (newState.title) {
           document.title = newState.title;
         }
         // effectiveHref is logical (finalHref from fetchPageState is also logical).
-        const effectiveLogical = newState.finalHref ?? logicalHref;
+        const effectiveLogical = newState.finalHref ?? redirectLogical ?? logicalHref;
         // Push the PHYSICAL path to browser history.
-        const physicalEffective = _basePath + effectiveLogical;
+        const physicalEffective = basePath + effectiveLogical;
         if (opts?.replace) {
           // Preserve the existing key — same history entry, URL just updated.
           window.history.replaceState(
@@ -1149,7 +1294,7 @@ export function RouterProvider({
         }
         // Store the LOGICAL path in currentHref so Link active-state works.
         const effectiveUrl = new URL(physicalEffective, window.location.origin);
-        const logicalPath = normalizeHref(toLogical(effectiveUrl.pathname, _basePath));
+        const logicalPath = normalizeHref(toLogical(effectiveUrl.pathname, basePath));
         setCurrentHref(logicalPath + effectiveUrl.search);
         if (opts?.resetScroll ?? true) {
           pendingScrollRef.current = { type: "reset", href: physicalEffective };
@@ -1161,19 +1306,19 @@ export function RouterProvider({
         }
       }
     },
-    [prefetch, _basePath]
+    [prefetch, basePath]
   );
 
   const refresh = useCallback(
     async (opts?: { resetScroll?: boolean }) => {
       // Convert the physical browser URL to a logical href before navigating.
-      const logicalPath = toLogical(window.location.pathname, _basePath);
+      const logicalPath = toLogical(window.location.pathname, basePath);
       const logicalHref = logicalPath + window.location.search;
       // Bust the cache for this exact logical page so navigate always re-fetches
       invalidatePrefetch(logicalHref, "page");
       await navigate(logicalHref, { replace: true, resetScroll: opts?.resetScroll ?? false });
     },
-    [navigate, invalidatePrefetch, _basePath]
+    [navigate, invalidatePrefetch, basePath]
   );
 
   // Expose refresh() to the HMR handler in _hydrate.tsx so that after a hot
@@ -1199,11 +1344,12 @@ export function RouterProvider({
     // Convert physical browser URL to logical href for cache lookup + fetchPageState.
     // Normalize trailing slashes so "/docs/routing/" back-button navigations
     // still match the route pattern "/docs/routing".
-    const logicalPath = normalizeHref(toLogical(window.location.pathname, _basePath));
+    const logicalPath = normalizeHref(toLogical(window.location.pathname, basePath));
     const logicalHref = logicalPath + window.location.search;
     const myVersion = ++navVersion.current;
     setIsNavigating(true);
 
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: popstate handler — cache check, redirect follow, and scroll restoration require this depth
     (async () => {
       try {
         // Check prefetch cache before fetching fresh (keyed by logical href)
@@ -1227,16 +1373,33 @@ export function RouterProvider({
           window.location.reload();
           return;
         }
+
+        // Server-side redirect: replace history entry and load target
+        let redirectLogical: string | undefined;
+        if (newState.finalHref && !newState.match && !newState.notFound) {
+          redirectLogical = normalizeHref(newState.finalHref);
+          window.history.replaceState(history.state, "", basePath + redirectLogical);
+          setCurrentHref(redirectLogical);
+          const redirectState = await resolveRedirectState(redirectLogical, myVersion);
+          if (!redirectState) {
+            if (navVersion.current === myVersion) {
+              window.location.reload();
+            }
+            return;
+          }
+          newState = redirectState;
+        }
+
         currentMatchRef.current = newState.match;
         setState(newState);
         if (newState.title) {
           document.title = newState.title;
         }
         // effectiveHref is logical (includes search); push physical to history if server redirected.
-        const effectiveLogical = newState.finalHref ?? logicalHref;
+        const effectiveLogical = newState.finalHref ?? redirectLogical ?? logicalHref;
         if (newState.finalHref) {
           // Preserve _furinKey so scroll restoration still works after a redirect.
-          window.history.replaceState(history.state, "", _basePath + effectiveLogical);
+          window.history.replaceState(history.state, "", basePath + effectiveLogical);
         }
         // effectiveLogical already contains the search params — no URL round-trip needed.
         setCurrentHref(normalizeHref(effectiveLogical));
@@ -1252,7 +1415,7 @@ export function RouterProvider({
         }
       }
     })();
-  }, [fetchPageState, _basePath]);
+  }, [fetchPageState, basePath]);
 
   // Disable native scroll restoration and assign a key to the initial history entry.
   // No cleanup: in an SPA once manual it stays manual for the app lifetime.
@@ -1331,7 +1494,7 @@ export function RouterProvider({
       const logicalHref = shouldInterceptClick(
         anchor,
         e,
-        _basePath,
+        basePath,
         window.location.origin,
         window.location.pathname
       );
@@ -1343,7 +1506,7 @@ export function RouterProvider({
     };
     document.addEventListener("click", handler);
     return () => document.removeEventListener("click", handler);
-  }, [navigate, _basePath]);
+  }, [navigate, basePath]);
 
   // Intercept all window.fetch calls to auto-process X-Furin-Revalidate headers.
   // This ensures that API routes calling revalidatePath() automatically bust the
@@ -1361,9 +1524,9 @@ export function RouterProvider({
         invalidatePrefetch(path, type);
         invalidated.push({ path, type });
       });
-      if (_autoRefresh && invalidated.length > 0) {
+      if (autoRefresh && invalidated.length > 0) {
         const currentLogicalPath =
-          normalizeHref(toLogical(window.location.pathname, _basePath)) + window.location.search;
+          normalizeHref(toLogical(window.location.pathname, basePath)) + window.location.search;
         if (shouldAutoRefreshPath(currentLogicalPath, invalidated)) {
           // fire-and-forget: don't block the original fetch caller
           refresh();
@@ -1378,7 +1541,7 @@ export function RouterProvider({
     return () => {
       window.fetch = originalFetch;
     };
-  }, [invalidatePrefetch, refresh, _autoRefresh]);
+  }, [invalidatePrefetch, refresh, autoRefresh]);
 
   // Slice 8 — when a prior SPA navigation hit a loader-thrown or catch-all 404,
   // render the bare not-found element (mirrors server's `buildNotFoundElement`).
@@ -1401,16 +1564,25 @@ export function RouterProvider({
       state.notFound ?? {}
     );
   } else {
-    pageElement = buildPageElement(state.match, root, state.data, {
-      // User's `reset()` prop → clear local boundary state (handled by the
-      // boundary itself) → re-run loaders for the current route so transient
-      // errors (bad state, expired data) can recover without a full reload.
-      onReset: refresh,
-      // Auto-clear latched errors when navigating between routes that share
-      // a boundary instance — otherwise the new route would render INSIDE
-      // the previous route's error fallback.
-      resetKey: currentHref,
-    });
+    pageElement = buildPageElement(
+      state.match,
+      root,
+      state.data,
+      {
+        // User's `reset()` prop → clear local boundary state (handled by the
+        // boundary itself) → re-run loaders for the current route so transient
+        // errors (bad state, expired data) can recover without a full reload.
+        onReset: refresh,
+        // Auto-clear latched errors when navigating between routes that share
+        // a boundary instance — otherwise the new route would render INSIDE
+        // the previous route's error fallback.
+        resetKey: currentHref,
+      },
+      // Slice 3 — when the server's NDJSON sentinelled `__furinError`, render
+      // the deepest `error.tsx` inline by throwing a `FurinServerError` at
+      // the page slot. The boundaries set up by buildPageElement catch it.
+      state.error
+    );
   }
 
   // Slice 9 + 10 — wrap the entire tree in a root FurinErrorBoundary that
@@ -1420,16 +1592,16 @@ export function RouterProvider({
   // the same id the server already logged.
   return buildRouterTree(
     {
-      basePath: _basePath,
+      basePath,
       currentHref,
       navigate,
       prefetch,
       refresh,
       invalidatePrefetch,
       isNavigating,
-      defaultPreload: _defaultPreload,
-      defaultPreloadDelay: _defaultPreloadDelay,
-      defaultPreloadStaleTime: _defaultPreloadStaleTime,
+      defaultPreload,
+      defaultPreloadDelay,
+      defaultPreloadStaleTime,
     },
     pageElement,
     {

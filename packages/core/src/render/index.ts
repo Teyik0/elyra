@@ -165,8 +165,14 @@ async function prepareRender(
     notFoundError = { message: loaderResult.error.message, data: loaderResult.error.data };
   } else if (loaderResult.type === "error") {
     errorDigest = computeErrorDigest(loaderResult.error);
-    element = buildErrorElement(route.error ?? root.error, loaderResult.error, errorDigest);
-    status = 500;
+    element = buildErrorElement(
+      route.error ?? root.error,
+      loaderResult.error,
+      errorDigest,
+      loaderResult.message,
+      loaderResult.status
+    );
+    status = loaderResult.status;
   } else {
     element = buildElement(route, componentProps, root.route);
   }
@@ -379,7 +385,7 @@ export async function renderSSR(
     try {
       reactStream = await renderToReadableStream(
         withSSRRouterContext(
-          buildErrorElement(route.error ?? root.error, shellError, finalDigest),
+          buildErrorElement(route.error ?? root.error, shellError, finalDigest, undefined, 500),
           prepared.ssrContext
         )
       );
@@ -388,7 +394,7 @@ export async function renderSSR(
       // pure markup and cannot crash.
       reactStream = await renderToReadableStream(
         withSSRRouterContext(
-          buildErrorElement(undefined, shellError, finalDigest),
+          buildErrorElement(undefined, shellError, finalDigest, undefined, 500),
           prepared.ssrContext
         )
       );
@@ -414,7 +420,7 @@ export async function renderSSR(
 
   const dataPayload: Record<string, unknown> = shellErrored ? {} : { ...syncData };
   if (finalDigest) {
-    dataPayload.__furinError = { digest: finalDigest };
+    dataPayload.__furinError = { digest: finalDigest, status };
   }
   // Slice 8 — SPA 404 signal.
   if (status === 404 && !shellErrored) {
@@ -422,6 +428,19 @@ export async function renderSSR(
     if (prepared.notFoundError) {
       dataPayload.__furinNotFound = prepared.notFoundError;
     }
+  }
+  // Invariant: __furinError and __furinNotFound are mutually exclusive — one is
+  // a notFound() signal (renders not-found.tsx), the other is an error.tsx
+  // signal. They are gated by distinct LoaderResult variants in prepareRender,
+  // so collisions would indicate a bug. Dev assert to lock the invariant.
+  if (
+    process.env.NODE_ENV !== "production" &&
+    dataPayload.__furinError !== undefined &&
+    dataPayload.__furinNotFound !== undefined
+  ) {
+    throw new Error(
+      "[furin] internal invariant violated: __furinError and __furinNotFound were both set on the same SSR payload. Open a bug — these signals are mutually exclusive."
+    );
   }
 
   const hasDeferred = !shellErrored && deferredPromises !== undefined;
@@ -458,13 +477,19 @@ export async function renderSSR(
     }
 
     // After React stream: inject late resolution scripts for each deferred Promise
-    if (hasDeferred && deferredPromises !== undefined) {
+    if (hasDeferred) {
       for (const [key, promise] of Object.entries(deferredPromises)) {
         try {
           const resolvedValue = await promise;
           const chunk = toCrossJSON(resolvedValue);
           await writer.write(enc.encode(buildDeferredResolution(key, chunk, "resolve")));
         } catch (err) {
+          // TODO(furin/server-error): handle Response rejections in deferred
+          // streams. Same bug pattern as runLoaders — `String(err)` on a
+          // Response yields "[object Response]" and `notFound()` brand checks
+          // are lost when a deferred Promise rejects with one. Out of scope
+          // for the current slice; needs its own design (the rejection lands
+          // inside `<Await>` which has its own error UI semantics).
           const chunk = toCrossJSON(err instanceof Error ? err : new Error(String(err)));
           await writer.write(enc.encode(buildDeferredResolution(key, chunk, "reject")));
         }
@@ -697,7 +722,7 @@ async function renderISRNon200(
     try {
       reactStream = await renderToReadableStream(
         withSSRRouterContext(
-          buildErrorElement(route.error ?? root.error, shellError, finalDigest),
+          buildErrorElement(route.error ?? root.error, shellError, finalDigest, undefined, 500),
           prepared.ssrContext
         )
       );
@@ -706,14 +731,14 @@ async function renderISRNon200(
       // cannot crash).
       reactStream = await renderToReadableStream(
         withSSRRouterContext(
-          buildErrorElement(undefined, shellError, finalDigest),
+          buildErrorElement(undefined, shellError, finalDigest, undefined, 500),
           prepared.ssrContext
         )
       );
     }
   }
   if (!fallbackProps.__furinError && errorDigest) {
-    fallbackProps.__furinError = { digest: errorDigest };
+    fallbackProps.__furinError = { digest: errorDigest, status };
   }
 
   await reactStream.allReady;

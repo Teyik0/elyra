@@ -17,6 +17,7 @@ import {
   setDevISRLoaderCache,
   setDevSSGLoaderCache,
 } from "./render/dev-cache.ts";
+import { computeErrorDigest } from "./render/digest.ts";
 import {
   handleISR,
   type LoaderResult,
@@ -1038,19 +1039,74 @@ export function filePathToPattern(path: string): string {
 
 // ── /_furin/data endpoint ──────────────────────────────────────────────────────
 
+const REGEX_META_CHARS_RE = /[.*+?^${}()|[\]\\]/;
+
+function escapeRegExpChar(ch: string): string {
+  return REGEX_META_CHARS_RE.test(ch) ? `\\${ch}` : ch;
+}
+
 /**
  * Builds a regex from a route pattern, extracts named capture groups for
  * each `:param` segment, and returns `{ regex, paramNames }`.
+ *
+ * Literal characters (e.g. dots in filenames like `v1.0`) are escaped so
+ * they are matched exactly rather than interpreted as regex syntax.
  */
 function buildRouteRegex(pattern: string): { regex: RegExp; paramNames: string[] } {
   const paramNames: string[] = [];
-  const regexSource = pattern
-    .replace(/:[^/]+/g, (m) => {
-      paramNames.push(m.slice(1));
-      return "([^/]+)";
-    })
-    .replace(/\*/g, "(.*)");
-  return { regex: new RegExp(`^${regexSource}$`), paramNames };
+  let source = "";
+  let i = 0;
+  while (i < pattern.length) {
+    if (pattern[i] === ":") {
+      const start = ++i;
+      while (i < pattern.length && pattern[i] !== "/") {
+        i++;
+      }
+      paramNames.push(pattern.slice(start, i));
+      source += "([^/]+)";
+    } else if (pattern[i] === "*") {
+      source += "(.*)";
+      i++;
+    } else {
+      const ch = pattern[i];
+      if (ch !== undefined) {
+        source += escapeRegExpChar(ch);
+      }
+      i++;
+    }
+  }
+  return { regex: new RegExp(`^${source}$`), paramNames };
+}
+
+/**
+ * Applies top-level `default` values from a TypeBox TObject schema to a
+ * values record. Used in the `/_furin/data` endpoint so loaders see the same
+ * defaulted query objects that the SSR path produces via Elysia's guard.
+ */
+function applySchemaDefaults(
+  schema: Record<string, unknown> | undefined,
+  values: Record<string, unknown>
+): Record<string, unknown> {
+  if (!schema || typeof schema !== "object") {
+    return values;
+  }
+  const s = schema as Record<string, unknown>;
+  if (s.type !== "object" || !s.properties || typeof s.properties !== "object") {
+    return values;
+  }
+  const result = { ...values };
+  const properties = s.properties as Record<string, Record<string, unknown>>;
+  for (const [key, propSchema] of Object.entries(properties)) {
+    if (
+      !(key in result) &&
+      propSchema &&
+      typeof propSchema === "object" &&
+      "default" in propSchema
+    ) {
+      result[key] = propSchema.default;
+    }
+  }
+  return result;
 }
 
 /**
@@ -1133,6 +1189,27 @@ export function createDataEndpoint(routes: ResolvedRoute[], root: RootLayout): A
         status: (code: number | string) => new Response(null, { status: Number(code) }),
       } as unknown as Context;
 
+      // Normalize params and query through the same merged schemas used by
+      // createRoutePlugin so loaders see identical typed/defaulted inputs.
+      const mergedParams = mergeRouteSchemas(matched.route.routeChain, "params");
+      const mergedQuery = mergeRouteSchemas(matched.route.routeChain, "query");
+      syntheticCtx.params = applySchemaDefaults(
+        mergedParams as Record<string, unknown> | undefined,
+        syntheticCtx.params as Record<string, unknown>
+      ) as Record<string, string>;
+      syntheticCtx.query = applySchemaDefaults(
+        mergedQuery as Record<string, unknown> | undefined,
+        syntheticCtx.query as Record<string, unknown>
+      ) as Record<string, string>;
+
+      // Redirect when query defaults were applied (validator-agnostic)
+      if (mergedQuery) {
+        const redirect = queryDefaultRedirectHook(syntheticCtx as Context);
+        if (redirect) {
+          return redirect;
+        }
+      }
+
       const result = await runLoaders(matched.route, syntheticCtx, root.route);
 
       if (result.type === "redirect") {
@@ -1161,7 +1238,25 @@ export function createDataEndpoint(routes: ResolvedRoute[], root: RootLayout): A
       }
 
       if (result.type === "error") {
-        return new Response("Internal server error", { status: 500 });
+        // Compute the digest server-side ONCE so:
+        //   1. The HTTP response body carries it (client error UI displays the
+        //      same id the server logs).
+        //   2. The server-log line below uses the SAME digest a user would see
+        //      on screen, enabling support correlation.
+        // Recomputing client-side from a synthetic message + stack would yield
+        // a different hash — see boundaries.tsx for the digest precedence.
+        const digest = computeErrorDigest(result.error);
+        const serialized = await toCrossJSONAsync({
+          __furinError: {
+            digest,
+            message: result.message,
+            status: result.status,
+          },
+        });
+        return new Response(`${JSON.stringify(serialized)}\n`, {
+          status: result.status,
+          headers: { "content-type": "application/x-ndjson" },
+        });
       }
 
       // Merge sync + deferred. toCrossJSONAsync awaits all Promises.

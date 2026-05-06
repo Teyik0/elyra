@@ -108,12 +108,35 @@ const SERVER_RESET_NOOP = () => {
   /* reset is a client-only action; the response is already committed here */
 };
 
+/**
+ * Builds the error element rendered when a loader (or the SSR shell) fails.
+ *
+ * @param component - User-declared `error.tsx` component, or `undefined` to
+ *   fall back to the built-in `DefaultErrorScreen` with a generic message.
+ * @param error - The original thrown value. Kept for `errorMessageOf` lookup
+ *   when no explicit `messageOverride` is provided (e.g. shell-render errors).
+ * @param digest - 10-hex-char digest correlating with server logs.
+ * @param messageOverride - Pre-extracted public message. Set by the loader
+ *   pipeline when the thrown value is a `Response` (whose body has already
+ *   been consumed in `runLoaders`); pass `undefined` to derive the message
+ *   from `error` via `errorMessageOf`.
+ * @param status - HTTP status to surface in `ErrorProps.error.status`. The
+ *   loader pipeline passes the thrown `Response.status` (default 500); the
+ *   shell-error recovery path always passes 500.
+ */
 export function buildErrorElement(
   component: ErrorComponent | undefined,
   error: unknown,
-  digest: string
+  digest: string,
+  messageOverride: string | undefined,
+  status: number
 ): ReactNode {
   const ErrorView = component ?? DefaultErrorComponent;
-  const message = component ? errorMessageOf(error) : "An unexpected error occurred.";
-  return <ErrorView error={{ message, digest }} reset={SERVER_RESET_NOOP} />;
+  let message: string;
+  if (component) {
+    message = messageOverride ?? errorMessageOf(error);
+  } else {
+    message = "An unexpected error occurred.";
+  }
+  return <ErrorView error={{ message, digest, status }} reset={SERVER_RESET_NOOP} />;
 }

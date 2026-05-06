@@ -11,6 +11,20 @@ export interface ErrorProps {
      * without leaking stack traces to the browser.
      */
     digest: string;
+    /**
+     * HTTP status associated with the error.
+     * - For thrown `Response` objects with a 4xx/5xx status: the response's
+     *   status (e.g. 401, 403, 404, 500).
+     * - For all other errors (thrown `Error`, non-Error throws, shell-render
+     *   crashes): always `500`.
+     *
+     * Always present so consumers never need a `?? 500` fallback. Note that
+     * `prepared.status` is honoured ONLY for loader-time errors. If a Suspense
+     * boundary throws AFTER the SSR shell has flushed (i.e. during streaming),
+     * the HTTP status cannot be changed and the user-visible status here may
+     * differ from the actual response code.
+     */
+    status: number;
   };
   /**
    * Clears the nearest FurinErrorBoundary's error state, remounting its
@@ -25,7 +39,10 @@ export type ErrorComponent = FC<ErrorProps>;
 
 export function getPublicErrorMessage(error: Error | unknown): string {
   const branded = error as { __furinBrand?: string } | undefined;
-  if (branded?.__furinBrand === "FURIN_NOT_FOUND") {
+  if (
+    branded?.__furinBrand === "FURIN_NOT_FOUND" ||
+    branded?.__furinBrand === "FURIN_SERVER_ERROR"
+  ) {
     return (error as Error).message;
   }
   return "Something went wrong";

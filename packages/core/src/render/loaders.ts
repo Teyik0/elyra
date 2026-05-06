@@ -22,7 +22,54 @@ export type LoaderResult =
     }
   | { type: "redirect"; response: Response }
   | { type: "not-found"; error: FurinNotFoundError; headers: Record<string, string> }
-  | { type: "error"; error: unknown; headers: Record<string, string> };
+  | {
+      type: "error";
+      /**
+       * Original thrown value, kept for digest computation and server logging.
+       * For thrown `Response` objects this is the Response instance whose body
+       * has already been consumed by `runLoaders` (do NOT read it again).
+       */
+      error: unknown;
+      /** HTTP status to return. Default 500; sourced from `Response.status` for thrown Response objects. */
+      status: number;
+      /**
+       * Safe public message extracted at the loader boundary. For thrown
+       * `Response` objects: response body or `statusText`. For thrown `Error`
+       * / non-Error values: a generic "Something went wrong" string (the raw
+       * error/message is never leaked here — `errorMessageOf` decides what to
+       * surface from the original `error` value when an `error.tsx` fallback
+       * exists).
+       */
+      message: string;
+      headers: Record<string, string>;
+    };
+
+/**
+ * `true` only for HTTP responses that are syntactically valid redirects:
+ * 3xx status code AND a `Location` header. A 3xx without `Location` is invalid
+ * HTTP and almost always a developer mistake — surfaced as an error so it's
+ * debuggable rather than silently redirecting to `/`.
+ */
+function isHttpRedirect(res: Response): boolean {
+  return res.status >= 300 && res.status < 400 && res.headers.has("location");
+}
+
+/**
+ * Reads the body of a thrown `Response` exactly once. Returns the body text
+ * if present, otherwise the response's `statusText`. The body is consumed
+ * destructively — callers must NOT read `res.body` / `res.text()` again.
+ */
+async function readResponseMessage(res: Response): Promise<string> {
+  if (res.body === null) {
+    return res.statusText;
+  }
+  try {
+    const body = await res.text();
+    return body || res.statusText;
+  } catch {
+    return res.statusText;
+  }
+}
 
 /**
  * Wraps the Elysia context so that any property NOT present on `ctx` is
@@ -161,31 +208,57 @@ export async function runLoaders(
 
     // When the page loader returned a `defer()` object, split its fields:
     // - Promise-valued fields → deferredPromises (streamed lazily)
-    // - Scalar fields + all route-chain data → syncData (injected into the HTML shell)
+    // - Scalar fields + all route-chain loader data → syncData (injected into the HTML shell)
     //
     // Route-chain loaders (layouts) are never deferred in v1; their data always
     // lands in syncData. Only the page loader's own `defer()` fields are split.
-    const pageResult = await pagePromise;
+    const routeOnlyResults = results.slice(0, loaderMap.size);
+    const pageResult = results[loaderMap.size] as Record<string, unknown>;
+    // Route context is always injected into syncData so components receive
+    // params, query and path regardless of the serialisation path (SSR, SPA
+    // nav, dev cache).
+    const routeCtx = { params: ctx.params, query: ctx.query, path: ctx.path };
     if (isDeferred(pageResult)) {
-      const routeOnlyResults = await Promise.all([...loaderMap.values()]);
       const routeMerged = Object.assign({}, ...routeOnlyResults) as Record<string, unknown>;
       const { syncData, deferredPromises } = splitDeferredResult(pageResult, routeMerged);
-      return { type: "data", syncData, deferredPromises, headers };
+      return { type: "data", syncData: { ...syncData, ...routeCtx }, deferredPromises, headers };
     }
 
     // No defer() — all data is synchronous
-    return { type: "data", syncData: merged, deferredPromises: undefined, headers };
+    return {
+      type: "data",
+      syncData: { ...merged, ...routeCtx },
+      deferredPromises: undefined,
+      headers,
+    };
   } catch (err) {
+    const headers: Record<string, string> = {};
+    Object.assign(headers, ctx.set.headers);
     if (isNotFoundError(err)) {
-      const headers: Record<string, string> = {};
-      Object.assign(headers, ctx.set.headers);
       return { type: "not-found", error: err, headers };
     }
     if (err instanceof Response) {
-      return { type: "redirect", response: err };
+      if (isHttpRedirect(err)) {
+        return { type: "redirect", response: err };
+      }
+      // Non-redirect Response → error. Read the body ONCE here so downstream
+      // consumers (digest, logging, error UI) all share the same extracted
+      // message without consuming the stream a second time.
+      //
+      // 3xx without Location is invalid HTTP — treat as a developer mistake
+      // (status 500) rather than honouring an unreachable redirect status.
+      const isMalformedRedirect = err.status >= 300 && err.status < 400;
+      const status = isMalformedRedirect ? 500 : err.status;
+      const body = await readResponseMessage(err);
+      const message = body || "Something went wrong";
+      return { type: "error", error: err, status, message, headers };
     }
-    const headers: Record<string, string> = {};
-    Object.assign(headers, ctx.set.headers);
-    return { type: "error", error: err, headers };
+    return {
+      type: "error",
+      error: err,
+      status: 500,
+      message: "Something went wrong",
+      headers,
+    };
   }
 }

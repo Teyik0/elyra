@@ -1,12 +1,21 @@
 import { Component, Fragment, type ReactNode } from "react";
 import { type ErrorComponent, getPublicErrorMessage } from "../error.ts";
 import { isNotFoundError, type NotFoundComponent } from "../not-found.ts";
+import { isFurinServerError } from "../server-error.ts";
 import { DefaultErrorScreen, DefaultNotFoundScreen } from "./default-screens.tsx";
 import { computeErrorDigest } from "./digest.ts";
 
 const DefaultErrorFallback: ErrorComponent = ({ error, reset }) => (
   <DefaultErrorScreen digest={error.digest} message={error.message} reset={reset} />
 );
+
+/**
+ * Default HTTP status surfaced to error UIs when the caught error has no
+ * intrinsic status (e.g. a thrown `Error`, a non-Error throw). The loader
+ * pipeline produces a `FurinServerError` with the right status when a thrown
+ * `Response` is the cause; everything else collapses to 500.
+ */
+const DEFAULT_ERROR_STATUS = 500;
 
 const DefaultNotFoundFallback: NotFoundComponent = ({ error }) => (
   <DefaultNotFoundScreen message={error.message} />
@@ -108,18 +117,27 @@ export class FurinErrorBoundary extends Component<ErrorBoundaryProps, ErrorBound
       }
       const Fallback = this.props.fallback ?? DefaultErrorFallback;
       // Digest precedence:
-      //   1. state.digest — computed at catch time, always correct for the
+      //   1. FurinServerError.digest — when the server emitted an error
+      //      sentinel through the SPA-nav payload, the synthesized error
+      //      carries the server's own digest so logs correlate without
+      //      recomputing a different hash from a synthetic stack.
+      //   2. state.digest — computed at catch time, always correct for the
       //      ACTUAL caught error.
-      //   2. props.digest — the server-rendered digest, only meaningful for
+      //   3. props.digest — the server-rendered digest, only meaningful for
       //      the very first error post-hydration; we still honour it as a
       //      last-resort fallback in case state.digest is somehow missing
       //      (e.g. tests that inject state by hand).
-      //   3. recompute on the spot — defensive, should never be reached.
-      const finalDigest = digest ?? this.props.digest ?? computeErrorDigest(error);
+      //   4. recompute on the spot — defensive, should never be reached.
+      const serverDigest = isFurinServerError(error) ? error.digest : undefined;
+      const finalDigest = serverDigest ?? digest ?? this.props.digest ?? computeErrorDigest(error);
       const message = this.props.fallback ? error.message : getPublicErrorMessage(error);
+      // Status precedence: FurinServerError carries the original Response.status
+      // (or the loader's computed 500 for non-Response throws); everything else
+      // collapses to the default 500.
+      const status = isFurinServerError(error) ? error.status : DEFAULT_ERROR_STATUS;
       return (
         <Fallback
-          error={{ message, digest: finalDigest }}
+          error={{ message, digest: finalDigest, status }}
           reset={typeof window === "undefined" ? SERVER_RESET_NOOP : this.reset}
         />
       );

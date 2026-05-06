@@ -161,7 +161,7 @@ describe("buildPageElement", () => {
 
   test("no layout — returns the page element directly", () => {
     const match = makeMatch(Page, makeRoute(undefined), undefined);
-    expect(renderToStaticMarkup(buildPageElement(match, null, data, undefined))).toBe(
+    expect(renderToStaticMarkup(buildPageElement(match, null, data, undefined, undefined))).toBe(
       "<p>page</p>"
     );
   });
@@ -171,7 +171,7 @@ describe("buildPageElement", () => {
       createElement("main", null, children);
 
     const match = makeMatch(Page, makeRoute({ layout: Layout }), undefined);
-    expect(renderToStaticMarkup(buildPageElement(match, null, data, undefined))).toBe(
+    expect(renderToStaticMarkup(buildPageElement(match, null, data, undefined, undefined))).toBe(
       "<main><p>page</p></main>"
     );
   });
@@ -182,7 +182,7 @@ describe("buildPageElement", () => {
 
     const root = makeRoute({ layout: Root });
     const match = makeMatch(Page, makeRoute(undefined), undefined); // pageRoute has no layout
-    expect(renderToStaticMarkup(buildPageElement(match, root, data, undefined))).toBe(
+    expect(renderToStaticMarkup(buildPageElement(match, root, data, undefined, undefined))).toBe(
       "<body><p>page</p></body>"
     );
   });
@@ -197,9 +197,9 @@ describe("buildPageElement", () => {
     const pageRoute = makeRoute({ layout: Nav, parent: rootRoute });
     const match = makeMatch(Page, pageRoute, "/dashboard");
 
-    expect(renderToStaticMarkup(buildPageElement(match, rootRoute, data, undefined))).toBe(
-      '<section data-root="true"><nav><p>page</p></nav></section>'
-    );
+    expect(
+      renderToStaticMarkup(buildPageElement(match, rootRoute, data, undefined, undefined))
+    ).toBe('<section data-root="true"><nav><p>page</p></nav></section>');
   });
 
   test("passes loader data to the page component as props", () => {
@@ -208,7 +208,9 @@ describe("buildPageElement", () => {
 
     const match = makeMatch(DataPage, makeRoute(undefined), undefined);
     expect(
-      renderToStaticMarkup(buildPageElement(match, null, { title: "Hello World" }, undefined))
+      renderToStaticMarkup(
+        buildPageElement(match, null, { title: "Hello World" }, undefined, undefined)
+      )
     ).toBe("<h1>Hello World</h1>");
   });
 
@@ -218,7 +220,9 @@ describe("buildPageElement", () => {
 
     const match = makeMatch(Page, makeRoute({ layout: Layout }), undefined);
     expect(
-      renderToStaticMarkup(buildPageElement(match, null, { title: "My Blog" }, undefined))
+      renderToStaticMarkup(
+        buildPageElement(match, null, { title: "My Blog" }, undefined, undefined)
+      )
     ).toBe('<div data-title="My Blog"><p>page</p></div>');
   });
 });
@@ -756,8 +760,11 @@ describe("classifySpaResponse", () => {
     expect(classifySpaResponse(404, {})).toEqual({ kind: "bail" });
   });
 
-  test("500 response → bail regardless of payload", () => {
-    expect(classifySpaResponse(500, { __furinError: { digest: "x" } })).toEqual({ kind: "bail" });
+  test("500 response without __furinError sentinel → bail (full reload)", () => {
+    // No sentinel means an opaque server error (e.g. crash before the data
+    // endpoint formed a response) — fall back to a full-page navigation so
+    // the browser shows whatever the server sent.
+    expect(classifySpaResponse(500, {})).toEqual({ kind: "bail" });
   });
 
   test("null/missing data → bail (cannot render without loader data)", () => {
@@ -768,6 +775,39 @@ describe("classifySpaResponse", () => {
     // Guards against odd proxy/CDN setups that rewrite the status but preserve HTML.
     const result = classifySpaResponse(200, { __furinStatus: 404 });
     expect(result).toEqual({ kind: "not-found", error: {} });
+  });
+
+  // ── Slice 3 — error sentinel ─────────────────────────────────────────────
+  test("500 with __furinError sentinel → error kind carrying the payload", () => {
+    const result = classifySpaResponse(500, {
+      __furinError: { digest: "abc1234567", message: "Boom", status: 500 },
+    });
+    expect(result).toEqual({
+      kind: "error",
+      error: { digest: "abc1234567", message: "Boom", status: 500 },
+    });
+  });
+
+  test("403 with __furinError sentinel → error kind carrying the original status", () => {
+    const result = classifySpaResponse(403, {
+      __furinError: { digest: "deadbeef00", message: "Forbidden", status: 403 },
+    });
+    expect(result).toEqual({
+      kind: "error",
+      error: { digest: "deadbeef00", message: "Forbidden", status: 403 },
+    });
+  });
+
+  test("200 with __furinError sentinel still classifies as error (proxy-rewrite guard)", () => {
+    // Mirrors the __furinStatus=404 / 200 trust pattern: trust the payload
+    // sentinel over the HTTP status to handle proxies that rewrite codes.
+    const result = classifySpaResponse(200, {
+      __furinError: { digest: "feed00face", message: "Server error", status: 500 },
+    });
+    expect(result).toEqual({
+      kind: "error",
+      error: { digest: "feed00face", message: "Server error", status: 500 },
+    });
   });
 });
 
@@ -876,25 +916,27 @@ describe("buildNotFoundPageElement", () => {
 describe("buildRouterTree", () => {
   const page = createElement("p", null, "page");
 
-  test("returns a FurinErrorBoundary as the outermost element", () => {
+  test("returns a RouterContext.Provider as the outermost element", () => {
     const tree = buildRouterTree(makeRouterContext(undefined), page, {});
-    expect(tree.type).toBe(FurinErrorBoundary);
+    expect(tree.type).toBe(RouterContext.Provider);
   });
 
-  test("passes the page element through inside RouterContext.Provider", () => {
+  test("passes the page element through inside FurinErrorBoundary", () => {
     const ctx = makeRouterContext({ currentHref: "/abc" });
     const tree = buildRouterTree(ctx, page, {});
-    // FurinErrorBoundary.children = RouterContext.Provider
-    const providerEl = (tree.props as { children: React.ReactElement }).children;
-    expect(providerEl.type).toBe(RouterContext.Provider);
-    expect((providerEl.props as { value: RouterContextValue }).value.currentHref).toBe("/abc");
-    // RouterContext.Provider.children = the page element
-    expect((providerEl.props as { children: React.ReactNode }).children).toBe(page);
+    // RouterContext.Provider.children = FurinErrorBoundary
+    const boundaryEl = (tree.props as { children: React.ReactElement }).children;
+    expect(boundaryEl.type).toBe(FurinErrorBoundary);
+    // FurinErrorBoundary.children = the page element
+    expect((boundaryEl.props as { children: React.ReactNode }).children).toBe(page);
+    // Router context value is on the outermost Provider
+    expect((tree.props as { value: RouterContextValue }).value.currentHref).toBe("/abc");
   });
 
   test("forwards digest onto the root boundary (Slice 10 — rehydration)", () => {
     const tree = buildRouterTree(makeRouterContext(undefined), page, { digest: "deadbeef12" });
-    expect((tree.props as { digest?: string }).digest).toBe("deadbeef12");
+    const boundaryEl = (tree.props as { children: React.ReactElement }).children;
+    expect((boundaryEl.props as { digest?: string }).digest).toBe("deadbeef12");
   });
 
   test("forwards onReset + resetKey onto the root boundary", () => {
@@ -905,14 +947,16 @@ describe("buildRouterTree", () => {
       onReset,
       resetKey: "/blog",
     });
-    const props = tree.props as { onReset?: () => void; resetKey?: string };
+    const boundaryEl = (tree.props as { children: React.ReactElement }).children;
+    const props = boundaryEl.props as { onReset?: () => void; resetKey?: string };
     expect(props.onReset).toBe(onReset);
     expect(props.resetKey).toBe("/blog");
   });
 
   test("omits digest when not provided (no false correlation)", () => {
     const tree = buildRouterTree(makeRouterContext(undefined), page, {});
-    expect((tree.props as { digest?: string }).digest).toBeUndefined();
+    const boundaryEl = (tree.props as { children: React.ReactElement }).children;
+    expect((boundaryEl.props as { digest?: string }).digest).toBeUndefined();
   });
 
   test("renders children unchanged when no error is thrown (SSR passthrough)", () => {
@@ -929,6 +973,7 @@ describe("buildRouterTree", () => {
     // default so there's always something to render even if user's own
     // error.tsx throws during its own render.
     const tree = buildRouterTree(makeRouterContext(undefined), page, {});
-    expect((tree.props as { fallback?: unknown }).fallback).toBeUndefined();
+    const boundaryEl = (tree.props as { children: React.ReactElement }).children;
+    expect((boundaryEl.props as { fallback?: unknown }).fallback).toBeUndefined();
   });
 });

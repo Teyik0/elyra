@@ -248,6 +248,120 @@ describe("renderToHTML — error handling", () => {
     expect(body).toContain("An unexpected error occurred.");
   });
 
+  // ── thrown Response → error.tsx ─────────────────────────────────────────────
+  test("renderSSR returns the Response status when loader throws a non-redirect Response", async () => {
+    const result = await scanPages(FIXTURES_DIR);
+    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
+    if (!blogRoute) {
+      throw new Error("Expected /blog route in fixture");
+    }
+
+    const routeWithUnauthorized = {
+      ...blogRoute,
+      page: {
+        ...blogRoute.page,
+        loader: () => {
+          throw new Response("Login required", { status: 401 });
+        },
+      },
+    } as ResolvedRoute;
+
+    const response = await renderSSR(
+      routeWithUnauthorized,
+      createMockLoaderContext({ path: "/blog" }),
+      result.root,
+      undefined
+    );
+
+    // Must be 401, NOT 500 (the previous bug treated this as a redirect →
+    // location-less 302 fallback) AND not the legacy "always 500 on error"
+    // behaviour. The thrown Response.status is the source of truth.
+    expect(response.status).toBe(401);
+    const body = await response.text();
+    expect(body).toContain("Blog error"); // segment-level error.tsx renders
+  });
+
+  test("error.tsx receives the thrown Response.status via error.status prop", async () => {
+    const result = await scanPages(FIXTURES_DIR);
+    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
+    if (!blogRoute) {
+      throw new Error("Expected /blog route in fixture");
+    }
+
+    const ErrorWithStatus = ({
+      error,
+    }: {
+      error: { message: string; digest: string; status: number };
+    }) =>
+      createElement(
+        "div",
+        { "data-testid": "error-with-status" },
+        createElement("span", null, `status=${error.status}`),
+        createElement("span", null, `msg=${error.message}`)
+      );
+
+    const routeWithForbidden = {
+      ...blogRoute,
+      error: ErrorWithStatus,
+      page: {
+        ...blogRoute.page,
+        loader: () => {
+          throw new Response("nope", { status: 403 });
+        },
+      },
+    } as ResolvedRoute;
+
+    const rendered = await renderToHTML(
+      routeWithForbidden,
+      createMockLoaderContext({ path: "/blog" }),
+      result.root
+    );
+
+    // The user error.tsx received status=403 — the Response status, not a
+    // hard-coded 500.
+    expect(rendered.html).toContain("status=403");
+    // The Response body is exposed as the public message.
+    expect(rendered.html).toContain("msg=nope");
+  });
+
+  test("plain Error throws still surface error.status === 500 by default (regression)", async () => {
+    const result = await scanPages(FIXTURES_DIR);
+    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
+    if (!blogRoute) {
+      throw new Error("Expected /blog route in fixture");
+    }
+
+    const ErrorWithStatus = ({
+      error,
+    }: {
+      error: { message: string; digest: string; status: number };
+    }) =>
+      createElement(
+        "div",
+        { "data-testid": "error-with-status" },
+        createElement("span", null, `status=${error.status}`)
+      );
+
+    const routeWithError = {
+      ...blogRoute,
+      error: ErrorWithStatus,
+      page: {
+        ...blogRoute.page,
+        loader: () => {
+          throw new Error("boom");
+        },
+      },
+    } as ResolvedRoute;
+
+    const rendered = await renderToHTML(
+      routeWithError,
+      createMockLoaderContext({ path: "/blog" }),
+      result.root
+    );
+
+    expect(rendered.html).toContain("status=500");
+  });
+
   test("renders the built-in 500 component with no message for non-Error, non-string throws", async () => {
     const BARE_FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages");
     const result = await scanPages(BARE_FIXTURES_DIR);
