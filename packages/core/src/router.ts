@@ -640,6 +640,34 @@ export async function refreshLayoutChain(
   }
 }
 
+/**
+ * Rebuilds a `ResolvedRoute` from freshly-imported `page` and `chain` so that
+ * `mode` reflects the CURRENT contents of the page module — not the value
+ * captured at scan time.
+ *
+ * In dev, `handleDevRequest` re-imports the page on every request to pick up
+ * source edits via the `?furin-server&t=<ts>` cache-buster. Without this
+ * function the spread `{ ...route, page, chain }` would carry over the stale
+ * `route.mode` resolved at startup, so toggling `revalidate` or removing a
+ * loader in source would not retake effect until a server restart.
+ *
+ * Only `mode` is recomputed: it is the only field DERIVED from page+chain.
+ * Structural fields (`pattern`, `path`, `segmentBoundaries`, `error`,
+ * `notFound`) are scan-time invariants in dev and are preserved as-is.
+ */
+export function rebuildDevRoute(
+  base: ResolvedRoute,
+  page: RuntimePage,
+  chain: RuntimeRoute[]
+): ResolvedRoute {
+  return {
+    ...base,
+    page,
+    routeChain: chain,
+    mode: resolveMode(page, chain),
+  };
+}
+
 /** @internal Handles a request in dev mode — re-imports the page fresh on every request. */
 async function handleDevRequest(
   route: ResolvedRoute,
@@ -686,7 +714,7 @@ async function handleDevRequest(
         chain[0].loader = currentRoot.route.loader;
       }
 
-      const refreshedRoute: ResolvedRoute = { ...route, page, routeChain: chain };
+      const refreshedRoute = rebuildDevRoute(route, page, chain);
 
       // Live ISR — the loader chain is short-circuited by the dev cache when
       // a fresh entry exists.  HTML re-assembles every time so the dev shell
