@@ -24,15 +24,15 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.14",
-    "@commitlint/cli": "^20.5.3",
-    "@commitlint/config-conventional": "^20.5.3",
+    "@commitlint/cli": "^21.0.0",
+    "@commitlint/config-conventional": "^21.0.0",
     "@happy-dom/global-registrator": "^20.9.0",
     "@types/bun": "^1.3.13",
-    "knip": "^6.12.0",
+    "knip": "^6.12.1",
     "lefthook": "^2.1.6",
-    "react-doctor": "^0.0.47",
+    "react-doctor": "^0.1.2",
     "typescript": "^6.0.3",
-    "ultracite": "7.6.3"
+    "ultracite": "7.6.5"
   },
   "catalog": {
     "elysia": "^1.4.28",

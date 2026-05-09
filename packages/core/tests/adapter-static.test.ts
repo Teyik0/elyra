@@ -100,6 +100,40 @@ describe.serial("buildStaticTarget", () => {
     expect(html).toContain("<!DOCTYPE html>");
   });
 
+  // ── SPA-nav data files (so static deployments don't full-reload) ─────────────
+
+  test("writes __furin_data.ndjson next to every prerendered HTML", async () => {
+    // Without this file the client's SPA navigation falls back to fetching
+    // /_furin/data?path=... — an endpoint that does not exist on a static
+    // host (GitHub Pages, Vercel static, S3) and whose 404 HTML response is
+    // unparseable by `parseDeferredNdjson`. The router-provider then bails
+    // to a full reload on every link click. Pre-writing a parseable NDJSON
+    // payload at a static-friendly URL fixes that.
+    const { distDir } = await runStaticBuild();
+
+    expect(existsSync(join(distDir, "__furin_data.ndjson"))).toBe(true);
+    expect(existsSync(join(distDir, "blog/hello-world/__furin_data.ndjson"))).toBe(true);
+  });
+
+  test("__furin_data.ndjson is parseable by parseDeferredNdjson", async () => {
+    const { distDir } = await runStaticBuild();
+    const { parseDeferredNdjson } = await import("../src/deferred-ndjson.ts");
+
+    const ndjsonText = readFileSync(join(distDir, "blog/hello-world/__furin_data.ndjson"), "utf8");
+    // Recreate a stream from the file content so we exercise the same
+    // `parseDeferredNdjson` API the SPA client uses on the live response body.
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(ndjsonText));
+        controller.close();
+      },
+    });
+    const { syncData } = await parseDeferredNdjson(stream);
+    // The fixture has no loader, so syncData is an empty object — not null,
+    // not undefined. The crucial assertion is that parsing succeeds at all.
+    expect(syncData).toBeInstanceOf(Object);
+  });
+
   // ── B3: SSR + onSSR:"error" (default) → throw ────────────────────────────────
 
   test("B3: throws when SSR route present and onSSR is 'error' (default)", async () => {

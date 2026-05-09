@@ -436,6 +436,8 @@ export function shouldRefetch(entry: CacheEntry): boolean {
 }
 
 const HASH_FRAGMENT_RE = /#.*$/;
+/** Strips one or more trailing slashes — used by `buildDataEndpoint` in static mode. */
+const TRAILING_SLASHES_RE = /\/+$/;
 
 function stripHashFromHref(href: string): string {
   return href.replace(HASH_FRAGMENT_RE, "");
@@ -908,6 +910,59 @@ async function parsePageResponse(
   return { data, finalHref, title: doc.title };
 }
 
+/**
+ * Builds the URL the SPA navigation flow uses to fetch a route's loader data.
+ *
+ * Two transports are supported:
+ *
+ *   • **Runtime (SSR/ISR/dev)** — `${basePath}/_furin/data?path=<logicalHref>`.
+ *     Served by the Elysia plugin in `createDataEndpoint`, which dynamically
+ *     re-runs the loader with the requested path/query.
+ *
+ *   • **Static export** — `${basePath}<logicalPathname>/__furin_data.ndjson`.
+ *     Pre-written next to each `index.html` by `buildStaticTarget`, served
+ *     verbatim by any file server (GitHub Pages, S3, …). The loader does not
+ *     execute at request time, so query strings are *intentionally* ignored:
+ *     a single NDJSON exists per route, computed at build time.
+ *
+ * `staticMode` is decided once at boot from the `<meta name="furin-mode">`
+ * tag injected by `generateProdIndexHtml` — flipping the transport at runtime
+ * for the wrong deployment would just produce 404s.
+ *
+ * @internal Exported for unit testing.
+ */
+export function buildDataEndpoint(
+  basePath: string,
+  logicalHref: string,
+  staticMode: boolean
+): string {
+  if (!staticMode) {
+    return `${basePath}/_furin/data?path=${encodeURIComponent(logicalHref)}`;
+  }
+  // Strip query/hash and any trailing slash. In static mode the on-disk file
+  // is `<pathname>/__furin_data.ndjson` regardless of search/hash, because
+  // the loader payload was frozen at build time.
+  const parsed = new URL(logicalHref, "http://x");
+  const pathname = parsed.pathname.replace(TRAILING_SLASHES_RE, "");
+  return `${basePath}${pathname}/__furin_data.ndjson`;
+}
+
+/**
+ * Reads `<meta name="furin-mode" content="static">` from the document at boot.
+ * The static adapter injects this tag (`shell.ts:generateProdIndexHtml`) so the
+ * SPA client picks the static-friendly transport. SSR/dev shells omit the tag
+ * and the client uses the runtime endpoint.
+ *
+ * @internal Exported for unit testing.
+ */
+export function detectStaticMode(): boolean {
+  if (typeof document === "undefined") {
+    return false;
+  }
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="furin-mode"]');
+  return meta?.content === "static";
+}
+
 /** Strips basePath prefix from a physical pathname, returning the logical path. */
 export function toLogical(physicalPathname: string, basePath: string): string {
   if (
@@ -971,6 +1026,13 @@ export function RouterProvider({
    * soon as the user navigates away via `navigate()` or the back button.
    */
   const currentMatchRef = useRef<LoadedClientRoute | null>(initialMatch);
+  /**
+   * Cached at boot from `<meta name="furin-mode">`. Drives the SPA-nav data
+   * fetch URL: runtime `/_furin/data` for SSR/ISR/dev, per-route
+   * `__furin_data.ndjson` for static exports. Computed once because the meta
+   * tag is part of the shell — it cannot change without a full reload.
+   */
+  const staticModeRef = useRef<boolean>(detectStaticMode());
 
   /**
    * Depth-0 boundary (pagesDir root level) for the "no client route matched" 404
@@ -1037,10 +1099,12 @@ export function RouterProvider({
         }
 
         // ── NDJSON data endpoint + JS chunk load (parallel) ──────────────────
-        // Fetch loader data from /_furin/data (NDJSON, supports deferred Promises)
-        // and load the JS module concurrently. The browser module cache makes
-        // match.load() near-instant for already-loaded pages.
-        const dataEndpoint = `${basePath}/_furin/data?path=${encodeURIComponent(logicalHref)}`;
+        // Fetch loader data and load the JS module concurrently. The transport
+        // depends on the deployment mode (see `buildDataEndpoint` JSDoc): the
+        // runtime endpoint for SSR/ISR/dev, a static `__furin_data.ndjson`
+        // file for static exports. Detection happens once at boot to avoid
+        // racing the meta-tag lookup against React StrictMode double-renders.
+        const dataEndpoint = buildDataEndpoint(basePath, logicalHref, staticModeRef.current);
         const [res, loadedMod] = await Promise.all([fetch(dataEndpoint), match.load()]);
 
         // Stale-deploy detection: if the server reports a different buildId, the client

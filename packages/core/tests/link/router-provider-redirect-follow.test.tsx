@@ -163,15 +163,6 @@ describe("RouterProvider server-side redirect follow", () => {
     currentCleanup = undefined;
   });
 
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-    if (originalReplaceState) {
-      window.history.replaceState = originalReplaceState;
-    }
-    currentCleanup?.();
-    currentCleanup = undefined;
-  });
-
   test(
     "follows server-side redirect via __furinRedirect without crashing",
     async () => {

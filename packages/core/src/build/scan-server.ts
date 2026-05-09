@@ -1,23 +1,11 @@
 import { readFileSync } from "node:fs";
 import { parse } from "yuku-parser";
+import { detectLangFromPath, unwrapTSExpression } from "../lang-detect";
 
 // Minimal AST node shapes — just what we need
 interface AstNode {
   type: string;
   [key: string]: unknown;
-}
-
-function detectLangFromPath(filePath: string): "js" | "ts" | "jsx" | "tsx" | "dts" {
-  if (filePath.endsWith(".d.ts")) {
-    return "dts";
-  }
-  const ext = filePath.split(".").pop()?.toLowerCase();
-  switch (ext) {
-    case "ts": return "ts";
-    case "tsx": return "tsx";
-    case "jsx": return "jsx";
-    default: return "js";
-  }
 }
 
 /**
@@ -29,21 +17,14 @@ function detectLangFromPath(filePath: string): "js" | "ts" | "jsx" | "tsx" | "dt
  */
 export function scanFurinInstances(serverEntryPath: string): string[] {
   const code = readFileSync(serverEntryPath, "utf8");
-  let lang = detectLangFromPath(serverEntryPath);
+  const lang = detectLangFromPath(serverEntryPath);
 
   // Declaration files contain no runtime code — skip parsing.
   if (lang === "dts") {
     return [];
   }
 
-  let parseInput = code;
-  if (lang === "ts" || lang === "tsx") {
-    const transpiler = new Bun.Transpiler({ loader: lang });
-    parseInput = transpiler.transformSync(code);
-    lang = "js";
-  }
-
-  const { program, diagnostics } = parse(parseInput, { sourceType: "module", lang });
+  const { program, diagnostics } = parse(code, { sourceType: "module", lang });
   const firstError = diagnostics.find((d) => d.severity === "error");
   if (firstError) {
     console.error("[furin] scan-server: parse error:", firstError.message, "in", serverEntryPath);
@@ -68,7 +49,9 @@ function checkFurinCall(node: AstNode, out: string[]): void {
     return;
   }
 
-  const firstArg = args[0] as AstNode;
+  // Unwrap TS expression wrappers like `furin({...} as Config)` or
+  // `furin({...} satisfies Options)` so we still see the ObjectExpression.
+  const firstArg = unwrapTSExpression(args[0] as AstNode);
   if (firstArg?.type !== "ObjectExpression") {
     return;
   }

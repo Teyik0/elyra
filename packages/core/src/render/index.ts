@@ -1,7 +1,7 @@
 // biome-ignore-all lint/correctness/useHookAtTopLevel: useLogger is not a hook attached to a react component
 import { createElement, type ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
-import { toCrossJSON } from "seroval";
+import { toCrossJSON, toCrossJSONAsync } from "seroval";
 import { FurinNotFoundError } from "../not-found.ts";
 import type { RootLayout } from "../router.ts";
 import { normalizeHref, RouterContext, type RouterContextValue } from "../router-provider.tsx";
@@ -45,6 +45,15 @@ import { generateIndexHtml } from "./shell.ts";
 interface RenderResult {
   headers: Record<string, string>;
   html: string;
+  /**
+   * NDJSON payload (one CrossJSON-serialised line) carrying the loader's
+   * resolved sync + deferred data. Identical in shape to the body the live
+   * `/_furin/data` endpoint emits, so the SPA client can consume both
+   * interchangeably. Populated for every render, not just SSG, because the
+   * static adapter is the only consumer that persists it today but ISR
+   * may want it tomorrow for the same reason.
+   */
+  ndjson: string;
   status: number;
 }
 
@@ -256,18 +265,51 @@ function renderForPath(
         },
       });
 
-      const { componentProps, element, headData, headers, status, template } = prepared;
+      const {
+        componentProps,
+        deferredPromises,
+        element,
+        headData,
+        headers,
+        status,
+        syncData,
+        template,
+      } = prepared;
       const stream = await renderToReadableStream(element);
       await stream.allReady;
       const reactHtml = await streamToString(stream);
       return {
         html: assembleHTML(template, headData, reactHtml, componentProps),
         headers,
+        ndjson: await serializeLoaderDataNdjson(syncData, deferredPromises),
         status,
       };
     },
     { route: route.pattern, render: mode }
   );
+}
+
+/**
+ * Serialises a loader's `syncData` + `deferredPromises` into the same one-line
+ * NDJSON shape the live `/_furin/data` endpoint emits. Used by the static
+ * adapter to persist a parseable payload at a static-friendly URL so SPA
+ * navigation works on file-server deployments (GitHub Pages, S3, …).
+ *
+ * Mirrors the body construction in `createDataEndpoint` so both code paths
+ * stay in lockstep: any future change to the on-the-wire format only needs
+ * to land in one of these two call sites and the test suite will catch the
+ * other via the `__furin_data.ndjson is parseable` regression test.
+ */
+async function serializeLoaderDataNdjson(
+  syncData: Record<string, unknown>,
+  deferredPromises: Record<string, Promise<unknown>> | undefined
+): Promise<string> {
+  const payload: Record<string, unknown> = {
+    ...syncData,
+    ...(deferredPromises ?? {}),
+  };
+  const serialized = await toCrossJSONAsync(payload);
+  return `${JSON.stringify(serialized)}\n`;
 }
 
 // ── Core pipeline ────────────────────────────────────────────────────────────
@@ -284,7 +326,16 @@ export async function renderToHTML(
     throw prepared;
   }
 
-  const { componentProps, element, headData, headers, status, template } = prepared;
+  const {
+    componentProps,
+    deferredPromises,
+    element,
+    headData,
+    headers,
+    status,
+    syncData,
+    template,
+  } = prepared;
 
   const stream = await renderToReadableStream(element);
   await stream.allReady;
@@ -293,6 +344,7 @@ export async function renderToHTML(
   return {
     html: assembleHTML(template, headData, reactHtml, componentProps),
     headers,
+    ndjson: await serializeLoaderDataNdjson(syncData, deferredPromises),
     status,
   };
 }
@@ -331,7 +383,12 @@ export async function prerenderSSG(
   }
   const result = renderResult;
 
-  const entry: SsgCacheEntry = { html: result.html, cachedAt: Date.now(), status: result.status };
+  const entry: SsgCacheEntry = {
+    cachedAt: Date.now(),
+    html: result.html,
+    ndjson: result.ndjson,
+    status: result.status,
+  };
   setSSGCache(resolvedPath, entry);
 
   return entry;

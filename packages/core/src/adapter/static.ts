@@ -22,20 +22,21 @@ const TRAILING_SLASHES_RE = /\/+$/;
 // ── Path helpers ──────────────────────────────────────────────────────────────
 
 /**
- * Converts a URL path to a filesystem output path.
- * "/"              → "outDir/index.html"
- * "/docs/routing"  → "outDir/docs/routing/index.html"
+ * Converts a URL path to a filesystem output path for the given file name.
+ * "/"              + "index.html"           → "outDir/index.html"
+ * "/docs/routing"  + "index.html"           → "outDir/docs/routing/index.html"
+ * "/docs/routing"  + "__furin_data.ndjson"  → "outDir/docs/routing/__furin_data.ndjson"
  *
  * The resolved path is validated to stay within `outDir` so that `..`
  * segments injected via dynamic `staticParams()` values cannot escape
  * the output directory.
  */
-function pathToOutputFile(urlPath: string, outDir: string): string {
+function pathToOutputFile(urlPath: string, outDir: string, fileName: string): string {
   const normalizedOutDir = resolve(outDir);
   if (urlPath === "/" || urlPath === "") {
-    return join(normalizedOutDir, "index.html");
+    return join(normalizedOutDir, fileName);
   }
-  const resolved = resolve(normalizedOutDir, urlPath.slice(1), "index.html");
+  const resolved = resolve(normalizedOutDir, urlPath.slice(1), fileName);
   if (!resolved.startsWith(`${normalizedOutDir}${sep}`)) {
     throw new Error(
       `[furin] static: unsafe output path detected for URL "${urlPath}" — path traversal via ".." is not allowed.`
@@ -56,7 +57,8 @@ async function prerenderAndWrite(
   basePath: string
 ): Promise<void> {
   const urlPath = resolvePath(route.pattern, params);
-  const outputFile = pathToOutputFile(urlPath, outDir);
+  const htmlOutputFile = pathToOutputFile(urlPath, outDir, "index.html");
+  const dataOutputFile = pathToOutputFile(urlPath, outDir, "__furin_data.ndjson");
 
   try {
     const entry = await prerenderSSG(route, params, root, "http://localhost", basePath);
@@ -68,10 +70,14 @@ async function prerenderAndWrite(
       return;
     }
 
-    ensureDir(dirname(outputFile));
-    writeFileSync(outputFile, entry.html);
+    ensureDir(dirname(htmlOutputFile));
+    writeFileSync(htmlOutputFile, entry.html);
+    // Persist the loader payload at a static-friendly URL: SPA navigation on
+    // file-server deployments (GitHub Pages, S3, …) fetches this file instead
+    // of the runtime `/_furin/data?path=…` endpoint, which doesn't exist there.
+    writeFileSync(dataOutputFile, entry.ndjson);
     renderedRoutes.push(urlPath);
-    console.log(`[furin] static:   ${urlPath} → ${toPosixPath(outputFile)}`);
+    console.log(`[furin] static:   ${urlPath} → ${toPosixPath(htmlOutputFile)}`);
   } catch (err) {
     console.error(
       `[furin] static: prerender failed for "${route.pattern}" (params: ${JSON.stringify(params)}):`,
@@ -275,7 +281,7 @@ export async function buildStaticTarget(
   // This ensures the browser finds it even when the site is served from a sub-path.
   const publicFavicon = join(rootDir, "public", "favicon.ico");
   const faviconHref = existsSync(publicFavicon) ? `${basePath}/favicon.ico` : undefined;
-  const shellHtml = generateProdIndexHtml(entryChunk, cssChunks, undefined, faviconHref);
+  const shellHtml = generateProdIndexHtml(entryChunk, cssChunks, undefined, faviconHref, true);
 
   // ── 5. Prime the renderer with the production shell ──────────────────────
   // Must be called before any prerenderSSG invocation.

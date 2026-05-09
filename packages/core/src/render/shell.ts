@@ -147,17 +147,28 @@ export function generateIndexHtml(): string {
  * Called after Bun.build() completes so we can inject the correct entry chunk
  * and CSS paths derived from result.outputs.
  *
- * @param buildId - Short hash identifying this specific build. Injected as a
- *   `<meta name="furin-build-id">` tag so the client can detect stale deploys.
- * @param faviconHref - Absolute href for the favicon (e.g. "/furin/favicon.ico").
- *   When provided, a `<link rel="icon">` tag is injected so browsers can locate
- *   the favicon even when the site is served from a sub-path.
+ * @param entryChunk - Hashed URL of the client entry script.
+ * @param cssChunks - Hashed URLs of the CSS chunks to inject as `<link>`s.
+ * @param buildId - Short hash identifying this specific build (or `undefined`
+ *   for static exports where stale-deploy detection is not applicable).
+ *   Injected as a `<meta name="furin-build-id">` tag so the client can
+ *   detect stale deploys.
+ * @param faviconHref - Absolute href for the favicon (e.g. "/furin/favicon.ico"),
+ *   or `undefined` when no favicon is provided. When set, a `<link rel="icon">`
+ *   tag is injected so browsers can locate the favicon even when the site is
+ *   served from a sub-path.
+ * @param staticMode - `true` for static exports, `false` for SSR/ISR. When
+ *   `true`, a `<meta name="furin-mode" content="static">` tag is injected so
+ *   the SPA client knows to fetch loader data from the per-route
+ *   `__furin_data.ndjson` file instead of the runtime `/_furin/data` endpoint
+ *   (which doesn't exist on a static host).
  */
 export function generateProdIndexHtml(
   entryChunk: string,
   cssChunks: string[],
-  buildId?: string,
-  faviconHref?: string
+  buildId: string | undefined,
+  faviconHref: string | undefined,
+  staticMode: boolean
 ): string {
   const cssLinks = cssChunks
     .map((c) => `    <link rel="stylesheet" crossorigin href="${c}">`)
@@ -169,6 +180,7 @@ export function generateProdIndexHtml(
   const faviconLink = faviconHref
     ? `    <link rel="icon" href="${escapeHtml(faviconHref)}">\n`
     : "";
+  const modeMeta = staticMode ? `    <meta name="furin-mode" content="static">\n` : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -176,7 +188,7 @@ export function generateProdIndexHtml(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     ${THEME_INIT_SCRIPT}
-${buildIdMeta}${faviconLink}${cssLinks ? `${cssLinks}\n` : ""}    <!--ssr-head-->
+${buildIdMeta}${modeMeta}${faviconLink}${cssLinks ? `${cssLinks}\n` : ""}    <!--ssr-head-->
   </head>
   <body>
     <div id="root"><!--ssr-outlet--></div>

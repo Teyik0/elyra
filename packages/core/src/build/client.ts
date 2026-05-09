@@ -7,7 +7,6 @@ import { CLIENT_MODULE_PATH, LINK_MODULE_PATH } from "./shared";
 import type { BuildClientOptions, BunBuildAliasConfig } from "./types";
 
 const TS_FILE_FILTER = /\.(tsx|ts)$/;
-const REACT_IMPORT_RE = /import\s+React\b/;
 
 export interface BuildClientResult {
   /** Public paths of all CSS chunks, e.g. `["/_client/chunk-abc.css"]` */
@@ -63,13 +62,10 @@ export async function buildClient(
         const code = await Bun.file(path).text();
         try {
           const result = transformForClient(code, path);
-          let transformed = result.code;
-
-          if (transformed.includes("React.createElement") && !REACT_IMPORT_RE.test(transformed)) {
-            transformed = `import React from "react";\n${transformed}`;
-          }
-
-          transformed = transformed
+          // transformForClient now emits TS/TSX directly (no pre-transpile),
+          // so JSX → React handling is delegated to Bun.build's loader, which
+          // applies the project tsconfig's automatic runtime by default.
+          const transformed = result.code
             .replaceAll(`"@teyik0/furin/client"`, JSON.stringify(CLIENT_MODULE_PATH))
             .replaceAll(`'furin/client'`, JSON.stringify(CLIENT_MODULE_PATH))
             .replaceAll(`"@teyik0/furin/link"`, JSON.stringify(LINK_MODULE_PATH))

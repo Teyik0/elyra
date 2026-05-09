@@ -11,7 +11,20 @@ const nativeTransformStream = globalThis.TransformStream;
 const nativeReadableStream = globalThis.ReadableStream;
 const nativeWritableStream = globalThis.WritableStream;
 
-GlobalRegistrator.register();
+// Disable external resource loading: tests don't serve CSS/JS, and happy-dom
+// 20.9.0 has a bug where the CSSParser asks for `this.window.SyntaxError`
+// after a frame navigation — that property exists on `globalThis` (where we
+// patch it below) but not on the freshly recreated detached frame's window,
+// so any background <link rel="stylesheet"> parsing tips the test over with
+// "undefined is not a constructor". Disabling the loaders makes the failure
+// path unreachable.
+GlobalRegistrator.register({
+  settings: {
+    disableCSSFileLoading: true,
+    disableJavaScriptFileLoading: true,
+    disableJavaScriptEvaluation: true,
+  },
+});
 
 // happy-dom@20.9.0 omits window.SyntaxError, breaking CSS selector parsing
 // inside its querySelector engine. Must be set AFTER register() because
@@ -120,15 +133,35 @@ beforeEach(() => {
 
   // Ensure a valid origin for every test. happy-dom defaults to about:blank
   // with a null origin, which breaks isInternal() in <Link> and any code
-  // that resolves relative URLs against window.location.
-  if (typeof window !== "undefined" && typeof window.location !== "undefined") {
+  // that resolves relative URLs against window.location. We only navigate
+  // when needed — assigning to `location.href` recreates `window` and any
+  // patches we put on it (SyntaxError, etc.) would be wiped.
+  if (
+    typeof window !== "undefined" &&
+    typeof window.location !== "undefined" &&
+    window.location.href !== "http://localhost:3000/"
+  ) {
     window.location.href = "http://localhost:3000/";
   }
+
+  // Re-apply the SyntaxError patch *after* the potential nav: assigning to
+  // `location.href` makes happy-dom navigate the detached frame, which
+  // recreates `window` (and `document.defaultView`) without the patched
+  // SyntaxError. Without this second pass, any test that subsequently parses
+  // CSS / a selector hits "undefined is not a constructor" inside happy-dom's
+  // SelectorParser — flakiness depending on test ordering and microtasks.
+  patchSyntaxError();
 });
 
 afterEach(() => {
   // Reset location to a safe default so cross-test pathname pollution
   // (e.g. hash-only navigation tests that mutate window.location) does
-  // not bleed into the next test.
-  window.location.href = "http://localhost:3000/";
+  // not bleed into the next test. Only navigate when the URL actually
+  // changed, to avoid happy-dom recreating `window` for nothing.
+  if (window.location.href !== "http://localhost:3000/") {
+    window.location.href = "http://localhost:3000/";
+  }
+  // Re-apply the patch in case the test (or happy-dom microtasks fired
+  // during it) swapped the window object.
+  patchSyntaxError();
 });

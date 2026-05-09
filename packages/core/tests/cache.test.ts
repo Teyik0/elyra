@@ -116,7 +116,12 @@ describe("revalidatePath page eviction", () => {
   });
 
   test("removes an exact SSG cache entry", () => {
-    setSSGCache("/about", { html: "<html>about</html>", cachedAt: Date.now(), status: 200 });
+    setSSGCache("/about", {
+      cachedAt: Date.now(),
+      html: "<html>about</html>",
+      ndjson: "{}\n",
+      status: 200,
+    });
     expect(ssgCache.has("/about")).toBe(true);
 
     revalidatePath("/about", "page");
@@ -171,9 +176,24 @@ describe("revalidatePath layout prefix eviction", () => {
   });
 
   test("evicts SSG cache entries under the given prefix", () => {
-    setSSGCache("/blog/post-1", { html: "<html>1</html>", cachedAt: Date.now(), status: 200 });
-    setSSGCache("/blog/post-2", { html: "<html>2</html>", cachedAt: Date.now(), status: 200 });
-    setSSGCache("/contact", { html: "<html>contact</html>", cachedAt: Date.now(), status: 200 });
+    setSSGCache("/blog/post-1", {
+      cachedAt: Date.now(),
+      html: "<html>1</html>",
+      ndjson: "{}\n",
+      status: 200,
+    });
+    setSSGCache("/blog/post-2", {
+      cachedAt: Date.now(),
+      html: "<html>2</html>",
+      ndjson: "{}\n",
+      status: 200,
+    });
+    setSSGCache("/contact", {
+      cachedAt: Date.now(),
+      html: "<html>contact</html>",
+      ndjson: "{}\n",
+      status: 200,
+    });
 
     revalidatePath("/blog", "layout");
 
@@ -420,8 +440,9 @@ describe("ISR LRU eviction", () => {
     const count = 1001;
     for (let i = 0; i < count; i++) {
       setSSGCache(`/page-${i}`, {
-        html: `<html>${i}</html>`,
         cachedAt: Date.now(),
+        html: `<html>${i}</html>`,
+        ndjson: "{}\n",
         status: 200,
       });
     }

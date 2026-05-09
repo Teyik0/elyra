@@ -12,6 +12,10 @@ const IMPORT_DB_RE = /from\s+["']\.\/db["']/;
 const IMPORT_RELATIVE_DB_RE = /from\s+["'][^"']*db["']/;
 /** Quoted form of a `loader` property key (`"loader":` or `'loader':`). */
 const QUOTED_LOADER_KEY_RE = /["']loader["']\s*:/;
+/** Bare `UI` identifier — used to verify a JSX MemberExpression root binding survives DCE. */
+const BARE_UI_RE = /\bUI\b/;
+/** Matches `from "./styles"` or `from './styles'` — used for DCE assertions. */
+const IMPORT_STYLES_RE = /from\s+["']\.\/styles["']/;
 
 // ---------------------------------------------------------------------------
 // Basic transformation
@@ -211,6 +215,66 @@ describe("transformForClient — dead code elimination", () => {
     // Import statement kept but without getUser specifier
     expect(result.code).toMatch(IMPORT_DB_RE);
   });
+
+  test("import used only as a JSX tag is preserved after loader removal", () => {
+    // Regression: yuku-parser parses TSX directly (no transpile step), so
+    // `<Link>` references show up as `JSXIdentifier`, not `Identifier`. The
+    // DCE must treat JSX tag positions as references — otherwise this import
+    // is silently dropped and the browser hits "Link is not defined" at
+    // runtime as soon as a route both has a `loader` and renders the link.
+    const input = `
+      import { Link } from "@teyik0/furin/link";
+      export default page({
+        loader: async () => ({ items: [] }),
+        component: () => <Link to="/foo">Hello</Link>,
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    expect(result.code).toContain("Link");
+    expect(result.code).toContain('from "@teyik0/furin/link"');
+  });
+
+  test("import used only inside a JSX MemberExpression tag is preserved", () => {
+    // Regression: <Namespace.Component /> uses `Namespace` as a reference but
+    // the property `Component` is NOT a reference — the DCE must collect the
+    // *root* of the JSXMemberExpression chain without falsely treating the
+    // `.Component` part as a same-named identifier reference.
+    const input = `
+      import { UI } from "./ui";
+      export default page({
+        loader: async () => ({}),
+        component: () => <UI.Button label="ok" />,
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    expect(result.code).toContain('from "./ui"');
+    expect(result.code).toMatch(BARE_UI_RE);
+  });
+
+  test("import sharing a name with a JSX attribute key is still pruned when unused", () => {
+    // Regression guard: `<div className="...">` must NOT count `className` as
+    // a reference to a same-named import. This is the analogue of the
+    // existing `Property` / `MemberExpression.property` exclusions, but for
+    // JSXAttribute.name positions.
+    const input = `
+      import { className } from "./styles";
+      export default page({
+        loader: async () => ({}),
+        component: () => <div className="static" />,
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    // The string "className" still appears as the JSX attribute, but the
+    // *import* declaration must be gone — otherwise the JSX attribute key
+    // would falsely keep dead imports alive forever.
+    expect(result.code).not.toMatch(IMPORT_STYLES_RE);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -291,9 +355,117 @@ describe("deadCodeElimination — parse error recovery", () => {
   test("returns input unchanged when transformed code is unparseable", () => {
     // Feed deliberately invalid JS to DCE — it must not throw
     const broken = new MagicString("import { x } from 'y'; <<<INVALID>>>");
-    const result = deadCodeElimination(broken);
+    const result = deadCodeElimination(broken, "tsx");
 
     // Returns the same string unchanged (not null, not throws)
     expect(result.toString()).toBe("import { x } from 'y'; <<<INVALID>>>");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TypeScript syntax — exercised because yuku-parser now parses TS directly
+// (no Bun.Transpiler pre-pass). These cases would previously have been
+// silently stripped by the transpiler before ever reaching the AST walk.
+// ---------------------------------------------------------------------------
+
+const ROUTECONFIG_TYPE_RE = /:\s*RouteConfig\b/;
+
+describe("transformForClient — TypeScript syntax", () => {
+  test("strips loader when call argument is wrapped in `as Config`", () => {
+    const input = `
+      const route = createRoute({
+        loader: async () => ({ user: "test" }),
+        mode: "ssr",
+      } as RouteConfig);
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    expect(result.code).not.toMatch(LOADER_PROPERTY_RE);
+    expect(result.code).toContain("mode");
+  });
+
+  test("strips loader when call argument is wrapped in `satisfies RouteConfig`", () => {
+    const input = `
+      const route = createRoute({
+        loader: async () => ({ user: "test" }),
+        mode: "ssr",
+      } satisfies RouteConfig);
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    expect(result.code).not.toMatch(LOADER_PROPERTY_RE);
+    expect(result.code).toContain("mode");
+  });
+
+  test("strips loader when call argument is wrapped in parentheses", () => {
+    const input = `
+      const route = createRoute(({
+        loader: async () => ({ user: "test" }),
+        mode: "ssr",
+      }));
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    expect(result.code).not.toMatch(LOADER_PROPERTY_RE);
+  });
+
+  test("strips loader when surrounding code has type annotations", () => {
+    const input = `
+      type Loader = () => Promise<{ x: number }>;
+      const handler: Loader = async () => ({ x: 1 });
+      const config: RouteConfig = createRoute({
+        loader: handler,
+        mode: "ssr",
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    expect(result.code).not.toMatch(LOADER_PROPERTY_RE);
+    // The TS type annotation around `config` must survive — Bun.build strips it later.
+    expect(result.code).toMatch(ROUTECONFIG_TYPE_RE);
+  });
+
+  test("strips loader inside a generic call createRoute<T>({...})", () => {
+    const input = `
+      const route = createRoute<{ user: string }>({
+        loader: async () => ({ user: "x" }),
+        mode: "ssr",
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    expect(result.code).not.toMatch(LOADER_PROPERTY_RE);
+  });
+
+  test("preserves `import type` declarations through DCE", () => {
+    // `import type` is value-erased by the bundler; our DCE must not crash on it.
+    const input = `
+      import type { RouteConfig } from "furin/client";
+      import { queries } from "../../db";
+      export const route = createRoute({
+        loader: () => ({ posts: queries.getPosts.all() }),
+        mode: "ssr",
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    // queries was loader-only → must be DCE'd.
+    expect(result.code).not.toContain("queries");
+    // The type-only import is harmless to leave in place — Bun.build erases it.
+    expect(result.code).not.toMatch(LOADER_PROPERTY_RE);
+  });
+
+  test("returns .d.ts files unchanged (passthrough)", () => {
+    const input = "export declare function loader(): Promise<unknown>;";
+    const result = transformForClient(input, "types.d.ts");
+
+    expect(result.removedServerCode).toBe(false);
+    expect(result.code).toBe(input);
   });
 });

@@ -5,6 +5,10 @@ import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import type { AnySchema } from "elysia/types";
 import { toCrossJSONAsync } from "seroval";
 import type { RuntimePage, RuntimeRoute } from "./client.ts";
+// Use the project-local `useLogger` (not `evlog/elysia` directly) so the
+// `/_furin/data` enrichment also works in synthetic render scopes (ISR/SSG)
+// and falls back to a no-op outside any request — see context-logger.ts.
+import { useLogger } from "./context-logger.ts";
 import type { ErrorComponent } from "./error.ts";
 import { type CompileContext, getCompileContext } from "./internal.ts";
 import type { NotFoundComponent } from "./not-found.ts";
@@ -469,16 +473,28 @@ async function buildDevRoute(
 // contains keys absent from the URL, defaults were applied → 302 redirect to
 // the canonical URL so the address bar always reflects the actual app state.
 
-/** @internal Exported for unit testing. */
-export function queryDefaultRedirectHook({ request, query, status, set }: Context) {
-  const resolvedQuery = query as Record<string, unknown>;
+/**
+ * Detects whether a validator filled in default query values that the original
+ * URL did not carry, and returns the canonical `pathname + search` to redirect
+ * to — or `undefined` when the URL already reflects the resolved query.
+ *
+ * Pure helper extracted from `queryDefaultRedirectHook` so the `/_furin/data`
+ * NDJSON endpoint can detect the same condition without going through
+ * Elysia's `status()` shim (which only emits HTTP 302s, unparseable by the
+ * SPA client).
+ *
+ * @internal Exported for unit testing.
+ */
+export function detectQueryDefaultRedirect(
+  request: Request,
+  resolvedQuery: Record<string, unknown>
+): string | undefined {
   const queryKeys = Object.keys(resolvedQuery);
   if (queryKeys.length === 0) {
     return;
   }
 
   const rawParams = new URL(request.url).searchParams;
-
   let needsRedirect = false;
   for (const key of queryKeys) {
     if (!rawParams.has(key) && resolvedQuery[key] != null) {
@@ -496,8 +512,45 @@ export function queryDefaultRedirectHook({ request, query, status, set }: Contex
       url.searchParams.set(k, String(v));
     }
   }
+  return url.pathname + url.search;
+}
 
-  set.headers.location = url.pathname + url.search;
+/**
+ * Parses the `?path=` argument of `/_furin/data`, rejecting absolute /
+ * protocol-relative inputs that would let a caller smuggle a foreign origin
+ * into the synthetic loader request.
+ *
+ * Returns `{ url, pathname }` on success, or `undefined` when the input is
+ * unsafe (the caller should reply 400). `new URL(rawPath, base)` ignores the
+ * base when `rawPath` is itself absolute, so without these prefix and origin
+ * checks a value like `https://evil.com/foo` would propagate to
+ * `syntheticRequest.url`.
+ *
+ * @internal Exported for unit testing.
+ */
+export function parseDataEndpointPath(rawPath: string): { url: URL; pathname: string } | undefined {
+  if (rawPath.includes("://") || rawPath.startsWith("//")) {
+    return;
+  }
+  let url: URL;
+  try {
+    url = new URL(rawPath, "http://localhost");
+  } catch {
+    return;
+  }
+  if (url.origin !== "http://localhost") {
+    return;
+  }
+  return { url, pathname: url.pathname };
+}
+
+/** @internal Exported for unit testing. */
+export function queryDefaultRedirectHook({ request, query, status, set }: Context) {
+  const location = detectQueryDefaultRedirect(request, query as Record<string, unknown>);
+  if (!location) {
+    return;
+  }
+  set.headers.location = location;
   return status("Found");
 }
 
@@ -1164,14 +1217,19 @@ export function createDataEndpoint(routes: ResolvedRoute[], root: RootLayout): A
         return new Response("Missing required query param: path", { status: 400 });
       }
 
-      // Parse the logical path (may include query string)
-      let url: URL;
-      try {
-        url = new URL(rawPath, "http://localhost");
-      } catch {
+      const parsed = parseDataEndpointPath(rawPath);
+      if (!parsed) {
         return new Response("Invalid path", { status: 400 });
       }
-      const pathname = url.pathname;
+      const { url, pathname } = parsed;
+
+      // Rewrite the request-scoped wide event so logs / drains report the
+      // *logical* path the user navigated to (e.g. "/board/123/card/456")
+      // instead of the technical "/_furin/data" transport URL. We set this
+      // before the route-match check so 404s also surface the attempted path
+      // — otherwise monitoring just sees "GET /_furin/data 404" with no clue.
+      const wideEventLog = useLogger();
+      wideEventLog.set({ path: rawPath });
 
       // Find a matching route
       const matched = routes.reduce<{
@@ -1200,9 +1258,16 @@ export function createDataEndpoint(routes: ResolvedRoute[], root: RootLayout): A
         return new Response("Route not found", { status: 404 });
       }
 
+      // Now that we know the matched pattern, add it as a stable aggregation
+      // key for drains (e.g. "p99 latency by route").
+      wideEventLog.set({ routePattern: matched.route.pattern });
+
       // Build a synthetic Elysia-compatible context for the matched route.
       // Loaders receive request, params, query, set, headers, and cookie.
-      const syntheticRequest = new Request(new URL(rawPath, ctx.request.url));
+      // Build the synthetic URL from the parsed `pathname + search` only —
+      // never from `rawPath` directly — so an attacker cannot smuggle a
+      // foreign origin into `syntheticRequest.url`.
+      const syntheticRequest = new Request(new URL(pathname + url.search, ctx.request.url));
       const syntheticSet = { headers: {} as Record<string, string>, status: 200 as number };
       const syntheticCtx = {
         request: syntheticRequest,
@@ -1212,9 +1277,17 @@ export function createDataEndpoint(routes: ResolvedRoute[], root: RootLayout): A
         headers: ctx.headers,
         cookie: ctx.cookie,
         path: pathname,
-        redirect: (url: string, status?: number) =>
-          new Response(null, { status: status ?? 302, headers: { location: url } }),
-        status: (code: number | string) => new Response(null, { status: Number(code) }),
+        // Loader-emitted redirects flow through `runLoaders` → `result.type
+        // === "redirect"` and are converted to NDJSON below. The Response we
+        // return here only has to be detectable by that pipeline.
+        redirect: (location: string, status?: number) =>
+          new Response(null, { status: status ?? 302, headers: { location } }),
+        // Synthetic `status` helper: numeric codes only. Callers that reach
+        // this endpoint never dispatch a string-keyed status; rejecting them
+        // is safer than coercing via `Number(code)` and silently producing
+        // `NaN`. Query-default redirects no longer flow through this helper —
+        // they are detected via `detectQueryDefaultRedirect` below.
+        status: (code: number) => new Response(null, { status: code }),
       } as unknown as Context;
 
       // Normalize params and query through the same merged schemas used by
@@ -1230,11 +1303,20 @@ export function createDataEndpoint(routes: ResolvedRoute[], root: RootLayout): A
         syntheticCtx.query as Record<string, unknown>
       ) as Record<string, string>;
 
-      // Redirect when query defaults were applied (validator-agnostic)
+      // Query-default redirect: detect via the pure helper so we can emit the
+      // NDJSON `__furinRedirect` sentinel (the SPA client cannot parse a real
+      // HTTP 302 — it never sees one because `parseDeferredNdjson` reads the
+      // body, not the redirect chain).
       if (mergedQuery) {
-        const redirect = queryDefaultRedirectHook(syntheticCtx as Context);
-        if (redirect) {
-          return redirect;
+        const redirectLocation = detectQueryDefaultRedirect(
+          syntheticRequest,
+          syntheticCtx.query as Record<string, unknown>
+        );
+        if (redirectLocation) {
+          const serialized = await toCrossJSONAsync({ __furinRedirect: redirectLocation });
+          return new Response(`${JSON.stringify(serialized)}\n`, {
+            headers: { "content-type": "application/x-ndjson" },
+          });
         }
       }
 

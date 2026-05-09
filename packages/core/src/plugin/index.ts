@@ -4,7 +4,6 @@ const ELYSIA_FILTER = /^elysia$/;
 const BUN_BUILTIN_FILTER = /^bun:/;
 const ANY_FILTER = /.*/;
 const TS_FILE_FILTER = /\.(tsx|ts)$/;
-const REACT_IMPORT_FILTER = /import\s+React\b/;
 
 // Minimal browser stub for elysia — `t` is only used for schema definitions
 // in params/query, which the client never validates at runtime.
@@ -62,13 +61,13 @@ const plugin: Bun.BunPlugin = {
 
       try {
         const result = transformForClient(source, args.path);
-        let code = result.code;
-
-        if (code.includes("React.createElement") && !REACT_IMPORT_FILTER.test(code)) {
-          code = `import React from "react";\n${code}`;
-        }
-
-        return { contents: code, loader: "js" };
+        // Output is TS/TSX (yuku parses directly, no pre-transpile). Bun's
+        // bundler picks the loader from the file extension and applies the
+        // project tsconfig — including the JSX automatic runtime.
+        return {
+          contents: result.code,
+          loader: args.path.endsWith(".tsx") ? "tsx" : "ts",
+        };
       } catch (err) {
         console.error(`[furin] strip-plugin transform error for ${args.path}:`, err);
         return;

@@ -122,4 +122,58 @@ new Elysia().listen(3000);
       rmSync(path, { force: true });
     }
   });
+
+  // -------------------------------------------------------------------------
+  // TypeScript syntax — yuku-parser handles TS directly, so these cases
+  // (which would previously have been stripped by Bun.Transpiler) must now
+  // be tolerated end-to-end.
+  // -------------------------------------------------------------------------
+
+  test("detects pagesDir when call argument is wrapped in `as FurinOptions`", async () => {
+    await withTmpFile(
+      `
+import { furin } from "furin";
+import Elysia from "elysia";
+new Elysia().use(furin({ pagesDir: "./src/pages" } as FurinOptions)).listen(3000);
+`,
+      (path) => {
+        const result = scanFurinInstances(path);
+        expect(result).toEqual(["./src/pages"]);
+      }
+    );
+  });
+
+  test("detects pagesDir when call argument uses `satisfies FurinOptions`", async () => {
+    await withTmpFile(
+      `
+import { furin } from "furin";
+import Elysia from "elysia";
+new Elysia()
+  .use(furin({ pagesDir: "./src/pages" } satisfies FurinOptions))
+  .listen(3000);
+`,
+      (path) => {
+        const result = scanFurinInstances(path);
+        expect(result).toEqual(["./src/pages"]);
+      }
+    );
+  });
+
+  test("detects pagesDir alongside surrounding TS type annotations", async () => {
+    await withTmpFile(
+      `
+import { furin } from "furin";
+import Elysia from "elysia";
+const app: Elysia = new Elysia();
+const opts: { pagesDir: string } = { pagesDir: "./src/pages" };
+app.use(furin(opts)).listen(3000);
+app.use(furin({ pagesDir: "./src/admin" })).listen(3001);
+`,
+      (path) => {
+        // First call uses a variable → ignored; second uses a literal → captured.
+        const result = scanFurinInstances(path);
+        expect(result).toEqual(["./src/admin"]);
+      }
+    );
+  });
 });

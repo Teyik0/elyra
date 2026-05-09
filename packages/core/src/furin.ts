@@ -183,8 +183,13 @@ export async function furin({
           "/_client/**",
           "/public/**",
           "/favicon.ico",
-          "/_furin/!(ingest)",
           "/_bun_hmr_entry/**",
+          // Note: /_furin/data is logged with the *logical* path rewritten by
+          // createDataEndpoint via useLogger().set({ path }), so SPA navigations
+          // appear as "GET /board/123 200" — same shape as a normal SSR nav.
+          // /_furin/ingest is kept loggable so browser-side events show up.
+          // evlog's `matchesPattern` only supports `*`, `**`, `?` — extglob
+          // like `!(...)` matches nothing, so don't add patterns relying on it.
           ...(userExclude ?? []),
         ],
       })

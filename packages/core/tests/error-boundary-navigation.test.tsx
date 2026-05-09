@@ -83,15 +83,6 @@ describe("buildRouterTree — error boundary fallback navigation", () => {
     }
     expect(anchor.textContent).toContain("Go Home");
 
-    // Debug: check rendered HTML and onclick handler
-    console.log("typeof window in test:", typeof window, "window exists:", !!window);
-    console.log("container HTML:", container.innerHTML.slice(0, 500));
-    console.log("anchor onclick:", (anchor as unknown as Record<string, unknown>).onclick);
-    console.log("anchor data-furin-link:", anchor.getAttribute("data-furin-link"));
-
-    // Debug: check if window.location.href was changed by the fallback
-    const hrefBeforeClick = window.location.href;
-
     // Simulate a plain left-click (no modifiers)
     const clickEvent = new MouseEvent("click", {
       bubbles: true,
@@ -103,17 +94,6 @@ describe("buildRouterTree — error boundary fallback navigation", () => {
       altKey: false,
     });
     anchor.dispatchEvent(clickEvent);
-
-    // Debug: if href changed, the fallback navigate() was used
-    const hrefAfterClick = window.location.href;
-    console.log(
-      "hrefBeforeClick:",
-      hrefBeforeClick,
-      "hrefAfterClick:",
-      hrefAfterClick,
-      "navigateSpy calls:",
-      navigateSpy.mock.calls.length
-    );
 
     // The Link should have used router.navigate() (SPA) instead of window.location.href (full reload)
     expect(navigateSpy).toHaveBeenCalledTimes(1);

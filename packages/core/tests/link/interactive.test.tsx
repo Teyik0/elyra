@@ -509,24 +509,6 @@ describe("LinkInteractive — client-side behaviour", () => {
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), ctx);
 
-    console.log("CLICK TEST typeof window:", typeof window);
-    const getListenerTypes = (el: any) => {
-      const sym = Object.getOwnPropertySymbols(el).find(
-        (s) => s.toString() === "Symbol(listeners)"
-      );
-      if (!sym) {
-        return [];
-      }
-      const listeners = el[sym];
-      return [...(listeners.capturing?.keys() || []), ...(listeners.bubbling?.keys() || [])];
-    };
-    console.log("CLICK TEST anchor types:", getListenerTypes(anchor).join(", ") || "none");
-    console.log("CLICK TEST document types:", getListenerTypes(document).join(", ") || "none");
-    console.log(
-      "CLICK TEST container types:",
-      getListenerTypes(anchor.parentElement).join(", ") || "none"
-    );
-
     anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 
     expect(navigate).toHaveBeenCalledWith("/blog", { replace: undefined, resetScroll: true });

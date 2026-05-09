@@ -150,7 +150,7 @@ export async function buildBunTarget(
   const clientDir = join(targetDir, "client");
   writeFileSync(
     join(clientDir, "index.html"),
-    generateProdIndexHtml(entryChunk, cssChunks, buildId)
+    generateProdIndexHtml(entryChunk, cssChunks, buildId, undefined, false)
   );
 
   const routeManifest = routes.map((r) => ({ pattern: r.pattern, path: r.path, mode: r.mode }));

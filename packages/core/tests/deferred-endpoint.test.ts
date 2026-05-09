@@ -40,6 +40,51 @@ describe("GET /_furin/data", () => {
     expect(res.status).toBe(400);
   });
 
+  test("rejette une URL absolue passée dans ?path= (open-redirect prevention)", async () => {
+    const { root, routes } = await scanPages(FIXTURES_DIR);
+    const app = new Elysia().use(createDataEndpoint(routes, root));
+
+    // Without the prefix/origin guard, `new URL("https://evil.com/foo", base)`
+    // ignores the base and the attacker-controlled origin would propagate to
+    // `syntheticRequest.url`.
+    const res = await app.handle(
+      new Request("http://localhost/_furin/data?path=https%3A%2F%2Fevil.com%2Ffoo")
+    );
+
+    expect(res.status).toBe(400);
+  });
+
+  test("rejette un path protocol-relative `//host/foo`", async () => {
+    const { root, routes } = await scanPages(FIXTURES_DIR);
+    const app = new Elysia().use(createDataEndpoint(routes, root));
+
+    const res = await app.handle(
+      new Request("http://localhost/_furin/data?path=%2F%2Fevil.com%2Ffoo")
+    );
+
+    expect(res.status).toBe(400);
+  });
+
+  test("émet le sentinel NDJSON __furinRedirect quand un défaut de query est appliqué", async () => {
+    // Regression: previously the query-default redirect returned an HTTP 302
+    // (Response) directly from the handler. The SPA client reads NDJSON via
+    // `parseDeferredNdjson` — a 302 is unparseable and would crash the
+    // navigation pipeline. The endpoint must now produce an NDJSON document
+    // carrying the `__furinRedirect` sentinel instead.
+    const { root, routes } = await scanPages(FIXTURES_DIR);
+    const app = new Elysia().use(createDataEndpoint(routes, root));
+
+    const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fquery-default"));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/x-ndjson");
+
+    const { syncData } = await parseDeferredNdjson(
+      res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() })
+    );
+    expect(syncData.__furinRedirect).toBe("/query-default?city=Paris");
+  });
+
   test("retourne 404 si aucune route ne correspond au path", async () => {
     const { root, routes } = await scanPages(FIXTURES_DIR);
     const app = new Elysia().use(createDataEndpoint(routes, root));
