@@ -128,7 +128,14 @@ export default route.page({
             </div>
 
             {/* Form */}
-            <form className="space-y-5 p-6" ref={formRef}>
+            <form
+              className="space-y-5 p-6"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSave();
+              }}
+              ref={formRef}
+            >
               {errorMessage ? (
                 <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-red-300 text-sm">
                   {errorMessage}
@@ -181,8 +188,7 @@ export default route.page({
 
                 <button
                   className="rounded-xl bg-violet-600 px-5 py-2.5 font-semibold text-sm text-white shadow-lg shadow-violet-500/20 transition-all hover:bg-violet-500 active:scale-[0.98]"
-                  onClick={handleSave}
-                  type="button"
+                  type="submit"
                 >
                   Save Changes
                 </button>

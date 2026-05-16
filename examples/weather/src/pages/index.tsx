@@ -51,7 +51,14 @@ export default route.page({
         </div>
 
         {/* Search */}
-        <form className="flex gap-3" ref={formRef}>
+        <form
+          className="flex gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSearch();
+          }}
+          ref={formRef}
+        >
           <input
             className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-white outline-none placeholder:text-zinc-500 focus:border-cyan-400/50 focus:ring-1 focus:ring-cyan-400/30"
             defaultValue={city}
@@ -62,8 +69,7 @@ export default route.page({
           />
           <button
             className="rounded-xl bg-cyan-500 px-5 py-2.5 font-medium text-sm text-white transition-colors hover:bg-cyan-400"
-            onClick={handleSearch}
-            type="button"
+            type="submit"
           >
             Search
           </button>

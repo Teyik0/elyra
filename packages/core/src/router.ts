@@ -1129,6 +1129,28 @@ function escapeRegExpChar(ch: string): string {
 }
 
 /**
+ * Scores how specific a route pattern is so the `/_furin/data` matcher can
+ * prefer a static route over a dynamic sibling that also matches. Per segment:
+ * a literal segment outranks a `:param`, which outranks a `*` wildcard.
+ */
+function routeSpecificity(pattern: string): number {
+  let score = 0;
+  for (const segment of pattern.split("/")) {
+    if (segment.length === 0) {
+      continue;
+    }
+    if (segment === "*") {
+      score += 1;
+    } else if (segment.startsWith(":")) {
+      score += 2;
+    } else {
+      score += 3;
+    }
+  }
+  return score;
+}
+
+/**
  * Builds a regex from a route pattern, extracts named capture groups for
  * each `:param` segment, and returns `{ regex, paramNames }`.
  *
@@ -1235,18 +1257,24 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       const wideEventLog = useLogger();
       wideEventLog.set({ path: rawPath });
 
-      // Find a matching route
+      // Find the MOST SPECIFIC matching route. A first-match scan would let a
+      // dynamic route (`/users/:id`) shadow a static sibling (`/users/new`)
+      // whenever it is scanned first — and `[id]` sorts before `new`, so it
+      // is. Score each match (static segment > :param > wildcard) and keep the
+      // highest, mirroring the precedence Elysia's router applies on the SSR path.
       const matched = routes.reduce<{
         route: ResolvedRoute;
         params: Record<string, string>;
+        score: number;
       } | null>((acc, route) => {
-        if (acc) {
-          return acc;
-        }
         const { regex, paramNames } = buildRouteRegex(route.pattern);
         const m = regex.exec(pathname);
         if (!m) {
-          return null;
+          return acc;
+        }
+        const score = routeSpecificity(route.pattern);
+        if (acc && acc.score >= score) {
+          return acc;
         }
         const params: Record<string, string> = {};
         for (let i = 0; i < paramNames.length; i++) {
@@ -1255,7 +1283,7 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
             params[name] = m[i + 1] ?? "";
           }
         }
-        return { route, params };
+        return { route, params, score };
       }, null);
 
       if (!matched) {

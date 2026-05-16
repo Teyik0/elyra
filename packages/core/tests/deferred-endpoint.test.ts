@@ -170,12 +170,13 @@ describe("GET /_furin/data", () => {
       new Request("http://localhost/_furin/data?path=%2Fdefer-page")
     );
 
-    let responseReturned = false;
-    responsePromise.then(() => {
-      responseReturned = true;
-    });
-    await delay(10);
-    expect(responseReturned).toBe(true);
+    // The handler must resolve BEFORE the 50ms deferred Promise settles —
+    // racing against the delay is robust on slow CI, unlike a fixed sleep.
+    const winner = await Promise.race([
+      responsePromise.then(() => "handler" as const),
+      delay(50).then(() => "deferred" as const),
+    ]);
+    expect(winner).toBe("handler");
 
     const res = await responsePromise;
     const { syncData, deferredPromises } = await parseDeferredNdjson(
@@ -249,6 +250,27 @@ describe("GET /_furin/data", () => {
     );
     expect(syncData.params).toEqual({ id: "42" });
     expect(syncData.path).toBe("/dynamic/42");
+  });
+
+  test("prefers a static route over a dynamic sibling that also matches", async () => {
+    // `/dynamic/specific` (static) and `/dynamic/:id` (dynamic) both match the
+    // path `/dynamic/specific`. The endpoint must pick the static route — the
+    // dynamic one would otherwise shadow it (its dir `[id]` is scanned first).
+    const { routes } = await scanPages(FIXTURES_DIR);
+    const app = new Elysia().use(createDataEndpoint(routes));
+
+    const res = await app.handle(
+      new Request("http://localhost/_furin/data?path=%2Fdynamic%2Fspecific")
+    );
+
+    expect(res.status).toBe(200);
+    const { syncData } = await parseDeferredNdjson(
+      res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      undefined
+    );
+    expect(syncData.pageData).toBe("from-static-specific");
+    // The dynamic route would have produced a `params.id` — the static one has none.
+    expect(syncData.params).toEqual({});
   });
 
   test("émet les chunks dans l'ordre de résolution, pas dans l'ordre d'insertion", async () => {

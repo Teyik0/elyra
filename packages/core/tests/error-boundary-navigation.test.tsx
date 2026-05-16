@@ -43,9 +43,21 @@ describe("buildRouterTree — error boundary fallback navigation", () => {
     root = createRoot(container);
     originalHref = window.location.href;
     locationSpy = { set: mock() };
+    // The code under test writes `window.location.href = …`, not
+    // `window.location = …`. The spy must therefore live on the `href` setter
+    // of the object returned by the getter — a setter on `window.location`
+    // itself never fires for `.href` assignments, making the spy a dead no-op.
     Object.defineProperty(window, "location", {
       configurable: true,
-      get: () => ({ href: originalHref, origin: "http://localhost:3000" }),
+      get: () => ({
+        get href() {
+          return originalHref;
+        },
+        set href(v: string) {
+          locationSpy.set(v);
+        },
+        origin: "http://localhost:3000",
+      }),
       set: locationSpy.set as unknown as (v: string) => void,
     });
   });

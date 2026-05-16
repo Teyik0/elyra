@@ -45,13 +45,20 @@ export type LoaderResult =
     };
 
 /**
+ * Navigation redirect status codes — the exact set `ctx.redirect()` can emit.
+ * Other 3xx codes (304 Not Modified, 305/306) are NOT navigation redirects and
+ * must not be treated as one even when they carry a `Location` header.
+ */
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+/**
  * `true` only for HTTP responses that are syntactically valid redirects:
- * 3xx status code AND a `Location` header. A 3xx without `Location` is invalid
- * HTTP and almost always a developer mistake — surfaced as an error so it's
- * debuggable rather than silently redirecting to `/`.
+ * a navigation redirect status code AND a `Location` header. A redirect status
+ * without `Location` is invalid HTTP and almost always a developer mistake —
+ * surfaced as an error so it's debuggable rather than silently redirecting to `/`.
  */
 function isHttpRedirect(res: Response): boolean {
-  return res.status >= 300 && res.status < 400 && res.headers.has("location");
+  return REDIRECT_STATUSES.has(res.status) && res.headers.has("location");
 }
 
 /**

@@ -54,7 +54,7 @@ export default route.page({
 
           <h1 className="font-semibold text-5xl tracking-tight">
             <span className="bg-linear-to-br from-violet-400 via-purple-400 to-sky-400 bg-clip-text text-transparent">
-              Task Managerd
+              Task Manager
             </span>
           </h1>
 
@@ -147,7 +147,13 @@ function CreateBoardForm() {
 
   return (
     <div className="mb-10 flex flex-col gap-3">
-      <div className="flex gap-3">
+      <form
+        className="flex gap-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleCreate();
+        }}
+      >
         <div className="relative flex-1">
           <input
             className="w-full rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-white outline-none transition-all placeholder:text-zinc-600 focus:border-violet-500/40 focus:bg-white/6 focus:ring-1 focus:ring-violet-500/20 disabled:opacity-50"
@@ -161,13 +167,12 @@ function CreateBoardForm() {
         <button
           className="inline-flex items-center gap-2 rounded-xl bg-violet-600 px-5 py-3 font-semibold text-sm text-white transition-all hover:bg-violet-500 hover:shadow-lg hover:shadow-violet-500/20 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           disabled={isSubmitting}
-          onClick={handleCreate}
-          type="button"
+          type="submit"
         >
           <span>+</span>
           <span>{isSubmitting ? "Creating…" : "Create Board"}</span>
         </button>
-      </div>
+      </form>
       {errorMessage ? (
         <p className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2.5 text-red-300 text-sm">
           {errorMessage}
