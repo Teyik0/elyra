@@ -309,9 +309,11 @@ export async function runLoaders(route: ResolvedRoute, ctx: Context): Promise<Lo
       // consumers (digest, logging, error UI) all share the same extracted
       // message without consuming the stream a second time.
       //
-      // 3xx without Location is invalid HTTP — treat as a developer mistake
-      // (status 500) rather than honouring an unreachable redirect status.
-      const isMalformedRedirect = err.status >= 300 && err.status < 400;
+      // A *malformed redirect* is a redirect-status code WITHOUT a `Location`
+      // header (we only reach here when `isHttpRedirect` was false) — invalid
+      // HTTP, coerced to 500. Other 3xx codes (304/305/306) are not redirects
+      // at all, so they keep their own status rather than being rewritten.
+      const isMalformedRedirect = REDIRECT_STATUSES.has(err.status);
       const status = isMalformedRedirect ? 500 : err.status;
       const body = await readResponseMessage(err);
       const message = body || "Something went wrong";

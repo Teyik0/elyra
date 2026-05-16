@@ -124,6 +124,23 @@ describe("runLoaders — thrown Response classification", () => {
     }
   });
 
+  test("Response(304) keeps its own status — not coerced to 500", async () => {
+    // 304 is not a navigation redirect, so it is not a *malformed* redirect
+    // either: it must keep its own status rather than being rewritten to 500
+    // by the malformed-redirect fallback.
+    const baseRoute = await getRoute("/with-loader");
+    const route = withLoader(baseRoute, () => {
+      throw new Response(null, { status: 304 });
+    });
+
+    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
+
+    expect(result.type).toBe("error");
+    if (result.type === "error") {
+      expect(result.status).toBe(304);
+    }
+  });
+
   test("Response(401) without body falls back to a generic public message", async () => {
     const baseRoute = await getRoute("/with-loader");
     const route = withLoader(baseRoute, () => {
