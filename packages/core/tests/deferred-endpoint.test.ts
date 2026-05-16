@@ -153,11 +153,17 @@ describe("GET /_furin/data", () => {
       throw new Error("No /defer-page route in fixtures — add defer-page.tsx");
     }
 
-    deferRoute.page.loader = () =>
-      defer({
-        title: "deferred page",
-        stats: new Promise((resolve) => setTimeout(() => resolve(42), 50)),
-      });
+    // Replace `.page` with a shallow copy instead of mutating the shared
+    // module export — `scanPages` returns routes whose `.page` is the cached
+    // import, so in-place mutation would leak into other tests.
+    deferRoute.page = {
+      ...deferRoute.page,
+      loader: () =>
+        defer({
+          title: "deferred page",
+          stats: new Promise((resolve) => setTimeout(() => resolve(42), 50)),
+        }),
+    };
 
     const app = new Elysia().use(createDataEndpoint(routes));
     const responsePromise = app.handle(
@@ -191,9 +197,13 @@ describe("GET /_furin/data", () => {
     if (!route) {
       throw new Error("No /with-loader route in fixtures");
     }
-    route.page.head = ({ pageData }: { pageData: string }) => ({
-      meta: [{ title: `Page: ${pageData}` }],
-    });
+    // Shallow-copy `.page` rather than mutating the shared module export.
+    route.page = {
+      ...route.page,
+      head: ({ pageData }: { pageData: string }) => ({
+        meta: [{ title: `Page: ${pageData}` }],
+      }),
+    };
 
     const app = new Elysia().use(createDataEndpoint(routes));
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fwith-loader"));
@@ -251,12 +261,16 @@ describe("GET /_furin/data", () => {
     if (!deferRoute?.page) {
       throw new Error("No /defer-page route in fixtures");
     }
-    deferRoute.page.loader = () =>
-      defer({
-        title: "deferred page",
-        slow: new Promise((resolve) => setTimeout(() => resolve("slow-value"), 80)),
-        fast: new Promise((resolve) => setTimeout(() => resolve("fast-value"), 10)),
-      });
+    // Shallow-copy `.page` rather than mutating the shared module export.
+    deferRoute.page = {
+      ...deferRoute.page,
+      loader: () =>
+        defer({
+          title: "deferred page",
+          slow: new Promise((resolve) => setTimeout(() => resolve("slow-value"), 80)),
+          fast: new Promise((resolve) => setTimeout(() => resolve("fast-value"), 10)),
+        }),
+    };
 
     const app = new Elysia().use(createDataEndpoint(routes));
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fdefer-page"));
@@ -300,9 +314,12 @@ describe("GET /_furin/data", () => {
     if (!route) {
       throw new Error("No /with-loader route in fixtures");
     }
-    // Patch the loader in-place to throw a non-redirect Response.
-    route.page.loader = () => {
-      throw new Response("Forbidden", { status: 403 });
+    // Shallow-copy `.page` so the throwing loader does not leak to other tests.
+    route.page = {
+      ...route.page,
+      loader: () => {
+        throw new Response("Forbidden", { status: 403 });
+      },
     };
 
     const app = new Elysia().use(createDataEndpoint(routes));
@@ -333,8 +350,12 @@ describe("GET /_furin/data", () => {
     if (!route) {
       throw new Error("No /with-loader route in fixtures");
     }
-    route.page.loader = () => {
-      throw new Error("kaboom");
+    // Shallow-copy `.page` so the throwing loader does not leak to other tests.
+    route.page = {
+      ...route.page,
+      loader: () => {
+        throw new Error("kaboom");
+      },
     };
 
     const app = new Elysia().use(createDataEndpoint(routes));

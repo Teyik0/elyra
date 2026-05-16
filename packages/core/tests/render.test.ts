@@ -974,6 +974,12 @@ describe("render.tsx", () => {
       // Should not crash; fallback component renders a generic 500 page.
       expect(html).toContain("500");
       expect(ctx.set.status).toBe(500);
+
+      // The shell-error __furinError payload must carry `status` (not just
+      // `digest`) so the SPA client's classifySpaResponse recognises it as an
+      // error sentinel instead of bailing to a full-page reload.
+      const data = JSON.parse((html as string).match(FURIN_DATA_REGEX)?.[1] ?? "{}");
+      expect(data.__furinError).toEqual({ digest: expect.any(String), status: 500 });
     });
   });
 

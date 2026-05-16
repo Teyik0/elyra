@@ -669,19 +669,26 @@ export interface RootBoundaryOptions {
 /**
  * Composes the outermost tree produced by `RouterProvider`:
  *
- *   <FurinErrorBoundary digest onReset resetKey>
- *     <RouterContext.Provider value={context}>
+ *   <RouterContext.Provider value={context}>
+ *     <FurinErrorBoundary digest onReset resetKey>
  *       {pageElement}
- *     </RouterContext.Provider>
- *   </FurinErrorBoundary>
+ *     </FurinErrorBoundary>
+ *   </RouterContext.Provider>
  *
- * This top boundary is the LAST line of defence. Per-segment
- * `FurinErrorBoundary`s inserted by `buildPageElement` only wrap the page
- * subtree BELOW the root layout, so they cannot catch errors thrown in:
+ * `RouterContext.Provider` is the OUTERMOST element so that a root-level
+ * `error.tsx` rendered by the boundary can still call `useRouter()` / render
+ * `<Link>` (the context is in scope above the boundary).
+ *
+ * The `FurinErrorBoundary` is the LAST line of defence for render errors.
+ * Per-segment `FurinErrorBoundary`s inserted by `buildPageElement` only wrap
+ * the page subtree BELOW the root layout, so this top boundary is the only one
+ * that catches errors thrown in:
  *   - the root layout itself,
- *   - hydration mismatches (these tear the whole tree before any inner
- *     boundary is reached),
- *   - the RouterProvider / page-building scaffolding code.
+ *   - hydration mismatches within the rendered tree.
+ *
+ * It does NOT catch errors thrown by `RouterProvider` itself or by the
+ * `buildPageElement` / `buildRouterTree` scaffolding — those run before the
+ * boundary exists in the tree, so React has no boundary to propagate to.
  *
  * We deliberately omit the `fallback` prop so the boundary falls back to its
  * built-in `DefaultErrorFallback` — if a user-authored fallback crashed

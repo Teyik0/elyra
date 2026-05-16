@@ -178,6 +178,7 @@ const TYPE_SCOPE_NODES = new Set([
   "TSInterfaceDeclaration", // `interface Foo { … }` — entirely type-level
   "TSTypeAliasDeclaration", // `type Foo = …` — entirely type-level
   "TSTypePredicate", // `x is Type` in return-type position
+  "TSClassImplements", // `class C implements Iface` — the implements clause is type-only
 ]);
 
 // Walk `node` and add every Identifier / JSXIdentifier found inside it to

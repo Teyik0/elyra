@@ -777,7 +777,7 @@ async function renderISRNon200(
         phase: "shell",
       },
     });
-    fallbackProps.__furinError = { digest: finalDigest };
+    fallbackProps.__furinError = { digest: finalDigest, status: finalStatus };
     fallbackProps.__furinStatus = 500;
     try {
       reactStream = await renderToReadableStream(

@@ -45,34 +45,42 @@ function patchSyntaxError(): void {
 
 patchSyntaxError();
 
-// Ensure window.open exists — happy-dom sometimes omits it in isolated scopes.
-if (typeof window.open === "undefined") {
-  (window as Window & { open: typeof window.open }).open = () => null;
+// Ensure window.open / window.history exist with the minimal API surface the
+// tests rely on — happy-dom sometimes omits them in isolated scopes, and
+// assigning `window.location.href` recreates `window`, dropping any shims that
+// were attached to the previous instance. Idempotent: only fills gaps.
+function ensureWindowShims(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  if (typeof window.open === "undefined") {
+    (window as Window & { open: typeof window.open }).open = () => null;
+  }
+  if (typeof window.history === "undefined") {
+    (window as Window & { history: History }).history = {
+      length: 1,
+      scrollRestoration: "auto",
+      state: null,
+      back: () => {
+        /* noop */
+      },
+      forward: () => {
+        /* noop */
+      },
+      go: () => {
+        /* noop */
+      },
+      pushState: () => {
+        /* noop */
+      },
+      replaceState: () => {
+        /* noop */
+      },
+    } as History;
+  }
 }
 
-// Ensure window.history exists with the minimal API surface tests rely on.
-if (typeof window.history === "undefined") {
-  (window as Window & { history: History }).history = {
-    length: 1,
-    scrollRestoration: "auto",
-    state: null,
-    back: () => {
-      /* noop */
-    },
-    forward: () => {
-      /* noop */
-    },
-    go: () => {
-      /* noop */
-    },
-    pushState: () => {
-      /* noop */
-    },
-    replaceState: () => {
-      /* noop */
-    },
-  } as History;
-}
+ensureWindowShims();
 
 // Restore native Web APIs — happy-dom's polyfills break Bun's server-side
 // fetch (Parse Error on local URLs), TransformStream (no getWriter), and
@@ -105,31 +113,7 @@ beforeEach(() => {
   patchSyntaxError();
 
   // Re-ensure window APIs exist in case --isolate created a fresh scope.
-  if (typeof window !== "undefined" && typeof window.open === "undefined") {
-    (window as Window & { open: typeof window.open }).open = () => null;
-  }
-  if (typeof window !== "undefined" && typeof window.history === "undefined") {
-    (window as Window & { history: History }).history = {
-      length: 1,
-      scrollRestoration: "auto",
-      state: null,
-      back: () => {
-        /* noop */
-      },
-      forward: () => {
-        /* noop */
-      },
-      go: () => {
-        /* noop */
-      },
-      pushState: () => {
-        /* noop */
-      },
-      replaceState: () => {
-        /* noop */
-      },
-    } as History;
-  }
+  ensureWindowShims();
 
   // Ensure a valid origin for every test. happy-dom defaults to about:blank
   // with a null origin, which breaks isInternal() in <Link> and any code
@@ -144,13 +128,15 @@ beforeEach(() => {
     window.location.href = "http://localhost:3000/";
   }
 
-  // Re-apply the SyntaxError patch *after* the potential nav: assigning to
-  // `location.href` makes happy-dom navigate the detached frame, which
-  // recreates `window` (and `document.defaultView`) without the patched
-  // SyntaxError. Without this second pass, any test that subsequently parses
-  // CSS / a selector hits "undefined is not a constructor" inside happy-dom's
-  // SelectorParser — flakiness depending on test ordering and microtasks.
+  // Re-apply the SyntaxError patch and window shims *after* the potential nav:
+  // assigning to `location.href` makes happy-dom navigate the detached frame,
+  // which recreates `window` (and `document.defaultView`) without the patched
+  // SyntaxError or the window.open / window.history shims. Without this second
+  // pass, any test that subsequently parses CSS / a selector hits "undefined is
+  // not a constructor" inside happy-dom's SelectorParser, or finds a missing
+  // window.open / window.history — flakiness depending on test ordering.
   patchSyntaxError();
+  ensureWindowShims();
 });
 
 afterEach(() => {
@@ -161,7 +147,8 @@ afterEach(() => {
   if (window.location.href !== "http://localhost:3000/") {
     window.location.href = "http://localhost:3000/";
   }
-  // Re-apply the patch in case the test (or happy-dom microtasks fired
-  // during it) swapped the window object.
+  // Re-apply the patch and window shims in case the test (or happy-dom
+  // microtasks fired during it) swapped the window object.
   patchSyntaxError();
+  ensureWindowShims();
 });

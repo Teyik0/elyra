@@ -550,4 +550,24 @@ describe("transformForClient — TypeScript syntax", () => {
     // Config was only used as a generic type arg — not a runtime reference.
     expect(result.code).not.toContain('from "./db"');
   });
+
+  test("import used only in a class `implements` clause is eliminated after loader removal", () => {
+    // Regression: a class `implements` heritage clause is a pure type position.
+    // `TSClassImplements` was missing from the type-scope node set, so `Shape`
+    // was counted as a runtime reference and its import survived DCE.
+    const input = `
+      import { getData } from "./db";
+      import { Shape } from "./shapes";
+      class Widget implements Shape {}
+      export default page({
+        loader: async () => ({ data: getData() }),
+        component: () => null,
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    // Shape only appears in a class `implements` clause → type-only, must be DCE'd.
+    expect(result.code).not.toContain('from "./shapes"');
+  });
 });
