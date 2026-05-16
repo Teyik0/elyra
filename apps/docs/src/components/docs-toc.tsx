@@ -49,6 +49,12 @@ export function DocsToc() {
       const seen = new Map<string, number>();
       const elements = Array.from(article.querySelectorAll<HTMLHeadingElement>("h2, h3"));
       const nextHeadings: HeadingItem[] = [];
+      // Only headings that get an id end up here — empty headings are skipped
+      // entirely. The observer must watch THIS list, not `elements`: an
+      // observed-but-id-less heading becoming the first visible entry would
+      // make the callback's `target.id` guard fall through and freeze the
+      // active TOC item.
+      const observedHeadings: HTMLHeadingElement[] = [];
       for (const element of elements) {
         const text = element.textContent ?? "";
         if (text.length === 0) {
@@ -56,6 +62,7 @@ export function DocsToc() {
         }
         const id = getUniqueHeadingId(text, seen);
         element.id = id;
+        observedHeadings.push(element);
         nextHeadings.push({
           id,
           level: element.tagName === "H2" ? 2 : 3,
@@ -89,7 +96,7 @@ export function DocsToc() {
         }
       );
 
-      for (const element of elements) {
+      for (const element of observedHeadings) {
         observer.observe(element);
       }
 

@@ -42,21 +42,23 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   // shadcn best practice: apply theme class on <html> so Radix portals
   // (dropdowns, dialogs, tooltips…) inherit the correct color scheme.
-  // Combined with the mount effect above to break the previous effect chain.
+  // Persistence happens here too — driven by the COMMITTED `theme`, never by a
+  // render-snapshot value in the click handler. Computing the next value in
+  // the handler desyncs localStorage from reducer state when two toggles fire
+  // before a re-render (both read the same stale `theme`).
   useEffect(() => {
     const root = document.documentElement;
     root.classList.remove("light", "dark");
     root.classList.add(theme);
+    try {
+      localStorage.setItem("furin-theme", theme);
+    } catch {
+      // localStorage unavailable (private mode, sandboxed iframe, etc.)
+    }
   }, [theme]);
 
   const toggleTheme = () => {
     dispatch("toggle");
-    const next = theme === "dark" ? "light" : "dark";
-    try {
-      localStorage.setItem("furin-theme", next);
-    } catch {
-      // ignore
-    }
   };
 
   return (
