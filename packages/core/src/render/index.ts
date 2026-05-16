@@ -21,9 +21,10 @@ import {
   setISRCache,
   setSSGCache,
 } from "./cache.ts";
+import { warnDeferredInStaticContext } from "./deferred-warn.ts";
 import { computeErrorDigest } from "./digest.ts";
 import { buildElement, buildErrorElement, buildNotFoundElement } from "./element.tsx";
-import { type LoaderResult, runLoaders } from "./loaders.ts";
+import { type LoaderResult, runLoaders, serializeDeferredRejection } from "./loaders.ts";
 import { buildHeadInjection, safeJson } from "./shell.ts";
 import { getDevTemplate, getProductionTemplate } from "./template.ts";
 
@@ -31,7 +32,7 @@ import { getDevTemplate, getProductionTemplate } from "./template.ts";
 // biome-ignore lint/performance/noBarrelFile: acnowledged
 export { type LoaderContext, streamToString } from "./assemble.ts";
 export { buildElement } from "./element.tsx";
-export { type LoaderResult, runLoaders } from "./loaders.ts";
+export { type LoaderResult, runLoaders, serializeDeferredRejection } from "./loaders.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -123,7 +124,7 @@ async function prepareRender(
   precomputedLoaderResult: LoaderResult | undefined
 ): Promise<PreparedRender | Response> {
   const loaderStart = Date.now();
-  const loaderResult = precomputedLoaderResult ?? (await runLoaders(route, ctx, root.route));
+  const loaderResult = precomputedLoaderResult ?? (await runLoaders(route, ctx));
   const loader_ms = Date.now() - loaderStart;
 
   if (loaderResult.type === "redirect") {
@@ -265,21 +266,15 @@ function renderForPath(
         },
       });
 
-      const {
-        componentProps,
-        deferredPromises,
-        element,
-        headData,
-        headers,
-        status,
-        syncData,
-        template,
-      } = prepared;
+      const { deferredPromises, element, headData, headers, status, syncData, template } = prepared;
+      if (deferredPromises !== undefined) {
+        warnDeferredInStaticContext(route.pattern, mode);
+      }
       const stream = await renderToReadableStream(element);
       await stream.allReady;
       const reactHtml = await streamToString(stream);
       return {
-        html: assembleHTML(template, headData, reactHtml, componentProps),
+        html: assembleHTML(template, headData, reactHtml, syncData),
         headers,
         ndjson: await serializeLoaderDataNdjson(syncData, deferredPromises),
         status,
@@ -326,23 +321,14 @@ export async function renderToHTML(
     throw prepared;
   }
 
-  const {
-    componentProps,
-    deferredPromises,
-    element,
-    headData,
-    headers,
-    status,
-    syncData,
-    template,
-  } = prepared;
+  const { deferredPromises, element, headData, headers, status, syncData, template } = prepared;
 
   const stream = await renderToReadableStream(element);
   await stream.allReady;
   const reactHtml = await streamToString(stream);
 
   return {
-    html: assembleHTML(template, headData, reactHtml, componentProps),
+    html: assembleHTML(template, headData, reactHtml, syncData),
     headers,
     ndjson: await serializeLoaderDataNdjson(syncData, deferredPromises),
     status,
@@ -504,7 +490,8 @@ export async function renderSSR(
 
   // The deferred registry script is injected before the React stream so client
   // Suspense boundaries can access `window.__FURIN_DEFERRED__` synchronously.
-  const deferredSetupScript = hasDeferred ? buildDeferredScript(dataPayload) : "";
+  const deferredKeys = hasDeferred ? Object.keys(deferredPromises) : [];
+  const deferredSetupScript = hasDeferred ? buildDeferredScript(dataPayload, deferredKeys) : "";
 
   // The standard __FURIN_DATA__ script is always injected (for SPA nav signal,
   // error digest, and non-deferred data). In deferred mode the syncData is
@@ -519,6 +506,7 @@ export async function renderSSR(
   const writer = writable.getWriter();
   const enc = new TextEncoder();
 
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: streaming render orchestrates multiple async stages (head, React stream, deferred scripts, tail); extracting further would break the linear data flow
   (async () => {
     // Head section — includes the deferred registry if needed
     await writer.write(enc.encode(headPre + headData + deferredSetupScript + bodyPre));
@@ -533,27 +521,34 @@ export async function renderSSR(
       await writer.write(value);
     }
 
-    // After React stream: inject late resolution scripts for each deferred Promise
+    const [earlyBodyPost, finalBodyPost] = hasDeferred
+      ? splitBeforeBodyClose(bodyPost)
+      : ["", bodyPost];
+    await writer.write(enc.encode(dataScript + earlyBodyPost));
+
+    // After React stream and hydration script: inject late resolution scripts
+    // for each deferred Promise IN SETTLE ORDER (not insertion order). Kicking
+    // off all awaits in parallel and writing on settlement is the whole point
+    // of `defer()`: a fast field must not be held hostage by a slow sibling.
+    // The WritableStreamDefaultWriter serialises concurrent .write() calls
+    // internally, so chunks cannot interleave even though awaits race.
     if (hasDeferred) {
-      for (const [key, promise] of Object.entries(deferredPromises)) {
-        try {
-          const resolvedValue = await promise;
-          const chunk = toCrossJSON(resolvedValue);
-          await writer.write(enc.encode(buildDeferredResolution(key, chunk, "resolve")));
-        } catch (err) {
-          // TODO(furin/server-error): handle Response rejections in deferred
-          // streams. Same bug pattern as runLoaders — `String(err)` on a
-          // Response yields "[object Response]" and `notFound()` brand checks
-          // are lost when a deferred Promise rejects with one. Out of scope
-          // for the current slice; needs its own design (the rejection lands
-          // inside `<Await>` which has its own error UI semantics).
-          const chunk = toCrossJSON(err instanceof Error ? err : new Error(String(err)));
-          await writer.write(enc.encode(buildDeferredResolution(key, chunk, "reject")));
-        }
-      }
+      await Promise.all(
+        Object.entries(deferredPromises).map(async ([key, promise]) => {
+          try {
+            const resolvedValue = await promise;
+            const chunk = toCrossJSON(resolvedValue);
+            await writer.write(enc.encode(buildDeferredResolution(key, chunk, "resolve")));
+          } catch (err) {
+            const normalized = await serializeDeferredRejection(err);
+            const chunk = toCrossJSON(normalized);
+            await writer.write(enc.encode(buildDeferredResolution(key, chunk, "reject")));
+          }
+        })
+      );
     }
 
-    await writer.write(enc.encode(dataScript + bodyPost));
+    await writer.write(enc.encode(finalBodyPost));
     await writer.close();
   })().catch((err) => writer.abort(err));
 
@@ -565,6 +560,14 @@ export async function renderSSR(
       ...headers,
     },
   });
+}
+
+function splitBeforeBodyClose(bodyPost: string): [string, string] {
+  const index = bodyPost.toLowerCase().lastIndexOf("</body>");
+  if (index === -1) {
+    return [bodyPost, ""];
+  }
+  return [bodyPost.slice(0, index), bodyPost.slice(index)];
 }
 
 // ── Catch-all 404 ────────────────────────────────────────────────────────────
@@ -848,7 +851,7 @@ export async function handleISR(
     return prepared;
   }
 
-  const { componentProps, element, headData, template, status, errorDigest } = prepared;
+  const { element, headData, syncData, template, status, errorDigest } = prepared;
 
   if (status !== 200) {
     return renderISRNon200(prepared, route, ctx, root, errorDigest, renderStart, buildId);
@@ -857,7 +860,7 @@ export async function handleISR(
   const stream = await renderToReadableStream(element);
   await stream.allReady;
   const reactHtml = await streamToString(stream);
-  const html = assembleHTML(template, headData, reactHtml, componentProps);
+  const html = assembleHTML(template, headData, reactHtml, syncData);
   const generatedAt = Date.now();
 
   useLogger().set({

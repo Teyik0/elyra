@@ -128,7 +128,7 @@ describe.serial("buildStaticTarget", () => {
         controller.close();
       },
     });
-    const { syncData } = await parseDeferredNdjson(stream);
+    const { syncData } = await parseDeferredNdjson(stream, undefined);
     // The fixture has no loader, so syncData is an empty object — not null,
     // not undefined. The crucial assertion is that parsing succeeds at all.
     expect(syncData).toBeInstanceOf(Object);

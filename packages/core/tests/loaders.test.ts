@@ -52,10 +52,6 @@ async function getRoute(pattern: string): Promise<ResolvedRoute> {
   return route;
 }
 
-async function getRoot() {
-  return (await scanPages(FIXTURES_DIR)).root;
-}
-
 function withLoader(route: ResolvedRoute, loader: () => unknown): ResolvedRoute {
   return {
     ...route,
@@ -73,16 +69,11 @@ afterAll(() => __setDevMode(originalDevMode));
 describe("runLoaders — thrown Response classification", () => {
   test("Response(404) is classified as type: error with status 404", async () => {
     const baseRoute = await getRoute("/with-loader");
-    const root = await getRoot();
     const route = withLoader(baseRoute, () => {
       throw new Response(null, { status: 404 });
     });
 
-    const result = await runLoaders(
-      route,
-      createMockLoaderContext({ path: "/with-loader" }),
-      root.route
-    );
+    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
 
     expect(result.type).toBe("error");
     if (result.type === "error") {
@@ -92,16 +83,11 @@ describe("runLoaders — thrown Response classification", () => {
 
   test("Response(500) with body surfaces the body as the public message", async () => {
     const baseRoute = await getRoute("/with-loader");
-    const root = await getRoot();
     const route = withLoader(baseRoute, () => {
       throw new Response("oops", { status: 500 });
     });
 
-    const result = await runLoaders(
-      route,
-      createMockLoaderContext({ path: "/with-loader" }),
-      root.route
-    );
+    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
 
     expect(result.type).toBe("error");
     if (result.type === "error") {
@@ -112,16 +98,11 @@ describe("runLoaders — thrown Response classification", () => {
 
   test("Response(302) with Location is classified as redirect", async () => {
     const baseRoute = await getRoute("/with-loader");
-    const root = await getRoot();
     const route = withLoader(baseRoute, () => {
       throw new Response(null, { status: 302, headers: { Location: "/x" } });
     });
 
-    const result = await runLoaders(
-      route,
-      createMockLoaderContext({ path: "/with-loader" }),
-      root.route
-    );
+    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
 
     expect(result.type).toBe("redirect");
     if (result.type === "redirect") {
@@ -131,16 +112,11 @@ describe("runLoaders — thrown Response classification", () => {
 
   test("Response(302) without Location is classified as error 500 (invalid redirect)", async () => {
     const baseRoute = await getRoute("/with-loader");
-    const root = await getRoot();
     const route = withLoader(baseRoute, () => {
       throw new Response(null, { status: 302 });
     });
 
-    const result = await runLoaders(
-      route,
-      createMockLoaderContext({ path: "/with-loader" }),
-      root.route
-    );
+    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
 
     expect(result.type).toBe("error");
     if (result.type === "error") {
@@ -150,16 +126,11 @@ describe("runLoaders — thrown Response classification", () => {
 
   test("Response(401) without body falls back to a generic public message", async () => {
     const baseRoute = await getRoute("/with-loader");
-    const root = await getRoot();
     const route = withLoader(baseRoute, () => {
       throw new Response(null, { status: 401 });
     });
 
-    const result = await runLoaders(
-      route,
-      createMockLoaderContext({ path: "/with-loader" }),
-      root.route
-    );
+    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
 
     expect(result.type).toBe("error");
     if (result.type === "error") {
@@ -172,32 +143,22 @@ describe("runLoaders — thrown Response classification", () => {
 
   test("notFound() is still classified as type: not-found (regression)", async () => {
     const baseRoute = await getRoute("/with-loader");
-    const root = await getRoot();
     const route = withLoader(baseRoute, () => {
       notFound({ message: "x" });
     });
 
-    const result = await runLoaders(
-      route,
-      createMockLoaderContext({ path: "/with-loader" }),
-      root.route
-    );
+    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
 
     expect(result.type).toBe("not-found");
   });
 
   test("plain Error is classified as type: error with status 500 (regression)", async () => {
     const baseRoute = await getRoute("/with-loader");
-    const root = await getRoot();
     const route = withLoader(baseRoute, () => {
       throw new Error("boom");
     });
 
-    const result = await runLoaders(
-      route,
-      createMockLoaderContext({ path: "/with-loader" }),
-      root.route
-    );
+    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
 
     expect(result.type).toBe("error");
     if (result.type === "error") {

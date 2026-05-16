@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { createElement } from "react";
-import { flushSync } from "react-dom";
+import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { buildRouterTree, type RouterContextValue } from "../src/link";
 
@@ -51,8 +50,8 @@ describe("buildRouterTree — error boundary fallback navigation", () => {
     });
   });
 
-  afterEach(() => {
-    flushSync(() => {
+  afterEach(async () => {
+    await act(() => {
       root.unmount();
     });
     container.remove();
@@ -63,7 +62,7 @@ describe("buildRouterTree — error boundary fallback navigation", () => {
     });
   });
 
-  test("Link in default 500 fallback navigates via SPA (not full reload)", () => {
+  test("Link in default 500 fallback navigates via SPA (not full reload)", async () => {
     const navigateSpy = mock(() => Promise.resolve());
     const ctx = makeRouterContext({
       navigate: navigateSpy as unknown as RouterContextValue["navigate"],
@@ -71,7 +70,7 @@ describe("buildRouterTree — error boundary fallback navigation", () => {
 
     const tree = buildRouterTree(ctx, createElement(ThrowOnRender), {});
 
-    flushSync(() => {
+    await act(() => {
       root.render(tree);
     });
 

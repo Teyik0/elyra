@@ -10,6 +10,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`defer()` and `<Await>`** — Streaming loader data with deferred promises. Loaders can return `defer({ slow: slowPromise })` and the page renders immediately with a fallback. `<Await resolve={slow} fallback={<Loading />}>` unwraps the promise when it resolves. Uses NDJSON streaming for SSR/ISR with automatic client-side hydration of deferred chunks.
 - `useAsyncError()` and `useAsyncValue()` hooks for reading deferred promise states inside `<Await>` error boundaries and children.
 
+### Fixed
+- **Deferred SSR chunks now stream in settle order** — `renderSSR` emitted deferred resolution `<script>`s in loader-declaration order, so a fast field was held hostage by a slow sibling. Chunks are now flushed as each Promise settles.
+- **`defer()` brand no longer leaks into props** — the internal `__isDeferred` marker was surfacing as a typed component / `head()` prop. It is now stripped from the inferred loader-data type.
+- **SPA navigation title comes from `head()`** — the `/_furin/data` endpoint now resolves the page title server-side and ships it as `__furinTitle`. A loader returning a plain `title` field no longer hijacks `document.title`; `head()` is the single source of truth.
+- `rebuildDevRoute` now recomputes route mode (SSR/SSG/ISR) on every dev request after HMR re-import, so toggling `revalidate` or adding/removing a loader takes effect immediately without a server restart.
+- Loaders that throw a `Response` (e.g. redirect) now correctly trigger the error boundary instead of silently failing during SPA navigation.
+- `evlog` path logging, DCE transform `JSXIdentifier` handling, static SPA navigation edge case, and test flakiness.
+
 ## [0.1.0-alpha.13] — 2026-05-03
 
 ### Added

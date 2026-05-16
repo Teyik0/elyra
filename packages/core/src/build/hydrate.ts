@@ -137,26 +137,36 @@ const loaderData = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
 //   - _chunks: raw CrossJSON chunks keyed by field name (from late <script> tags)
 // We deserialise each chunk with fromCrossJSON and create a Promise so <Await>
 // components receive a proper resolved Promise instead of the raw CrossJSON node.
-const __deferred = (window as any).__FURIN_DEFERRED__;
+interface FurinDeferredRegistry {
+  _chunks: Record<string, { a: 0 | 1; v: SerovalNode }>;
+  _data: Record<string, unknown>;
+  _deferredKeys: string[];
+  _resolvers: Record<string, {
+    promise: Promise<unknown>;
+    reject: (reason: unknown) => void;
+    resolve: (value: unknown) => void;
+  }>;
+  getPromise: (key: string) => Promise<unknown>;
+  reject: (key: string, chunk: SerovalNode) => void;
+  resolve: (key: string, chunk: SerovalNode) => void;
+}
+const __deferred = (window as unknown as { __FURIN_DEFERRED__?: FurinDeferredRegistry })
+  .__FURIN_DEFERRED__;
 const deferredData: Record<string, Promise<unknown>> = {};
 if (__deferred && __deferred._chunks) {
-  // Patch resolve/reject so any chunks that arrive after this script runs
-  // (edge-case: non-deferred inline scripts racing with defer) also work.
+  // Patch resolve/reject so any chunks that arrive AFTER this entry has run
+  // settle immediately. The previous version stored late chunks in _chunks
+  // when no resolver was registered yet, but the drain loop below only runs
+  // ONCE at hydrate time — so any chunk landing after the drain would stay
+  // orphaned and the corresponding Await would hang forever. Eagerly creating
+  // the resolver via getPromise() fixes the race.
   __deferred.resolve = (key: string, chunk: SerovalNode) => {
-    const r = __deferred._resolvers[key];
-    if (r) {
-      r.resolve(fromCrossJSON(chunk, {}));
-    } else {
-      __deferred._chunks[key] = { a: 0, v: chunk };
-    }
+    __deferred.getPromise(key);
+    __deferred._resolvers[key].resolve(fromCrossJSON(chunk, {}));
   };
   __deferred.reject = (key: string, chunk: SerovalNode) => {
-    const r = __deferred._resolvers[key];
-    if (r) {
-      r.reject(fromCrossJSON(chunk, {}));
-    } else {
-      __deferred._chunks[key] = { a: 1, v: chunk };
-    }
+    __deferred.getPromise(key);
+    __deferred._resolvers[key].reject(fromCrossJSON(chunk, {}));
   };
     for (const key of Object.keys(__deferred._chunks)) {
       const entry = __deferred._chunks[key] as { a: 0 | 1; v: SerovalNode };
@@ -169,6 +179,11 @@ if (__deferred && __deferred._chunks) {
         resolver.reject(value);
       }
       deferredData[key] = p;
+    }
+    for (const key of __deferred._deferredKeys ?? []) {
+      if (!(key in deferredData)) {
+        deferredData[key] = __deferred.getPromise(key) as Promise<unknown>;
+      }
     }
     // Keys that have a resolver (getPromise was called by <Await>) but no
     // chunk yet (the late <script> hasn't arrived) still need a Promise entry

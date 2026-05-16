@@ -2,7 +2,7 @@ import "./globals.css";
 
 import { createRoute } from "@teyik0/furin/client";
 import { Link, RouterContext } from "@teyik0/furin/link";
-import { useContext } from "react";
+import { use } from "react";
 import { DocsSearchDialog } from "@/components/docs-search-dialog";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -24,7 +24,7 @@ function GithubIcon({ className }: { className?: string }) {
 function RootLayout({ children }: { children: React.ReactNode }) {
   // basePath is available during static pre-render (RouterContext injected) and on the client.
   // Falls back to "/public" in dev (Elysia static plugin serves public/ at /public/).
-  const router = useContext(RouterContext);
+  const router = use(RouterContext);
   const imgPrefix = router?.basePath || "/public";
 
   return (
@@ -55,12 +55,12 @@ function RootLayout({ children }: { children: React.ReactNode }) {
               <ThemeToggle />
               <a
                 aria-label="GitHub"
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                className="inline-flex size-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
                 href="https://github.com/teyik0/furin"
                 rel="noopener noreferrer"
                 target="_blank"
               >
-                <GithubIcon className="h-4 w-4" />
+                <GithubIcon className="size-4" />
               </a>
             </div>
           </div>
@@ -73,7 +73,7 @@ function RootLayout({ children }: { children: React.ReactNode }) {
         <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
           <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
             <p className="text-muted-foreground text-sm">
-              Built with Furin — React meta-framework on Bun + Elysia
+              Built with Furin: React meta-framework on Bun + Elysia
             </p>
             <div className="flex gap-6">
               <a

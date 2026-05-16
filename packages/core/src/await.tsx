@@ -1,4 +1,4 @@
-import { Component, createContext, createElement, type ReactNode, use, useContext } from "react";
+import { Component, createContext, createElement, type ReactNode, use } from "react";
 
 // ── Async error context ────────────────────────────────────────────────────────
 
@@ -13,7 +13,7 @@ export const AsyncErrorContext = createContext<unknown>(undefined);
  * deferred Promise to reject. Throws outside of an error-boundary subtree.
  */
 export function useAsyncError(): unknown {
-  return useContext(AsyncErrorContext);
+  return use(AsyncErrorContext);
 }
 
 /**
@@ -25,7 +25,7 @@ export function useAsyncError(): unknown {
 export function useAsyncValue<T>(): T {
   // This hook is intended to be used inside <Await>'s children renderer.
   // The actual value is accessed via the AwaitValueContext.
-  const ctx = useContext(AwaitValueContext) as { promise: Promise<T> } | undefined;
+  const ctx = use(AwaitValueContext) as { promise: Promise<T> } | undefined;
   if (!ctx) {
     throw new Error("useAsyncValue must be used inside <Await> children");
   }
@@ -39,11 +39,13 @@ const AwaitValueContext = createContext<{ promise: Promise<unknown> } | undefine
 interface AsyncErrorBoundaryProps {
   children?: ReactNode;
   errorElement: ReactNode | undefined;
+  resolve: Promise<unknown>;
 }
 
 interface AsyncErrorBoundaryState {
   error: unknown;
   hasError: boolean;
+  resolve: Promise<unknown> | undefined;
 }
 
 /**
@@ -60,10 +62,20 @@ interface AsyncErrorBoundaryState {
 class AsyncErrorBoundary extends Component<AsyncErrorBoundaryProps, AsyncErrorBoundaryState> {
   constructor(props: AsyncErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: undefined };
+    this.state = { hasError: false, error: undefined, resolve: props.resolve };
   }
 
-  static getDerivedStateFromError(error: unknown): AsyncErrorBoundaryState {
+  static getDerivedStateFromProps(
+    props: AsyncErrorBoundaryProps,
+    state: AsyncErrorBoundaryState
+  ): Partial<AsyncErrorBoundaryState> | null {
+    if (props.resolve !== state.resolve) {
+      return { hasError: false, error: undefined, resolve: props.resolve };
+    }
+    return null;
+  }
+
+  static getDerivedStateFromError(error: unknown): Partial<AsyncErrorBoundaryState> {
     return { hasError: true, error };
   }
 
@@ -137,7 +149,7 @@ export interface AwaitProps<T> {
 export function Await<T>({ resolve, errorElement, children }: AwaitProps<T>): ReactNode {
   return createElement(
     AsyncErrorBoundary,
-    { errorElement },
+    { errorElement, resolve: resolve as Promise<unknown> },
     createElement(AwaitInner<T>, { resolve, children })
   );
 }

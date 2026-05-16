@@ -128,19 +128,21 @@ function splitDeferredResult(
   const syncData: Record<string, unknown> = {};
   const deferredPromises: Record<string, Promise<unknown>> = {};
 
+  // Route-chain data first so page sync fields can overwrite it — matching the
+  // non-deferred Object.assign order where page result is spread last and wins.
+  for (const [key, value] of Object.entries(routeChainData)) {
+    syncData[key] = value;
+  }
+
   for (const [key, value] of Object.entries(pageResult)) {
     if (key === "__isDeferred") {
       continue;
     }
-    if (value instanceof Promise) {
-      deferredPromises[key] = value;
+    if (isPromiseLike(value)) {
+      deferredPromises[key] = Promise.resolve(value);
     } else {
       syncData[key] = value;
     }
-  }
-
-  for (const [key, value] of Object.entries(routeChainData)) {
-    syncData[key] = value;
   }
 
   return {
@@ -149,12 +151,65 @@ function splitDeferredResult(
   };
 }
 
-// TODO: remove _rootLayout parameter in next refactor (unused; routeChain[0] is root layout)
-export async function runLoaders(
-  route: ResolvedRoute,
-  ctx: Context,
-  _rootLayout: RuntimeRoute
-): Promise<LoaderResult> {
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (
+    (typeof value === "object" || typeof value === "function") &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === "function"
+  );
+}
+
+/**
+ * Normalises an error thrown inside a deferred Promise into a value that is
+ * safe to send through `toCrossJSON` and that preserves the original semantics
+ * after `fromCrossJSON` on the client.
+ *
+ * Symmetric to the rejection handling in `runLoaders` (lines 247-272) but for
+ * the *deferred* path, where the rejection is delivered to a client-side
+ * `<Await>` instead of becoming a top-level response.
+ *
+ *  - `notFound()`         → `Error` carrying `__furinBrand` + `data` so the
+ *                            client-side `isNotFoundError()` (duck-typed)
+ *                            recognises the rejection.
+ *  - `Response(status, body)` → `Error` carrying `__furinStatus` and the
+ *                            body/statusText as `message`.
+ *  - `Error`              → returned unchanged.
+ *  - anything else        → wrapped in `new Error(String(value))`.
+ */
+export async function serializeDeferredRejection(err: unknown): Promise<unknown> {
+  if (isNotFoundError(err)) {
+    const wrapped = new Error(err.message);
+    Object.assign(wrapped, { __furinBrand: "FURIN_NOT_FOUND", data: err.data });
+    return wrapped;
+  }
+  if (err instanceof Response) {
+    const body = await readResponseMessage(err);
+    const wrapped = new Error(body || err.statusText || "Something went wrong");
+    Object.assign(wrapped, { __furinStatus: err.status });
+    return wrapped;
+  }
+  if (err instanceof Error) {
+    return err;
+  }
+  return new Error(String(err));
+}
+
+/**
+ * v1 restriction: defer() is only valid in a page loader. Route/layout loaders
+ * returning a deferred object would silently leak the brand into syncData and
+ * pass raw Promises to descendants — fail fast at the loader boundary instead.
+ */
+function assertNoDeferredInRouteLoaders(routeResults: unknown[]): void {
+  for (const result of routeResults) {
+    if (isDeferred(result as Record<string, unknown>)) {
+      throw new Error(
+        "[furin] defer() is only supported in a page loader (route.page({ loader })). A route/layout loader returned a deferred object; move the deferred fields to the page loader, or `await` them in the route loader and return resolved values."
+      );
+    }
+  }
+}
+
+export async function runLoaders(route: ResolvedRoute, ctx: Context): Promise<LoaderResult> {
   try {
     // Inject `log` so loaders can destructure it directly as `({ log })`.
     // useLogger() resolves the correct logger for every rendering context:
@@ -214,6 +269,8 @@ export async function runLoaders(
     // lands in syncData. Only the page loader's own `defer()` fields are split.
     const routeOnlyResults = results.slice(0, loaderMap.size);
     const pageResult = results[loaderMap.size] as Record<string, unknown>;
+
+    assertNoDeferredInRouteLoaders(routeOnlyResults);
     // Route context is always injected into syncData so components receive
     // params, query and path regardless of the serialisation path (SSR, SPA
     // nav, dev cache).

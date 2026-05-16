@@ -65,7 +65,7 @@ async function createBuildFingerprint(
   }
 
   const fileParts = await Promise.all(
-    [...fingerprintPaths].sort().map(async (path) => {
+    [...fingerprintPaths].toSorted().map(async (path) => {
       const content = existsSync(path) ? await Bun.file(path).text() : "";
       return `${toPosixPath(path)}:${content}`;
     })
@@ -77,7 +77,7 @@ async function createBuildFingerprint(
     )
     .sort();
 
-  return [entryChunk, ...[...cssChunks].sort(), ...routeParts, ...fileParts].join("\n");
+  return [entryChunk, ...[...cssChunks].toSorted(), ...routeParts, ...fileParts].join("\n");
 }
 
 function buildCompileMetadata(root: RootLayout, routes: ResolvedRoute[]) {

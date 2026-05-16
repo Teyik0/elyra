@@ -29,11 +29,11 @@ export const route = createRoute({
   layout: ({ children, sidebarBoards }) => (
     <div className="flex min-h-screen">
       {/* ─── Sidebar ──────────────────────────────────────────── */}
-      <aside className="flex w-[220px] shrink-0 flex-col border-white/5 border-r bg-[#0a0a0c]">
+      <aside className="flex w-55 shrink-0 flex-col border-white/5 border-r bg-[#0a0a0c]">
         {/* Logo */}
-        <div className="flex h-[58px] items-center border-white/5 border-b px-4">
+        <div className="flex h-14.5 items-center border-white/5 border-b px-4">
           <Link className="flex items-center gap-3" to="/">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-violet-700 to-indigo-700 shadow-[0_0_14px_rgba(124,58,237,0.45)]">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-violet-700 to-purple-700 shadow-[0_0_14px_rgba(124,58,237,0.45)]">
               <span className="text-sm">⚡</span>
             </div>
             <div>
@@ -65,7 +65,7 @@ export const route = createRoute({
               >
                 {/* Avatar dot — background/border/color are dynamic, kept as inline style */}
                 <span
-                  className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] font-bold text-[9px]"
+                  className="inline-flex size-5 shrink-0 items-center justify-center rounded-[6px] font-bold text-[9px]"
                   style={{
                     background: `${color}18`,
                     border: `1px solid ${color}35`,
@@ -91,7 +91,7 @@ export const route = createRoute({
           </Link>
 
           <div className="mt-2 flex items-center justify-center gap-1.5 rounded-md bg-emerald-400/5 p-1.5">
-            <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" />
+            <span className="size-[5px] shrink-0 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" />
             <span className="font-medium text-[10px] text-emerald-400/50 tracking-[0.04em]">
               SSR Layout
             </span>

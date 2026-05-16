@@ -1,5 +1,6 @@
+import { Await, defer } from "@teyik0/furin/client";
 import { Link } from "@teyik0/furin/link";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { codeToHtml } from "shiki";
 import { route } from "./root";
 
@@ -48,17 +49,15 @@ export default route.page({
     meta: [{ title: "Furin — The Fast, Minimal React Framework for Bun" }],
     links: [{ rel: "canonical", href: "/" }],
   }),
-  loader: async () => {
+  loader: () => {
     const entries = Object.entries(FILES) as [FileName, string][];
-    const codeHtmlMap = Object.fromEntries(
-      await Promise.all(
-        entries.map(async ([name, code]) => [
-          name,
-          await codeToHtml(code, { lang: "tsx", theme: "github-dark" }),
-        ])
-      )
-    ) as Record<FileName, string>;
-    return { codeHtmlMap };
+    const codeHtmlMap = Promise.all(
+      entries.map(async ([name, code]) => [
+        name,
+        await codeToHtml(code, { lang: "tsx", theme: "github-dark" }),
+      ])
+    ).then((resolvedEntries) => Object.fromEntries(resolvedEntries) as Record<FileName, string>);
+    return defer({ codeHtmlMap });
   },
   component: ({ codeHtmlMap }) => (
     <div>
@@ -77,7 +76,7 @@ export default route.page({
         <div className="relative mx-auto grid max-w-7xl grid-cols-1 gap-16 px-4 py-24 sm:px-6 lg:grid-cols-2 lg:px-8">
           {/* Left: headline */}
           <div className="flex flex-col justify-center">
-            <h1 className="mb-6 font-bold text-3xl text-foreground leading-[1.1] sm:text-6xl lg:text-[3.75rem]">
+            <h1 className="mb-6 font-semibold text-3xl text-foreground leading-[1.1] sm:text-6xl lg:text-[3.75rem]">
               Furin.{" "}
               <span className="text-muted-foreground">
                 The Fast, Minimal, and Modern React Meta Framework for Bun.
@@ -111,7 +110,13 @@ export default route.page({
 
           {/* Right: tabbed code window — intentionally always dark */}
           <div className="flex items-center justify-center">
-            <HeroCodeWindow codeHtmlMap={codeHtmlMap} />
+            <Suspense fallback={<HeroCodeWindowSkeleton />}>
+              <Await errorElement={<HeroCodeWindowSkeleton />} resolve={codeHtmlMap}>
+                {(resolvedCodeHtmlMap: Record<FileName, string>) => (
+                  <HeroCodeWindow codeHtmlMap={resolvedCodeHtmlMap} />
+                )}
+              </Await>
+            </Suspense>
           </div>
         </div>
       </section>
@@ -119,11 +124,11 @@ export default route.page({
       {/* Features */}
       <section className="border-border border-t py-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <h2 className="mb-4 text-center font-bold text-3xl text-foreground">
+          <h2 className="mb-4 text-center font-semibold text-3xl text-foreground">
             Everything you need
           </h2>
           <p className="mb-12 text-center text-muted-foreground">
-            A complete React meta-framework — batteries included.
+            A complete React meta-framework, batteries included.
           </p>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <FeatureCard
@@ -173,7 +178,7 @@ export default route.page({
       {/* CTA */}
       <section className="border-border border-t py-24">
         <div className="mx-auto max-w-3xl px-4 text-center sm:px-6 lg:px-8">
-          <h2 className="mb-4 font-bold text-3xl text-foreground">Ready to build?</h2>
+          <h2 className="mb-4 font-semibold text-3xl text-foreground">Ready to build?</h2>
           <p className="mb-10 text-lg text-muted-foreground">
             Explore the live demo or dive into the documentation.
           </p>
@@ -199,23 +204,43 @@ export default route.page({
 
 const TAB_NAMES: FileName[] = ["server.ts", "pages/root.tsx", "pages/index.tsx"];
 
+function HeroCodeWindowSkeleton() {
+  return (
+    <div className="w-full max-w-lg overflow-hidden rounded-xl border border-zinc-700/50 shadow-2xl shadow-black/40">
+      <div className="flex items-center gap-2 border-zinc-700/50 border-b bg-[#161b22] px-4 py-3">
+        <span className="size-3 rounded-full bg-red-500/80" />
+        <span className="size-3 rounded-full bg-yellow-500/80" />
+        <span className="size-3 rounded-full bg-green-500/80" />
+        <div className="ml-2 flex gap-2">
+          {TAB_NAMES.map((name) => (
+            <div className="h-7 w-24 rounded-md bg-zinc-800/90" key={name} />
+          ))}
+        </div>
+      </div>
+      <div className="space-y-3 bg-[#0d1117] p-5">
+        {Array.from({ length: 11 }, (_, i) => `${92 - i * 4}%`).map((width) => (
+          <div className="h-4 animate-pulse rounded bg-zinc-800/85" key={width} style={{ width }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function HeroCodeWindow({ codeHtmlMap }: { codeHtmlMap: Record<FileName, string> }) {
   const [active, setActive] = useState<FileName>("server.ts");
 
   return (
-    <div className="w-full max-w-lg overflow-hidden rounded-xl border border-slate-700/50 shadow-2xl shadow-black/40">
+    <div className="w-full max-w-lg overflow-hidden rounded-xl border border-zinc-700/50 shadow-2xl shadow-black/40">
       {/* Title bar with dots + tabs */}
-      <div className="flex items-center gap-2 border-slate-700/50 border-b bg-[#161b22] px-4 py-3">
-        <span className="h-3 w-3 rounded-full bg-red-500/80" />
-        <span className="h-3 w-3 rounded-full bg-yellow-500/80" />
-        <span className="h-3 w-3 rounded-full bg-green-500/80" />
+      <div className="flex items-center gap-2 border-zinc-700/50 border-b bg-[#161b22] px-4 py-3">
+        <span className="size-3 rounded-full bg-red-500/80" />
+        <span className="size-3 rounded-full bg-yellow-500/80" />
+        <span className="size-3 rounded-full bg-green-500/80" />
         <div className="ml-2 flex">
           {TAB_NAMES.map((name) => (
             <button
               className={`border-0 px-3 py-1 font-mono text-xs transition-colors ${
-                active === name
-                  ? "bg-[#0d1117] text-slate-200"
-                  : "text-slate-500 hover:text-slate-300"
+                active === name ? "bg-[#0d1117] text-zinc-200" : "text-zinc-500 hover:text-zinc-300"
               } ${name === TAB_NAMES[0] ? "rounded-l-md" : ""} ${name === TAB_NAMES.at(-1) ? "rounded-r-md" : ""}`}
               key={name}
               onClick={() => setActive(name)}
@@ -229,7 +254,8 @@ function HeroCodeWindow({ codeHtmlMap }: { codeHtmlMap: Record<FileName, string>
       {/* Code content */}
       <div
         className="[&>pre]:overflow-auto [&>pre]:bg-[#0d1117]! [&>pre]:p-6 [&>pre]:text-sm [&>pre]:leading-relaxed"
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted shiki output
+        // oxlint-disable-next-line react/no-danger -- trusted shiki syntax-highlighted HTML; never contains user input
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted Shiki syntax-highlighted output; never contains user input
         dangerouslySetInnerHTML={{ __html: codeHtmlMap[active] }}
       />
     </div>
@@ -247,7 +273,7 @@ function FeatureCard({
 }) {
   return (
     <div className="rounded-xl border border-border bg-card p-8 transition-all hover:border-foreground/20 hover:shadow-sm">
-      <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-lg border border-border bg-muted text-muted-foreground">
+      <div className="mb-5 flex size-12 items-center justify-center rounded-lg border border-border bg-muted text-muted-foreground">
         {icon}
       </div>
       <h3 className="mb-3 font-semibold text-foreground text-lg">{title}</h3>
@@ -258,7 +284,7 @@ function FeatureCard({
 
 function FileIcon() {
   return (
-    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <title>File-Based Routing</title>
       <path
         d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
@@ -272,7 +298,7 @@ function FileIcon() {
 
 function RenderIcon() {
   return (
-    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <title>Multiple Rendering Modes</title>
       <path
         d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
@@ -286,7 +312,7 @@ function RenderIcon() {
 
 function TypeIcon() {
   return (
-    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <title>Full Type Safety</title>
       <path
         d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
@@ -300,7 +326,7 @@ function TypeIcon() {
 
 function LayoutIcon() {
   return (
-    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <title>Nested Layouts</title>
       <path
         d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"
@@ -314,7 +340,7 @@ function LayoutIcon() {
 
 function HmrIcon() {
   return (
-    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <title>Fast Refresh</title>
       <path
         d="M13 10V3L4 14h7v7l9-11h-7z"
@@ -328,7 +354,7 @@ function HmrIcon() {
 
 function ApiIcon() {
   return (
-    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <title>API Routes</title>
       <path
         d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
@@ -342,7 +368,7 @@ function ApiIcon() {
 
 function CompileIcon() {
   return (
-    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <title>Bun Binary Compile</title>
       <path
         d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"
@@ -356,7 +382,7 @@ function CompileIcon() {
 
 function PluginIcon() {
   return (
-    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <title>User Plugins</title>
       <path
         d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z"

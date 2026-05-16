@@ -468,4 +468,86 @@ describe("transformForClient — TypeScript syntax", () => {
     expect(result.removedServerCode).toBe(false);
     expect(result.code).toBe(input);
   });
+
+  test("import used only in a type annotation is eliminated after loader removal", () => {
+    // Regression: before the fix, `UserModel` in `: { user: UserModel }` was
+    // counted as a runtime reference because `collectReferencedNames` walked
+    // into TSTypeAnnotation nodes. After loader removal the entire import from
+    // "./db" had only type-position uses and should be DCE'd.
+    const input = `
+      import { getUser, UserModel } from "./db";
+      export default page({
+        loader: async () => ({ user: getUser() }),
+        component: ({ user }: { user: UserModel }) => null,
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    // Both getUser (loader-only) and UserModel (type-annotation-only) are gone.
+    expect(result.code).not.toMatch(IMPORT_DB_RE);
+  });
+
+  test("import used at runtime survives even when also referenced in a type annotation", () => {
+    const input = `
+      import { createUser, UserModel } from "./db";
+      export default page({
+        loader: async () => ({}),
+        component: (_: { model: UserModel }) => { createUser(); return null; },
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    // createUser is a genuine runtime reference → import must survive.
+    expect(result.code).toContain("createUser");
+    expect(result.code).toMatch(IMPORT_DB_RE);
+  });
+
+  test("interface declaration does not keep its name as a runtime reference", () => {
+    // `interface Opts { … }` is type-level; the identifier `Opts` must not be
+    // treated as a runtime reference that keeps same-named imports alive.
+    const input = `
+      import { Opts } from "./db";
+      interface LocalOpts { x: number }
+      export default page({
+        loader: async () => ({}),
+        component: (props: LocalOpts) => null,
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    // Opts import is unreferenced at runtime → must be removed.
+    expect(result.code).not.toMatch(IMPORT_DB_RE);
+  });
+
+  test("type alias declaration does not keep its referenced names as runtime references", () => {
+    const input = `
+      import { DbUser } from "./db";
+      type UserAlias = DbUser;
+      export default page({
+        loader: async () => ({}),
+        component: () => null,
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    // DbUser only appears inside a type alias → not a runtime reference.
+    expect(result.code).not.toMatch(IMPORT_DB_RE);
+  });
+
+  test("generic type parameter instantiation does not keep type args as runtime refs", () => {
+    const input = `
+      import { Config } from "./db";
+      import { queries } from "../../db";
+      export const route = createRoute<Config>({
+        loader: () => ({ posts: queries.getPosts.all() }),
+        mode: "ssr",
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    // Config was only used as a generic type arg — not a runtime reference.
+    expect(result.code).not.toContain('from "./db"');
+  });
 });

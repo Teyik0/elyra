@@ -43,6 +43,9 @@ jobs:
       - name: Knip
         run: bun run knip
 
+      - name: React Doctor
+        run: bunx react-doctor -y
+
       - name: Publish Preview
         working-directory: packages/core
         if: github.event_name == 'pull_request'

@@ -5,7 +5,7 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 > **Disclaimers**
 >
 > - **Next.js** = App Router (stable), not Pages Router.
-> - **TanStack Start** = RC (1.x, pre-GA). The official TanStack site labels it "RC / preparing for 1.0". Server functions are stable; RSC is experimental and excluded.
+> - **TanStack Start** = 1.x stable (released May 2026). The official TanStack site still labels it "RC" in some nav elements, but the npm packages and GitHub releases are on stable 1.x semver. Server functions are stable; RSC is experimental and excluded.
 > - **Furin** = latest stable. Where a feature is planned but not shipped, we say so explicitly.
 > - This comparison is maintained by the Furin team. We flag our own limitations with ⚠️ and our advantages with 💡 so you can verify independently.
 
@@ -23,10 +23,11 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 | **ISR** | ✅ | ❌ | ✅ |
 | **SSR** | ✅ | ✅ | ✅ |
 | **Streaming** | ✅ | ✅ | ✅ |
+| **Deferred data streaming** | ❌ | ✅ (`defer` + `<Await>`) | ✅ (`defer()` + `<Await>`) |
 | **RSC** | ✅ | ⚠️ Experimental | ❌ |
 | **PPR** | ⚠️ Experimental | ❌ | ❌ |
 | **Binary compile** | ❌ | ❌ | ✅ |
-| **ISR in dev** | ❌ | ❌ | ❌ |
+| **ISR in dev** | ❌ | ❌ | ⚠️ Partial (loader cache, no background revalidation, deferred Promises not cached) |
 
 ---
 
@@ -89,6 +90,8 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 > 💡 **Furin advantage** — ISR is implemented with `stale-while-revalidate` semantics, ETags, and `Cache-Tag` headers out of the box. No platform-specific adapter required.
 >
 > ⚠️ **Furin limitation** — No RSC means every component in the tree is shipped to the client. For apps with heavy server-only logic (data transforms, heavy libraries), this increases bundle size compared to Next.js App Router.
+>
+> 💡 **Furin note** — `defer()` is optimized for SSR. SSG and ISR routes support it, but deferred Promises resolve synchronously during the render pass (no streaming benefit).
 
 ---
 
@@ -98,7 +101,7 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 |---|---|---|---|
 | **HMR speed** | Fast (Turbopack) | Fast (Vite) | **Fast** (Bun HMR + plugin pipeline) |
 | **SSR during HMR** | ✅ | ✅ | ✅ |
-| **ISR in dev** | ❌ (dev = SSR always) | ❌ | ❌ (planned) |
+| **ISR in dev** | ❌ (dev = SSR always) | ❌ | ⚠️ Partial (loader data is cached and skipped within the revalidate window; no background revalidation; deferred Promises are not preserved on cache hit) |
 | **Cache hit/miss visibility** | `NEXT_PRIVATE_DEBUG_CACHE=1` | Console logs | **Built-in logs** (`[furin] ISR miss` / `hit` / `stale`) |
 | **Startup time (`bun dev` / `next dev`)** | Medium | Fast | **Fast** (single process, no Vite server to boot) |
 | **Type-safe links** | ❌ (string-based `href`) | ✅ (`<Link to="/about">`) | ✅ (`<Link to="/about">` with autocomplete) |
@@ -171,7 +174,7 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 | **Redirect from loader** | ✅ (`redirect()`) | ✅ (`throw redirect()`) | ✅ (`throw redirect()` or `ctx.redirect()`) |
 | **Not-found from loader** | ✅ (`notFound()`) | ✅ (`throw notFound()`) | ✅ (`notFound()`) |
 | **Error handling** | `error.js` boundaries | `ErrorBoundary` | `error.tsx` per segment |
-| **Streaming loader data** | ✅ (RSC streaming) | ✅ (`Await` + `defer`) | ✅ (`renderToReadableStream` + Suspense) |
+| **Streaming loader data** | ✅ (RSC streaming) | ✅ (`defer` + `<Await>`) | ✅ (`defer()` + `<Await>` + `<Suspense>`) |
 
 > 💡 **Furin advantage** — Loaders are standard async functions with TypeBox schemas for params/query. No magic conventions: what you see in `createRoute()` is what gets validated at runtime.
 >
@@ -258,4 +261,4 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 
 ---
 
-*Last verified: April 23, 2026. Sources: Next.js 15 docs, TanStack Start RC docs (v1.x, pre-GA), Furin source code, @tanstack/react-start GitHub (packages/react-start, start-server-core, start-plugin-core).*
+*Last verified: May 9, 2026. Sources: Next.js 15 docs, TanStack Start 1.x stable docs, Furin source code, @tanstack/react-start GitHub (packages/react-start, start-server-core, start-plugin-core).*

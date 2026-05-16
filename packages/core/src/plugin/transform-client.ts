@@ -168,6 +168,63 @@ function removeServerProperties(s: MagicString, source: string, obj: ObjectExpre
   return true;
 }
 
+// TypeScript-specific node types that introduce a type-only scope. Any
+// Identifier / JSXIdentifier beneath one of these nodes is a TypeScript type
+// reference, not a runtime value reference, and must not count toward DCE refs.
+const TYPE_SCOPE_NODES = new Set([
+  "TSTypeAnnotation", // `: Type` on variables, params, return types
+  "TSTypeParameterDeclaration", // `<T>` in generic type-param declarations
+  "TSTypeParameterInstantiation", // `<T>` in generic instantiation positions
+  "TSInterfaceDeclaration", // `interface Foo { … }` — entirely type-level
+  "TSTypeAliasDeclaration", // `type Foo = …` — entirely type-level
+  "TSTypePredicate", // `x is Type` in return-type position
+]);
+
+// Walk `node` and add every Identifier / JSXIdentifier found inside it to
+// `excluded`. Called for nodes that are entirely in type position (e.g. a
+// TSTypeAnnotation) so their descendant identifiers are ignored by DCE.
+function markTypeDescendants(node: unknown, excluded: Set<unknown>): void {
+  if (!node || typeof node !== "object") {
+    return;
+  }
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      markTypeDescendants(item, excluded);
+    }
+    return;
+  }
+  const n = node as AstNode;
+  if (n.type === "Identifier" || n.type === "JSXIdentifier") {
+    excluded.add(n);
+  }
+  for (const key of Object.keys(n)) {
+    if (key === "type" || key === "start" || key === "end") {
+      continue;
+    }
+    markTypeDescendants(n[key], excluded);
+  }
+}
+
+// Excludes identifiers that appear in TypeScript type-only positions from the
+// `excluded` set. Extracted from the Pass-1 walk callback to keep cognitive
+// complexity within the allowed budget.
+function excludeTypePositionIdentifiers(node: AstNode, excluded: Set<unknown>): void {
+  if (TYPE_SCOPE_NODES.has(node.type)) {
+    markTypeDescendants(node, excluded);
+    return;
+  }
+  // TSAsExpression (`x as T`), TSSatisfiesExpression (`x satisfies T`), and
+  // TSTypeAssertion (`<T>x`) are mixed: the expression child is runtime; only
+  // the typeAnnotation child is type-only.
+  if (
+    node.type === "TSAsExpression" ||
+    node.type === "TSSatisfiesExpression" ||
+    node.type === "TSTypeAssertion"
+  ) {
+    markTypeDescendants(node.typeAnnotation as unknown, excluded);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Collect all Identifier / JSXIdentifier names referenced in the AST
 // (excluding imports). Skips identifiers in non-reference positions:
@@ -176,6 +233,7 @@ function removeServerProperties(s: MagicString, source: string, obj: ObjectExpre
 //   • Static (non-computed) member access properties — `obj.prop`
 //   • JSX attribute names                            — `<div className=...>`
 //   • Right-hand side of a JSXMemberExpression chain — `<UI.Button>` (Button)
+//   • TypeScript type positions                      — `: MyType`, `<T>`, etc.
 //
 // Computed keys like `{ [someVar]: v }` are left in — they ARE references.
 // JSX tag positions ARE references — `<Link>` requires the `Link` binding
@@ -213,6 +271,7 @@ function collectReferencedNames(program: AstNode): Set<string> {
       if (node.type === "JSXMemberExpression") {
         excluded.add(node.property);
       }
+      excludeTypePositionIdentifiers(node, excluded);
     });
   }
 

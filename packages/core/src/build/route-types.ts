@@ -22,7 +22,11 @@ export function schemaToTypeString(schema: unknown): string {
   }
   const s = schema as Record<string, unknown>;
   if (s.anyOf && Array.isArray(s.anyOf)) {
-    const parts = (s.anyOf as unknown[]).map(schemaToTypeString).filter((t) => t !== "null");
+    const parts: string[] = [];
+    for (const item of s.anyOf as unknown[]) {
+      const t = schemaToTypeString(item);
+      if (t !== "null") parts.push(t);
+    }
     return parts.join(" | ") || "unknown";
   }
   switch (s.type) {

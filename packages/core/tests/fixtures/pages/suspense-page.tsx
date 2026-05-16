@@ -18,7 +18,7 @@ function AsyncChild() {
 export default suspenseRoute.page({
   component: () => (
     <div data-testid="suspense-page">
-      <Suspense fallback={<span data-testid="suspense-fallback">Loading...</span>}>
+      <Suspense fallback={<span data-testid="suspense-fallback">Loading…</span>}>
         <AsyncChild />
       </Suspense>
     </div>

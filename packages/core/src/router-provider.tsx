@@ -1012,6 +1012,13 @@ export function RouterProvider({
   /** Monotonic counter to discard stale navigations (race condition guard). */
   const navVersion = useRef(0);
   /**
+   * AbortController for the current navigation. Cancelled when a newer
+   * navigation starts so any in-flight `parseDeferredNdjson` releases its
+   * pending deferred promises (resolvers reject with `AbortError`) and frees
+   * the underlying stream reader.
+   */
+  const navAbortRef = useRef<AbortController | null>(null);
+  /**
    * Deferred scroll instruction consumed by the layout effect tied to `currentHref`.
    * This replaces the fragile double-requestAnimationFrame pattern with a render-
    * synchronous scroll that fires immediately after React commits the new route.
@@ -1051,9 +1058,45 @@ export function RouterProvider({
     return;
   }, [routes]);
 
+  /**
+   * Resolves the RouterState when no client-side route matched the URL. The
+   * server's `renderRootNotFound` produced the 404 HTML; we fetch the physical
+   * URL to detect the `__furinStatus: 404` signal and render the 404 UI inline
+   * (rather than triggering a jarring full-page reload). Extracted from
+   * `fetchPageState` to keep that function's complexity under the lint
+   * threshold.
+   */
+  const resolveNoMatchState = useCallback(
+    async (physicalHref: string): Promise<RouterState | null> => {
+      const res = await fetch(physicalHref);
+      if (isStaleDeployResponse(res)) {
+        window.location.href = physicalHref;
+        return null;
+      }
+      const { data, finalHref, title } = await parsePageResponse(res, basePath);
+      const kind = classifySpaResponse(res.status, data);
+      if (kind.kind !== "not-found") {
+        return null;
+      }
+      const { __furinStatus: _s, __furinNotFound: _n, ...cleanData } = data ?? {};
+      return {
+        match: currentMatchRef.current,
+        data: cleanData,
+        title,
+        finalHref,
+        notFound: kind.error,
+        notFoundBoundaries: rootBoundaries,
+      };
+    },
+    [basePath, rootBoundaries]
+  );
+
   const fetchPageState = useCallback(
-    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: SPA navigation orchestrator — multiple response shapes (not-found, redirect, stale-deploy, deferred) require this depth
-    async (rawLogicalHref: string): Promise<RouterState | null> => {
+    async (
+      rawLogicalHref: string,
+      signal: AbortSignal | undefined
+      // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: SPA navigation orchestrator — response shapes (redirect, stale-deploy, deferred) + abort-signal wiring require this depth
+    ): Promise<RouterState | null> => {
       // Normalize trailing slashes so "/docs/routing/" matches the route
       // pattern "/docs/routing" — static hosts (GitHub Pages, Netlify) often
       // redirect to or serve URLs with a trailing slash.
@@ -1067,35 +1110,7 @@ export function RouterProvider({
         const logicalPathname = toLogical(url.pathname, basePath);
         const match = routes.find((r) => r.regex.test(logicalPathname));
         if (!match) {
-          // No client-side route matched — the server will call renderRootNotFound.
-          // Fetch the URL so we can detect the __furinStatus: 404 signal embedded
-          // by renderRootNotFound and render the 404 UI inline (SPA) instead of
-          // forcing a jarring full-page reload.
-          const res = await fetch(physicalHref);
-          if (isStaleDeployResponse(res)) {
-            window.location.href = physicalHref;
-            return null;
-          }
-          const { data, finalHref, title } = await parsePageResponse(res, basePath);
-          const kind = classifySpaResponse(res.status, data);
-          if (kind.kind !== "not-found") {
-            // Non-404 server response for an unmatched URL (e.g. 5xx) — bail to
-            // full-page navigation so the browser shows whatever the server sent.
-            return null;
-          }
-          // Strip internal signals before surfacing loader data.
-          const { __furinStatus: _s, __furinNotFound: _n, ...cleanData } = data ?? {};
-          return {
-            match: currentMatchRef.current,
-            data: cleanData,
-            title,
-            finalHref,
-            notFound: kind.error,
-            // Pass only depth-0 boundaries: for an unmatched URL the root
-            // not-found.tsx is always the right component — no page-specific
-            // segment context exists.
-            notFoundBoundaries: rootBoundaries,
-          };
+          return await resolveNoMatchState(physicalHref);
         }
 
         // ── NDJSON data endpoint + JS chunk load (parallel) ──────────────────
@@ -1126,7 +1141,7 @@ export function RouterProvider({
           deferredPromises: Record<string, Promise<unknown>>;
         };
         try {
-          parsed = await parseDeferredNdjson(body);
+          parsed = await parseDeferredNdjson(body, signal);
         } catch (parseErr) {
           log.warn({
             action: "navigate_server_error",
@@ -1143,14 +1158,22 @@ export function RouterProvider({
         //   __furinNotFound — not-found payload
         //   __furinRedirect — server-side redirect target (logical path)
         //   __furinError    — error sentinel (digest, message, status)
-        const { __furinStatus, __furinNotFound, __furinRedirect, __furinError, ...cleanSyncData } =
-          syncData as {
-            __furinStatus?: number;
-            __furinNotFound?: { data?: unknown; message?: string };
-            __furinRedirect?: string;
-            __furinError?: { digest: string; message: string; status: number };
-            [key: string]: unknown;
-          };
+        //   __furinTitle    — document title resolved server-side from head()
+        const {
+          __furinStatus,
+          __furinNotFound,
+          __furinRedirect,
+          __furinError,
+          __furinTitle,
+          ...cleanSyncData
+        } = syncData as {
+          __furinStatus?: number;
+          __furinNotFound?: { data?: unknown; message?: string };
+          __furinRedirect?: string;
+          __furinError?: { digest: string; message: string; status: number };
+          __furinTitle?: string;
+          [key: string]: unknown;
+        };
 
         const finalHref: string | undefined =
           typeof __furinRedirect === "string" ? __furinRedirect : undefined;
@@ -1159,10 +1182,10 @@ export function RouterProvider({
         // values for deferred fields — wrapped in <Await> for suspension.
         const data = { ...cleanSyncData, ...deferredPromises };
 
-        const title =
-          (syncData.title as string | undefined) ??
-          (syncData.__furinTitle as string | undefined) ??
-          "";
+        // Title comes exclusively from the server-resolved head() output
+        // (__furinTitle). A loader returning a plain `title` field no longer
+        // hijacks document.title — head() is the single source of truth.
+        const title = typeof __furinTitle === "string" ? __furinTitle : "";
 
         const loadedMatch: LoadedClientRoute = {
           ...match,
@@ -1212,7 +1235,7 @@ export function RouterProvider({
         return null;
       }
     },
-    [routes, basePath, rootBoundaries]
+    [routes, basePath, resolveNoMatchState]
   );
 
   const invalidatePrefetch = useCallback((path: string, type: "page" | "layout" = "page") => {
@@ -1248,7 +1271,7 @@ export function RouterProvider({
         return;
       }
       prefetchCache.current.set(href, {
-        promise: fetchPageState(href),
+        promise: fetchPageState(href, undefined),
         createdAt: Date.now(),
         staleTime,
       });
@@ -1264,13 +1287,14 @@ export function RouterProvider({
   /** Loads the RouterState for a redirect target, respecting the nav version. */
   async function resolveRedirectState(
     redirectLogical: string,
-    myVersion: number
+    myVersion: number,
+    signal: AbortSignal | undefined
   ): Promise<RouterState | null> {
     const cached = prefetchCache.current.get(redirectLogical);
     const state =
       cached && !shouldRefetch(cached)
         ? await cached.promise
-        : await fetchPageState(redirectLogical);
+        : await fetchPageState(redirectLogical, signal);
     if (navVersion.current !== myVersion) {
       return null;
     }
@@ -1287,6 +1311,12 @@ export function RouterProvider({
       // The prefetch cache is keyed by logical hrefs.
       prefetch(logicalHref);
       const myVersion = ++navVersion.current;
+      // Cancel any in-flight navigation: its parseDeferredNdjson resolvers will
+      // reject with AbortError and the underlying stream reader will be freed.
+      navAbortRef.current?.abort();
+      const navAbort = new AbortController();
+      navAbortRef.current = navAbort;
+      const navSignal = navAbort.signal;
       setIsNavigating(true);
       try {
         let newState = await prefetchCache.current.get(logicalHref)?.promise;
@@ -1319,7 +1349,7 @@ export function RouterProvider({
             redirectPhysical
           );
           setCurrentHref(redirectLogical);
-          const redirectState = await resolveRedirectState(redirectLogical, myVersion);
+          const redirectState = await resolveRedirectState(redirectLogical, myVersion, navSignal);
           if (!redirectState) {
             if (navVersion.current === myVersion) {
               window.location.href = redirectPhysical;
@@ -1411,6 +1441,12 @@ export function RouterProvider({
     const logicalPath = normalizeHref(toLogical(window.location.pathname, basePath));
     const logicalHref = logicalPath + window.location.search;
     const myVersion = ++navVersion.current;
+    // Cancel in-flight nav (same rationale as in `navigate`): release pending
+    // deferred promises and stream readers from the now-stale request.
+    navAbortRef.current?.abort();
+    const navAbort = new AbortController();
+    navAbortRef.current = navAbort;
+    const navSignal = navAbort.signal;
     setIsNavigating(true);
 
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: popstate handler — cache check, redirect follow, and scroll restoration require this depth
@@ -1422,7 +1458,7 @@ export function RouterProvider({
         if (cached && !shouldRefetch(cached)) {
           newState = await cached.promise;
         } else {
-          newState = await fetchPageState(logicalHref);
+          newState = await fetchPageState(logicalHref, navSignal);
         }
         // Discard if a newer navigation was started while we were waiting
         if (navVersion.current !== myVersion) {
@@ -1444,7 +1480,7 @@ export function RouterProvider({
           redirectLogical = normalizeHref(newState.finalHref);
           window.history.replaceState(history.state, "", basePath + redirectLogical);
           setCurrentHref(redirectLogical);
-          const redirectState = await resolveRedirectState(redirectLogical, myVersion);
+          const redirectState = await resolveRedirectState(redirectLogical, myVersion, navSignal);
           if (!redirectState) {
             if (navVersion.current === myVersion) {
               window.location.reload();

@@ -1,5 +1,5 @@
 import { Link } from "@teyik0/furin/link";
-import { motion } from "framer-motion";
+import { domAnimation, LazyMotion, m } from "framer-motion";
 import {
   type Dispatch,
   type DragEvent,
@@ -107,7 +107,7 @@ export const Kanban = ({ initialCards, boardId, onMutation }: KanbanProps) => {
   const [isDragging, setIsDragging] = useState(false);
 
   return (
-    <>
+    <LazyMotion features={domAnimation}>
       {errorMessage ? (
         <div className="mx-6 mt-6 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-red-300 text-sm">
           {errorMessage}
@@ -170,7 +170,7 @@ export const Kanban = ({ initialCards, boardId, onMutation }: KanbanProps) => {
         setErrorMessage={setErrorMessage}
         setIsDragging={setIsDragging}
       />
-    </>
+    </LazyMotion>
   );
 };
 
@@ -380,7 +380,7 @@ const Card = ({ title, id, column, boardId, handleDragStart }: CardProps) => {
   return (
     <>
       <DropIndicator beforeId={id} column={column} />
-      <motion.div
+      <m.div
         className={cn(
           "group relative mb-1.5 cursor-grab rounded-lg border border-white/6 bg-white/4 p-3",
           "shadow-sm active:cursor-grabbing",
@@ -407,7 +407,7 @@ const Card = ({ title, id, column, boardId, handleDragStart }: CardProps) => {
         >
           <FiArrowUpRight size={11} />
         </Link>
-      </motion.div>
+      </m.div>
     </>
   );
 };
@@ -525,7 +525,7 @@ const BurnBarrel = ({
       style={{ pointerEvents: isDragging ? "auto" : "none" }}
       type="button"
     >
-      {active ? <FaFire className="animate-bounce" /> : <FiTrash size={16} />}
+      {active ? <FaFire className="animate-pulse" /> : <FiTrash size={16} />}
     </button>
   );
 };
@@ -576,14 +576,13 @@ const AddCard = ({ column, setCards, boardId, onMutation }: AddCardProps) => {
   return (
     <>
       {adding ? (
-        <motion.form className="mt-1.5" layout onSubmit={handleSubmit}>
+        <m.form className="mt-1.5" layout onSubmit={handleSubmit}>
           {addError ? (
             <p className="mb-1.5 rounded-lg bg-red-500/10 px-2.5 py-1.5 text-red-300 text-xs">
               {addError}
             </p>
           ) : null}
           <textarea
-            autoFocus
             className={cn(
               "w-full rounded-lg border border-violet-500/40 bg-violet-500/8 p-2.5 text-sm",
               "resize-none text-neutral-200 placeholder-neutral-600 focus:outline-none"
@@ -615,9 +614,9 @@ const AddCard = ({ column, setCards, boardId, onMutation }: AddCardProps) => {
               <FiPlus />
             </button>
           </div>
-        </motion.form>
+        </m.form>
       ) : (
-        <motion.button
+        <m.button
           className={cn(
             "mt-1 flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5",
             "text-neutral-700 text-xs transition-colors hover:text-neutral-500",
@@ -628,7 +627,7 @@ const AddCard = ({ column, setCards, boardId, onMutation }: AddCardProps) => {
         >
           <FiPlus className="shrink-0" />
           <span>Add card</span>
-        </motion.button>
+        </m.button>
       )}
     </>
   );

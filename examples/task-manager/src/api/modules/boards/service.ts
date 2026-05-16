@@ -258,3 +258,8 @@ export function getBoardStats(boardId: string): BoardStats | undefined {
 
   return computeBoardStats(boardCards);
 }
+
+export async function getBoardStatsDeferred(boardId: string): Promise<BoardStats | undefined> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 800));
+  return getBoardStats(boardId);
+}

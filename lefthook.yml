@@ -12,6 +12,9 @@ pre-commit:
     - name: knip
       run: bun run knip
 
+    - name: react doctor
+      run: bunx react-doctor -y --staged
+
 pre-push:
   jobs:
     - name: Build

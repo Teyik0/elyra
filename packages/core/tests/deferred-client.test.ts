@@ -32,7 +32,7 @@ describe("parseDeferredNdjson()", () => {
     const crossJson = toCrossJSON(syncValue);
     const stream = makeNdjsonStream([JSON.stringify(crossJson)]);
 
-    const result = await parseDeferredNdjson(stream);
+    const result = await parseDeferredNdjson(stream, undefined);
 
     expect(result.syncData).toEqual({ title: "hello", count: 42 });
     expect(Object.keys(result.deferredPromises)).toHaveLength(0);
@@ -53,7 +53,7 @@ describe("parseDeferredNdjson()", () => {
     }
 
     const ndjsonStream = makeNdjsonStream(ndjsonLines);
-    const result = await parseDeferredNdjson(ndjsonStream);
+    const result = await parseDeferredNdjson(ndjsonStream, undefined);
 
     // syncData contient les scalaires
     expect(result.syncData.title).toBe("board");
@@ -63,32 +63,45 @@ describe("parseDeferredNdjson()", () => {
     expect(resolvedStats).toBe(99);
   });
 
-  test("les Promises dans deferredPromises sont disponibles immédiatement (avant résolution NDJSON)", async () => {
-    // Vérifie que parseDeferredNdjson retourne avant que les lignes de résolution arrivent.
-    // La structure de données est disponible dès le premier chunk.
-    const slowStream = toCrossJSONStream({
-      title: "hello",
-      data: new Promise((r) => setTimeout(() => r("slow"), 50)),
+  test("retourne dès la ligne initiale et résout les Promises avec les lignes suivantes", async () => {
+    const enc = new TextEncoder();
+    let controller!: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c;
+      },
     });
 
-    const linesFromStream: string[] = [];
-    const reader = slowStream.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      linesFromStream.push(value);
+    const parsePromise = parseDeferredNdjson(stream, undefined);
+    controller.enqueue(
+      enc.encode(
+        `${JSON.stringify(toCrossJSON({ title: "hello", __furinDeferredKeys: ["data"] }))}\n`
+      )
+    );
+
+    const result = await parsePromise;
+    expect(result.syncData).toEqual({ title: "hello" });
+    const dataPromise = result.deferredPromises.data;
+    expect(dataPromise).toBeInstanceOf(Promise);
+    if (!dataPromise) {
+      throw new Error("Expected deferred data Promise");
     }
 
-    const ndjsonStream = makeNdjsonStream(linesFromStream);
-    const result = await parseDeferredNdjson(ndjsonStream);
+    let settled = false;
+    dataPromise.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
 
-    // La Promise doit exister dans le résultat
-    expect(result.deferredPromises.data).toBeInstanceOf(Promise);
-    // Et se résoudre correctement
-    const val = await result.deferredPromises.data;
-    expect(val).toBe("slow");
+    controller.enqueue(
+      enc.encode(
+        `${JSON.stringify({ key: "data", action: "resolve", value: toCrossJSON("slow") })}\n`
+      )
+    );
+    controller.close();
+
+    expect(await dataPromise).toBe("slow");
   });
 });
 

@@ -282,7 +282,7 @@ export async function furin({
           : () => new Response(null, { status: 404 })
       )
       .use(createDevInspectorPlugin())
-      .use(createDataEndpoint(routes, root))
+      .use(createDataEndpoint(routes))
       .use((app) => {
         for (const route of routes) {
           app.use(createRoutePlugin(route, root));
@@ -369,7 +369,7 @@ export async function furin({
         return app;
       })()
     )
-    .use(createDataEndpoint(routes, root))
+    .use(createDataEndpoint(routes))
     .use((app) => {
       for (const route of routes) {
         app.use(createRoutePlugin(route, root, prodBuildId));

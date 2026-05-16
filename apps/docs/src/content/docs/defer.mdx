@@ -1,0 +1,148 @@
+# Deferred Data
+
+Furin supports **deferred data streaming** — returning a mix of synchronous values and Promises from a page loader so the HTML shell can be sent immediately while slow data streams in later.
+
+## Why defer?
+
+In a standard loader, every `await` blocks the entire render. If one query takes 600 ms, the user sees a blank page until everything resolves.
+
+With `defer()`, scalar fields are embedded in the initial HTML shell immediately, and `Promise`-valued fields are streamed as late `<script>` chunks that resolve on the client. The shell renders instantly; slow data populates when ready.
+
+## Using `defer()`
+
+`defer()` is available from `@teyik0/furin/client`. It wraps the loader return value and tells Furin to split scalar fields from Promise fields.
+
+```tsx
+// src/pages/dashboard/index.tsx
+import { defer } from "@teyik0/furin/client"
+import { route } from "./_route"
+
+export default route.page({
+  loader: async () => {
+    const fast = { title: "Dashboard" }
+    const slow = fetchAnalytics()
+
+    return defer({
+      ...fast,
+      stats: slow, // Promise — streamed later
+    })
+  },
+  component: ({ title, stats }) => (
+    <div>
+      <h1>{title}</h1>
+      <Suspense fallback={<Spinner />}>
+        <Await resolve={stats}>
+          {(data) => <AnalyticsChart data={data} />}
+        </Await>
+      </Suspense>
+    </div>
+  ),
+})
+```
+
+## `<Await>`
+
+`<Await>` consumes a deferred Promise. It uses React 19's `use()` to suspend the boundary until the Promise settles, then calls the render-prop `children` with the resolved value.
+
+```tsx
+import { Await } from "@teyik0/furin/client"
+
+<Await resolve={stats}>
+  {(data) => <AnalyticsChart data={data} />}
+</Await>
+```
+
+`<Await>` **must** be wrapped in a `<Suspense>` boundary so React has a fallback to show while the Promise is pending.
+
+## Error handling
+
+When a deferred Promise rejects, `<Await>` catches it with an internal error boundary. Provide `errorElement` to render a fallback:
+
+```tsx
+<Await resolve={stats} errorElement={<ErrorCard />}>
+  {(data) => <AnalyticsChart data={data} />}
+</Await>
+```
+
+Inside `errorElement`, call `useAsyncError()` to read the rejection reason:
+
+```tsx
+import { useAsyncError } from "@teyik0/furin/client"
+
+function ErrorCard() {
+  const error = useAsyncError()
+  return <p>Failed to load stats: {String(error)}</p>
+}
+```
+
+If `errorElement` is omitted, the error propagates to the nearest React error boundary.
+
+## `useAsyncValue()`
+
+As an alternative to the render-prop API, you can use `useAsyncValue()` inside a component rendered as children of `<Await>`:
+
+```tsx
+import { Await, useAsyncValue } from "@teyik0/furin/client"
+
+function Chart() {
+  const data = useAsyncValue<AnalyticsData>()
+  return <AnalyticsChart data={data} />
+}
+
+<Await resolve={stats} errorElement={<ErrorCard />}>
+  <Chart />
+</Await>
+```
+
+## Important restrictions
+
+- **`defer()` is page-loader only** — it works inside `route.page({ loader })`, not inside `createRoute({ loader })` or layout loaders. In v1, only the page loader supports deferred streaming.
+- **Always wrap `<Await>` in `<Suspense>`** — without a Suspense boundary, React has no fallback to render during the pending phase.
+- **SPA navigation** — deferred Promises are also supported on client-side navigation; Furin fetches them via `/_furin/data` and reconstructs the same Promise-based props.
+
+## Full example
+
+```tsx
+// src/pages/board/[id].tsx
+import { defer, Await } from "@teyik0/furin/client"
+import { route } from "./_route"
+import { Suspense } from "react"
+
+export default route.page({
+  loader: async ({ params }) => {
+    const board = await getBoard(params.id)        // fast — blocks render
+    const comments = fetchComments(params.id)        // slow — deferred
+
+    return defer({
+      board,
+      comments,
+    })
+  },
+
+  component: ({ board, comments }) => (
+    <div>
+      <h1>{board.name}</h1>
+      <Suspense fallback={<p>Loading comments…</p>}>
+        <Await
+          resolve={comments}
+          errorElement={<p>Could not load comments.</p>}
+        >
+          {(list) => <CommentList comments={list} />}
+        </Await>
+      </Suspense>
+    </div>
+  ),
+})
+```
+
+## Limitations
+
+- **`defer()` is optimized for SSR.** In SSG and ISR modes, deferred data is resolved synchronously during the render pass (no streaming benefit). The HTML shell still renders correctly, but Suspense fallbacks are never emitted.
+- **Dev ISR/SSG cache does not preserve deferred Promises.** On cache hit, the dev loader cache only stores synchronous data. Deferred Promises are stripped and the page reverts to sync data only until the cache expires. Use `bun run dev` with SSR routes for the full deferred streaming experience.
+
+## Comparison
+
+| Approach | When to use |
+|----------|-------------|
+| Normal loader | All data is fast (< 50 ms) or required before any paint |
+| `defer()` | Some data is slow and can appear after the shell |

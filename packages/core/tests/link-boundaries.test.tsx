@@ -26,6 +26,15 @@ import { FurinErrorBoundary, FurinNotFoundBoundary } from "../src/render/boundar
 
 // ── Helpers (mirrors render-element-boundaries.test.tsx) ─────────────────────
 
+function firstValidChild(kids: ReactNode): ReactElement | null {
+  for (const child of Children.toArray(kids)) {
+    if (isValidElement(child)) {
+      return child as ReactElement;
+    }
+  }
+  return null;
+}
+
 function makeRoute(opts: Partial<Omit<RuntimeRoute, "__type">>): RuntimeRoute {
   return { __type: "FURIN_ROUTE", ...opts };
 }
@@ -78,7 +87,7 @@ function typeChain(node: ReactNode): string[] {
       const onlyValid = kids.filter(isValidElement);
       current = onlyValid.length === 1 ? onlyValid[0] : null;
     } else {
-      current = Children.toArray(kids).find(isValidElement) ?? null;
+      current = firstValidChild(kids);
     }
   }
   return chain;
@@ -183,7 +192,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
         nf = node;
       }
       const children = (node.props as { children?: ReactNode }).children;
-      node = Children.toArray(children).find(isValidElement) ?? null;
+      node = firstValidChild(children);
     }
     expect(err?.props).toMatchObject({ fallback: E });
     expect(nf?.props).toMatchObject({ fallback: NF });
@@ -216,7 +225,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
         break;
       }
       const children = (node.props as { children?: ReactNode }).children;
-      node = Children.toArray(children).find(isValidElement) ?? null;
+      node = firstValidChild(children);
     }
     expect(err?.props).toMatchObject({ fallback: E, onReset });
   });
@@ -240,7 +249,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
         nf = node;
       }
       const children = (node.props as { children?: ReactNode }).children;
-      node = Children.toArray(children).find(isValidElement) ?? null;
+      node = firstValidChild(children);
     }
     expect(err?.props).toMatchObject({ resetKey: "/blog" });
     expect(nf?.props).toMatchObject({ resetKey: "/blog" });
@@ -262,7 +271,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
         break;
       }
       const children = (node.props as { children?: ReactNode }).children;
-      node = Children.toArray(children).find(isValidElement) ?? null;
+      node = firstValidChild(children);
     }
     expect(err).not.toBeNull();
     const props = err?.props as Record<string, unknown>;
@@ -301,7 +310,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
     while (isValidElement(node)) {
       deepest = node;
       const children = (node.props as { children?: ReactNode }).children;
-      const next = Children.toArray(children).find(isValidElement);
+      const next = firstValidChild(children);
       if (!next) {
         break;
       }

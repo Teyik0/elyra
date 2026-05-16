@@ -22,6 +22,8 @@ export const route = createRoute({
 
 Use SSR for session-dependent pages, personalized data, and anything that must render fresh on every request.
 
+SSR also supports [deferred data streaming](/docs/defer) via `defer()` and `<Await>` for slow loader data.
+
 ## SSG
 
 Set `mode: "ssg"` on `createRoute()` to pre-render the page.

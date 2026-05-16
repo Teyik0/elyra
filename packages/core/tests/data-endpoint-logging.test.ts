@@ -50,8 +50,8 @@ beforeEach(() => {
 
 describe("GET /_furin/data — wide event enrichment", () => {
   test("rewrites path and routePattern on the wide event when the route matches", async () => {
-    const { root, routes } = await scanPages(FIXTURES_DIR);
-    const app = new Elysia().use(createDataEndpoint(routes, root));
+    const { routes } = await scanPages(FIXTURES_DIR);
+    const app = new Elysia().use(createDataEndpoint(routes));
 
     await app.handle(new Request("http://localhost/_furin/data?path=%2Fdynamic%2F42"));
 
@@ -69,8 +69,8 @@ describe("GET /_furin/data — wide event enrichment", () => {
   });
 
   test("still rewrites path on the wide event when no route matches (404)", async () => {
-    const { root, routes } = await scanPages(FIXTURES_DIR);
-    const app = new Elysia().use(createDataEndpoint(routes, root));
+    const { routes } = await scanPages(FIXTURES_DIR);
+    const app = new Elysia().use(createDataEndpoint(routes));
 
     const res = await app.handle(
       new Request("http://localhost/_furin/data?path=%2Fnope%2Fnowhere")

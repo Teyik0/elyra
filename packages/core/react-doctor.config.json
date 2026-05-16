@@ -1,0 +1,41 @@
+{
+  "ignore": {
+    "rules": [
+      "react-doctor/async-await-in-loop",
+      "react-doctor/server-sequential-independent-await",
+      "react-doctor/no-dynamic-import-path",
+      "react-doctor/no-barrel-import",
+      "react-doctor/async-parallel"
+    ],
+    "overrides": [
+      {
+        "files": ["src/render/**", "src/render/loaders.ts"],
+        "rules": ["react-hooks/rules-of-hooks", "react/rules-of-hooks"]
+      },
+      {
+        "files": ["src/dev-page-plugin.ts"],
+        "rules": ["react-doctor/js-hoist-regexp"]
+      },
+      {
+        "files": ["src/render/default-screens.tsx"],
+        "rules": ["react-doctor/design-no-em-dash-in-jsx-text"]
+      },
+      {
+        "files": ["tests/link/**"],
+        "rules": ["react-doctor/no-flush-sync"]
+      },
+      {
+        "files": ["src/link.tsx", "src/await.tsx", "tests/**"],
+        "rules": ["react/no-children-prop"]
+      },
+      {
+        "files": [
+          "src/plugin/transform-client.ts",
+          "src/deferred-ndjson.ts",
+          "tests/**"
+        ],
+        "rules": ["react-doctor/js-set-map-lookups"]
+      }
+    ]
+  }
+}

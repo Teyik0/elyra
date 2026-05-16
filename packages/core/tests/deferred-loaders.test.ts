@@ -22,6 +22,9 @@ import { defer } from "../src/client";
 import { runLoaders } from "../src/render/loaders";
 import type { ResolvedRoute } from "../src/router";
 
+const PAGE_LOADER_RE = /page loader/i;
+const DEFER_RE = /defer/i;
+
 function makeCtx(overrides: Partial<Context> = {}): Context {
   return {
     params: {},
@@ -67,7 +70,7 @@ function makeRoute(
 describe("runLoaders — DeferredData", () => {
   test("loader normal (sans defer) → syncData contient tout, deferredPromises absent", async () => {
     const route = makeRoute(() => ({ title: "hello", count: 42 }));
-    const result = await runLoaders(route, makeCtx(), { __type: "FURIN_ROUTE" });
+    const result = await runLoaders(route, makeCtx());
 
     expect(result.type).toBe("data");
     if (result.type !== "data") {
@@ -81,7 +84,7 @@ describe("runLoaders — DeferredData", () => {
   test("loader avec defer() → syncData contient les scalaires, deferredPromises les Promises", async () => {
     const statsPromise = Promise.resolve(99);
     const route = makeRoute(() => defer({ title: "hello", stats: statsPromise }));
-    const result = await runLoaders(route, makeCtx(), { __type: "FURIN_ROUTE" });
+    const result = await runLoaders(route, makeCtx());
 
     expect(result.type).toBe("data");
     if (result.type !== "data") {
@@ -104,7 +107,7 @@ describe("runLoaders — DeferredData", () => {
     );
     const route = makeRoute(() => defer({ x: slowPromise }));
 
-    const result = await runLoaders(route, makeCtx(), { __type: "FURIN_ROUTE" });
+    const result = await runLoaders(route, makeCtx());
 
     expect(result.type).toBe("data");
     // runLoaders should return immediately without waiting for the slow Promise
@@ -123,7 +126,7 @@ describe("runLoaders — DeferredData", () => {
         users: Promise.resolve([]),
       })
     );
-    const result = await runLoaders(route, makeCtx(), { __type: "FURIN_ROUTE" });
+    const result = await runLoaders(route, makeCtx());
 
     expect(result.type).toBe("data");
     if (result.type !== "data") {
@@ -135,9 +138,30 @@ describe("runLoaders — DeferredData", () => {
     expect(result.deferredPromises).toHaveProperty("users");
   });
 
+  test("les thenables dans defer() sont traités comme des Promises différées", async () => {
+    const thenable = {
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable — testing that defer() treats objects with a then method as deferred Promises
+      then(resolve: (value: number) => void) {
+        resolve(7);
+      },
+    };
+    const route = makeRoute(() => defer({ title: "hello", stats: thenable }));
+
+    const result = await runLoaders(route, makeCtx());
+
+    expect(result.type).toBe("data");
+    if (result.type !== "data") {
+      return;
+    }
+    expect(result.syncData).toMatchObject({ title: "hello" });
+    expect(result.syncData).not.toHaveProperty("stats");
+    expect(result.deferredPromises?.stats).toBeInstanceOf(Promise);
+    expect(await result.deferredPromises?.stats).toBe(7);
+  });
+
   test("loader dans la routeChain (non-page) → données normales, pas de split deferred", async () => {
     const route = makeRoute(() => ({ pageTitle: "page" }), [() => ({ routeData: "from-route" })]);
-    const result = await runLoaders(route, makeCtx(), { __type: "FURIN_ROUTE" });
+    const result = await runLoaders(route, makeCtx());
 
     expect(result.type).toBe("data");
     if (result.type !== "data") {
@@ -145,5 +169,22 @@ describe("runLoaders — DeferredData", () => {
     }
     expect(result.syncData).toMatchObject({ routeData: "from-route", pageTitle: "page" });
     expect(result.deferredPromises).toBeUndefined();
+  });
+
+  test("route loader retournant defer() → erreur explicite mentionnant 'page loader'", async () => {
+    const route = makeRoute(
+      () => ({ pageTitle: "page" }),
+      [() => defer({ shared: Promise.resolve("nope") })]
+    );
+    const result = await runLoaders(route, makeCtx());
+
+    expect(result.type).toBe("error");
+    if (result.type !== "error") {
+      return;
+    }
+    expect(result.status).toBe(500);
+    expect(result.error).toBeInstanceOf(Error);
+    expect((result.error as Error).message).toMatch(PAGE_LOADER_RE);
+    expect((result.error as Error).message).toMatch(DEFER_RE);
   });
 });

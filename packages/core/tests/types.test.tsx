@@ -10,6 +10,7 @@ import { expectTypeOf } from "expect-type";
 import {
   type ComponentProps,
   createRoute,
+  defer,
   type InferProps,
   type RouteContext,
 } from "../src/client";
@@ -532,6 +533,54 @@ describe("page-level loader", () => {
         expectTypeOf(members).toBeNumber();
         return null;
       },
+    });
+  });
+});
+
+describe("defer() page loader", () => {
+  test("the __isDeferred brand does not leak into component props", () => {
+    const route = createRoute();
+
+    route.page({
+      loader: () => defer({ board: "my board" }),
+      component: (props) => {
+        expectTypeOf(props.board).toBeString();
+        // @ts-expect-error — the internal brand must NOT surface as a component prop
+        props.__isDeferred;
+        return null;
+      },
+    });
+  });
+
+  test("deferred Promise fields stay Promise<T> in component props", () => {
+    const route = createRoute();
+
+    route.page({
+      loader: () =>
+        defer({
+          board: "my board",
+          stats: Promise.resolve({ count: 42 }),
+        }),
+      component: ({ board, stats }) => {
+        expectTypeOf(board).toBeString();
+        expectTypeOf(stats).toEqualTypeOf<Promise<{ count: number }>>();
+        return null;
+      },
+    });
+  });
+
+  test("the __isDeferred brand does not leak into head() ctx", () => {
+    const route = createRoute();
+
+    route.page({
+      loader: () => defer({ board: "my board" }),
+      head: (ctx) => {
+        expectTypeOf(ctx.board).toBeString();
+        // @ts-expect-error — the internal brand must NOT surface in head() ctx
+        ctx.__isDeferred;
+        return { meta: [{ title: ctx.board }] };
+      },
+      component: () => null,
     });
   });
 });

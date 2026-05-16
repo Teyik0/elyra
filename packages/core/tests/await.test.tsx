@@ -6,18 +6,7 @@ import { AsyncErrorContext, Await, useAsyncError } from "../src/await";
 async function renderToString(element: React.ReactNode): Promise<string> {
   const stream = await renderToReadableStream(element);
   await stream.allReady;
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let result = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-    result += decoder.decode(value, { stream: true });
-  }
-  result += decoder.decode();
-  return result;
+  return new Response(stream).text();
 }
 
 describe("<Await>", () => {
@@ -39,7 +28,6 @@ describe("<Await>", () => {
   });
 
   test("affiche le fallback Suspense quand la Promise résout après un délai", async () => {
-    // Promise qui se résout après un court délai
     const delayed = new Promise<string>((r) => setTimeout(() => r("delayed value"), 10));
     const html = await renderToString(
       createElement(
@@ -92,17 +80,7 @@ describe("<Await>", () => {
     doReject(new Error("fetch failed"));
     await stream.allReady;
 
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    let html = "";
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      html += decoder.decode(value, { stream: true });
-    }
-    html += decoder.decode();
+    const html = await new Response(stream).text();
 
     // React SSR émet soit le fallback soit un marqueur client-rendering
     expect(html.length).toBeGreaterThan(0);

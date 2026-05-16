@@ -170,10 +170,13 @@ describe("generateHydrateEntry", () => {
 
       expect(result.exitCode).toBe(0);
 
-      const bundleText = readdirSync(outDir)
-        .filter((file) => file.endsWith(".js"))
-        .map((file) => readFileSync(join(outDir, file), "utf8"))
-        .join("\n");
+      const chunks: string[] = [];
+      for (const file of readdirSync(outDir)) {
+        if (file.endsWith(".js")) {
+          chunks.push(readFileSync(join(outDir, file), "utf8"));
+        }
+      }
+      const bundleText = chunks.join("\n");
 
       expect((bundleText.match(/createContext\(null\)/g) ?? []).length).toBe(1);
     } finally {

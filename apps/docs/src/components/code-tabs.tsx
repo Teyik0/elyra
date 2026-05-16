@@ -23,7 +23,7 @@ export function CodeTabs({ children }: CodeTabsProps) {
   );
 
   return (
-    <div className="not-prose my-6 overflow-hidden rounded-xl border border-slate-700/50 shadow-black/20 shadow-lg">
+    <div className="not-prose my-6 overflow-hidden rounded-xl border border-zinc-700/50 shadow-black/20 shadow-lg">
       {/* Title bar with dots + tabs */}
       <div
         style={{
@@ -70,6 +70,7 @@ export function CodeTabs({ children }: CodeTabsProps) {
             <button
               key={tab.props.title}
               onClick={() => setActive(i)}
+              // oxlint-disable-next-line react-doctor/no-inline-exhaustive-style -- dark-theme tab styles use rgba values and dynamic active state that can't be expressed with Tailwind without arbitrary values
               style={{
                 padding: "8px 16px",
                 fontFamily: "ui-monospace, monospace",

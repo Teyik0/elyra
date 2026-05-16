@@ -48,7 +48,13 @@ export function getMissingGiscusConfigFields(config: GiscusConfig): string[] {
     ["categoryId", config.categoryId],
   ];
 
-  return fields.filter(([, value]) => !value).map(([field]) => field);
+  const missing: string[] = [];
+  for (const [field, value] of fields) {
+    if (!value) {
+      missing.push(field);
+    }
+  }
+  return missing;
 }
 
 export function getGiscusTheme(theme: Theme): string {

@@ -12,6 +12,7 @@ declare module "@teyik0/furin/link" {
     "/docs/comparison": { search?: never };
     "/docs/configuration": { search?: never };
     "/docs/data-loading": { search?: never };
+    "/docs/defer": { search?: never };
     "/docs/deployment": { search?: never };
     "/docs/dev-hmr": { search?: never };
     "/docs/error-handling": { search?: never };

@@ -3,7 +3,7 @@ import { readdir } from "node:fs/promises";
 import { join, parse } from "node:path";
 import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import type { AnySchema } from "elysia/types";
-import { toCrossJSONAsync } from "seroval";
+import { toCrossJSON, toCrossJSONAsync } from "seroval";
 import type { RuntimePage, RuntimeRoute } from "./client.ts";
 // Use the project-local `useLogger` (not `evlog/elysia` directly) so the
 // `/_furin/data` enrichment also works in synthetic render scopes (ISR/SSG)
@@ -28,7 +28,9 @@ import {
   prerenderSSG,
   renderSSR,
   runLoaders,
+  serializeDeferredRejection,
 } from "./render/index.ts";
+import { extractTitle } from "./render/shell.ts";
 import { IS_DEV } from "./runtime-env.ts";
 import {
   collectRouteChainFromRoute,
@@ -823,7 +825,7 @@ async function renderDevISRWithLoaderCache(
     return renderSSR(route, ctx, root, precomputed);
   }
 
-  const result = await runLoaders(route, ctx, root.route);
+  const result = await runLoaders(route, ctx);
   if (result.type === "data") {
     const revalidate = route.page._route.revalidate ?? 60;
     const entry: DevLoaderCacheEntry = {
@@ -864,7 +866,7 @@ async function renderDevSSGWithLoaderCache(
     return renderSSR(route, ctx, root, precomputed);
   }
 
-  const result = await runLoaders(route, ctx, root.route);
+  const result = await runLoaders(route, ctx);
   if (result.type === "data") {
     const entry: DevLoaderCacheEntry = {
       dependencies: computeRouteDependencies(route.path, root.path),
@@ -957,7 +959,7 @@ export function mergeRouteSchemas(
   routeChain: RuntimeRoute[],
   key: "params" | "query"
 ): AnySchema | undefined {
-  const schemas = routeChain.map((r) => r[key]).filter(Boolean) as Record<string, unknown>[];
+  const schemas = routeChain.flatMap((r) => (r[key] ? [r[key]] : [])) as Record<string, unknown>[];
 
   if (schemas.length === 0) {
     return;
@@ -1146,6 +1148,7 @@ function buildRouteRegex(pattern: string): { regex: RegExp; paramNames: string[]
       paramNames.push(pattern.slice(start, i));
       source += "([^/]+)";
     } else if (pattern[i] === "*") {
+      paramNames.push("*");
       source += "(.*)";
       i++;
     } else {
@@ -1206,11 +1209,12 @@ function applySchemaDefaults(
  *   - `__furinNotFound`    — not-found payload
  *   - `__furinRedirect`    — logical path after a server-side redirect
  */
-export function createDataEndpoint(routes: ResolvedRoute[], root: RootLayout): AnyElysia {
+export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
   const plugin = new Elysia();
 
   plugin.get(
     "/_furin/data",
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: data endpoint handler validates path, resolves loaders, handles deferred/SPA/ISR modes — each branch is a distinct protocol case; splitting would spread context across many functions
     async (ctx) => {
       const rawPath = ctx.query.path;
       if (!rawPath || typeof rawPath !== "string") {
@@ -1320,7 +1324,7 @@ export function createDataEndpoint(routes: ResolvedRoute[], root: RootLayout): A
         }
       }
 
-      const result = await runLoaders(matched.route, syntheticCtx, root.route);
+      const result = await runLoaders(matched.route, syntheticCtx);
 
       if (result.type === "redirect") {
         // Encode the redirect target as a special field for the client to follow
@@ -1369,13 +1373,24 @@ export function createDataEndpoint(routes: ResolvedRoute[], root: RootLayout): A
         });
       }
 
-      // Merge sync + deferred. toCrossJSONAsync awaits all Promises.
-      const payload: Record<string, unknown> = {
-        ...result.syncData,
-        ...(result.deferredPromises ?? {}),
-      };
+      // Resolve the page title server-side: head() never runs in the browser,
+      // so SPA navigation depends on the endpoint shipping it as __furinTitle.
+      const syncDataWithTitle = withResolvedTitle(matched.route, result.syncData);
 
-      const serialized = await toCrossJSONAsync(payload);
+      if (result.deferredPromises) {
+        return new Response(
+          createDeferredNdjsonStream(syncDataWithTitle, result.deferredPromises),
+          {
+            headers: {
+              "content-type": "application/x-ndjson",
+              ...result.headers,
+            },
+          }
+        );
+      }
+
+      // No deferred fields: emit the single-line payload used by the legacy path.
+      const serialized = await toCrossJSONAsync(syncDataWithTitle);
       return new Response(`${JSON.stringify(serialized)}\n`, {
         headers: {
           "content-type": "application/x-ndjson",
@@ -1389,4 +1404,71 @@ export function createDataEndpoint(routes: ResolvedRoute[], root: RootLayout): A
   );
 
   return plugin;
+}
+
+/**
+ * Runs the matched page's `head()` against the resolved sync data and, when it
+ * yields a title, returns a copy of `syncData` carrying the reserved
+ * `__furinTitle` field. `head()` never executes in the browser, so this is the
+ * only channel through which SPA navigation can learn the new document title.
+ *
+ * Deferred fields are absent from `syncData` (they are still Promises), so a
+ * `head()` that reads one sees `undefined` — titles should be derived from
+ * synchronous loader data. A throwing `head()` is swallowed: a missing title
+ * must never break the data response.
+ */
+function withResolvedTitle(
+  route: ResolvedRoute,
+  syncData: Record<string, unknown>
+): Record<string, unknown> {
+  const head = route.page.head;
+  if (!head) {
+    return syncData;
+  }
+  let title: string | undefined;
+  try {
+    title = extractTitle(head(syncData).meta);
+  } catch {
+    return syncData;
+  }
+  if (title === undefined) {
+    return syncData;
+  }
+  return { ...syncData, __furinTitle: title };
+}
+
+function createDeferredNdjsonStream(
+  syncData: Record<string, unknown>,
+  deferredPromises: Record<string, Promise<unknown>>
+): ReadableStream<Uint8Array> {
+  const enc = new TextEncoder();
+  const entries = Object.entries(deferredPromises);
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const initial = toCrossJSON({
+        ...syncData,
+        __furinDeferredKeys: entries.map(([key]) => key),
+      });
+      controller.enqueue(enc.encode(`${JSON.stringify(initial)}\n`));
+
+      await Promise.all(
+        entries.map(async ([key, promise]) => {
+          try {
+            const value = await promise;
+            controller.enqueue(
+              enc.encode(
+                `${JSON.stringify({ key, action: "resolve", value: toCrossJSON(value) })}\n`
+              )
+            );
+          } catch (err) {
+            const normalized = await serializeDeferredRejection(err);
+            const value = toCrossJSON(normalized);
+            controller.enqueue(enc.encode(`${JSON.stringify({ key, action: "reject", value })}\n`));
+          }
+        })
+      );
+      controller.close();
+    },
+  });
 }

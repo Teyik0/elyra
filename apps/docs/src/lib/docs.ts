@@ -101,6 +101,15 @@ export const DOCS_NAV: DocNavSection[] = [
         openIn: DEFAULT_OPEN_IN,
       },
       {
+        label: "Deferred Data",
+        title: "Deferred Data",
+        href: "/docs/defer",
+        description: "Stream slow data with defer() and <Await> for better perceived performance.",
+        sourcePath: "src/content/docs/defer.mdx",
+        githubPath: "apps/docs/src/content/docs/defer.mdx",
+        openIn: DEFAULT_OPEN_IN,
+      },
+      {
         label: "Rendering Modes",
         title: "Rendering Modes",
         href: "/docs/rendering",

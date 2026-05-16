@@ -82,11 +82,13 @@ function createExcerpt(content: string, description: string, query: string): str
   }
 
   const normalizedSource = source.toLowerCase();
-  const queryTerms = query
-    .toLowerCase()
-    .split(WHITESPACE_RE)
-    .map((term) => term.trim())
-    .filter((term) => term.length > 0);
+  const queryTerms: string[] = [];
+  for (const term of query.toLowerCase().split(WHITESPACE_RE)) {
+    const trimmed = term.trim();
+    if (trimmed.length > 0) {
+      queryTerms.push(trimmed);
+    }
+  }
 
   const matchIndex = queryTerms.reduce((bestIndex, term) => {
     const index = normalizedSource.indexOf(term);
@@ -280,7 +282,7 @@ export async function searchDocs(
   }
 
   return [...dedupedResults.values()]
-    .sort((left, right) => {
+    .toSorted((left, right) => {
       if (right.score === left.score) {
         return left.order - right.order;
       }

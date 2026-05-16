@@ -2,6 +2,14 @@ import type { toCrossJSON } from "seroval";
 import type { buildHeadInjection } from "./shell";
 import { safeJson } from "./shell";
 
+/**
+ * Single source of truth for the global registry name used by the SSR
+ * streaming script, the client hydration entry, and any test helper. Keeping
+ * it centralised here avoids `<script>`/JS source drift if the name is ever
+ * renamed.
+ */
+export const FURIN_DEFERRED_GLOBAL = "__FURIN_DEFERRED__";
+
 // ── Deferred streaming helpers ─────────────────────────────────────────────────
 
 /**
@@ -15,11 +23,16 @@ import { safeJson } from "./shell";
  *
  * CSP note: this is an inline `<script>` — nonce support is a v2 concern.
  */
-export function buildDeferredScript(syncData: Record<string, unknown>): string {
+export function buildDeferredScript(
+  syncData: Record<string, unknown>,
+  deferredKeys: string[]
+): string {
   const dataJson = safeJson(syncData);
-  return `<script id="__FURIN_DEFERRED__">
-window.__FURIN_DEFERRED__ = {
+  const keysJson = safeJson(deferredKeys);
+  return `<script id="${FURIN_DEFERRED_GLOBAL}">
+window.${FURIN_DEFERRED_GLOBAL} = {
   _data: ${dataJson},
+  _deferredKeys: ${keysJson},
   _chunks: {},
   _resolvers: {},
   resolve(key, chunk) {
@@ -53,8 +66,8 @@ export function buildDeferredResolution(
   chunk: ReturnType<typeof toCrossJSON>,
   action: "resolve" | "reject"
 ): string {
-  const chunkJson = JSON.stringify(chunk);
-  return `<script>window.__FURIN_DEFERRED__.${action}(${JSON.stringify(key)},${chunkJson})</script>`;
+  const chunkJson = safeJson(chunk);
+  return `<script>window.${FURIN_DEFERRED_GLOBAL}.${action}(${safeJson(key)},${chunkJson})</script>`;
 }
 
 /** Minimal context passed to background / synthetic render helpers — only `request` is needed. */

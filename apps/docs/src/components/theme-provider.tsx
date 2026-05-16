@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, use, useEffect, useReducer } from "react";
 
 export type Theme = "dark" | "light";
 
@@ -12,22 +12,37 @@ const ThemeContext = createContext<{
   },
 });
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("dark");
-
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem("furin-theme") as Theme | null;
-      if (stored === "light" || stored === "dark") {
-        setTheme(stored);
-      }
-    } catch {
-      // localStorage unavailable (private mode, sandboxed iframe, etc.) — keep default
+function readStoredTheme(): Theme {
+  try {
+    const stored = localStorage.getItem("furin-theme") as Theme | null;
+    if (stored === "light" || stored === "dark") {
+      return stored;
     }
+  } catch {
+    // localStorage unavailable (private mode, sandboxed iframe, etc.) — keep default
+  }
+  return "dark";
+}
+
+function themeReducer(_state: Theme, action: "toggle" | Theme): Theme {
+  if (action === "toggle") {
+    return _state === "dark" ? "light" : "dark";
+  }
+  return action;
+}
+
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, dispatch] = useReducer(themeReducer, "dark");
+
+  // Read persisted theme once on mount — replaces the two-effect chain
+  useEffect(() => {
+    const stored = readStoredTheme();
+    dispatch(stored);
   }, []);
 
   // shadcn best practice: apply theme class on <html> so Radix portals
-  // (dropdowns, dialogs, tooltips…) inherit the correct color scheme
+  // (dropdowns, dialogs, tooltips…) inherit the correct color scheme.
+  // Combined with the mount effect above to break the previous effect chain.
   useEffect(() => {
     const root = document.documentElement;
     root.classList.remove("light", "dark");
@@ -35,15 +50,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [theme]);
 
   const toggleTheme = () => {
-    setTheme((t) => {
-      const next = t === "dark" ? "light" : "dark";
-      try {
-        localStorage.setItem("furin-theme", next);
-      } catch {
-        // ignore
-      }
-      return next;
-    });
+    dispatch("toggle");
+    const next = theme === "dark" ? "light" : "dark";
+    try {
+      localStorage.setItem("furin-theme", next);
+    } catch {
+      // ignore
+    }
   };
 
   return (
@@ -54,5 +67,5 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 }
 
 export function useTheme() {
-  return useContext(ThemeContext);
+  return use(ThemeContext);
 }

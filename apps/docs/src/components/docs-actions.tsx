@@ -47,14 +47,13 @@ export function DocsActions({ doc, markdownSource }: DocsActionsProps) {
     }
   }
 
-  const openTargets = doc.openIn
-    .map((target) => ({
-      target,
-      url: buildOpenInUrl(target, doc, markdownSource),
-    }))
-    .filter((entry): entry is { target: (typeof doc.openIn)[number]; url: string } =>
-      Boolean(entry.url)
-    );
+  const openTargets: { target: (typeof doc.openIn)[number]; url: string }[] = [];
+  for (const target of doc.openIn) {
+    const url = buildOpenInUrl(target, doc, markdownSource);
+    if (url) {
+      openTargets.push({ target, url });
+    }
+  }
 
   return (
     <div className="not-prose mb-8 flex flex-wrap items-center gap-3 border-border border-b pb-5">

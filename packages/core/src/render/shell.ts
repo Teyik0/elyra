@@ -39,10 +39,13 @@ export function safeJson(value: unknown): string {
 }
 
 export function renderAttrs(obj: Record<string, string | undefined>): string {
-  return Object.entries(obj)
-    .filter(([, v]) => v !== undefined)
-    .map(([k, v]) => `${k}="${escapeHtml(String(v))}"`)
-    .join(" ");
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined) {
+      parts.push(`${k}="${escapeHtml(String(v))}"`);
+    }
+  }
+  return parts.join(" ");
 }
 
 // ---------------------------------------------------------------------------

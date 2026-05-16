@@ -1,7 +1,6 @@
 /// <reference lib="dom" />
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { createElement } from "react";
-import { flushSync } from "react-dom";
+import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { toCrossJSON } from "seroval";
 import { Link, RouterProvider } from "../../src/link";
@@ -72,7 +71,7 @@ async function renderRouterWithLink(
     };
   }
 
-  flushSync(() => {
+  await act(() => {
     root.render(
       createElement(RouterProvider, {
         routes,
@@ -95,9 +94,7 @@ async function renderRouterWithLink(
     container,
     root,
     cleanup: () => {
-      flushSync(() => {
-        root.unmount();
-      });
+      root.unmount();
       container.remove();
     },
   };
@@ -142,19 +139,6 @@ describe("RouterProvider click interception", () => {
         }
       ) as typeof window.history.pushState;
     }
-  });
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-    if (
-      originalPushState &&
-      typeof window !== "undefined" &&
-      typeof window.history !== "undefined"
-    ) {
-      window.history.pushState = originalPushState;
-    }
-    currentCleanup?.();
-    currentCleanup = undefined;
   });
 
   afterEach(() => {

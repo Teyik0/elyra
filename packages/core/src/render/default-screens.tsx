@@ -220,8 +220,7 @@ html, body {
 function ScreenFrame({ badge, children }: ScreenFrameProps) {
   return (
     <div style={PAGE_STYLE}>
-      {/* biome-ignore lint/security/noDangerouslySetInnerHtml: literal CSS string, no user input */}
-      <style dangerouslySetInnerHTML={{ __html: RESET_CSS }} />
+      <style>{RESET_CSS}</style>
       <div style={FRAME_STYLE}>
         <CornerBracket corner="tl" />
         <CornerBracket corner="tr" />

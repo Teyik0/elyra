@@ -37,11 +37,13 @@ function createExcerpt(content: string, description: string, query: string): str
   }
 
   const normalizedSource = source.toLowerCase();
-  const queryTerms = query
-    .toLowerCase()
-    .split(WHITESPACE_RE)
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0);
+  const queryTerms: string[] = [];
+  for (const t of query.toLowerCase().split(WHITESPACE_RE)) {
+    const trimmed = t.trim();
+    if (trimmed.length > 0) {
+      queryTerms.push(trimmed);
+    }
+  }
 
   const matchIndex = queryTerms.reduce((best, term) => {
     const idx = normalizedSource.indexOf(term);
@@ -102,7 +104,7 @@ function deduplicateAndSort(hits: OramaHit[], trimmedQuery: string): SearchResul
     }
   }
   return [...deduped.values()]
-    .sort((a, b) => (b.score === a.score ? a.order - b.order : b.score - a.score))
+    .toSorted((a, b) => (b.score === a.score ? a.order - b.order : b.score - a.score))
     .slice(0, 8)
     .map(({ order: _o, score: _s, ...result }) => result);
 }
@@ -128,6 +130,7 @@ export function DocsSearchDialog() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  // oxlint-disable-next-line react-doctor/rerender-state-only-in-handlers -- indexReady is a useEffect dependency that triggers re-search when the async index loads; it must be useState, not useRef
   const [indexReady, setIndexReady] = useState(false);
   const [indexUnavailable, setIndexUnavailable] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -234,7 +237,7 @@ export function DocsSearchDialog() {
   }, [open, router.basePath]);
 
   // Run a local Orama search whenever the query or index changes.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: oramaIndexRef is a ref — intentionally excluded
+  // biome-ignore lint/correctness/useExhaustiveDependencies: oramaIndexRef is a ref (excluded); indexReady is a trigger dep — not consumed in the body but required to re-run search when the async index loads
   useEffect(() => {
     if (!open) {
       return;
@@ -325,8 +328,8 @@ export function DocsSearchDialog() {
           className="flex h-8 w-full max-w-xs items-center gap-2 rounded-full border border-border bg-muted/40 px-3 text-muted-foreground transition-colors hover:border-border/80 hover:bg-muted/60"
           type="button"
         >
-          <Search className="h-3.5 w-3.5 shrink-0" />
-          <span className="flex-1 text-left text-xs">Search the docs...</span>
+          <Search className="size-3.5 shrink-0" />
+          <span className="flex-1 text-left text-xs">Search the docs…</span>
           <kbd className="hidden rounded border border-border bg-background/60 px-1.5 py-0.5 font-mono text-[10px] leading-none sm:inline-flex">
             {shortcutLabel}
           </kbd>
@@ -340,7 +343,7 @@ export function DocsSearchDialog() {
             Search Furin documentation pages and jump directly to matching sections.
           </DialogDescription>
           <div className="flex items-center gap-3">
-            <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <Search className="size-4 shrink-0 text-muted-foreground" />
             <Input
               className="h-11 border-0 px-0 shadow-none focus-visible:border-0 focus-visible:ring-0"
               onChange={(event) => {
@@ -374,7 +377,7 @@ export function DocsSearchDialog() {
                   navigateToResult(activeResult.href);
                 }
               }}
-              placeholder="Search the docs..."
+              placeholder="Search the docs…"
               ref={inputRef}
               value={query}
             />
@@ -384,13 +387,13 @@ export function DocsSearchDialog() {
         <div className="max-h-[60vh] overflow-y-auto">
           {query.trim().length < 2 ? (
             <div className="px-4 py-10 text-center text-muted-foreground text-sm">
-              Search the docs...
+              Search the docs…
             </div>
           ) : null}
 
           {query.trim().length >= 2 && loading ? (
             <div className="px-4 py-10 text-center text-muted-foreground text-sm">
-              Searching documentation...
+              Searching documentation…
             </div>
           ) : null}
 
