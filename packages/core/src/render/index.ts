@@ -21,7 +21,6 @@ import {
   setISRCache,
   setSSGCache,
 } from "./cache.ts";
-import { warnDeferredInStaticContext } from "./deferred-warn.ts";
 import { computeErrorDigest } from "./digest.ts";
 import { buildElement, buildErrorElement, buildNotFoundElement } from "./element.tsx";
 import { type LoaderResult, runLoaders, serializeDeferredRejection } from "./loaders.ts";
@@ -103,6 +102,26 @@ function withSSRRouterContext(element: ReactNode, contextValue: RouterContextVal
 }
 
 /**
+ * defer() streams data progressively — it only makes sense in SSR. In SSG/ISR
+ * the HTML is pre-rendered and cached, so the deferred fields would be absent
+ * from the embedded `__FURIN_DATA__` and the client `<Await>` would hydrate
+ * with `undefined`. Fail fast at the loader boundary instead of shipping a
+ * page that crashes on hydration.
+ */
+function assertDeferredModeAllowed(
+  route: ResolvedRoute,
+  deferredPromises: Record<string, Promise<unknown>> | undefined
+): void {
+  if (deferredPromises !== undefined && route.mode !== "ssr") {
+    throw new Error(
+      `[furin] page "${route.pattern}" returned defer() but the route is rendered in "${route.mode}" mode. ` +
+        "defer() streams data progressively and is only supported in SSR. " +
+        "Return the data directly (await it inside the loader) or switch the route to SSR mode."
+    );
+  }
+}
+
+/**
  * Shared pipeline steps used by both `renderToHTML` (buffered) and `renderSSR`
  * (streaming). Runs loaders, builds props, head injection, resolves template,
  * and creates the React element.
@@ -143,6 +162,8 @@ async function prepareRender(
   const syncData = isFallback ? {} : loaderResult.syncData;
   const deferredPromises =
     !isFallback && loaderResult.type === "data" ? loaderResult.deferredPromises : undefined;
+  assertDeferredModeAllowed(route, deferredPromises);
+
   const headers = loaderResult.headers;
   // componentProps merges sync data + Promise objects so React receives them
   // all as props. The Promise objects are used by <Await resolve={promise}>.
@@ -267,9 +288,6 @@ function renderForPath(
       });
 
       const { deferredPromises, element, headData, headers, status, syncData, template } = prepared;
-      if (deferredPromises !== undefined) {
-        warnDeferredInStaticContext(route.pattern, mode);
-      }
       const stream = await renderToReadableStream(element);
       await stream.allReady;
       const reactHtml = await streamToString(stream);
@@ -491,12 +509,11 @@ export async function renderSSR(
   // The deferred registry script is injected before the React stream so client
   // Suspense boundaries can access `window.__FURIN_DEFERRED__` synchronously.
   const deferredKeys = hasDeferred ? Object.keys(deferredPromises) : [];
-  const deferredSetupScript = hasDeferred ? buildDeferredScript(dataPayload, deferredKeys) : "";
+  const deferredSetupScript = hasDeferred ? buildDeferredScript(deferredKeys) : "";
 
   // The standard __FURIN_DATA__ script is always injected (for SPA nav signal,
-  // error digest, and non-deferred data). In deferred mode the syncData is
-  // already in the deferred registry `_data`; we still emit it here so the
-  // `/_furin/data` fallback path and error handling work unmodified.
+  // error digest, and non-deferred data). It is the single source of sync
+  // loader data — the deferred registry only carries the resolve/reject API.
   const dataScript = `<script id="__FURIN_DATA__" type="application/json">${safeJson(
     dataPayload
   )}</script>`;
@@ -506,7 +523,6 @@ export async function renderSSR(
   const writer = writable.getWriter();
   const enc = new TextEncoder();
 
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: streaming render orchestrates multiple async stages (head, React stream, deferred scripts, tail); extracting further would break the linear data flow
   (async () => {
     // Head section — includes the deferred registry if needed
     await writer.write(enc.encode(headPre + headData + deferredSetupScript + bodyPre));

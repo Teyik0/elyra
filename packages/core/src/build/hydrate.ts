@@ -133,13 +133,12 @@ const loaderData = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
 // ── Deferred data hydration ─────────────────────────────────────────────────
 // window.__FURIN_DEFERRED__ is injected by the server when a loader returns
 // defer(). It carries:
-//   - _data: sync fields (mirrors __FURIN_DATA__)
 //   - _chunks: raw CrossJSON chunks keyed by field name (from late <script> tags)
 // We deserialise each chunk with fromCrossJSON and create a Promise so <Await>
 // components receive a proper resolved Promise instead of the raw CrossJSON node.
+// Sync loader fields live exclusively in __FURIN_DATA__ (read above).
 interface FurinDeferredRegistry {
   _chunks: Record<string, { a: 0 | 1; v: SerovalNode }>;
-  _data: Record<string, unknown>;
   _deferredKeys: string[];
   _resolvers: Record<string, {
     promise: Promise<unknown>;

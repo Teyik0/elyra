@@ -14,24 +14,22 @@ export const FURIN_DEFERRED_GLOBAL = "__FURIN_DEFERRED__";
 
 /**
  * Generates the `window.__FURIN_DEFERRED__` registry script that is injected
- * BEFORE the React stream starts. It carries the synchronous data immediately
- * and sets up the resolve/reject/getPromise API for late chunks.
+ * BEFORE the React stream starts. It sets up the resolve/reject/getPromise API
+ * for late chunks.
  *
  * Client-side `<Await>` components call `getPromise(key)` to obtain a Promise
  * they can pass to React 19's `use()`. The late resolution scripts call
  * `resolve(key, chunk)` / `reject(key, chunk)` to settle those Promises.
  *
+ * Synchronous loader data is NOT carried here — it lives exclusively in the
+ * `__FURIN_DATA__` JSON script that the hydrate entry reads.
+ *
  * CSP note: this is an inline `<script>` — nonce support is a v2 concern.
  */
-export function buildDeferredScript(
-  syncData: Record<string, unknown>,
-  deferredKeys: string[]
-): string {
-  const dataJson = safeJson(syncData);
+export function buildDeferredScript(deferredKeys: string[]): string {
   const keysJson = safeJson(deferredKeys);
   return `<script id="${FURIN_DEFERRED_GLOBAL}">
 window.${FURIN_DEFERRED_GLOBAL} = {
-  _data: ${dataJson},
   _deferredKeys: ${keysJson},
   _chunks: {},
   _resolvers: {},

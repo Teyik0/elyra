@@ -147,6 +147,7 @@ function CreateBoardForm() {
 
   return (
     <div className="mb-10 flex flex-col gap-3">
+      {/* react-doctor-disable-next-line react-doctor/no-prevent-default */}
       <form
         className="flex gap-3"
         onSubmit={(e) => {

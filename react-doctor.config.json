@@ -9,7 +9,7 @@
     ],
     "overrides": [
       {
-        "files": ["src/render/**", "src/pages/**"],
+        "files": ["src/render/**", "src/pages/**", "examples/*/src/pages/**"],
         "rules": ["react-hooks/rules-of-hooks", "react/rules-of-hooks"]
       },
       {

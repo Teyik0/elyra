@@ -150,6 +150,7 @@ export function Await<T>({ resolve, errorElement, children }: AwaitProps<T>): Re
   return createElement(
     AsyncErrorBoundary,
     { errorElement, resolve: resolve as Promise<unknown> },
+    // react-doctor-disable-next-line react/no-children-prop
     createElement(AwaitInner<T>, { resolve, children })
   );
 }

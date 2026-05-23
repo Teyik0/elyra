@@ -1,5 +1,3 @@
-"use client";
-
 import { Link } from "@teyik0/furin/link";
 import { Menu } from "lucide-react";
 import { useState } from "react";

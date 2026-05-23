@@ -67,10 +67,10 @@ export function CodeTabs({ children }: CodeTabsProps) {
         {/* File tabs */}
         <div style={{ display: "flex", borderLeft: "1px solid rgba(99,102,241,0.15)" }}>
           {tabs.map((tab, i) => (
+            // react-doctor-disable-next-line react-doctor/no-inline-exhaustive-style
             <button
               key={tab.props.title}
               onClick={() => setActive(i)}
-              // oxlint-disable-next-line react-doctor/no-inline-exhaustive-style -- dark-theme tab styles use rgba values and dynamic active state that can't be expressed with Tailwind without arbitrary values
               style={{
                 padding: "8px 16px",
                 fontFamily: "ui-monospace, monospace",

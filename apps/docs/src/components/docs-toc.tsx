@@ -1,6 +1,4 @@
-"use client";
-
-import { useEffect, useState } from "react";
+import { useEffect, useReducer } from "react";
 import { getUniqueHeadingId } from "@/lib/docs-heading";
 import { cn } from "@/lib/utils";
 
@@ -10,9 +8,29 @@ interface HeadingItem {
   text: string;
 }
 
+interface TocState {
+  activeId: string;
+  headings: HeadingItem[];
+}
+
+type TocAction = { headings: HeadingItem[]; type: "register" } | { id: string; type: "setActive" };
+
+function tocReducer(state: TocState, action: TocAction): TocState {
+  switch (action.type) {
+    case "register":
+      return { activeId: action.headings[0]?.id ?? "", headings: action.headings };
+    case "setActive":
+      return state.activeId === action.id ? state : { ...state, activeId: action.id };
+    default:
+      return state;
+  }
+}
+
 export function DocsToc() {
-  const [headings, setHeadings] = useState<HeadingItem[]>([]);
-  const [activeId, setActiveId] = useState<string>("");
+  const [{ headings, activeId }, dispatch] = useReducer(tocReducer, {
+    activeId: "",
+    headings: [],
+  });
 
   useEffect(() => {
     let observer: IntersectionObserver | null = null;
@@ -36,7 +54,7 @@ export function DocsToc() {
       }
 
       target.scrollIntoView({ behavior: "smooth", block: "start" });
-      setActiveId(hash);
+      dispatch({ id: hash, type: "setActive" });
     }
 
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: DOM traversal, IntersectionObserver setup, retry logic, and hash-scroll handling are inherently coupled; splitting further would obscure the intent
@@ -70,8 +88,7 @@ export function DocsToc() {
         } satisfies HeadingItem);
       }
 
-      setHeadings(nextHeadings);
-      setActiveId(nextHeadings[0]?.id ?? "");
+      dispatch({ headings: nextHeadings, type: "register" });
       window.requestAnimationFrame(() => {
         scrollToHashTarget();
       });
@@ -87,7 +104,7 @@ export function DocsToc() {
             .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
 
           if (visible[0]?.target.id) {
-            setActiveId(visible[0].target.id);
+            dispatch({ id: visible[0].target.id, type: "setActive" });
           }
         },
         {
@@ -167,7 +184,7 @@ export function DocsToc() {
 
                     target.scrollIntoView({ behavior: "smooth", block: "start" });
                     window.history.replaceState(null, "", `#${heading.id}`);
-                    setActiveId(heading.id);
+                    dispatch({ id: heading.id, type: "setActive" });
                   }}
                   type="button"
                 >

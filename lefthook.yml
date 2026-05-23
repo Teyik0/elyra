@@ -20,7 +20,7 @@ pre-commit:
             run: bun run knip
 
     - name: react doctor
-      run: bunx react-doctor -y --staged
+      run: bunx react-doctor -y --staged --verbose
 
 pre-push:
   jobs:
@@ -29,7 +29,7 @@ pre-push:
       stage_fixed: true
 
     - name: Test
-      run: bun run test
+      run: bun run test:dev
       stage_fixed: true
 
 commit-msg:

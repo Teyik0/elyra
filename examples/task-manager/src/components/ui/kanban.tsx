@@ -102,6 +102,9 @@ function restoreDeletedCard(
 }
 
 export const Kanban = ({ initialCards, boardId, onMutation }: KanbanProps) => {
+  // Local mutable state for optimistic drag-and-drop: `initialCards` is the
+  // SSR/loader seed, not a value to stay in sync with.
+  // react-doctor-disable-next-line react-doctor/no-derived-useState
   const [cards, setCards] = useState<KanbanCard[]>(initialCards);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);

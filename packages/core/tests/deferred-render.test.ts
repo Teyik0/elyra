@@ -8,38 +8,42 @@ const SCRIPT_CLOSE_RE = /<\/script>$/;
 
 describe("buildDeferredScript()", () => {
   test("contient l'affectation window.__FURIN_DEFERRED__", () => {
-    const script = buildDeferredScript({ title: "hello" }, []);
+    const script = buildDeferredScript([]);
     expect(script).toContain("window.__FURIN_DEFERRED__");
   });
 
-  test("sérialise _data avec les données sync", () => {
-    const script = buildDeferredScript({ title: "hello", count: 42 }, []);
-    expect(script).toContain('"title"');
-    expect(script).toContain('"hello"');
-    expect(script).toContain('"count"');
-    expect(script).toContain("42");
+  test("sérialise les clés deferred dans _deferredKeys", () => {
+    const script = buildDeferredScript(["stats", "comments"]);
+    expect(script).toContain("_deferredKeys");
+    expect(script).toContain('"stats"');
+    expect(script).toContain('"comments"');
+  });
+
+  test("ne sérialise PAS les données sync (elles vivent dans __FURIN_DATA__)", () => {
+    const script = buildDeferredScript([]);
+    expect(script).not.toContain("_data");
   });
 
   test("contient les méthodes resolve, reject, getPromise", () => {
-    const script = buildDeferredScript({}, []);
+    const script = buildDeferredScript([]);
     expect(script).toContain("resolve(");
     expect(script).toContain("reject(");
     expect(script).toContain("getPromise(");
   });
 
   test("contient _resolvers: {}", () => {
-    const script = buildDeferredScript({}, []);
+    const script = buildDeferredScript([]);
     expect(script).toContain("_resolvers");
   });
 
   test("est enveloppé dans une balise <script>", () => {
-    const script = buildDeferredScript({}, []);
+    const script = buildDeferredScript([]);
     expect(script.trim()).toMatch(SCRIPT_TAG_RE);
     expect(script).toContain("</script>");
   });
 
-  test("données vides produisent un script valide", () => {
-    const script = buildDeferredScript({}, []);
+  test("clés vides produisent un script valide", () => {
+    const script = buildDeferredScript([]);
     expect(script).toContain("window.__FURIN_DEFERRED__");
   });
 });
@@ -87,12 +91,6 @@ describe("buildDeferredResolution()", () => {
     const script = buildDeferredResolution("payload", chunk, "resolve");
     // The literal "</script>" sequence must NOT appear unescaped inside the
     // generated inline <script> body. safeJson() rewrites "</" to "<\\/".
-    const innerBody = script.replace(SCRIPT_OPEN_RE, "").replace(SCRIPT_CLOSE_RE, "");
-    expect(innerBody).not.toContain("</script>");
-  });
-
-  test("XSS : syncData avec </script> dans buildDeferredScript est échappé", () => {
-    const script = buildDeferredScript({ title: "</script><img src=x onerror=alert(1)>" }, []);
     const innerBody = script.replace(SCRIPT_OPEN_RE, "").replace(SCRIPT_CLOSE_RE, "");
     expect(innerBody).not.toContain("</script>");
   });

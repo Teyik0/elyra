@@ -244,6 +244,7 @@ interface DefaultErrorScreenProps {
 
 export function DefaultErrorScreen({ message, digest, reset }: DefaultErrorScreenProps) {
   return (
+    // react-doctor-disable-next-line react-doctor/design-no-em-dash-in-jsx-text
     <ScreenFrame badge={<div style={BADGE_STYLE}>500 — ERROR</div>}>
       <h1 style={HEADING_STYLE}>Something went wrong</h1>
       <div style={CODE_BOX_STYLE}>
@@ -273,6 +274,7 @@ interface DefaultNotFoundScreenProps {
 
 export function DefaultNotFoundScreen({ message }: DefaultNotFoundScreenProps) {
   return (
+    // react-doctor-disable-next-line react-doctor/design-no-em-dash-in-jsx-text
     <ScreenFrame badge={<div style={BADGE_STYLE}>404 — NOT FOUND</div>}>
       <h1 style={HEADING_STYLE}>This page does not exist</h1>
       <p style={DESCRIPTION_WRAPPER_STYLE}>

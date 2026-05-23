@@ -137,8 +137,7 @@ export default route.page({
 
 ## Limitations
 
-- **`defer()` is optimized for SSR.** In SSG and ISR modes, deferred data is resolved synchronously during the render pass (no streaming benefit). The HTML shell still renders correctly, but Suspense fallbacks are never emitted.
-- **Dev ISR/SSG cache does not preserve deferred Promises.** On cache hit, the dev loader cache only stores synchronous data. Deferred Promises are stripped and the page reverts to sync data only until the cache expires. Use `bun run dev` with SSR routes for the full deferred streaming experience.
+- **`defer()` is SSR-only.** A loader that returns `defer()` on a route rendered in `ssg` or `isr` mode throws an error: the HTML is pre-rendered and cached, so the deferred fields would be missing from the hydration payload and `<Await>` would crash on the client. Either return the data directly (await it inside the loader) or switch the route to SSR mode.
 
 ## Comparison
 
