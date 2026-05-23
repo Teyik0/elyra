@@ -2,36 +2,23 @@ import { create, insertMultiple, search } from "@orama/orama";
 import type { DocNavItem } from "./docs";
 import { DOCS_CARDS } from "./docs";
 import { getUniqueHeadingId } from "./docs-heading";
+import {
+  dedupeAndSortHits,
+  SEARCH_DEFAULT_LIMIT,
+  SEARCH_MIN_QUERY_LENGTH,
+  type SearchHit,
+  type SearchIndexEntry,
+  type SearchResult,
+} from "./docs-search-shared";
 import { getDocSourceText } from "./docs-server";
 
-export interface SearchIndexEntry {
-  content: string;
-  description: string;
-  href: string;
-  id: string;
-  kind: "page" | "section";
-  order: number;
-  section: string;
-  title: string;
-}
-
-export interface SearchResult {
-  excerpt: string;
-  href: string;
-  kind: "page" | "section";
-  section: string;
-  title: string;
-}
+export type { SearchIndexEntry, SearchResult } from "./docs-search-shared";
 
 interface SearchIndexSection extends SearchIndexEntry {
   contentParts: string[];
 }
 
-const SEARCH_MIN_QUERY_LENGTH = 2;
-const SEARCH_DEFAULT_LIMIT = 8;
 const SEARCH_MAX_LIMIT = 20;
-const EXCERPT_RADIUS = 72;
-const WHITESPACE_RE = /\s+/;
 const HEADING_2_RE = /^##\s+(.+)$/;
 const HEADING_3_RE = /^###\s+(.+)$/;
 
@@ -73,46 +60,6 @@ function normalizeMarkdown(markdown: string): string {
 
 function normalizeText(value: string): string {
   return stripMarkdownInline(value).replace(/\s+/g, " ").trim();
-}
-
-function createExcerpt(content: string, description: string, query: string): string {
-  const source = content.length > 0 ? content : description;
-  if (source.length === 0) {
-    return "";
-  }
-
-  const normalizedSource = source.toLowerCase();
-  const queryTerms: string[] = [];
-  for (const term of query.toLowerCase().split(WHITESPACE_RE)) {
-    const trimmed = term.trim();
-    if (trimmed.length > 0) {
-      queryTerms.push(trimmed);
-    }
-  }
-
-  const matchIndex = queryTerms.reduce((bestIndex, term) => {
-    const index = normalizedSource.indexOf(term);
-    if (index === -1) {
-      return bestIndex;
-    }
-
-    if (bestIndex === -1 || index < bestIndex) {
-      return index;
-    }
-
-    return bestIndex;
-  }, -1);
-
-  if (matchIndex === -1) {
-    return source.length > 160 ? `${source.slice(0, 157).trimEnd()}...` : source;
-  }
-
-  const start = Math.max(0, matchIndex - EXCERPT_RADIUS);
-  const end = Math.min(source.length, matchIndex + query.length + EXCERPT_RADIUS);
-  const prefix = start > 0 ? "..." : "";
-  const suffix = end < source.length ? "..." : "";
-
-  return `${prefix}${source.slice(start, end).trim()}${suffix}`;
 }
 
 function clampLimit(limit: number | undefined): number {
@@ -260,35 +207,5 @@ export async function searchDocs(
     term: query,
   });
 
-  const dedupedResults = new Map<string, SearchResult & { order: number; score: number }>();
-
-  for (const hit of response.hits) {
-    const document = hit.document as SearchIndexEntry;
-    const existingResult = dedupedResults.get(document.href);
-
-    const nextResult = {
-      excerpt: createExcerpt(document.content, document.description, query),
-      href: document.href,
-      kind: document.kind,
-      order: document.order,
-      score: hit.score,
-      section: document.section,
-      title: document.title,
-    };
-
-    if (!existingResult || hit.score > existingResult.score) {
-      dedupedResults.set(document.href, nextResult);
-    }
-  }
-
-  return [...dedupedResults.values()]
-    .toSorted((left, right) => {
-      if (right.score === left.score) {
-        return left.order - right.order;
-      }
-
-      return right.score - left.score;
-    })
-    .slice(0, limit)
-    .map(({ order: _order, score: _score, ...result }) => result);
+  return dedupeAndSortHits(response.hits as unknown as SearchHit[], query, limit);
 }
