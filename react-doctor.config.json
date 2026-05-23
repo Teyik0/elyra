@@ -9,11 +9,18 @@
     ],
     "overrides": [
       {
-        "files": ["src/render/**", "src/pages/**", "examples/*/src/pages/**"],
+        "files": [
+          "**/src/render/**",
+          "**/src/pages/**",
+          "packages/core/src/render/**",
+          "packages/core/src/pages/**",
+          "apps/docs/src/pages/**",
+          "examples/*/src/pages/**"
+        ],
         "rules": ["react-hooks/rules-of-hooks", "react/rules-of-hooks"]
       },
       {
-        "files": ["src/link.tsx"],
+        "files": ["**/src/link.tsx", "packages/core/src/link.tsx"],
         "rules": ["react/no-children-prop"]
       },
       {

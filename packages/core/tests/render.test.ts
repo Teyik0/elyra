@@ -826,7 +826,7 @@ describe("render.tsx", () => {
           page: { ...ssrRoute.page, loader: deferredLoader },
         } as ResolvedRoute;
         const ctx = createMockLoaderContext({ path: "/ssr-page" });
-        expect(renderSSR(customRoute, ctx, root, undefined)).rejects.toThrow(DEFER_ERROR_RE);
+        await expect(renderSSR(customRoute, ctx, root, undefined)).rejects.toThrow(DEFER_ERROR_RE);
       }
     });
 

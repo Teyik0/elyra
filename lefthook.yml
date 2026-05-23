@@ -29,7 +29,7 @@ pre-push:
       stage_fixed: true
 
     - name: Test
-      run: bun run test:dev
+      run: bun run test
       stage_fixed: true
 
 commit-msg:

@@ -12,12 +12,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { SearchIndexEntry } from "@/lib/docs-search";
-import {
-  createDocsSearchIndex,
-  runDocsSearch,
-  SEARCH_MIN_QUERY_LENGTH,
-  type SearchResult,
-} from "@/lib/docs-search-client";
+import { createDocsSearchIndex, runDocsSearch } from "@/lib/docs-search-client";
+import { SEARCH_MIN_QUERY_LENGTH, type SearchResult } from "@/lib/docs-search-shared";
 import { cn } from "@/lib/utils";
 
 const SEARCH_DEBOUNCE_MS = 180;
@@ -85,8 +81,17 @@ function SearchResultItem({
         )}
         href={result.href}
         onClick={(event) => {
-          // Real <a href> for accessibility (middle-click, copy link); the
-          // preventDefault upgrades same-tab clicks to SPA navigation.
+          // Let the browser handle modifier-clicks (new tab, new window, download)
+          // and non-primary buttons. Only intercept plain primary-click for SPA nav.
+          if (
+            event.button !== 0 ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.altKey
+          ) {
+            return;
+          }
           event.preventDefault();
           onSelect();
         }}
