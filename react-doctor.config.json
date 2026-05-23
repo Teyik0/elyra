@@ -1,0 +1,30 @@
+{
+  "ignore": {
+    "rules": [
+      "react-doctor/async-await-in-loop",
+      "react-doctor/server-sequential-independent-await",
+      "react-doctor/async-parallel",
+      "react-doctor/no-dynamic-import-path",
+      "react-doctor/no-barrel-import"
+    ],
+    "overrides": [
+      {
+        "files": ["src/render/**", "src/pages/**"],
+        "rules": ["react-hooks/rules-of-hooks", "react/rules-of-hooks"]
+      },
+      {
+        "files": ["src/link.tsx"],
+        "rules": ["react/no-children-prop"]
+      },
+      {
+        "files": ["tests/**", "**/*.test.ts", "**/*.test.tsx"],
+        "rules": [
+          "react-doctor/no-eval",
+          "react-doctor/no-flush-sync",
+          "react-doctor/js-set-map-lookups",
+          "react/no-children-prop"
+        ]
+      }
+    ]
+  }
+}
