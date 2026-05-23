@@ -1,4 +1,3 @@
-// oxlint-disable react/rules-of-hooks -- hooks inside furin's route.page() component prop are valid React components
 import { notFound } from "@teyik0/furin";
 import { Link, useRouter } from "@teyik0/furin/link";
 import { ArrowLeft, ChevronRight, Trash2 } from "lucide-react";
@@ -128,6 +127,7 @@ export default route.page({
             </div>
 
             {/* Form */}
+            {/* react-doctor-disable-next-line react-doctor/no-prevent-default */}
             <form
               className="space-y-5 p-6"
               onSubmit={(e) => {

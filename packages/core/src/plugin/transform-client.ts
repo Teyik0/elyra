@@ -321,6 +321,7 @@ function removeUnusedSpecifiers(
     while (removeEnd < code.length && (code[removeEnd] === "," || code[removeEnd] === " ")) {
       removeEnd++;
     }
+    // react-doctor-disable-next-line react-doctor/js-set-map-lookups
     if (!code.slice(spec.end, removeEnd).includes(",")) {
       while (removeStart > 0 && (code[removeStart - 1] === " " || code[removeStart - 1] === ",")) {
         removeStart--;

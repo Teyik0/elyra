@@ -38,6 +38,7 @@ import { scanPages } from "../src/router";
 import { __setDevMode, IS_DEV } from "../src/runtime-env";
 
 const FIXTURES_DIR = join(import.meta.dirname, "fixtures/pages");
+const DEFER_ERROR_RE = /defer\(\)/;
 
 function createMockLoaderContext(overrides: Partial<Context> = {}) {
   return {
@@ -810,6 +811,23 @@ describe("render.tsx", () => {
       expect(fastIdx).toBeGreaterThan(-1);
       expect(slowIdx).toBeGreaterThan(-1);
       expect(fastIdx).toBeLessThan(slowIdx);
+    });
+
+    test("rejette quand un loader retourne defer() hors du mode SSR", async () => {
+      const ssrRoute = await getRoute("/ssr-page");
+      const root = await getRoot();
+      const deferredLoader = () =>
+        defer({ slow: new Promise((resolve) => setTimeout(() => resolve("done"), 10)) });
+
+      for (const mode of ["ssg", "isr"] as const) {
+        const customRoute = {
+          ...ssrRoute,
+          mode,
+          page: { ...ssrRoute.page, loader: deferredLoader },
+        } as ResolvedRoute;
+        const ctx = createMockLoaderContext({ path: "/ssr-page" });
+        expect(renderSSR(customRoute, ctx, root, undefined)).rejects.toThrow(DEFER_ERROR_RE);
+      }
     });
 
     describe("Suspense streaming", () => {

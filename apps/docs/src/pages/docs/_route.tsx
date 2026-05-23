@@ -1,5 +1,3 @@
-"use client";
-
 import { createRoute } from "@teyik0/furin/client";
 import { Link } from "@teyik0/furin/link";
 import { DocsMobileNav } from "@/components/docs-mobile-nav";

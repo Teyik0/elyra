@@ -119,6 +119,7 @@ function escapeRegExp(s: string): string {
 export function rewriteSingletonImports(source: string): string {
   let result = source;
   for (const [pkg, absPath] of SINGLETON_PATHS) {
+    // react-doctor-disable-next-line react-doctor/js-hoist-regexp
     const re = new RegExp(`((?:from|import(?:\\s+type)?)\\s+)["']${escapeRegExp(pkg)}["']`, "g");
     result = result.replace(re, (_, g1: string) => `${g1}"${absPath}"`);
   }
@@ -280,6 +281,7 @@ export function rewriteBareImports(source: string, transpiled: string, dir: stri
     // that both import and re-export from the same package. The regex only
     // matches when the specifier is preceded by `from` or `import` so string
     // literals in non-import positions are left untouched.
+    // react-doctor-disable-next-line react-doctor/js-hoist-regexp
     const re = new RegExp(`((?:from|import(?:\\s+type)?)\\s+)["']${escapeRegExp(spec)}["']`, "g");
     result = result.replace(re, (_, g1: string) => `${g1}"${resolved}"`);
   }

@@ -1,6 +1,5 @@
-import { Await, defer } from "@teyik0/furin/client";
 import { Link } from "@teyik0/furin/link";
-import { Suspense, useState } from "react";
+import { useState } from "react";
 import { codeToHtml } from "shiki";
 import { route } from "./root";
 
@@ -49,7 +48,7 @@ export default route.page({
     meta: [{ title: "Furin — The Fast, Minimal React Framework for Bun" }],
     links: [{ rel: "canonical", href: "/" }],
   }),
-  loader: () => {
+  loader: async () => {
     const entries = Object.entries(FILES) as [FileName, string][];
     const codeHtmlMap = Promise.all(
       entries.map(async ([name, code]) => [
@@ -57,7 +56,7 @@ export default route.page({
         await codeToHtml(code, { lang: "tsx", theme: "github-dark" }),
       ])
     ).then((resolvedEntries) => Object.fromEntries(resolvedEntries) as Record<FileName, string>);
-    return defer({ codeHtmlMap });
+    return { codeHtmlMap: await codeHtmlMap };
   },
   component: ({ codeHtmlMap }) => (
     <div>
@@ -110,13 +109,7 @@ export default route.page({
 
           {/* Right: tabbed code window — intentionally always dark */}
           <div className="flex items-center justify-center">
-            <Suspense fallback={<HeroCodeWindowSkeleton />}>
-              <Await errorElement={<HeroCodeWindowSkeleton />} resolve={codeHtmlMap}>
-                {(resolvedCodeHtmlMap: Record<FileName, string>) => (
-                  <HeroCodeWindow codeHtmlMap={resolvedCodeHtmlMap} />
-                )}
-              </Await>
-            </Suspense>
+            <HeroCodeWindow codeHtmlMap={codeHtmlMap} />
           </div>
         </div>
       </section>
@@ -204,28 +197,6 @@ export default route.page({
 
 const TAB_NAMES: FileName[] = ["server.ts", "pages/root.tsx", "pages/index.tsx"];
 
-function HeroCodeWindowSkeleton() {
-  return (
-    <div className="w-full max-w-lg overflow-hidden rounded-xl border border-zinc-700/50 shadow-2xl shadow-black/40">
-      <div className="flex items-center gap-2 border-zinc-700/50 border-b bg-[#161b22] px-4 py-3">
-        <span className="size-3 rounded-full bg-red-500/80" />
-        <span className="size-3 rounded-full bg-yellow-500/80" />
-        <span className="size-3 rounded-full bg-green-500/80" />
-        <div className="ml-2 flex gap-2">
-          {TAB_NAMES.map((name) => (
-            <div className="h-7 w-24 rounded-md bg-zinc-800/90" key={name} />
-          ))}
-        </div>
-      </div>
-      <div className="space-y-3 bg-[#0d1117] p-5">
-        {Array.from({ length: 11 }, (_, i) => `${92 - i * 4}%`).map((width) => (
-          <div className="h-4 animate-pulse rounded bg-zinc-800/85" key={width} style={{ width }} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function HeroCodeWindow({ codeHtmlMap }: { codeHtmlMap: Record<FileName, string> }) {
   const [active, setActive] = useState<FileName>("server.ts");
 
@@ -252,9 +223,9 @@ function HeroCodeWindow({ codeHtmlMap }: { codeHtmlMap: Record<FileName, string>
         </div>
       </div>
       {/* Code content */}
+      {/* react-doctor-disable-next-line react/no-danger */}
       <div
         className="[&>pre]:overflow-auto [&>pre]:bg-[#0d1117]! [&>pre]:p-6 [&>pre]:text-sm [&>pre]:leading-relaxed"
-        // oxlint-disable-next-line react/no-danger -- trusted shiki syntax-highlighted HTML; never contains user input
         // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted Shiki syntax-highlighted output; never contains user input
         dangerouslySetInnerHTML={{ __html: codeHtmlMap[active] }}
       />

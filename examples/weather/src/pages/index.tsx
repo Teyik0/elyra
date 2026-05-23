@@ -1,6 +1,4 @@
-// oxlint-disable react/rules-of-hooks -- hooks inside furin's route.page() component prop are valid React components
-import { Link, useRouter } from "@teyik0/furin/link";
-import { useRef } from "react";
+import { Link } from "@teyik0/furin/link";
 import type { DailyForecast, WeatherResponse } from "../api/weather";
 import { getWeatherCondition } from "../lib/weather-codes";
 import { route } from "./root";
@@ -29,17 +27,6 @@ export default route.page({
     meta: [{ title: `Weather in ${query.city ?? "Paris"}` }],
   }),
   component: ({ weather, city, error }) => {
-    const { navigate } = useRouter();
-    const formRef = useRef<HTMLFormElement>(null);
-
-    const handleSearch = () => {
-      const input = formRef.current?.elements.namedItem("city") as HTMLInputElement | null;
-      const value = input?.value.trim();
-      if (value) {
-        navigate(`/?city=${encodeURIComponent(value)}`);
-      }
-    };
-
     return (
       <div className="space-y-8">
         {/* Header */}
@@ -51,14 +38,9 @@ export default route.page({
         </div>
 
         {/* Search */}
-        <form
-          className="flex gap-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleSearch();
-          }}
-          ref={formRef}
-        >
+        {/* Native GET form: submits to /?city=<value>, which the loader
+            reads via query.city. Works with JavaScript disabled. */}
+        <form action="/" className="flex gap-3" method="get">
           <input
             className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-white outline-none placeholder:text-zinc-500 focus:border-cyan-400/50 focus:ring-1 focus:ring-cyan-400/30"
             defaultValue={city}

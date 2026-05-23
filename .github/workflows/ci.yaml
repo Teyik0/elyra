@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   build:
     name: Workflow - CI
@@ -13,6 +17,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Cache bun
         uses: actions/cache@v5
@@ -44,7 +50,7 @@ jobs:
         run: bun run knip
 
       - name: React Doctor
-        run: bunx react-doctor -y
+        run: bunx react-doctor -y --diff main --annotations
 
       - name: Publish Preview
         working-directory: packages/core

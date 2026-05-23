@@ -51,6 +51,7 @@ export async function parseDeferredNdjson(
 
   async function readLine(): Promise<string | undefined> {
     for (;;) {
+      // react-doctor-disable-next-line react-doctor/js-set-map-lookups
       const newlineIndex = buffer.indexOf("\n");
       if (newlineIndex >= 0) {
         const line = buffer.slice(0, newlineIndex).trim();

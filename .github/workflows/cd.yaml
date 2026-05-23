@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 'Checkout'
+      - name: "Checkout"
         uses: actions/checkout@v6
 
       - name: Cache bun
@@ -27,7 +27,7 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lockb') }}
 
-      - name: 'Setup Bun'
+      - name: "Setup Bun"
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -46,6 +46,12 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      - name: Knip
+        run: bun run knip
+
+      - name: React Doctor
+        run: bunx react-doctor -y --full
 
       - name: Setup auth for Bun
         working-directory: packages/core
