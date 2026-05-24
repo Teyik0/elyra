@@ -26,7 +26,7 @@ async function roundtrip(value: unknown): Promise<unknown> {
 }
 
 describe("serializeDeferredRejection — preserves rejection semantics over CrossJSON", () => {
-  test("notFound() : brand préservé pour que isNotFoundError() soit vrai côté client", async () => {
+  test("notFound(): brand preserved so isNotFoundError() is true on the client", async () => {
     let thrown: unknown;
     try {
       notFound({ message: "missing", data: { id: "x" } });
@@ -41,7 +41,7 @@ describe("serializeDeferredRejection — preserves rejection semantics over Cros
     expect((result as { data?: { id?: string } }).data).toEqual({ id: "x" });
   });
 
-  test("notFound() sans options : brand préservé, message vide", async () => {
+  test("notFound() without options: brand preserved, empty message", async () => {
     let thrown: unknown;
     try {
       notFound(undefined);
@@ -54,7 +54,7 @@ describe("serializeDeferredRejection — preserves rejection semantics over Cros
     expect(isNotFoundError(result)).toBe(true);
   });
 
-  test("Response(403, body) : status et message préservés", async () => {
+  test("Response(403, body): status and message preserved", async () => {
     const response = new Response("forbidden", { status: 403, statusText: "Forbidden" });
 
     const result = await roundtrip(response);
@@ -64,7 +64,7 @@ describe("serializeDeferredRejection — preserves rejection semantics over Cros
     expect(isNotFoundError(result)).toBe(false);
   });
 
-  test("Response sans body : utilise statusText", async () => {
+  test("Response without body: uses statusText", async () => {
     const response = new Response(null, { status: 401, statusText: "Unauthorized" });
 
     const result = await roundtrip(response);
@@ -73,7 +73,7 @@ describe("serializeDeferredRejection — preserves rejection semantics over Cros
     expect((result as { __furinStatus?: number }).__furinStatus).toBe(401);
   });
 
-  test("Error standard : message préservé tel quel", async () => {
+  test("standard Error: message preserved as-is", async () => {
     const err = new Error("boom");
 
     const result = await roundtrip(err);
@@ -82,7 +82,7 @@ describe("serializeDeferredRejection — preserves rejection semantics over Cros
     expect(isNotFoundError(result)).toBe(false);
   });
 
-  test("throw non-Error (string) : enveloppé dans Error", async () => {
+  test("throw non-Error (string): wrapped in Error", async () => {
     const result = await roundtrip("oops");
 
     expect((result as Error).message).toBe("oops");

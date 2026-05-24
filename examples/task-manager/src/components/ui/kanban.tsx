@@ -586,6 +586,7 @@ const AddCard = ({ column, setCards, boardId, onMutation }: AddCardProps) => {
             </p>
           ) : null}
           <textarea
+            aria-label="New task content"
             className={cn(
               "w-full rounded-lg border border-violet-500/40 bg-violet-500/8 p-2.5 text-sm",
               "resize-none text-neutral-200 placeholder-neutral-600 focus:outline-none"

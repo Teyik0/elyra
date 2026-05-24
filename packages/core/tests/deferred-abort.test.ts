@@ -28,7 +28,7 @@ function makeControlledStream(initialBytes: Uint8Array): ControlledStream {
 }
 
 describe("parseDeferredNdjson — error paths", () => {
-  test("première ligne NDJSON malformée → rejette avec une erreur explicite", async () => {
+  test("malformed first NDJSON line → rejects with an explicit error", async () => {
     const stream = new ReadableStream<Uint8Array>({
       start(c) {
         c.enqueue(enc.encode("{not valid json}\n"));
@@ -39,7 +39,7 @@ describe("parseDeferredNdjson — error paths", () => {
     await expect(parseDeferredNdjson(stream, undefined)).rejects.toThrow();
   });
 
-  test("ligne de résolution NDJSON malformée → la promise correspondante rejette, les autres ne fuient pas", async () => {
+  test("malformed NDJSON resolution line → the corresponding promise rejects, others do not leak", async () => {
     const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["a"] }));
     const { stream, controller } = makeControlledStream(initial);
 
@@ -54,7 +54,7 @@ describe("parseDeferredNdjson — error paths", () => {
     expect(err).toBeInstanceOf(SyntaxError);
   });
 
-  test("stream coupé au milieu (done avant tous les chunks) → resolvers restants rejettent", async () => {
+  test("stream cut mid-way (done before all chunks) → remaining resolvers reject", async () => {
     const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["a", "b"] }));
     const { stream, controller } = makeControlledStream(initial);
 
@@ -82,7 +82,7 @@ describe("parseDeferredNdjson — error paths", () => {
 });
 
 describe("parseDeferredNdjson — AbortSignal", () => {
-  test("signal qui s'abort pendant l'attente → promises pendantes rejettent avec AbortError", async () => {
+  test("signal that aborts while waiting → pending promises reject with AbortError", async () => {
     const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["a", "b"] }));
     const { stream } = makeControlledStream(initial);
 
@@ -105,7 +105,7 @@ describe("parseDeferredNdjson — AbortSignal", () => {
     expect((errB as { name?: string }).name).toBe("AbortError");
   });
 
-  test("signal déjà aborted avant l'appel → promises pendantes rejettent immédiatement", async () => {
+  test("signal already aborted before the call → pending promises reject immediately", async () => {
     const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["a"] }));
     const { stream } = makeControlledStream(initial);
 
@@ -121,7 +121,7 @@ describe("parseDeferredNdjson — AbortSignal", () => {
     expect((err as { name?: string }).name).toBe("AbortError");
   });
 
-  test("signal undefined → fonctionne comme avant, promises résolues par chunks", async () => {
+  test("undefined signal → works as before, promises resolved by chunks", async () => {
     const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["a"] }));
     const { stream, controller } = makeControlledStream(initial);
 
@@ -134,7 +134,7 @@ describe("parseDeferredNdjson — AbortSignal", () => {
     expect(await pA).toBe(42);
   });
 
-  test("chunks arrivés avant abort sont préservés, seuls les pending rejettent", async () => {
+  test("chunks that arrived before abort are preserved, only pending ones reject", async () => {
     const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["a", "b"] }));
     const { stream, controller } = makeControlledStream(initial);
 

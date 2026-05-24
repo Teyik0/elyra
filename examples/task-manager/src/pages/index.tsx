@@ -157,6 +157,7 @@ function CreateBoardForm() {
       >
         <div className="relative flex-1">
           <input
+            aria-label="New board name"
             className="w-full rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-white outline-none transition-all placeholder:text-zinc-600 focus:border-violet-500/40 focus:bg-white/6 focus:ring-1 focus:ring-violet-500/20 disabled:opacity-50"
             disabled={isSubmitting}
             onChange={(e) => setName(e.target.value)}

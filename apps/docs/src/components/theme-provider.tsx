@@ -1,4 +1,4 @@
-import { createContext, use, useEffect, useReducer } from "react";
+import { createContext, use, useCallback, useEffect, useMemo, useReducer } from "react";
 
 export type Theme = "dark" | "light";
 
@@ -57,12 +57,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [theme]);
 
-  const toggleTheme = () => {
+  const toggleTheme = useCallback(() => {
     dispatch("toggle");
-  };
+  }, []);
+
+  const contextValue = useMemo(() => ({ theme, toggleTheme }), [theme, toggleTheme]);
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+    <ThemeContext.Provider value={contextValue}>
       <div className="min-h-screen bg-background text-foreground">{children}</div>
     </ThemeContext.Provider>
   );

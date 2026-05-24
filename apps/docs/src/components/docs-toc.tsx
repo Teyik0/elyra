@@ -168,7 +168,8 @@ export function DocsToc() {
           <ul className="space-y-1 border-border border-l pl-4">
             {headings.map((heading) => (
               <li key={heading.id}>
-                <button
+                {/* react-doctor-disable-next-line react-doctor/no-prevent-default */}
+                <a
                   className={cn(
                     "block w-full py-1 text-left text-sm transition-colors",
                     heading.level === 3 && "pl-4 text-xs",
@@ -176,20 +177,32 @@ export function DocsToc() {
                       ? "font-medium text-foreground"
                       : "text-muted-foreground hover:text-foreground"
                   )}
-                  onClick={() => {
+                  href={`#${heading.id}`}
+                  onClick={(event) => {
+                    // Let the browser handle modifier/non-primary clicks
+                    // (new tab, copy link). Only upgrade plain primary-click
+                    // to smooth-scroll behavior.
+                    if (
+                      event.button !== 0 ||
+                      event.metaKey ||
+                      event.ctrlKey ||
+                      event.shiftKey ||
+                      event.altKey
+                    ) {
+                      return;
+                    }
                     const target = document.getElementById(heading.id);
                     if (!target) {
                       return;
                     }
-
+                    event.preventDefault();
                     target.scrollIntoView({ behavior: "smooth", block: "start" });
                     window.history.replaceState(null, "", `#${heading.id}`);
                     dispatch({ id: heading.id, type: "setActive" });
                   }}
-                  type="button"
                 >
                   {heading.text}
-                </button>
+                </a>
               </li>
             ))}
           </ul>

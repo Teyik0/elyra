@@ -1,27 +1,41 @@
 {
+  "deadCode": false,
   "ignore": {
     "rules": [
       "react-doctor/async-await-in-loop",
       "react-doctor/server-sequential-independent-await",
       "react-doctor/async-parallel",
       "react-doctor/no-dynamic-import-path",
-      "react-doctor/no-barrel-import"
+      "react-doctor/no-barrel-import",
+      "react-doctor/async-defer-await"
     ],
     "overrides": [
       {
-        "files": [
-          "**/src/render/**",
-          "**/src/pages/**",
-          "packages/core/src/render/**",
-          "packages/core/src/pages/**",
-          "apps/docs/src/pages/**",
-          "examples/*/src/pages/**"
-        ],
-        "rules": ["react-hooks/rules-of-hooks", "react/rules-of-hooks"]
+        "files": ["**/src/render/**", "**/src/pages/**", "**/src/router.ts"],
+        "rules": ["react-doctor/rules-of-hooks"]
       },
       {
-        "files": ["**/src/link.tsx", "packages/core/src/link.tsx"],
-        "rules": ["react/no-children-prop"]
+        "files": [
+          "**/src/pages/**",
+          "**/src/render/**",
+          "**/src/router-provider.tsx",
+          "**/src/link.tsx",
+          "**/src/await.tsx",
+          "**/components/ui/**"
+        ],
+        "rules": ["react-doctor/only-export-components"]
+      },
+      {
+        "files": ["**/src/link.tsx", "**/src/await.tsx"],
+        "rules": ["react-doctor/no-children-prop"]
+      },
+      {
+        "files": ["**/src/pages/**"],
+        "rules": ["react-doctor/no-multi-comp"]
+      },
+      {
+        "files": ["**/src/router-provider.tsx"],
+        "rules": ["react-doctor/no-giant-component"]
       },
       {
         "files": ["tests/**", "**/*.test.ts", "**/*.test.tsx"],
@@ -29,7 +43,7 @@
           "react-doctor/no-eval",
           "react-doctor/no-flush-sync",
           "react-doctor/js-set-map-lookups",
-          "react/no-children-prop"
+          "react-doctor/no-children-prop"
         ]
       }
     ]

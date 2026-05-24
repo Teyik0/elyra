@@ -36,7 +36,7 @@ beforeAll(() => {
 afterAll(() => __setDevMode(originalDevMode));
 
 describe("GET /_furin/data", () => {
-  test("retourne 400 si le paramètre path est absent", async () => {
+  test("returns 400 if the path parameter is missing", async () => {
     const { routes } = await scanPages(FIXTURES_DIR);
     const app = new Elysia().use(createDataEndpoint(routes));
 
@@ -45,7 +45,7 @@ describe("GET /_furin/data", () => {
     expect(res.status).toBe(400);
   });
 
-  test("rejette une URL absolue passée dans ?path= (open-redirect prevention)", async () => {
+  test("rejects an absolute URL passed in ?path= (open-redirect prevention)", async () => {
     const { routes } = await scanPages(FIXTURES_DIR);
     const app = new Elysia().use(createDataEndpoint(routes));
 
@@ -59,7 +59,7 @@ describe("GET /_furin/data", () => {
     expect(res.status).toBe(400);
   });
 
-  test("rejette un path protocol-relative `//host/foo`", async () => {
+  test("rejects a protocol-relative path `//host/foo`", async () => {
     const { routes } = await scanPages(FIXTURES_DIR);
     const app = new Elysia().use(createDataEndpoint(routes));
 
@@ -70,7 +70,7 @@ describe("GET /_furin/data", () => {
     expect(res.status).toBe(400);
   });
 
-  test("émet le sentinel NDJSON __furinRedirect quand un défaut de query est appliqué", async () => {
+  test("emits the __furinRedirect NDJSON sentinel when a query default is applied", async () => {
     // Regression: previously the query-default redirect returned an HTTP 302
     // (Response) directly from the handler. The SPA client reads NDJSON via
     // `parseDeferredNdjson` — a 302 is unparseable and would crash the
@@ -91,7 +91,7 @@ describe("GET /_furin/data", () => {
     expect(syncData.__furinRedirect).toBe("/query-default?city=Paris");
   });
 
-  test("retourne 404 si aucune route ne correspond au path", async () => {
+  test("returns 404 if no route matches the path", async () => {
     const { routes } = await scanPages(FIXTURES_DIR);
     const app = new Elysia().use(createDataEndpoint(routes));
 
@@ -102,7 +102,7 @@ describe("GET /_furin/data", () => {
     expect(res.status).toBe(404);
   });
 
-  test("retourne NDJSON pour une route avec loader synchrone", async () => {
+  test("returns NDJSON for a route with a synchronous loader", async () => {
     const { routes } = await scanPages(FIXTURES_DIR);
     const withLoaderRoute = routes.find((r) => r.pattern === "/with-loader");
     if (!withLoaderRoute) {
@@ -123,7 +123,7 @@ describe("GET /_furin/data", () => {
     expect(Object.keys(deferredPromises)).toHaveLength(0);
   });
 
-  test("retourne NDJSON avec Promise pour une route utilisant defer()", async () => {
+  test("returns NDJSON with Promise for a route using defer()", async () => {
     const { routes } = await scanPages(FIXTURES_DIR);
     const deferRoute = routes.find((r) => r.pattern === "/defer-page");
     if (!deferRoute) {
@@ -146,7 +146,7 @@ describe("GET /_furin/data", () => {
     expect(resolvedStats).toBe(42);
   });
 
-  test("retourne la réponse avant que les Promises deferred soient résolues", async () => {
+  test("returns the response before deferred Promises have resolved", async () => {
     const { routes } = await scanPages(FIXTURES_DIR);
     const deferRoute = routes.find((r) => r.pattern === "/defer-page");
     if (!deferRoute?.page) {
@@ -188,7 +188,7 @@ describe("GET /_furin/data", () => {
     expect(await deferredPromises.stats).toBe(42);
   });
 
-  test("émet __furinTitle depuis le head() de la page pour la navigation SPA", async () => {
+  test("emits __furinTitle from the page head() for SPA navigation", async () => {
     // During SPA navigation the client fetches /_furin/data (NDJSON) — head()
     // never runs in the browser, so the endpoint must resolve the page title
     // server-side and ship it as the reserved __furinTitle field. Without this,
@@ -216,7 +216,7 @@ describe("GET /_furin/data", () => {
     expect(syncData.__furinTitle).toBe("Page: from-page");
   });
 
-  test("ne définit pas __furinStatus pour une route sans loader", async () => {
+  test("does not set __furinStatus for a route without a loader", async () => {
     // SSR route without loader doesn't trigger notFound.
     // We test the ssr-page which has no loader — data should be empty.
     const { routes } = await scanPages(FIXTURES_DIR);
@@ -273,7 +273,7 @@ describe("GET /_furin/data", () => {
     expect(syncData.params).toEqual({});
   });
 
-  test("émet les chunks dans l'ordre de résolution, pas dans l'ordre d'insertion", async () => {
+  test("emits chunks in resolution order, not insertion order", async () => {
     // 'slow' is inserted FIRST in defer() but resolves LAST. 'fast' is inserted
     // SECOND but resolves FIRST. The on-the-wire stream MUST emit the fast key
     // first — otherwise streaming is cosmetic and a fast field is held hostage

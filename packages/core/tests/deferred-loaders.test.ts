@@ -68,7 +68,7 @@ function makeRoute(
 }
 
 describe("runLoaders — DeferredData", () => {
-  test("loader normal (sans defer) → syncData contient tout, deferredPromises absent", async () => {
+  test("normal loader (without defer) → syncData contains everything, deferredPromises absent", async () => {
     const route = makeRoute(() => ({ title: "hello", count: 42 }));
     const result = await runLoaders(route, makeCtx());
 
@@ -81,7 +81,7 @@ describe("runLoaders — DeferredData", () => {
     expect(result.deferredPromises).toBeUndefined();
   });
 
-  test("loader avec defer() → syncData contient les scalaires, deferredPromises les Promises", async () => {
+  test("loader with defer() → syncData contains scalars, deferredPromises the Promises", async () => {
     const statsPromise = Promise.resolve(99);
     const route = makeRoute(() => defer({ title: "hello", stats: statsPromise }));
     const result = await runLoaders(route, makeCtx());
@@ -97,7 +97,7 @@ describe("runLoaders — DeferredData", () => {
     expect(await result.deferredPromises?.stats).toBe(99);
   });
 
-  test("les Promises dans defer() ne sont PAS awaited dans syncData", async () => {
+  test("Promises in defer() are NOT awaited in syncData", async () => {
     let resolved = false;
     const slowPromise = new Promise<number>((r) =>
       setTimeout(() => {
@@ -118,7 +118,7 @@ describe("runLoaders — DeferredData", () => {
     expect(result.deferredPromises?.x).toBeInstanceOf(Promise);
   });
 
-  test("plusieurs Promises déférées sont toutes dans deferredPromises", async () => {
+  test("multiple deferred Promises are all in deferredPromises", async () => {
     const route = makeRoute(() =>
       defer({
         title: "board",
@@ -138,7 +138,7 @@ describe("runLoaders — DeferredData", () => {
     expect(result.deferredPromises).toHaveProperty("users");
   });
 
-  test("les thenables dans defer() sont traités comme des Promises différées", async () => {
+  test("thenables in defer() are treated as deferred Promises", async () => {
     const thenable = {
       // biome-ignore lint/suspicious/noThenProperty: intentional thenable — testing that defer() treats objects with a then method as deferred Promises
       then(resolve: (value: number) => void) {
@@ -159,7 +159,7 @@ describe("runLoaders — DeferredData", () => {
     expect(await result.deferredPromises?.stats).toBe(7);
   });
 
-  test("loader dans la routeChain (non-page) → données normales, pas de split deferred", async () => {
+  test("loader in routeChain (non-page) → normal data, no deferred split", async () => {
     const route = makeRoute(() => ({ pageTitle: "page" }), [() => ({ routeData: "from-route" })]);
     const result = await runLoaders(route, makeCtx());
 
@@ -171,7 +171,7 @@ describe("runLoaders — DeferredData", () => {
     expect(result.deferredPromises).toBeUndefined();
   });
 
-  test("route loader retournant defer() → erreur explicite mentionnant 'page loader'", async () => {
+  test("route loader returning defer() → explicit error mentioning 'page loader'", async () => {
     const route = makeRoute(
       () => ({ pageTitle: "page" }),
       [() => defer({ shared: Promise.resolve("nope") })]
