@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 - **`defer()` and `<Await>`** — Streaming loader data with deferred promises. Loaders can return `defer({ slow: slowPromise })` and the page renders immediately with a fallback. `<Await resolve={slow} fallback={<Loading />}>` unwraps the promise when it resolves. Uses NDJSON streaming for SSR/ISR with automatic client-side hydration of deferred chunks.
+- **`defer()` in layout loaders** — `createRoute({ loader })` can now return `defer({...})`. Deferred fields from layouts and pages are streamed together over a single transport (SSR `<script>` chunks or `/_furin/data` NDJSON), letting a layout flush its shell (nav, sidebar) while a slow widget streams in. The previous v1 restriction that fail-fast'd a deferred layout loader is removed.
 - `useAsyncError()` and `useAsyncValue()` hooks for reading deferred promise states inside `<Await>` error boundaries and children.
 
 ### Fixed

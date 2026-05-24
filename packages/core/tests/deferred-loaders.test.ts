@@ -22,9 +22,6 @@ import { defer } from "../src/client";
 import { runLoaders } from "../src/render/loaders";
 import type { ResolvedRoute } from "../src/router";
 
-const PAGE_LOADER_RE = /page loader/i;
-const DEFER_RE = /defer/i;
-
 function makeCtx(overrides: Partial<Context> = {}): Context {
   return {
     params: {},
@@ -171,20 +168,106 @@ describe("runLoaders — DeferredData", () => {
     expect(result.deferredPromises).toBeUndefined();
   });
 
-  test("route loader returning defer() → explicit error mentioning 'page loader'", async () => {
+  test("route loader returning defer() → deferred fields stream alongside page data", async () => {
     const route = makeRoute(
       () => ({ pageTitle: "page" }),
-      [() => defer({ shared: Promise.resolve("nope") })]
+      [() => defer({ shared: Promise.resolve("layout-async") })]
     );
     const result = await runLoaders(route, makeCtx());
 
-    expect(result.type).toBe("error");
-    if (result.type !== "error") {
+    expect(result.type).toBe("data");
+    if (result.type !== "data") {
       return;
     }
-    expect(result.status).toBe(500);
-    expect(result.error).toBeInstanceOf(Error);
-    expect((result.error as Error).message).toMatch(PAGE_LOADER_RE);
-    expect((result.error as Error).message).toMatch(DEFER_RE);
+    expect(result.syncData).toMatchObject({ pageTitle: "page" });
+    expect(result.deferredPromises?.shared).toBeInstanceOf(Promise);
+    expect(await result.deferredPromises?.shared).toBe("layout-async");
+  });
+
+  test("layout deferred + page sync → layout Promises split, layout scalars merged into syncData", async () => {
+    const route = makeRoute(
+      () => ({ pageTitle: "page", count: 3 }),
+      [() => defer({ user: "alice", widgets: Promise.resolve(["w1", "w2"]) })]
+    );
+    const result = await runLoaders(route, makeCtx());
+
+    expect(result.type).toBe("data");
+    if (result.type !== "data") {
+      return;
+    }
+    expect(result.syncData).toMatchObject({ user: "alice", pageTitle: "page", count: 3 });
+    expect(result.syncData).not.toHaveProperty("widgets");
+    expect(result.deferredPromises?.widgets).toBeInstanceOf(Promise);
+    expect(await result.deferredPromises?.widgets).toEqual(["w1", "w2"]);
+  });
+
+  test("layout deferred + page deferred → all Promises merged into a single deferredPromises", async () => {
+    const route = makeRoute(
+      () => defer({ pageTitle: "page", stats: Promise.resolve(42) }),
+      [() => defer({ user: "alice", widgets: Promise.resolve(["w1"]) })]
+    );
+    const result = await runLoaders(route, makeCtx());
+
+    expect(result.type).toBe("data");
+    if (result.type !== "data") {
+      return;
+    }
+    expect(result.syncData).toMatchObject({ user: "alice", pageTitle: "page" });
+    expect(result.deferredPromises).toHaveProperty("widgets");
+    expect(result.deferredPromises).toHaveProperty("stats");
+    expect(await result.deferredPromises?.stats).toBe(42);
+    expect(await result.deferredPromises?.widgets).toEqual(["w1"]);
+  });
+
+  test("two layouts in chain, only one deferred → only its Promises are split out", async () => {
+    const route = makeRoute(
+      () => ({ pageTitle: "page" }),
+      [() => ({ org: "acme" }), () => defer({ user: "alice", widgets: Promise.resolve(["w1"]) })]
+    );
+    const result = await runLoaders(route, makeCtx());
+
+    expect(result.type).toBe("data");
+    if (result.type !== "data") {
+      return;
+    }
+    expect(result.syncData).toMatchObject({ org: "acme", user: "alice", pageTitle: "page" });
+    expect(result.deferredPromises).toBeDefined();
+    expect(result.deferredPromises).toHaveProperty("widgets");
+    expect(Object.keys(result.deferredPromises ?? {})).toEqual(["widgets"]);
+  });
+
+  test("key collision between layout and page defer → page wins (last-spread semantics)", async () => {
+    const layoutPromise = Promise.resolve("from-layout");
+    const pagePromise = Promise.resolve("from-page");
+    const route = makeRoute(
+      () => defer({ stats: pagePromise }),
+      [() => defer({ stats: layoutPromise })]
+    );
+    const result = await runLoaders(route, makeCtx());
+
+    expect(result.type).toBe("data");
+    if (result.type !== "data") {
+      return;
+    }
+    expect(result.deferredPromises?.stats).toBe(pagePromise);
+    expect(await result.deferredPromises?.stats).toBe("from-page");
+  });
+
+  test("layout deferred Promise that rejects → exposed as a rejected Promise in deferredPromises", async () => {
+    const failure = new Error("boom");
+    const rejected = Promise.reject(failure);
+    // Avoid unhandled-rejection noise; the consumer (streaming layer) will catch.
+    rejected.catch(() => {
+      /* intentional */
+    });
+    const route = makeRoute(() => ({ pageTitle: "page" }), [() => defer({ broken: rejected })]);
+    const result = await runLoaders(route, makeCtx());
+
+    expect(result.type).toBe("data");
+    if (result.type !== "data") {
+      return;
+    }
+    expect(result.deferredPromises?.broken).toBeInstanceOf(Promise);
+    await expect(result.deferredPromises?.broken).rejects.toThrow("boom");
   });
 });

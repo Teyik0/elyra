@@ -122,40 +122,32 @@ function createLoaderCtx(
 }
 
 /**
- * Splits a `defer()` page result into sync scalars and deferred Promises,
- * then merges in the already-resolved route-chain loader data.
+ * Splits a single loader result into sync scalars and deferred Promises.
+ *
+ * A loader result is considered "deferred" only when wrapped with `defer()`
+ * (i.e. carries the `__isDeferred` brand). A loader that returned a plain
+ * object keeps all its values in sync — even if some happen to be Promises —
+ * preserving the long-standing semantic that only an explicit `defer()` opts
+ * into streaming.
  */
-function splitDeferredResult(
-  pageResult: Record<string, unknown>,
-  routeChainData: Record<string, unknown>
-): {
-  syncData: Record<string, unknown>;
-  deferredPromises: Record<string, Promise<unknown>> | undefined;
+function splitOneLoaderResult(result: Record<string, unknown>): {
+  sync: Record<string, unknown>;
+  deferred: Record<string, Promise<unknown>>;
 } {
-  const syncData: Record<string, unknown> = {};
-  const deferredPromises: Record<string, Promise<unknown>> = {};
-
-  // Route-chain data first so page sync fields can overwrite it — matching the
-  // non-deferred Object.assign order where page result is spread last and wins.
-  for (const [key, value] of Object.entries(routeChainData)) {
-    syncData[key] = value;
-  }
-
-  for (const [key, value] of Object.entries(pageResult)) {
+  const sync: Record<string, unknown> = {};
+  const deferred: Record<string, Promise<unknown>> = {};
+  const isDef = isDeferred(result);
+  for (const [key, value] of Object.entries(result)) {
     if (key === "__isDeferred") {
       continue;
     }
-    if (isPromiseLike(value)) {
-      deferredPromises[key] = Promise.resolve(value);
+    if (isDef && isPromiseLike(value)) {
+      deferred[key] = Promise.resolve(value);
     } else {
-      syncData[key] = value;
+      sync[key] = value;
     }
   }
-
-  return {
-    syncData,
-    deferredPromises: Object.keys(deferredPromises).length > 0 ? deferredPromises : undefined,
-  };
+  return { sync, deferred };
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
@@ -199,21 +191,6 @@ export async function serializeDeferredRejection(err: unknown): Promise<unknown>
     return err;
   }
   return new Error(String(err));
-}
-
-/**
- * v1 restriction: defer() is only valid in a page loader. Route/layout loaders
- * returning a deferred object would silently leak the brand into syncData and
- * pass raw Promises to descendants — fail fast at the loader boundary instead.
- */
-function assertNoDeferredInRouteLoaders(routeResults: unknown[]): void {
-  for (const result of routeResults) {
-    if (isDeferred(result as Record<string, unknown>)) {
-      throw new Error(
-        "[furin] defer() is only supported in a page loader (route.page({ loader })). A route/layout loader returned a deferred object; move the deferred fields to the page loader, or `await` them in the route loader and return resolved values."
-      );
-    }
-  }
 }
 
 export async function runLoaders(route: ResolvedRoute, ctx: Context): Promise<LoaderResult> {
@@ -262,37 +239,34 @@ export async function runLoaders(route: ResolvedRoute, ctx: Context): Promise<Lo
       ? Promise.resolve(route.page.loader(pageCtx)).then((r) => r ?? {})
       : Promise.resolve({});
 
-    // Await everything in parallel, then flat-merge.
+    // Await everything in parallel. `results` is ordered layout1 → … → page;
+    // the per-loader split preserves that order so later loaders (page last)
+    // overwrite earlier ones on key collision — same semantic as the previous
+    // non-deferred `Object.assign({}, ...results)` flat merge.
     const results = await Promise.all([...loaderMap.values(), pagePromise]);
-    const merged = Object.assign({}, ...results);
     const headers: Record<string, string> = {};
     Object.assign(headers, ctx.set.headers);
 
-    // When the page loader returned a `defer()` object, split its fields:
-    // - Promise-valued fields → deferredPromises (streamed lazily)
-    // - Scalar fields + all route-chain loader data → syncData (injected into the HTML shell)
-    //
-    // Route-chain loaders (layouts) are never deferred in v1; their data always
-    // lands in syncData. Only the page loader's own `defer()` fields are split.
-    const routeOnlyResults = results.slice(0, loaderMap.size);
-    const pageResult = results[loaderMap.size] as Record<string, unknown>;
+    // Per-loader split: any loader wrapped with `defer()` (page OR route/layout)
+    // contributes its Promise-valued fields to `allDeferred` and its scalars to
+    // `allSync`. Non-deferred loaders keep everything in `allSync` — even Promise
+    // values, since only an explicit `defer()` opts into streaming.
+    const allSync: Record<string, unknown> = {};
+    const allDeferred: Record<string, Promise<unknown>> = {};
+    for (const result of results) {
+      const { sync, deferred } = splitOneLoaderResult(result as Record<string, unknown>);
+      Object.assign(allSync, sync);
+      Object.assign(allDeferred, deferred);
+    }
 
-    assertNoDeferredInRouteLoaders(routeOnlyResults);
     // Route context is always injected into syncData so components receive
     // params, query and path regardless of the serialisation path (SSR, SPA
     // nav, dev cache).
     const routeCtx = { params: ctx.params, query: ctx.query, path: ctx.path };
-    if (isDeferred(pageResult)) {
-      const routeMerged = Object.assign({}, ...routeOnlyResults) as Record<string, unknown>;
-      const { syncData, deferredPromises } = splitDeferredResult(pageResult, routeMerged);
-      return { type: "data", syncData: { ...syncData, ...routeCtx }, deferredPromises, headers };
-    }
-
-    // No defer() — all data is synchronous
     return {
       type: "data",
-      syncData: { ...merged, ...routeCtx },
-      deferredPromises: undefined,
+      syncData: { ...allSync, ...routeCtx },
+      deferredPromises: Object.keys(allDeferred).length > 0 ? allDeferred : undefined,
       headers,
     };
   } catch (err) {

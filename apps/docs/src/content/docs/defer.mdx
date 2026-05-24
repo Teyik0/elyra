@@ -94,9 +94,44 @@ function Chart() {
 </Await>
 ```
 
+## Deferring in layouts
+
+`defer()` works in any loader of the route tree — page **and** layout/route loaders defined via `createRoute({ loader })`. A layout can ship its shell (nav, sidebar) immediately while a slow widget streams in the background:
+
+```tsx
+// src/pages/dashboard/_route.tsx
+import { createRoute, defer } from "@teyik0/furin/client"
+import { Suspense } from "react"
+import { Await } from "@teyik0/furin/client"
+
+export const route = createRoute({
+  loader: () =>
+    defer({
+      user: "alice",                  // sync — embedded in the initial shell
+      widgets: fetchSidebarWidgets(), // Promise — streamed when it resolves
+    }),
+  layout: ({ children, user, widgets }) => (
+    <div>
+      <nav>Hello {user}</nav>
+      <aside>
+        <Suspense fallback={<WidgetSkeleton />}>
+          <Await resolve={widgets}>
+            {(list) => <WidgetList widgets={list} />}
+          </Await>
+        </Suspense>
+      </aside>
+      <main>{children}</main>
+    </div>
+  ),
+})
+```
+
+The deferred field is exposed to the `layout` component as a `Promise`, exactly like a deferred field would be exposed to a page component. Promises from layouts and pages are streamed together — there is no separate transport.
+
+If both a layout and its page `defer()` a field with the same key, the page wins (last-spread semantics), matching the merge order used for synchronous loader data.
+
 ## Important restrictions
 
-- **`defer()` is page-loader only** — it works inside `route.page({ loader })`, not inside `createRoute({ loader })` or layout loaders. In v1, only the page loader supports deferred streaming.
 - **Always wrap `<Await>` in `<Suspense>`** — without a Suspense boundary, React has no fallback to render during the pending phase.
 - **SPA navigation** — deferred Promises are also supported on client-side navigation; Furin fetches them via `/_furin/data` and reconstructs the same Promise-based props.
 
