@@ -67,6 +67,8 @@ All loaders in the chain start **immediately in parallel**. A child loader recei
 
 The flat-merge of results into component props is unchanged — components always receive all data as plain values.
 
+> **Deferred parent fields.** When an ancestor wraps a field with `defer()` (so the raw value is already a `Promise<T>`), the descendant still sees `Promise<T>` — not `Promise<Promise<T>>`. A single `await` is sufficient. The Furin runtime uses standard JS Promise chaining, which auto-flattens, and the types mirror that behaviour.
+
 ## Typed Query Schemas
 
 `query` belongs to `createRoute()`, not `route.page()`.

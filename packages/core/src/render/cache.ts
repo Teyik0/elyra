@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { createLogger } from "../context-logger.ts";
 import { type Cache, createRouteCache, type RevalidateType } from "./route-cache.ts";
 
@@ -31,10 +32,16 @@ const MAX_SSG_CACHE_SIZE = 1000;
 const isrRouteCache = createRouteCache<ISRCacheEntry>({
   maxSize: MAX_ISR_CACHE_SIZE,
   name: "render:isr-html",
+  onDelete: (key) => {
+    autoInvalidateRegistry.unregisterPath(key);
+  },
 });
 const ssgRouteCache = createRouteCache<SsgCacheEntry>({
   maxSize: MAX_SSG_CACHE_SIZE,
   name: "render:ssg-html",
+  onDelete: (key) => {
+    autoInvalidateRegistry.unregisterPath(key);
+  },
 });
 
 export const isrCache = isrRouteCache.store;

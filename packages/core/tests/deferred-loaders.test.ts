@@ -37,8 +37,8 @@ function makeCtx(overrides: Partial<Context> = {}): Context {
 }
 
 function makeRoute(
-  pageLoader: (() => unknown) | undefined,
-  routeLoaders: (() => unknown)[] = []
+  pageLoader: ((ctx: Record<string, unknown>) => unknown) | undefined,
+  routeLoaders: ((ctx: Record<string, unknown>) => unknown)[] = []
 ): ResolvedRoute {
   return {
     pattern: "/test",
@@ -269,5 +269,82 @@ describe("runLoaders — DeferredData", () => {
     }
     expect(result.deferredPromises?.broken).toBeInstanceOf(Promise);
     await expect(result.deferredPromises?.broken).rejects.toThrow("boom");
+  });
+
+  test("key switching from layout-deferred to page-sync → page-sync wins exclusively (stale deferred is dropped)", async () => {
+    // Regression: cross-map merging used to leave both `allSync.stats = 42`
+    // AND `allDeferred.stats = Promise<X>` when a later loader replaced a
+    // deferred field with a sync one. The wire would then ship the sync value
+    // AND a stale deferred resolution chunk for the same key.
+    const route = makeRoute(() => ({ stats: 42 }), [() => defer({ stats: Promise.resolve(999) })]);
+    const result = await runLoaders(route, makeCtx());
+
+    expect(result.type).toBe("data");
+    if (result.type !== "data") {
+      return;
+    }
+    expect(result.syncData.stats).toBe(42);
+    expect(result.deferredPromises).toBeUndefined();
+  });
+
+  test("key switching from layout-sync to page-deferred → page-deferred wins exclusively (stale sync is dropped)", async () => {
+    const route = makeRoute(() => defer({ stats: Promise.resolve(999) }), [() => ({ stats: 42 })]);
+    const result = await runLoaders(route, makeCtx());
+
+    expect(result.type).toBe("data");
+    if (result.type !== "data") {
+      return;
+    }
+    // The deferred replacement wins → page's deferred Promise is exposed and
+    // the layout's stale sync 42 must NOT remain in syncData.
+    expect(result.syncData).not.toHaveProperty("stats");
+    expect(result.deferredPromises?.stats).toBeInstanceOf(Promise);
+    expect(await result.deferredPromises?.stats).toBe(999);
+  });
+
+  test("child loader awaits a parent-deferred field with a single await", async () => {
+    // Parent defers a Promise<X>. The child loader reads it through the
+    // createLoaderCtx proxy. Thanks to JS Promise-chaining auto-flatten, a
+    // single `await` is sufficient at runtime to obtain X — no `await await`
+    // dance. This test guards that runtime contract; the matching type-level
+    // contract lives in tests/types.test.tsx.
+    const route = makeRoute(
+      async (ctx: Record<string, unknown>) => {
+        const slow = ctx.slow as Promise<string>;
+        const value = await slow;
+        return { received: value };
+      },
+      [() => defer({ slow: Promise.resolve("from-parent") })]
+    );
+    const result = await runLoaders(route, makeCtx());
+
+    expect(result.type).toBe("data");
+    if (result.type !== "data") {
+      return;
+    }
+    expect(result.syncData).toMatchObject({ received: "from-parent" });
+  });
+
+  test("child loader can re-defer a parent-deferred field via defer({ mySlow: ctx.slow })", async () => {
+    // A child loader forwards a parent-deferred field by re-wrapping it in its
+    // own `defer()`. The end-to-end wire chunk must carry the resolved value —
+    // not a nested Promise — so the client-side <Await> consumes X directly.
+    const route = makeRoute(
+      (ctx: Record<string, unknown>) =>
+        defer({ mySlow: ctx.slow as Promise<string>, scalar: "ok" }),
+      [() => defer({ slow: Promise.resolve("from-parent") })]
+    );
+    const result = await runLoaders(route, makeCtx());
+
+    expect(result.type).toBe("data");
+    if (result.type !== "data") {
+      return;
+    }
+    expect(result.syncData).toMatchObject({ scalar: "ok" });
+    expect(result.deferredPromises?.mySlow).toBeInstanceOf(Promise);
+    // Single await on the forwarded field yields the original parent value
+    // (the parent's Promise chaining + the child's Promise chaining both auto-
+    // flatten, so no nested Promise reaches the wire).
+    expect(await result.deferredPromises?.mySlow).toBe("from-parent");
   });
 });

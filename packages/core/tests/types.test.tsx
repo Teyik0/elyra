@@ -14,6 +14,7 @@ import {
   type InferProps,
   type RouteContext,
 } from "../src/client";
+import type { CacheTag, InvalidationRule } from "../src/furin";
 import { collectRouteChainFromRoute, isFurinPage, isFurinRoute } from "../src/utils";
 
 describe("RouteContext types (for loaders)", () => {
@@ -185,6 +186,20 @@ describe("ComponentProps types (for components)", () => {
 });
 
 describe("createRoute types", () => {
+  test("route and page configs accept cache tags", () => {
+    const route = createRoute({
+      tags: ["boards"],
+    });
+
+    const page = route.page({
+      tags: ["board"],
+      component: () => null,
+    });
+
+    expectTypeOf(route.tags).toEqualTypeOf<string[] | undefined>();
+    expectTypeOf(page.tags).toEqualTypeOf<string[] | undefined>();
+  });
+
   test("simple route — no loader, no layout", () => {
     const route = createRoute({ mode: "ssg" });
 
@@ -335,6 +350,17 @@ describe("createRoute types", () => {
         return null;
       },
     });
+  });
+});
+
+describe("cache invalidation types", () => {
+  test("CacheTag falls back to string before furin-env.d.ts augmentation", () => {
+    expectTypeOf<CacheTag>().toEqualTypeOf<string>();
+  });
+
+  test("InvalidationRule accepts tag-only and path-based rules", () => {
+    expectTypeOf<{ tags: ["boards"] }>().toMatchTypeOf<InvalidationRule>();
+    expectTypeOf<{ path: "/"; type: "page" }>().toMatchTypeOf<InvalidationRule>();
   });
 });
 
@@ -579,6 +605,43 @@ describe("defer() page loader", () => {
         // @ts-expect-error — the internal brand must NOT surface in head() ctx
         ctx.__isDeferred;
         return { meta: [{ title: ctx.board }] };
+      },
+      component: () => null,
+    });
+  });
+
+  test("layout-deferred Promise field is exposed to descendants as Promise<T> (single-await, not Promise<Promise<T>>)", () => {
+    // A parent layout returns `defer({slow: Promise<X>})`. Without the
+    // PromisifyData flatten, descendants would see `Promise<Promise<X>>` and
+    // be forced into `await await ctx.slow`. The runtime already auto-flattens
+    // via Promise chaining, so the type must match (single-level Promise).
+    const parent = createRoute({
+      loader: () => defer({ slow: Promise.resolve({ kind: "value" as const }) }),
+    });
+
+    parent.page({
+      loader: async (ctx) => {
+        expectTypeOf(ctx.slow).toEqualTypeOf<Promise<{ kind: "value" }>>();
+        // A single await must yield the resolved value — not another Promise.
+        const v = await ctx.slow;
+        expectTypeOf(v).toEqualTypeOf<{ kind: "value" }>();
+        return { received: v };
+      },
+      component: () => null,
+    });
+  });
+
+  test("layout-sync field stays Promise<T> as before (no behavioural change for non-deferred fields)", () => {
+    const parent = createRoute({
+      loader: () => ({ user: "alice" }),
+    });
+
+    parent.page({
+      loader: async (ctx) => {
+        expectTypeOf(ctx.user).toEqualTypeOf<Promise<string>>();
+        const u = await ctx.user;
+        expectTypeOf(u).toBeString();
+        return { greet: `hi ${u}` };
       },
       component: () => null,
     });

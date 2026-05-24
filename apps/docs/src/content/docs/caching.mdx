@@ -68,7 +68,7 @@ ETag format:
 
 ---
 
-## `revalidatePath(path, type?)`
+## `revalidatePath(path, type)`
 
 Force invalidation of one or more server-side cache entries on demand. Typical use cases: publishing a CMS entry, processing a webhook, or handling a form submission.
 
@@ -76,7 +76,7 @@ Force invalidation of one or more server-side cache entries on demand. Typical u
 import { revalidatePath } from "@teyik0/furin";
 
 // Exact match — invalidate a single page (ISR + SSG)
-revalidatePath("/blog/my-post");
+revalidatePath("/blog/my-post", "page");
 
 // Prefix match — invalidate /blog + all nested routes
 revalidatePath("/blog", "layout");
@@ -87,7 +87,7 @@ revalidatePath("/blog", "layout");
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `path` | `string` | — | The URL path to invalidate |
-| `type` | `"page" \| "layout"` | `"page"` | `"page"` = exact match; `"layout"` = prefix match |
+| `type` | `"page" \| "layout"` | — | `"page"` = exact match; `"layout"` = prefix match |
 
 **Returns:** `boolean` — `true` if at least one cache entry was removed.
 
@@ -102,7 +102,7 @@ export const api = new Elysia().post("/api/webhook", async ({ body, headers }) =
   // Verify signature ...
   const event = body as { slug: string };
 
-  revalidatePath(`/blog/${event.slug}`);
+  revalidatePath(`/blog/${event.slug}`, "page");
   // Next request to /blog/my-post will be a cache miss → fresh render
 
   return { ok: true };
@@ -115,6 +115,62 @@ After `revalidatePath()` is called:
 3. On the _next response_ sent by the server (any route), the `X-Furin-Revalidate` header is emitted
 4. The browser's prefetch cache is busted automatically
 5. If a CDN purger is registered, it is called asynchronously
+
+---
+
+## Cache tags
+
+Cache tags let loaders describe the data they depend on, then let mutation routes invalidate those groups without hard-coding every path.
+
+```tsx
+// src/pages/blog/index.tsx
+export default route.page({
+  mode: "isr",
+  revalidate: 60,
+  tags: ["posts"],
+  loader: async () => ({ posts: await db.posts.findMany() }),
+  component: BlogList,
+});
+```
+
+```ts
+// src/api/posts.ts
+import { furinInvalidate } from "@teyik0/furin";
+import { Elysia, t } from "elysia";
+
+export const postsApi = new Elysia()
+  .use(furinInvalidate())
+  .post(
+    "/posts",
+    async ({ body }) => db.posts.create(body),
+    {
+      body: t.Object({ title: t.String() }),
+      invalidate: { tags: ["posts"] },
+    }
+  );
+```
+
+The `invalidate` route option is provided by the `furinInvalidate()` macro. Install the macro on the same Elysia plugin that declares the routes using `invalidate`.
+
+When `furin-env.d.ts` is generated, Furin also augments `FurinCacheTags`, so mutation routes get autocomplete and type-checking for known tags:
+
+```ts
+declare module "@teyik0/furin" {
+  interface FurinCacheTags {
+    posts: "posts";
+  }
+}
+```
+
+You can also invalidate tags manually:
+
+```ts
+import { revalidateTag } from "@teyik0/furin";
+
+revalidateTag("posts");
+```
+
+Tags are registered against concrete cached paths when ISR/SSG entries are written. Dynamic routes such as `/blog/:slug` therefore invalidate only the concrete paths that have actually been cached.
 
 ---
 

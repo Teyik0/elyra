@@ -9,3 +9,11 @@ declare module "@teyik0/furin/link" {
     [key: `/board/${string}`]: { search?: never };
   }
 }
+
+declare module "@teyik0/furin" {
+  interface FurinCacheTags {
+    board: "board";
+    boards: "boards";
+    cards: "cards";
+  }
+}

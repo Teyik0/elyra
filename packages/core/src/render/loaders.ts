@@ -159,6 +159,36 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 }
 
 /**
+ * Merges per-loader results into the unified sync / deferred maps used by
+ * `runLoaders`. `results` is ordered ancestor-most → page, so later loaders
+ * overwrite earlier ones on key collision.
+ *
+ * Cross-map cleanup: when a later loader contributes a key, drop any stale
+ * entry from the opposite map. Without this, a key that switches between sync
+ * and deferred across loaders would leave both maps populated, and the wire
+ * would carry two contradictory values for the same field.
+ */
+function mergeLoaderResults(results: unknown[]): {
+  allSync: Record<string, unknown>;
+  allDeferred: Record<string, Promise<unknown>>;
+} {
+  const allSync: Record<string, unknown> = {};
+  const allDeferred: Record<string, Promise<unknown>> = {};
+  for (const result of results) {
+    const { sync, deferred } = splitOneLoaderResult(result as Record<string, unknown>);
+    for (const k of Object.keys(sync)) {
+      delete allDeferred[k];
+    }
+    for (const k of Object.keys(deferred)) {
+      delete allSync[k];
+    }
+    Object.assign(allSync, sync);
+    Object.assign(allDeferred, deferred);
+  }
+  return { allSync, allDeferred };
+}
+
+/**
  * Normalises an error thrown inside a deferred Promise into a value that is
  * safe to send through `toCrossJSON` and that preserves the original semantics
  * after `fromCrossJSON` on the client.
@@ -247,17 +277,11 @@ export async function runLoaders(route: ResolvedRoute, ctx: Context): Promise<Lo
     const headers: Record<string, string> = {};
     Object.assign(headers, ctx.set.headers);
 
-    // Per-loader split: any loader wrapped with `defer()` (page OR route/layout)
-    // contributes its Promise-valued fields to `allDeferred` and its scalars to
-    // `allSync`. Non-deferred loaders keep everything in `allSync` — even Promise
-    // values, since only an explicit `defer()` opts into streaming.
-    const allSync: Record<string, unknown> = {};
-    const allDeferred: Record<string, Promise<unknown>> = {};
-    for (const result of results) {
-      const { sync, deferred } = splitOneLoaderResult(result as Record<string, unknown>);
-      Object.assign(allSync, sync);
-      Object.assign(allDeferred, deferred);
-    }
+    // Any loader wrapped with `defer()` (page OR route/layout) contributes its
+    // Promise-valued fields to `allDeferred` and its scalars to `allSync`.
+    // Non-deferred loaders keep everything in `allSync` — even Promise values,
+    // since only an explicit `defer()` opts into streaming.
+    const { allSync, allDeferred } = mergeLoaderResults(results);
 
     // Route context is always injected into syncData so components receive
     // params, query and path regardless of the serialisation path (SSR, SPA

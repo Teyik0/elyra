@@ -19,7 +19,12 @@ mock.module("evlog/elysia", () => ({
 
 import { Elysia, t } from "elysia";
 import type { RuntimeRoute } from "../../src/client";
-import { createRoutePlugin, mergeRouteSchemas, scanPages } from "../../src/router";
+import {
+  collectRouteTags,
+  createRoutePlugin,
+  mergeRouteSchemas,
+  scanPages,
+} from "../../src/router";
 import { __setDevMode, IS_DEV } from "../../src/runtime-env";
 
 const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
@@ -81,6 +86,29 @@ describe("mergeRouteSchemas", () => {
     // child is last → its Optional(childVal) wins
     const sharedSchema = merged.properties.shared as { [key: string]: unknown };
     expect(JSON.stringify(sharedSchema)).toContain('"child"');
+  });
+});
+
+describe("collectRouteTags", () => {
+  test("deduplicates route-chain and page-level tags", () => {
+    const chain: RuntimeRoute[] = [
+      { __type: "FURIN_ROUTE", tags: ["root", "shared"] },
+      { __type: "FURIN_ROUTE", tags: ["board", "shared"] },
+    ];
+    const page = {
+      __type: "FURIN_PAGE" as const,
+      _route: chain[1] as RuntimeRoute,
+      component: () => null,
+      tags: ["cards", "board"],
+    };
+
+    expect(collectRouteTags(chain, page)).toEqual(["root", "shared", "board", "cards"]);
+  });
+
+  test("returns undefined when no route or page tags exist", () => {
+    const chain: RuntimeRoute[] = [{ __type: "FURIN_ROUTE" }];
+
+    expect(collectRouteTags(chain, undefined)).toBeUndefined();
   });
 });
 

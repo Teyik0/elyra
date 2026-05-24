@@ -17,6 +17,7 @@
  */
 
 import { statSync } from "node:fs";
+import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { registerCacheInvalidator } from "./cache.ts";
 import { createRouteCache, type RevalidateType } from "./route-cache.ts";
 
@@ -80,6 +81,10 @@ function createDevLoaderCache(name: string) {
     name,
     onDelete: (key, entry) => {
       unindexEntryDependencies(key, entry.dependencies);
+      const urlPath = urlPathFromCacheKey(key);
+      if (urlPath) {
+        autoInvalidateRegistry.unregisterPath(urlPath);
+      }
     },
     onSet: (key, entry, previous) => {
       // Drop any stale reverse-index links from a previous entry under this key.

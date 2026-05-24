@@ -18,6 +18,11 @@ import { setProductionTemplateContent, setProductionTemplatePath } from "./rende
 import { createDataEndpoint, createRoutePlugin, loadProdRoutes } from "./router.ts";
 import { IS_DEV } from "./runtime-env.ts";
 
+// biome-ignore lint/suspicious/noEmptyInterface: intentionally augmentable via furin-env.d.ts
+export interface FurinCacheTags {}
+
+export type CacheTag = keyof FurinCacheTags extends never ? string : keyof FurinCacheTags;
+
 function resolveClientDirFromArgv(): string {
   return (
     resolveClientDirFromEnv() ??
@@ -381,6 +386,8 @@ export async function furin({
 
 // ── Public API re-export ──────────────────────────────────────────────────────
 // biome-ignore-start lint/performance/noBarrelFile: intentional — furin.ts is the public package entry
+export type { InvalidationInput, InvalidationRule } from "./auto-invalidate/index.ts";
+export { furinInvalidate, revalidateTag } from "./auto-invalidate/index.ts";
 export { Await, useAsyncError, useAsyncValue } from "./await.tsx";
 export type { DeferredData } from "./client.ts";
 export { defer, isDeferred } from "./client.ts";
