@@ -37,6 +37,7 @@ export { type LoaderResult, runLoaders, serializeDeferredRejection } from "./loa
 // ── Types ────────────────────────────────────────────────────────────────────
 
 import type { Context } from "elysia";
+import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { createLogger, runInSyntheticRenderScope, useLogger } from "../context-logger.ts";
 import type { ResolvedRoute } from "../router.ts";
 import { IS_DEV } from "../runtime-env.ts";
@@ -395,6 +396,7 @@ export async function prerenderSSG(
     status: result.status,
   };
   setSSGCache(resolvedPath, entry);
+  autoInvalidateRegistry.registerLoaderTags(resolvedPath, route.tags);
 
   return entry;
 }
@@ -890,6 +892,7 @@ export async function handleISR(
   });
 
   setISRCache(cacheKey, { html, generatedAt, revalidate });
+  autoInvalidateRegistry.registerLoaderTags(cacheKey, route.tags);
 
   const etag = buildId ? `"${buildId}:${generatedAt}"` : null;
   ctx.set.headers["content-type"] = "text/html; charset=utf-8";

@@ -4,7 +4,7 @@ All notable changes to Furin will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0-alpha.15] — Unreleased
 
 ### Added
 - **`defer()` and `<Await>`** — Streaming loader data with deferred promises. Loaders can return `defer({ slow: slowPromise })` and the page renders immediately with a fallback. `<Await resolve={slow} fallback={<Loading />}>` unwraps the promise when it resolves. Uses NDJSON streaming for SSR/ISR with automatic client-side hydration of deferred chunks.
@@ -14,6 +14,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 - **Deferred SSR chunks now stream in settle order** — `renderSSR` emitted deferred resolution `<script>`s in loader-declaration order, so a fast field was held hostage by a slow sibling. Chunks are now flushed as each Promise settles.
 - **`defer()` brand no longer leaks into props** — the internal `__isDeferred` marker was surfacing as a typed component / `head()` prop. It is now stripped from the inferred loader-data type.
+- **Parent-deferred fields are now typed as `Promise<T>` for descendants** — `PromisifyData<T>` previously double-wrapped a parent loader's deferred field into `Promise<Promise<T>>`, forcing callers into a redundant `await await ctx.field`. The type now mirrors the existing JS Promise-chaining auto-flatten so a single `await` is sufficient — simplified to `Promise<Awaited<T[K]>>`. No runtime change.
+- **Tag-based revalidation now survives SPA navigation** — `/_furin/data` (the SPA loader-fetch endpoint) did not re-register the route's `tags` after running its loader, so the first mutation would invalidate the path and drop its tag mapping while subsequent mutations on the same tag found no path and the `x-furin-revalidate` header was silently omitted. The data endpoint now registers loader tags on every successful run, mirroring the full-HTML render path.
+- **Cross-map cleanup on layout/page key collision** — when a layout returned `defer({stats: Promise})` and the page returned `{stats: 42}` (or vice-versa), both the sync and deferred maps kept their entry for the same key, so the wire carried two contradictory values. The later loader now drops any stale entry from the opposite map.
 - **SPA navigation title comes from `head()`** — the `/_furin/data` endpoint now resolves the page title server-side and ships it as `__furinTitle`. A loader returning a plain `title` field no longer hijacks `document.title`; `head()` is the single source of truth.
 - `rebuildDevRoute` now recomputes route mode (SSR/SSG/ISR) on every dev request after HMR re-import, so toggling `revalidate` or adding/removing a loader takes effect immediately without a server restart.
 - Loaders that throw a `Response` (e.g. redirect) now correctly trigger the error boundary instead of silently failing during SPA navigation.

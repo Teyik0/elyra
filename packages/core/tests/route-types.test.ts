@@ -129,9 +129,14 @@ describe("writeRouteTypes", () => {
   });
 
   /** Build minimal ResolvedRoute stubs. */
-  function routes(patterns: string[], querySchemas: Record<string, unknown> = {}): ResolvedRoute[] {
+  function routes(
+    patterns: string[],
+    querySchemas: Record<string, unknown> = {},
+    tags: Record<string, string[]> = {}
+  ): ResolvedRoute[] {
     return patterns.map((pattern) => ({
       pattern,
+      tags: tags[pattern],
       routeChain: querySchemas[pattern]
         ? [{ __type: "FURIN_ROUTE" as const, query: querySchemas[pattern] }]
         : [],
@@ -216,5 +221,42 @@ describe("writeRouteTypes", () => {
     expect(existsSync(join(freshDir, "furin-env.d.ts"))).toBe(false);
     writeRouteTypes(routes(["/"]), freshDir);
     expect(existsSync(join(freshDir, "furin-env.d.ts"))).toBe(true);
+  });
+
+  test("generates FurinCacheTags when routes have tags", () => {
+    writeRouteTypes(
+      routes(["/", "/blog"], {}, { "/": ["boards", "board"], "/blog": ["posts"] }),
+      tmpDir
+    );
+
+    const content = readFileSync(join(tmpDir, "furin-env.d.ts"), "utf8");
+    expect(content).toContain('declare module "@teyik0/furin"');
+    expect(content).toContain("interface FurinCacheTags");
+    expect(content).toContain("boards: 'boards';");
+    expect(content).toContain("board: 'board';");
+    expect(content).toContain("posts: 'posts';");
+  });
+
+  test("omits FurinCacheTags section when no routes have tags", () => {
+    writeRouteTypes(routes(["/"], {}, {}), tmpDir);
+
+    const content = readFileSync(join(tmpDir, "furin-env.d.ts"), "utf8");
+    expect(content).not.toContain("FurinCacheTags");
+  });
+
+  test("tags are sorted alphabetically and deduplicated", () => {
+    writeRouteTypes(
+      routes(["/", "/blog"], {}, { "/": ["zzz", "aaa", "aaa"], "/blog": ["bbb"] }),
+      tmpDir
+    );
+
+    const content = readFileSync(join(tmpDir, "furin-env.d.ts"), "utf8");
+    const aaaIdx = content.indexOf("aaa: 'aaa'");
+    const bbbIdx = content.indexOf("bbb: 'bbb'");
+    const zzzIdx = content.indexOf("zzz: 'zzz'");
+
+    expect(aaaIdx).toBeGreaterThanOrEqual(0);
+    expect(aaaIdx).toBeLessThan(bbbIdx);
+    expect(bbbIdx).toBeLessThan(zzzIdx);
   });
 });

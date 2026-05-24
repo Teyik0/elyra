@@ -5,6 +5,7 @@ import { CardDetailPage } from "@/components/card-detail-page";
 import { route } from "./_route";
 
 export default route.page({
+  tags: ["cards"],
   loader: ({ params }) => {
     const board = getBoard(params.boardId);
     const card = getCard(params.cardId);

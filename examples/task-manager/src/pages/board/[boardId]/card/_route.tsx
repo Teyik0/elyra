@@ -8,4 +8,5 @@ export const route = createRoute({
     boardId: t.String(),
     cardId: t.String(),
   }),
+  tags: ["cards"],
 });

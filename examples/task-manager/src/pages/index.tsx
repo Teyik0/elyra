@@ -6,6 +6,7 @@ import { route } from "./root";
 export default route.page({
   mode: "isr",
   revalidate: 10,
+  tags: ["boards"],
   loader: () => {
     const rawBoards = getBoards();
     const generatedAt = new Date().toLocaleTimeString("en-US", {
@@ -90,11 +91,11 @@ export default route.page({
               revalidate: 10
             </code>
             . The board list is served from cache and revalidates in the background every 10
-            seconds. After creating or deleting a board,{" "}
+            seconds. After creating or deleting a board, the API route declares{" "}
             <code className="rounded bg-white/6 px-1 py-0.5 font-mono text-violet-300">
-              revalidatePath("/", "page")
+              invalidate: {'{ tags: ["boards"] }'}
             </code>{" "}
-            is called server-side to immediately bust the cache.
+            to immediately bust the cache.
           </p>
         </div>
       </div>

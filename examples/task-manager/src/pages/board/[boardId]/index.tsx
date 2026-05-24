@@ -6,6 +6,7 @@ import type { KanbanCard } from "@/components/ui/kanban";
 import { route } from "../_route";
 
 export default route.page({
+  tags: ["board", "cards"],
   loader: ({ params }) => {
     const data = getBoardData(params.boardId);
     if (!data) {

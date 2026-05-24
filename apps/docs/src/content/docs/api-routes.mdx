@@ -44,6 +44,48 @@ export type App = typeof app
 
 Elysia instance order matters. Mount API plugins in the order you want them applied.
 
+## Auto-Invalidate Cached Pages
+
+Use `furinInvalidate()` in the same Elysia plugin that declares mutation routes. It adds the `invalidate` route option and runs it only after successful responses.
+
+```ts
+import { furinInvalidate } from "@teyik0/furin"
+import { Elysia, t } from "elysia"
+
+export const api = new Elysia({ prefix: "/api" })
+  .use(furinInvalidate())
+  .post(
+    "/posts",
+    async ({ body }) => {
+      return db.posts.create(body)
+    },
+    {
+      body: t.Object({ title: t.String() }),
+      invalidate: { tags: ["posts"] },
+    }
+  )
+```
+
+Tags come from page and route metadata:
+
+```tsx
+export default route.page({
+  mode: "isr",
+  revalidate: 60,
+  tags: ["posts"],
+  loader: async () => ({ posts: await db.posts.findMany() }),
+  component: PostsPage,
+})
+```
+
+Path-based invalidation is also available when a mutation targets a known URL:
+
+```ts
+{
+  invalidate: { path: "/blog", type: "layout" }
+}
+```
+
 ## Typed Client Access
 
 If you export `typeof app`, you can use Eden Treaty on the client side for end-to-end typing.

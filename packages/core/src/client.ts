@@ -39,9 +39,15 @@ type NormalizeUnset<T> = [T] extends [Unset] ? {} : T;
  * Transforms each key of a parent-data record into an individual `Promise<T>`.
  * This is what child loaders see for inherited fields — direct values from
  * `RouteContext` (request, params, set, …) remain unchanged.
+ *
+ * `Awaited<T[K]>` mirrors the JS Promise-chaining auto-flatten used by
+ * `createLoaderCtx`: when an ancestor wrapped a field with `defer()` (so the
+ * raw value is itself a `Promise<U>`), the type collapses to `Promise<U>`
+ * instead of `Promise<Promise<U>>`. Otherwise TypeScript would force a
+ * redundant `await await ctx.field` dance.
  */
 type PromisifyData<T extends Record<string, unknown>> = {
-  [K in keyof T]: Promise<T[K]>;
+  [K in keyof T]: Promise<Awaited<T[K]>>;
 };
 
 export interface RouteContext<TParams = {}, TQuery = {}> {
@@ -138,6 +144,7 @@ export interface PageConfig<
     ctx: RouteContext<TParams, TQuery> & PromisifyData<TParentData>
   ) => Promise<TPageLoaderData> | TPageLoaderData;
   staticParams?: () => Promise<NormalizeUnset<TParams>[]> | NormalizeUnset<TParams>[];
+  tags?: string[];
 }
 
 export interface RuntimeRoute {
@@ -149,6 +156,7 @@ export interface RuntimeRoute {
   parent?: RuntimeRoute;
   query?: unknown;
   revalidate?: number;
+  tags?: string[];
 }
 
 export interface RuntimePage {
@@ -158,6 +166,7 @@ export interface RuntimePage {
   head?(ctx: Record<string, unknown>): HeadOptions;
   loader?(ctx: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
   staticParams?(): Promise<Record<string, string>[]> | Record<string, string>[];
+  tags?: string[];
 }
 
 export interface RouteRef<
@@ -182,6 +191,7 @@ interface PageResult<
   loader?: (
     ctx: RouteContext<TParams, TQuery> & PromisifyData<TData>
   ) => Promise<TPageLoaderData> | TPageLoaderData;
+  tags?: string[];
 }
 
 export interface Route<TParentData extends Record<string, unknown>, TParams, TQuery> {
@@ -204,6 +214,7 @@ export interface Route<TParentData extends Record<string, unknown>, TParams, TQu
     mode?: "ssr" | "ssg" | "isr";
     revalidate?: number;
     staticParams?: () => Promise<NormalizeUnset<TParams>[]> | NormalizeUnset<TParams>[];
+    tags?: string[];
     component: React.FC<NoInfer<TParentData & TPageLoaderData & ComponentProps<TParams, TQuery>>>;
     head?: (
       ctx: NoInfer<ComponentProps<TParams, TQuery> & TParentData & TPageLoaderData>
@@ -215,6 +226,7 @@ export interface Route<TParentData extends Record<string, unknown>, TParams, TQu
     mode?: "ssr" | "ssg" | "isr";
     revalidate?: number;
     staticParams?: () => Promise<NormalizeUnset<TParams>[]> | NormalizeUnset<TParams>[];
+    tags?: string[];
     component: React.FC<TParentData & ComponentProps<TParams, TQuery>>;
     head?: (ctx: ComponentProps<TParams, TQuery> & TParentData) => HeadOptions;
   }): PageResult<TParentData, TParams, TQuery, {}>;
@@ -226,6 +238,7 @@ export interface Route<TParentData extends Record<string, unknown>, TParams, TQu
   /** Branded ref for type inference when used as a parent. */
   ref: RouteRef<TParentData, TParams, TQuery>;
   revalidate?: number;
+  tags?: string[];
 }
 
 export function createRoute<
@@ -239,6 +252,7 @@ export function createRoute<
   revalidate?: number;
   params?: TParamsSchema;
   query?: TQuerySchema;
+  tags?: string[];
   loader?: (
     ctx: RouteContext<
       Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema>["params"],

@@ -4,6 +4,7 @@ import { join, parse } from "node:path";
 import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import type { AnySchema } from "elysia/types";
 import { toCrossJSON, toCrossJSONAsync } from "seroval";
+import { autoInvalidateRegistry } from "./auto-invalidate/registry.ts";
 import type { RuntimePage, RuntimeRoute } from "./client.ts";
 // Use the project-local `useLogger` (not `evlog/elysia` directly) so the
 // `/_furin/data` enrichment also works in synthetic render scopes (ISR/SSG)
@@ -103,6 +104,7 @@ export interface ResolvedRoute {
    */
   segmentBoundaries: SegmentBoundary[];
   ssgHtml?: string;
+  tags?: string[];
 }
 
 export interface RootLayout {
@@ -112,6 +114,23 @@ export interface RootLayout {
   notFoundPath?: string;
   path: string;
   route: RuntimeRoute;
+}
+
+/** @internal Exported for unit testing. */
+export function collectRouteTags(
+  routeChain: RuntimeRoute[],
+  page: Pick<RuntimePage, "tags"> | undefined
+): string[] | undefined {
+  const tags = new Set<string>();
+  for (const route of routeChain) {
+    for (const tag of route.tags ?? []) {
+      tags.add(tag);
+    }
+  }
+  for (const tag of page?.tags ?? []) {
+    tags.add(tag);
+  }
+  return tags.size > 0 ? [...tags] : undefined;
 }
 
 export function loadProdRoutes(ctx: CompileContext): {
@@ -177,6 +196,7 @@ export function loadProdRoutes(ctx: CompileContext): {
       segmentBoundaries: boundaries,
       error,
       notFound,
+      tags: collectRouteTags(routeChain, page),
     });
   }
 
@@ -331,6 +351,7 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
       notFound,
       error: errorComponent,
       segmentBoundaries,
+      tags: collectRouteTags(routeChain, page),
     });
   }
 
@@ -466,6 +487,7 @@ async function buildDevRoute(
     // Still lazily re-imported on each request in createRoutePlugin for fresh code
     page: page ?? devStubPage,
     routeChain,
+    tags: collectRouteTags(routeChain, page),
     // scanPageFiles() overwrites this with the real chain before the route
     // is pushed — present here to satisfy the ResolvedRoute required shape.
     segmentBoundaries: [],
@@ -730,6 +752,7 @@ export function rebuildDevRoute(
     page,
     routeChain: chain,
     mode: resolveMode(page, chain),
+    tags: collectRouteTags(chain, page),
   };
 }
 
@@ -847,6 +870,10 @@ async function renderDevISRWithLoaderCache(
       revalidate,
     };
     setDevISRLoaderCache(cacheKey, entry);
+    autoInvalidateRegistry.registerLoaderTags(
+      resolvePath(route.pattern, ctx.params ?? {}),
+      route.tags
+    );
   }
   return renderSSR(route, ctx, root, result);
 }
@@ -888,6 +915,10 @@ async function renderDevSSGWithLoaderCache(
       revalidate: Number.POSITIVE_INFINITY,
     };
     setDevSSGLoaderCache(cacheKey, entry);
+    autoInvalidateRegistry.registerLoaderTags(
+      resolvePath(route.pattern, ctx.params ?? {}),
+      route.tags
+    );
   }
   return renderSSR(route, ctx, root, result);
 }
@@ -1374,6 +1405,18 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       }
 
       const result = await runLoaders(matched.route, syntheticCtx);
+
+      // Keep the auto-invalidate registry in sync with whatever path was just
+      // served, so subsequent `revalidateTag(...)` calls (e.g. from a mutation
+      // afterHandle) can still find this URL by tag. Without this, a SPA-only
+      // navigation path (which never goes through the full-HTML render that
+      // also registers tags) would silently fall off the registry — the first
+      // mutation invalidates and unregisters via the cache `onDelete` hook,
+      // the next SPA fetch re-loads but does not re-register, and from then
+      // on `revalidateTag` finds no path to invalidate.
+      if (result.type === "data") {
+        autoInvalidateRegistry.registerLoaderTags(pathname, matched.route.tags);
+      }
 
       if (result.type === "redirect") {
         // Encode the redirect target as a special field for the client to follow

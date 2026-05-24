@@ -126,7 +126,7 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 | **Cache persistence** | ✅ Filesystem | ❌ (in-memory only) | ❌ (in-memory only) |
 | **Cache invalidation by path** | ✅ (`revalidatePath`) | Manual | ✅ (`revalidatePath(path, "page")`) |
 | **Cache invalidation by layout** | ✅ (`revalidatePath(path, "layout")`) | Manual | ✅ (`revalidatePath(path, "layout")`) |
-| **Cache invalidation by tag** | ✅ (`revalidateTag`) | ❌ | ❌ (planned) |
+| **Cache invalidation by tag** | ✅ (`revalidateTag`) | ❌ | ✅ (`revalidateTag`, `furinInvalidate`) |
 | **ETags** | ❌ | ❌ | ✅ (`"buildId:timestamp"`) |
 | **Conditional requests (304)** | ❌ | ❌ | ✅ |
 | **CDN headers** | `s-maxage`, `stale-while-revalidate` | Manual | **`Cache-Tag`, `s-maxage`, `stale-while-revalidate`** |

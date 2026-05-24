@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
-import {
-  __resetCacheState,
-  consumePendingInvalidations,
-} from "../../../packages/core/src/render/cache";
+import { __resetCacheState } from "../../../packages/core/src/render/cache";
 
 let deleteBoardResult = true;
 let nextBoardId = "board-created";
@@ -43,7 +40,11 @@ describe("boards API cache invalidation", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(consumePendingInvalidations()).toEqual(["/", "/board:layout"]);
+    // The macro's afterHandle consumes the pending invalidations into the
+    // response header — that is the contract observed by the SPA client.
+    // Reading the header is the authoritative check; `consumePendingInvalidations`
+    // is already drained by the macro at this point.
+    expect(response.headers.get("x-furin-revalidate")).toBe("/,/board:layout");
   });
 
   test("deleting a board invalidates both the index page and board layout sidebars", async () => {
@@ -54,6 +55,6 @@ describe("boards API cache invalidation", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(consumePendingInvalidations()).toEqual(["/", "/board:layout"]);
+    expect(response.headers.get("x-furin-revalidate")).toBe("/,/board:layout");
   });
 });
