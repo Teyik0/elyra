@@ -51,7 +51,9 @@ jobs:
 
       - name: Fetch main branch
         if: github.ref != 'refs/heads/main'
-        run: git fetch origin main
+        run: |
+          git fetch origin main
+          git branch main origin/main
 
       - name: React Doctor (main)
         if: github.ref == 'refs/heads/main'
