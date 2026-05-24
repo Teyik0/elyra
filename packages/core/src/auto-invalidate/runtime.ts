@@ -3,8 +3,6 @@ import { consumePendingInvalidations, revalidatePath } from "../render/cache.ts"
 import { autoInvalidateRegistry } from "./registry.ts";
 import type { InvalidationInput, InvalidationRule } from "./types.ts";
 
-const SUCCESS_STATUS_FALLBACK = 200;
-
 function toRules(input: InvalidationInput): readonly InvalidationRule[] {
   return Array.isArray(input) ? input : [input as InvalidationRule];
 }
@@ -34,11 +32,32 @@ export function isSuccessfulMutationResponse(
     response?: unknown;
   }
 ): boolean {
-  const status =
-    statusFromResponseValue(ctx.responseValue) ??
-    statusFromResponseValue(ctx.response) ??
-    (typeof ctx.set.status === "number" ? ctx.set.status : SUCCESS_STATUS_FALLBACK);
-  return status >= 200 && status < 400;
+  const responseStatus =
+    statusFromResponseValue(ctx.responseValue) ?? statusFromResponseValue(ctx.response);
+  if (responseStatus !== undefined) {
+    return responseStatus >= 200 && responseStatus < 400;
+  }
+
+  const setStatus = ctx.set.status;
+  if (typeof setStatus === "number") {
+    return setStatus >= 200 && setStatus < 400;
+  }
+  if (typeof setStatus === "string") {
+    // Elysia allows string status codes (e.g. "Not Found"). We cannot map
+    // every possible string to its numeric code without the StatusMap, so we
+    // conservatively treat only common success strings as successful.
+    const successStrings = new Set([
+      "OK",
+      "Created",
+      "Accepted",
+      "No Content",
+      "Reset Content",
+      "Partial Content",
+    ]);
+    return successStrings.has(setStatus);
+  }
+  // No explicit status was set — default to success (200).
+  return true;
 }
 
 export function appendPendingInvalidationHeader(set: Context["set"]): void {
