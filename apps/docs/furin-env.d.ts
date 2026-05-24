@@ -4,6 +4,8 @@ import "@teyik0/furin/link";
 
 declare module "@teyik0/furin/link" {
   interface RouteManifest {
+    "/": { search?: never };
+    "/docs": { search?: never };
     "/docs/api-routes": { search?: never };
     "/docs/caching": { search?: never };
     "/docs/cli": { search?: never };
@@ -16,13 +18,11 @@ declare module "@teyik0/furin/link" {
     "/docs/error-handling": { search?: never };
     "/docs/getting-started": { search?: never };
     "/docs/head-seo": { search?: never };
-    "/docs": { search?: never };
     "/docs/layouts": { search?: never };
     "/docs/link-navigation": { search?: never };
     "/docs/logging": { search?: never };
     "/docs/plugins": { search?: never };
     "/docs/rendering": { search?: never };
     "/docs/routing": { search?: never };
-    "/": { search?: never };
   }
 }
