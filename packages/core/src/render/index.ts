@@ -931,24 +931,39 @@ export async function warmSSGCache(
   warmupLogger.emit();
 
   // Collect all (route, params) render tasks, handling per-route errors early.
+  type StaticParamsResult =
+    | { error: unknown; route: ResolvedRoute }
+    | { paramSets: Record<string, string>[]; route: ResolvedRoute };
+
+  const staticParamsResults: StaticParamsResult[] = await Promise.all(
+    targets.map(async (route) => {
+      try {
+        const paramSets = (await route.page.staticParams?.()) ?? [];
+        return { route, paramSets };
+      } catch (err) {
+        return { error: err, route };
+      }
+    })
+  );
+
   const tasks: Array<() => Promise<void>> = [];
-  for (const route of targets) {
-    let paramSets: Record<string, string>[];
-    try {
-      paramSets = (await route.page.staticParams?.()) ?? [];
-    } catch (err) {
+  for (const result of staticParamsResults) {
+    if ("error" in result) {
       const errorLogger = createLogger({});
       errorLogger.set({
         furin: {
           render: "ssg",
           action: "warmup_failed",
-          route: route.pattern,
+          route: result.route.pattern,
         },
       });
-      errorLogger.error(err instanceof Error ? err : new Error(String(err)));
+      errorLogger.error(
+        result.error instanceof Error ? result.error : new Error(String(result.error))
+      );
       errorLogger.emit();
       continue;
     }
+    const { route, paramSets } = result;
     for (const params of paramSets) {
       tasks.push(async () => {
         try {

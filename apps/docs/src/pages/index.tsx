@@ -1,6 +1,16 @@
 import { Link } from "@teyik0/furin/link";
-import { useState } from "react";
 import { codeToHtml } from "shiki";
+import { FeatureCard, HeroCodeWindow } from "@/components/hero-section";
+import {
+  ApiIcon,
+  CompileIcon,
+  FileIcon,
+  HmrIcon,
+  LayoutIcon,
+  PluginIcon,
+  RenderIcon,
+  TypeIcon,
+} from "@/components/icons";
 import { route } from "./root";
 
 const FILES = {
@@ -194,173 +204,3 @@ export default route.page({
     </div>
   ),
 });
-
-const TAB_NAMES: FileName[] = ["server.ts", "pages/root.tsx", "pages/index.tsx"];
-
-function HeroCodeWindow({ codeHtmlMap }: { codeHtmlMap: Record<FileName, string> }) {
-  const [active, setActive] = useState<FileName>("server.ts");
-
-  return (
-    <div className="w-full max-w-lg overflow-hidden rounded-xl border border-zinc-700/50 shadow-2xl shadow-black/40">
-      {/* Title bar with dots + tabs */}
-      <div className="flex items-center gap-2 border-zinc-700/50 border-b bg-[#161b22] px-4 py-3">
-        <span className="size-3 rounded-full bg-red-500/80" />
-        <span className="size-3 rounded-full bg-yellow-500/80" />
-        <span className="size-3 rounded-full bg-green-500/80" />
-        <div className="ml-2 flex">
-          {TAB_NAMES.map((name) => (
-            <button
-              className={`border-0 px-3 py-1 font-mono text-xs transition-colors ${
-                active === name ? "bg-[#0d1117] text-zinc-200" : "text-zinc-500 hover:text-zinc-300"
-              } ${name === TAB_NAMES[0] ? "rounded-l-md" : ""} ${name === TAB_NAMES.at(-1) ? "rounded-r-md" : ""}`}
-              key={name}
-              onClick={() => setActive(name)}
-              type="button"
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-      </div>
-      {/* Code content */}
-      {/* react-doctor-disable-next-line react/no-danger */}
-      <div
-        className="[&>pre]:overflow-auto [&>pre]:bg-[#0d1117]! [&>pre]:p-6 [&>pre]:text-sm [&>pre]:leading-relaxed"
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted Shiki syntax-highlighted output; never contains user input
-        dangerouslySetInnerHTML={{ __html: codeHtmlMap[active] }}
-      />
-    </div>
-  );
-}
-
-function FeatureCard({
-  icon,
-  title,
-  description,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="rounded-xl border border-border bg-card p-8 transition-all hover:border-foreground/20 hover:shadow-sm">
-      <div className="mb-5 flex size-12 items-center justify-center rounded-lg border border-border bg-muted text-muted-foreground">
-        {icon}
-      </div>
-      <h3 className="mb-3 font-semibold text-foreground text-lg">{title}</h3>
-      <p className="text-muted-foreground leading-relaxed">{description}</p>
-    </div>
-  );
-}
-
-function FileIcon() {
-  return (
-    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <title>File-Based Routing</title>
-      <path
-        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-      />
-    </svg>
-  );
-}
-
-function RenderIcon() {
-  return (
-    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <title>Multiple Rendering Modes</title>
-      <path
-        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-      />
-    </svg>
-  );
-}
-
-function TypeIcon() {
-  return (
-    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <title>Full Type Safety</title>
-      <path
-        d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-      />
-    </svg>
-  );
-}
-
-function LayoutIcon() {
-  return (
-    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <title>Nested Layouts</title>
-      <path
-        d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-      />
-    </svg>
-  );
-}
-
-function HmrIcon() {
-  return (
-    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <title>Fast Refresh</title>
-      <path
-        d="M13 10V3L4 14h7v7l9-11h-7z"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-      />
-    </svg>
-  );
-}
-
-function ApiIcon() {
-  return (
-    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <title>API Routes</title>
-      <path
-        d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-      />
-    </svg>
-  );
-}
-
-function CompileIcon() {
-  return (
-    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <title>Bun Binary Compile</title>
-      <path
-        d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-      />
-    </svg>
-  );
-}
-
-function PluginIcon() {
-  return (
-    <svg className="size-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <title>User Plugins</title>
-      <path
-        d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-      />
-    </svg>
-  );
-}

@@ -208,8 +208,10 @@ export async function scanRootLayout(pagesDir: string): Promise<RootLayout> {
     throw new Error("[furin] root.tsx: createRoute() has no layout.");
   }
 
-  const notFoundEntry = await loadConventionComponent<NotFoundComponent>(pagesDir, "not-found");
-  const errorEntry = await loadConventionComponent<ErrorComponent>(pagesDir, "error");
+  const [notFoundEntry, errorEntry] = await Promise.all([
+    loadConventionComponent<NotFoundComponent>(pagesDir, "not-found"),
+    loadConventionComponent<ErrorComponent>(pagesDir, "error"),
+  ]);
   return {
     path: rootPath,
     route: rootExport,
@@ -279,28 +281,23 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
       continue;
     }
 
-    const notFound = await resolveNearestConvention<NotFoundComponent>(
-      absolutePath,
-      pagesDir,
-      "not-found",
-      notFoundCache,
-      root.notFound
-    );
-
-    const errorComponent = await resolveNearestConvention<ErrorComponent>(
-      absolutePath,
-      pagesDir,
-      "error",
-      errorCache,
-      root.error
-    );
-
-    const segmentBoundaries = await collectSegmentBoundaries(
-      absolutePath,
-      pagesDir,
-      notFoundCache,
-      errorCache
-    );
+    const [notFound, errorComponent, segmentBoundaries] = await Promise.all([
+      resolveNearestConvention<NotFoundComponent>(
+        absolutePath,
+        pagesDir,
+        "not-found",
+        notFoundCache,
+        root.notFound
+      ),
+      resolveNearestConvention<ErrorComponent>(
+        absolutePath,
+        pagesDir,
+        "error",
+        errorCache,
+        root.error
+      ),
+      collectSegmentBoundaries(absolutePath, pagesDir, notFoundCache, errorCache),
+    ]);
 
     if (IS_DEV) {
       const devRoute = await buildDevRoute(absolutePath, relativePath, root);
@@ -373,15 +370,20 @@ async function collectSegmentBoundaries(
   for (let depth = 0; depth < dirs.length; depth++) {
     const dir = dirs[depth] as string;
 
-    if (!errorCache.has(dir)) {
-      errorCache.set(dir, await loadConventionComponent<ErrorComponent>(dir, "error"));
-    }
-    if (!notFoundCache.has(dir)) {
-      notFoundCache.set(dir, await loadConventionComponent<NotFoundComponent>(dir, "not-found"));
-    }
-
-    const errorEntry = errorCache.get(dir);
-    const notFoundEntry = notFoundCache.get(dir);
+    const [errorEntry, notFoundEntry] = await Promise.all([
+      errorCache.has(dir)
+        ? Promise.resolve(errorCache.get(dir))
+        : loadConventionComponent<ErrorComponent>(dir, "error").then((r) => {
+            errorCache.set(dir, r);
+            return r;
+          }),
+      notFoundCache.has(dir)
+        ? Promise.resolve(notFoundCache.get(dir))
+        : loadConventionComponent<NotFoundComponent>(dir, "not-found").then((r) => {
+            notFoundCache.set(dir, r);
+            return r;
+          }),
+    ]);
     if (errorEntry || notFoundEntry) {
       boundaries.push({
         path: dir,
@@ -673,12 +675,19 @@ export async function refreshLayoutChain(
   // so we must only advance chainIdx for directories whose _route module actually
   // exists. A positional assumption (i = chainIdx - 1) drifts whenever
   // isModuleNotFoundError is swallowed for a gap directory.
+  //
+  // Imports are parallelised for speed; patching stays sequential so the
+  // chainIdx-to-layoutDir positional mapping remains deterministic.
+  const freshMods = await Promise.all(
+    layoutDirs.map((layoutDir) =>
+      importFreshLayoutRouteModule(layoutDir, timestamp, resolveImport, ctx)
+    )
+  );
   let chainIdx = 1; // chain[0] is the root
-  for (const layoutDir of layoutDirs) {
+  for (const freshMod of freshMods) {
     if (chainIdx >= chain.length) {
       break;
     }
-    const freshMod = await importFreshLayoutRouteModule(layoutDir, timestamp, resolveImport, ctx);
     if (!freshMod) {
       // No _route module in this directory — no chain entry to match, so
       // do NOT advance chainIdx. The next deeper layoutDir may correspond
@@ -1053,17 +1062,24 @@ async function collectPageFilePaths(dir: string): Promise<string[]> {
     a.name.localeCompare(b.name)
   );
 
+  // Fire subdirectory traversals in parallel, then merge results in the
+  // original alphabetical entry order so the depth-first interleaving is
+  // preserved (file, then its sub-tree, then next file…).
+  const pending: Array<string | Promise<string[]>> = [];
   for (const entry of entries) {
     const absolutePath = join(dir, entry.name);
-
     if (entry.isDirectory()) {
-      files.push(...(await collectPageFilePaths(absolutePath)));
-      continue;
+      pending.push(collectPageFilePaths(absolutePath));
+    } else if (entry.isFile()) {
+      pending.push(absolutePath);
     }
+  }
 
-    if (entry.isFile()) {
-      files.push(absolutePath);
-    }
+  const resolved = await Promise.all(
+    pending.map(async (item) => (typeof item === "string" ? [item] : item))
+  );
+  for (const chunk of resolved) {
+    files.push(...chunk);
   }
 
   return files;
