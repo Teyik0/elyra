@@ -59,7 +59,12 @@ function tagKeyToPropertyName(tag: string): string {
 }
 
 function tagToStringLiteral(tag: string): string {
-  return `'${tag.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
+  // Use JSON.stringify for robust escaping of control chars, unicode
+  // separators, backslashes and quotes, then convert double quotes to single.
+  const json = JSON.stringify(tag);
+  // json is double-quoted; convert to single-quoted literal by escaping
+  // any contained single quotes and swapping the outer quotes.
+  return `'${json.slice(1, -1).replaceAll("'", "\\'")}'`;
 }
 
 /**

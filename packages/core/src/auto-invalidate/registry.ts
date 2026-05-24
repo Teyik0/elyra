@@ -4,6 +4,7 @@ export class AutoInvalidateRegistry {
 
   registerLoaderTags(urlPath: string, tags: readonly string[] | undefined): void {
     if (!tags || tags.length === 0) {
+      this.unregisterPath(urlPath);
       return;
     }
 

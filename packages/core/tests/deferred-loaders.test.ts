@@ -38,7 +38,7 @@ function makeCtx(overrides: Partial<Context> = {}): Context {
 
 function makeRoute(
   pageLoader: ((ctx: Record<string, unknown>) => unknown) | undefined,
-  routeLoaders: ((ctx: Record<string, unknown>) => unknown)[] = []
+  routeLoaders: ((ctx: Record<string, unknown>) => unknown)[]
 ): ResolvedRoute {
   return {
     pattern: "/test",
@@ -66,7 +66,7 @@ function makeRoute(
 
 describe("runLoaders — DeferredData", () => {
   test("normal loader (without defer) → syncData contains everything, deferredPromises absent", async () => {
-    const route = makeRoute(() => ({ title: "hello", count: 42 }));
+    const route = makeRoute(() => ({ title: "hello", count: 42 }), []);
     const result = await runLoaders(route, makeCtx());
 
     expect(result.type).toBe("data");
@@ -80,7 +80,7 @@ describe("runLoaders — DeferredData", () => {
 
   test("loader with defer() → syncData contains scalars, deferredPromises the Promises", async () => {
     const statsPromise = Promise.resolve(99);
-    const route = makeRoute(() => defer({ title: "hello", stats: statsPromise }));
+    const route = makeRoute(() => defer({ title: "hello", stats: statsPromise }), []);
     const result = await runLoaders(route, makeCtx());
 
     expect(result.type).toBe("data");
@@ -102,7 +102,7 @@ describe("runLoaders — DeferredData", () => {
         r(1);
       }, 50)
     );
-    const route = makeRoute(() => defer({ x: slowPromise }));
+    const route = makeRoute(() => defer({ x: slowPromise }), []);
 
     const result = await runLoaders(route, makeCtx());
 
@@ -116,12 +116,14 @@ describe("runLoaders — DeferredData", () => {
   });
 
   test("multiple deferred Promises are all in deferredPromises", async () => {
-    const route = makeRoute(() =>
-      defer({
-        title: "board",
-        stats: Promise.resolve(1),
-        users: Promise.resolve([]),
-      })
+    const route = makeRoute(
+      () =>
+        defer({
+          title: "board",
+          stats: Promise.resolve(1),
+          users: Promise.resolve([]),
+        }),
+      []
     );
     const result = await runLoaders(route, makeCtx());
 
@@ -142,7 +144,7 @@ describe("runLoaders — DeferredData", () => {
         resolve(7);
       },
     };
-    const route = makeRoute(() => defer({ title: "hello", stats: thenable }));
+    const route = makeRoute(() => defer({ title: "hello", stats: thenable }), []);
 
     const result = await runLoaders(route, makeCtx());
 
