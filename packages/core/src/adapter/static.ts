@@ -141,32 +141,55 @@ async function buildTaskQueue(
 ): Promise<Array<() => Promise<void>>> {
   const tasks: Array<() => Promise<void>> = [];
 
-  for (const route of ssgRoutes) {
-    if (!DYNAMIC_SEGMENT_RE.test(route.pattern)) {
-      tasks.push(() =>
-        prerenderAndWrite(route, {}, root, outDir, renderedRoutes, skippedRoutes, basePath)
-      );
-      continue;
-    }
+  type StaticParamsResult =
+    | { paramSets: Record<string, string>[] | null; route: ResolvedRoute }
+    | { error: unknown; paramSets: null; route: ResolvedRoute };
 
-    if (!route.page.staticParams) {
-      console.warn(
-        `[furin] static: skipping dynamic route "${route.pattern}" — no staticParams() defined.`
-      );
-      skippedRoutes.push(route.pattern);
-      continue;
-    }
-
-    try {
-      const paramSets = (await route.page.staticParams()) ?? [];
-      for (const params of paramSets) {
-        tasks.push(() =>
-          prerenderAndWrite(route, params, root, outDir, renderedRoutes, skippedRoutes, basePath)
-        );
+  const staticParamsResults: StaticParamsResult[] = await Promise.all(
+    ssgRoutes.map(async (route) => {
+      if (!DYNAMIC_SEGMENT_RE.test(route.pattern)) {
+        return { route, paramSets: [{}] };
       }
-    } catch (err) {
-      console.error(`[furin] static: staticParams() failed for "${route.pattern}":`, err);
-      skippedRoutes.push(route.pattern);
+      if (!route.page.staticParams) {
+        console.warn(
+          `[furin] static: skipping dynamic route "${route.pattern}" — no staticParams() defined.`
+        );
+        skippedRoutes.push(route.pattern);
+        return { route, paramSets: null };
+      }
+      try {
+        const paramSets = (await route.page.staticParams()) ?? [];
+        return { route, paramSets };
+      } catch (err) {
+        return { error: err, paramSets: null, route };
+      }
+    })
+  );
+
+  for (const result of staticParamsResults) {
+    if ("error" in result) {
+      console.error(
+        `[furin] static: staticParams() failed for "${result.route.pattern}":`,
+        result.error
+      );
+      skippedRoutes.push(result.route.pattern);
+      continue;
+    }
+    if (result.paramSets === null) {
+      continue;
+    }
+    for (const params of result.paramSets) {
+      tasks.push(() =>
+        prerenderAndWrite(
+          result.route,
+          params,
+          root,
+          outDir,
+          renderedRoutes,
+          skippedRoutes,
+          basePath
+        )
+      );
     }
   }
 
