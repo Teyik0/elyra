@@ -260,5 +260,9 @@ describe("writeRouteTypes", () => {
     expect(aaaIdx).toBeGreaterThanOrEqual(0);
     expect(aaaIdx).toBeLessThan(bbbIdx);
     expect(bbbIdx).toBeLessThan(zzzIdx);
+
+    // Verify deduplication: "aaa" must appear exactly once.
+    const aaaOccurrences = content.split("aaa: 'aaa'").length - 1;
+    expect(aaaOccurrences).toBe(1);
   });
 });

@@ -45,16 +45,51 @@ export function isSuccessfulMutationResponse(
   if (typeof setStatus === "string") {
     // Elysia allows string status codes (e.g. "Not Found"). We cannot map
     // every possible string to its numeric code without the StatusMap, so we
-    // conservatively treat only common success strings as successful.
-    const successStrings = new Set([
-      "OK",
-      "Created",
-      "Accepted",
-      "No Content",
-      "Reset Content",
-      "Partial Content",
+    // treat known client-error (4xx) and server-error (5xx) texts as failures
+    // and everything else as success (1xx, 2xx, 3xx, and any unknown string).
+    const errorStatusTexts = new Set([
+      "Bad Request",
+      "Unauthorized",
+      "Payment Required",
+      "Forbidden",
+      "Not Found",
+      "Method Not Allowed",
+      "Not Acceptable",
+      "Proxy Authentication Required",
+      "Request Timeout",
+      "Conflict",
+      "Gone",
+      "Length Required",
+      "Precondition Failed",
+      "Payload Too Large",
+      "URI Too Long",
+      "Unsupported Media Type",
+      "Range Not Satisfiable",
+      "Expectation Failed",
+      "I'm a teapot",
+      "Misdirected Request",
+      "Unprocessable Content",
+      "Locked",
+      "Failed Dependency",
+      "Too Early",
+      "Upgrade Required",
+      "Precondition Required",
+      "Too Many Requests",
+      "Request Header Fields Too Large",
+      "Unavailable For Legal Reasons",
+      "Internal Server Error",
+      "Not Implemented",
+      "Bad Gateway",
+      "Service Unavailable",
+      "Gateway Timeout",
+      "HTTP Version Not Supported",
+      "Variant Also Negotiates",
+      "Insufficient Storage",
+      "Loop Detected",
+      "Not Extended",
+      "Network Authentication Required",
     ]);
-    return successStrings.has(setStatus);
+    return !errorStatusTexts.has(setStatus);
   }
   // No explicit status was set — default to success (200).
   return true;

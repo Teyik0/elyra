@@ -77,7 +77,8 @@ function tagToStringLiteral(tag: string): string {
  */
 /** @internal Exported for unit testing only. */
 export function writeRouteTypes(routes: ResolvedRoute[], projectRoot: string): void {
-  const entries = routes.map((r) => {
+  const sortedRoutes = [...routes].sort((a, b) => a.pattern.localeCompare(b.pattern));
+  const entries = sortedRoutes.map((r) => {
     const typeKey = patternToTypeString(r.pattern);
     const isDynamic = typeKey.startsWith("`");
     const querySchema = r.routeChain?.find((rt) => rt.query)?.query;
