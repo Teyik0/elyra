@@ -50,7 +50,9 @@ jobs:
         run: bun run knip
 
       - name: Fetch main branch
-        run: git fetch origin main:main
+        run: |
+          git fetch origin main
+          git branch main origin/main 2>/dev/null || true
 
       - name: React Doctor
         run: bunx react-doctor -y --diff main --annotations
