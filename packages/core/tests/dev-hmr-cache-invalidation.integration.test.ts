@@ -147,19 +147,30 @@ describe.serial("dev HMR cache invalidation on unrelated _route edit", () => {
     // Step 4: hit `/` again. The served HTML MUST embed the new chunk URL.
     // Without the fix, the ISR cache keeps serving the stale HTML with the
     // old chunk URL, and the browser ends up in an infinite reload loop.
+    //
+    // Re-read `/_bun_hmr_entry` on every iteration: on slow CI runners Bun can
+    // rebuild several times during this loop, so we must compare the home
+    // page's chunk URL against the *current* shell chunk, not a captured one.
     let homeHtmlAfter = "";
     let homeChunkAfter: string | null = null;
+    let currentShellChunk: string | null = latestShellChunk;
     for (let i = 0; i < 40; i++) {
       homeHtmlAfter = await (await fetch(`http://localhost:${port}/`)).text();
       homeChunkAfter = extractDevClientEntry(homeHtmlAfter);
-      if (homeChunkAfter === latestShellChunk) {
+      const hmrHtml = await (await fetch(`http://localhost:${port}/_bun_hmr_entry`)).text();
+      currentShellChunk = extractDevClientEntry(hmrHtml);
+      if (
+        homeChunkAfter !== null &&
+        homeChunkAfter === currentShellChunk &&
+        homeChunkAfter !== initialChunk
+      ) {
         break;
       }
       await Bun.sleep(250);
     }
 
     expect(homeHtmlAfter).toContain("ISR home page");
-    expect(homeChunkAfter).toBe(latestShellChunk);
+    expect(homeChunkAfter).toBe(currentShellChunk);
     expect(homeChunkAfter).not.toBe(initialChunk);
   }, 20_000);
 });
