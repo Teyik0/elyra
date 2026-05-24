@@ -75,6 +75,7 @@ export function isSuccessfulMutationResponse(
       "Upgrade Required",
       "Precondition Required",
       "Too Many Requests",
+      "Enhance Your Calm",
       "Request Header Fields Too Large",
       "Unavailable For Legal Reasons",
       "Internal Server Error",
