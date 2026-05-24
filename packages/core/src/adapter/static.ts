@@ -9,6 +9,7 @@ import { prerenderSSG } from "../render/index.ts";
 import { generateProdIndexHtml } from "../render/shell.ts";
 import { setProductionTemplateContent } from "../render/template.ts";
 import type { ResolvedRoute, RootLayout } from "../router.ts";
+import { mapWithConcurrency } from "../utils.ts";
 
 /** Maximum concurrent pre-render calls (mirrors warmSSGCache). */
 const STATIC_CONCURRENCY = 4;
@@ -145,8 +146,10 @@ async function buildTaskQueue(
     | { paramSets: Record<string, string>[] | null; route: ResolvedRoute }
     | { error: unknown; paramSets: null; route: ResolvedRoute };
 
-  const staticParamsResults: StaticParamsResult[] = await Promise.all(
-    ssgRoutes.map(async (route) => {
+  const staticParamsResults: StaticParamsResult[] = await mapWithConcurrency(
+    ssgRoutes,
+    STATIC_CONCURRENCY,
+    async (route) => {
       if (!DYNAMIC_SEGMENT_RE.test(route.pattern)) {
         return { route, paramSets: [{}] };
       }
@@ -163,7 +166,7 @@ async function buildTaskQueue(
       } catch (err) {
         return { error: err, paramSets: null, route };
       }
-    })
+    }
   );
 
   for (const result of staticParamsResults) {
@@ -176,6 +179,16 @@ async function buildTaskQueue(
       continue;
     }
     if (result.paramSets === null) {
+      continue;
+    }
+    // Defend against staticParams() returning a non-array (e.g. a bare object
+    // or `null`-after-coercion). Without this guard, a single malformed route
+    // would throw out of `for...of` and abort the entire build.
+    if (!Array.isArray(result.paramSets)) {
+      console.error(
+        `[furin] static: staticParams() for "${result.route.pattern}" returned a non-array value; skipping route.`
+      );
+      skippedRoutes.push(result.route.pattern);
       continue;
     }
     for (const params of result.paramSets) {

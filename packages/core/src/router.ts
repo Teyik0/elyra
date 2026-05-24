@@ -36,6 +36,7 @@ import {
   collectRouteChainFromRoute,
   isFurinPage,
   isFurinRoute,
+  mapWithConcurrency,
   validateRouteChain,
 } from "./utils.ts";
 
@@ -1050,6 +1051,13 @@ export function createRoutePlugin(route: ResolvedRoute, root: RootLayout, buildI
   return plugin;
 }
 
+/**
+ * Per-level cap on parallel directory traversals. Bounds peak in-flight
+ * `readdir` calls to roughly `DIR_SCAN_CONCURRENCY * tree-depth`, which keeps
+ * a wide flat pagesDir from opening thousands of FDs at once.
+ */
+const DIR_SCAN_CONCURRENCY = 8;
+
 async function collectPageFilePaths(dir: string): Promise<string[]> {
   const files: string[] = [];
 
@@ -1062,22 +1070,19 @@ async function collectPageFilePaths(dir: string): Promise<string[]> {
     a.name.localeCompare(b.name)
   );
 
-  // Fire subdirectory traversals in parallel, then merge results in the
+  // Walk subdirectories with bounded parallelism, then merge results in the
   // original alphabetical entry order so the depth-first interleaving is
   // preserved (file, then its sub-tree, then next file…).
-  const pending: Array<string | Promise<string[]>> = [];
-  for (const entry of entries) {
+  const resolved = await mapWithConcurrency(entries, DIR_SCAN_CONCURRENCY, async (entry) => {
     const absolutePath = join(dir, entry.name);
     if (entry.isDirectory()) {
-      pending.push(collectPageFilePaths(absolutePath));
-    } else if (entry.isFile()) {
-      pending.push(absolutePath);
+      return await collectPageFilePaths(absolutePath);
     }
-  }
-
-  const resolved = await Promise.all(
-    pending.map(async (item) => (typeof item === "string" ? [item] : item))
-  );
+    if (entry.isFile()) {
+      return [absolutePath];
+    }
+    return [];
+  });
   for (const chunk of resolved) {
     files.push(...chunk);
   }
