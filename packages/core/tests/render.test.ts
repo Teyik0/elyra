@@ -783,7 +783,7 @@ describe("render.tsx", () => {
       expect(response.headers.get("Location")).toBe("/login");
     });
 
-    test("émet les <script> de résolution dans l'ordre de settlement, pas l'ordre d'insertion", async () => {
+    test("emits resolution <script> tags in settlement order, not insertion order", async () => {
       // 'slow' is inserted FIRST in defer() but resolves LAST. 'fast' is inserted
       // SECOND but resolves FIRST. The HTML stream MUST emit the fast resolve
       // <script> before the slow one — otherwise streaming is cosmetic and a
@@ -813,7 +813,7 @@ describe("render.tsx", () => {
       expect(fastIdx).toBeLessThan(slowIdx);
     });
 
-    test("rejette quand un loader retourne defer() hors du mode SSR", async () => {
+    test("rejects when a loader returns defer() outside SSR mode", async () => {
       const ssrRoute = await getRoute("/ssr-page");
       const root = await getRoot();
       const deferredLoader = () =>

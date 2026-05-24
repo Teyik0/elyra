@@ -7,11 +7,11 @@ import { parseDeferredNdjson } from "../src/deferred-ndjson";
 // parseDeferredNdjson(stream: ReadableStream<Uint8Array>):
 //   Promise<{ syncData: Record<string, unknown>; deferredPromises: Record<string, Promise<unknown>> }>
 //
-// Comportement:
-// - Ligne 0 : squelette CrossJSON — contient syncData + placeholders pour les Promises
-// - Lignes suivantes : résolutions des Promises déférées (CrossJSON)
+// Behaviour:
+// - Line 0: CrossJSON skeleton — contains syncData + placeholders for Promises
+// - Subsequent lines: deferred Promise resolutions (CrossJSON)
 //
-// On simule le format émis par toCrossJSONStream({ syncField: "x", stats: Promise.resolve(42) })
+// We simulate the format emitted by toCrossJSONStream({ syncField: "x", stats: Promise.resolve(42) })
 
 function makeNdjsonStream(lines: string[]): ReadableStream<Uint8Array> {
   const enc = new TextEncoder();
@@ -26,8 +26,8 @@ function makeNdjsonStream(lines: string[]): ReadableStream<Uint8Array> {
 }
 
 describe("parseDeferredNdjson()", () => {
-  test("parse un stream NDJSON avec seulement des données synchrones", async () => {
-    // Simule toCrossJSONStream({ title: "hello" }) → 1 ligne (pas de Promises)
+  test("parses an NDJSON stream with only synchronous data", async () => {
+    // Simulates toCrossJSONStream({ title: "hello" }) → 1 line (no Promises)
     const syncValue = { title: "hello", count: 42 };
     const crossJson = toCrossJSON(syncValue);
     const stream = makeNdjsonStream([JSON.stringify(crossJson)]);
@@ -38,8 +38,8 @@ describe("parseDeferredNdjson()", () => {
     expect(Object.keys(result.deferredPromises)).toHaveLength(0);
   });
 
-  test("parse un stream NDJSON avec une Promise déférée", async () => {
-    // Simule toCrossJSONStream({ title: "board", stats: Promise.resolve(99) })
+  test("parses an NDJSON stream with a deferred Promise", async () => {
+    // Simulates toCrossJSONStream({ title: "board", stats: Promise.resolve(99) })
     const statsPromise = Promise.resolve(99);
     const ndjsonLines: string[] = [];
     const stream = toCrossJSONStream({ title: "board", stats: statsPromise });
@@ -55,15 +55,15 @@ describe("parseDeferredNdjson()", () => {
     const ndjsonStream = makeNdjsonStream(ndjsonLines);
     const result = await parseDeferredNdjson(ndjsonStream, undefined);
 
-    // syncData contient les scalaires
+    // syncData contains the scalars
     expect(result.syncData.title).toBe("board");
-    // deferredPromises contient une Promise pour "stats"
+    // deferredPromises contains a Promise for "stats"
     expect(result.deferredPromises.stats).toBeInstanceOf(Promise);
     const resolvedStats = await result.deferredPromises.stats;
     expect(resolvedStats).toBe(99);
   });
 
-  test("retourne dès la ligne initiale et résout les Promises avec les lignes suivantes", async () => {
+  test("returns on the initial line and resolves Promises with subsequent lines", async () => {
     const enc = new TextEncoder();
     let controller!: ReadableStreamDefaultController<Uint8Array>;
     const stream = new ReadableStream<Uint8Array>({

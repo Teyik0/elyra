@@ -7,24 +7,24 @@ const SCRIPT_OPEN_RE = /^<script[^>]*>/;
 const SCRIPT_CLOSE_RE = /<\/script>$/;
 
 describe("buildDeferredScript()", () => {
-  test("contient l'affectation window.__FURIN_DEFERRED__", () => {
+  test("contains the window.__FURIN_DEFERRED__ assignment", () => {
     const script = buildDeferredScript([]);
     expect(script).toContain("window.__FURIN_DEFERRED__");
   });
 
-  test("sérialise les clés deferred dans _deferredKeys", () => {
+  test("serializes deferred keys in _deferredKeys", () => {
     const script = buildDeferredScript(["stats", "comments"]);
     expect(script).toContain("_deferredKeys");
     expect(script).toContain('"stats"');
     expect(script).toContain('"comments"');
   });
 
-  test("ne sérialise PAS les données sync (elles vivent dans __FURIN_DATA__)", () => {
+  test("does NOT serialize sync data (it lives in __FURIN_DATA__)", () => {
     const script = buildDeferredScript([]);
     expect(script).not.toContain("_data");
   });
 
-  test("contient les méthodes resolve, reject, getPromise", () => {
+  test("contains resolve, reject, getPromise methods", () => {
     const script = buildDeferredScript([]);
     expect(script).toContain("resolve(");
     expect(script).toContain("reject(");
@@ -36,45 +36,45 @@ describe("buildDeferredScript()", () => {
     expect(script).toContain("_resolvers");
   });
 
-  test("est enveloppé dans une balise <script>", () => {
+  test("is wrapped in a <script> tag", () => {
     const script = buildDeferredScript([]);
     expect(script.trim()).toMatch(SCRIPT_TAG_RE);
     expect(script).toContain("</script>");
   });
 
-  test("clés vides produisent un script valide", () => {
+  test("empty keys produce a valid script", () => {
     const script = buildDeferredScript([]);
     expect(script).toContain("window.__FURIN_DEFERRED__");
   });
 });
 
 describe("buildDeferredResolution()", () => {
-  test("génère un script qui appelle window.__FURIN_DEFERRED__.resolve", () => {
+  test("generates a script that calls window.__FURIN_DEFERRED__.resolve", () => {
     const chunk = toCrossJSON("test_value");
     const script = buildDeferredResolution("stats", chunk, "resolve");
     expect(script).toContain("window.__FURIN_DEFERRED__.resolve");
     expect(script).toContain('"stats"');
   });
 
-  test("pour une rejection, appelle window.__FURIN_DEFERRED__.reject", () => {
+  test("for a rejection, calls window.__FURIN_DEFERRED__.reject", () => {
     const chunk = toCrossJSON(new Error("oops"));
     const script = buildDeferredResolution("stats", chunk, "reject");
     expect(script).toContain("window.__FURIN_DEFERRED__.reject");
     expect(script).toContain('"stats"');
   });
 
-  test("est enveloppé dans une balise <script>", () => {
+  test("is wrapped in a <script> tag", () => {
     const chunk = toCrossJSON(42);
     const script = buildDeferredResolution("x", chunk, "resolve");
     expect(script.trim()).toMatch(SCRIPT_TAG_RE);
     expect(script).toContain("</script>");
   });
 
-  test("le chunk seroval peut être désérialisé par fromCrossJSON côté client (avec options vides)", () => {
+  test("the seroval chunk can be deserialized by fromCrossJSON on the client (with empty options)", () => {
     const value = { nested: { n: 1 }, arr: [1, 2, 3] };
     const chunk = toCrossJSON(value);
     const script = buildDeferredResolution("data", chunk, "resolve");
-    // Simule ce que le code d'hydratation fait : JSON.parse puis fromCrossJSON
+    // Simulates what the hydration code does: JSON.parse then fromCrossJSON
     // Format: <script>window.__FURIN_DEFERRED__.resolve("data",CHUNK)</script>
     const marker = 'resolve("data",';
     const startIdx = script.indexOf(marker) + marker.length;
@@ -85,7 +85,7 @@ describe("buildDeferredResolution()", () => {
   });
 
   // ── XSS hardening ─────────────────────────────────────────────────────────
-  test("XSS : une valeur contenant </script> est échappée — pas de break-out de la balise", () => {
+  test("XSS: a value containing </script> is escaped — no tag break-out", () => {
     const evil = "</script><script>window.pwned=1</script>";
     const chunk = toCrossJSON(evil);
     const script = buildDeferredResolution("payload", chunk, "resolve");

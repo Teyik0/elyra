@@ -20,7 +20,7 @@
     "@mdx-js/mdx": "^3.1.1",
     "@orama/orama": "^3.1.18",
     "@tailwindcss/typography": "^0.5.19",
-    "@tanstack/react-query": "^5.100.10",
+    "@tanstack/react-query": "^5.100.14",
     "@teyik0/furin": "workspace:*",
     "bun-plugin-tailwind": "^0.1.2",
     "class-variance-authority": "^0.7.1",
@@ -34,7 +34,7 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "remark-gfm": "^4.0.1",
-    "shiki": "^4.0.2",
+    "shiki": "^4.1.0",
     "tailwind-merge": "^3.6.0",
     "unist-util-visit-parents": "^6.0.2"
   },

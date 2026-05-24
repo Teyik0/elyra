@@ -10,7 +10,7 @@ async function renderToString(element: React.ReactNode): Promise<string> {
 }
 
 describe("<Await>", () => {
-  test("affiche le contenu quand la Promise résout", async () => {
+  test("renders content when the Promise resolves", async () => {
     const promise = Promise.resolve("hello world");
     const html = await renderToString(
       createElement(
@@ -27,7 +27,7 @@ describe("<Await>", () => {
     expect(html).not.toContain("loading");
   });
 
-  test("affiche le fallback Suspense quand la Promise résout après un délai", async () => {
+  test("renders Suspense fallback when the Promise resolves after a delay", async () => {
     const delayed = new Promise<string>((r) => setTimeout(() => r("delayed value"), 10));
     const html = await renderToString(
       createElement(
@@ -40,18 +40,17 @@ describe("<Await>", () => {
         })
       )
     );
-    // allReady attend la résolution — le contenu final est affiché
+    // allReady waits for resolution — the final content is rendered
     expect(html).toContain("delayed value");
   });
 
-  test("bascule en client-rendering quand la Promise rejette (comportement React SSR)", async () => {
-    // React SSR ne rend pas errorElement inline — il émet un marqueur
-    // client-rendering (<!--$!-->) pour que l'hydratation gère l'erreur.
-    // Le errorElement est rendu uniquement côté client après hydratation.
+  test("falls back to client-rendering when the Promise rejects (React SSR behaviour)", async () => {
+    // React SSR does not render errorElement inline — it emits a
+    // client-rendering marker (<!--$!-->) so hydration handles the error.
+    // errorElement is rendered on the client only, after hydration.
     //
-    // Pour éviter une unhandled rejection dans Bun, on construit une Promise
-    // pre-rejected via un objet thenable qui ne retourne jamais la rejection
-    // jusqu'à ce que React la consomme.
+    // To avoid an unhandled rejection in Bun, we build a pre-rejected Promise
+    // via a thenable that never surfaces the rejection until React consumes it.
     let doReject!: (e: unknown) => void;
     const rejected = new Promise<string>((_, reject) => {
       doReject = reject;
@@ -82,13 +81,13 @@ describe("<Await>", () => {
 
     const html = await new Response(stream).text();
 
-    // React SSR émet soit le fallback soit un marqueur client-rendering
+    // React SSR emits either the fallback or a client-rendering marker
     expect(html.length).toBeGreaterThan(0);
-    // Le rendu produit du HTML valide (pas d'exception non catchée)
+    // Render produces valid HTML (no uncaught exception)
     expect(html).toContain("<!--");
   });
 
-  test("rend les enfants avec un objet complexe résolu", async () => {
+  test("renders children with a resolved complex object", async () => {
     const data = { name: "Alice", count: 42 };
     const promise = Promise.resolve(data);
     const html = await renderToString(
@@ -107,7 +106,7 @@ describe("<Await>", () => {
 });
 
 describe("useAsyncError()", () => {
-  test("retourne undefined hors d'un boundary d'erreur", async () => {
+  test("returns undefined outside an error boundary", async () => {
     function OutsideBoundary() {
       const error = useAsyncError();
       return createElement("span", null, String(error));
@@ -117,7 +116,7 @@ describe("useAsyncError()", () => {
     expect(html).toContain("undefined");
   });
 
-  test("retourne l'erreur propagée à l'intérieur du errorElement d'Await", async () => {
+  test("returns the error propagated inside Await's errorElement", async () => {
     function ErrorDisplay() {
       const error = useAsyncError();
       return createElement("span", null, error instanceof Error ? error.message : String(error));

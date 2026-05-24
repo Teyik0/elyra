@@ -1,14 +1,14 @@
 # create-furin
 
-Scaffolder officiel pour [Furin](https://github.com/Teyik0/furin) — le meta-framework React construit sur Elysia + Bun.
+Official scaffolder for [Furin](https://github.com/Teyik0/furin) — the React meta-framework built on Elysia + Bun.
 
-## Prérequis
+## Prerequisites
 
 - [Bun](https://bun.sh) ≥ 1.0
 
 ---
 
-## Utilisation
+## Usage
 
 ### Via `bun create`
 
@@ -22,7 +22,7 @@ bun create furin@latest my-app
 bunx create-furin@latest my-app
 ```
 
-### En local (développement dans le monorepo)
+### Locally (development inside the monorepo)
 
 ```bash
 bun apps/scaffolder/src/index.ts my-app
@@ -38,23 +38,23 @@ Usage:
   bun create furin@latest <dir> --template <simple|full>
 
 Options:
-  --template <simple|full>   Choix du template (par défaut : interactif)
-  --yes                      Passer les confirmations interactives
-  --no-install               Ne pas lancer bun install après la génération
-  --version                  Afficher la version de @teyik0/furin ciblée
-  --help                     Afficher l'aide
+  --template <simple|full>   Template choice (default: interactive)
+  --yes                      Skip interactive confirmations
+  --no-install               Do not run bun install after scaffolding
+  --version                  Show the targeted @teyik0/furin version
+  --help                     Show help
 ```
 
-### Exemples
+### Examples
 
 ```bash
-# Mode interactif complet
+# Full interactive mode
 bun create furin@latest my-app
 
-# Générer directement, sans prompts
+# Scaffold directly, no prompts
 bun create furin@latest my-app --template full --yes
 
-# Générer sans installer les dépendances
+# Scaffold without installing dependencies
 bun create furin@latest my-app --no-install
 ```
 
@@ -62,7 +62,7 @@ bun create furin@latest my-app --no-install
 
 ## Templates
 
-### `simple` — Tailwind CSS + route API
+### `simple` — Tailwind CSS + API route
 
 ```text
 my-app/
@@ -84,11 +84,11 @@ my-app/
         └── index.tsx
 ```
 
-Dépendances : `@teyik0/furin`, `elysia`, `react`, `react-dom`, `bun-plugin-tailwind`, `tailwindcss`
+Dependencies: `@teyik0/furin`, `elysia`, `react`, `react-dom`, `bun-plugin-tailwind`, `tailwindcss`
 
 ---
 
-### `full` — shadcn/ui + Tailwind CSS + routes API
+### `full` — shadcn/ui + Tailwind CSS + API routes
 
 ```text
 my-app/
@@ -97,7 +97,7 @@ my-app/
 ├── bunfig.toml
 ├── furin.config.ts
 ├── furin-env.d.ts
-├── components.json         ← config shadcn/ui
+├── components.json         ← shadcn/ui config
 ├── .gitignore
 ├── public/
 │   └── favicon.ico
@@ -113,45 +113,45 @@ my-app/
     │       ├── card.tsx
     │       └── input.tsx
     └── pages/
-        ├── globals.css     ← variables CSS oklch (thème clair + sombre)
+        ├── globals.css     ← CSS oklch variables (light + dark theme)
         ├── root.tsx
         └── index.tsx
 ```
 
-Dépendances : tout ce qui est dans `simple`, plus `class-variance-authority`, `clsx`, `tailwind-merge`, `@radix-ui/react-slot`, `lucide-react`, `tw-animate-css`
+Dependencies: everything in `simple`, plus `class-variance-authority`, `clsx`, `tailwind-merge`, `@radix-ui/react-slot`, `lucide-react`, `tw-animate-css`
 
 ---
 
-## Après la génération
+## After scaffolding
 
-Le scaffolder lance automatiquement :
+The scaffolder automatically runs:
 
-1. **`bun install`** — installe toutes les dépendances
-2. **`git init`** + premier commit `chore: initial scaffold`
+1. **`bun install`** — installs all dependencies
+2. **`git init`** + first commit `chore: initial scaffold`
 
-Pour démarrer :
+To get started:
 
 ```bash
 cd my-app
-bun dev           # http://localhost:3000
-bun tscheck    # vérification TypeScript
+bun dev        # http://localhost:3000
+bun tscheck    # TypeScript check
 ```
 
 ---
 
-## Développement du scaffolder
+## Scaffolder development
 
 ```bash
-# Tests (53 cas)
+# Tests (53 cases)
 bun run --filter="create-furin" test
 
-# Vérification TypeScript
+# TypeScript check
 bun run --filter="create-furin" tscheck
 ```
 
-### Mettre à jour une version de dépendance
+### Updating a dependency version
 
-Édite `src/generated/package-catalog.json` — les templates récupèrent automatiquement les nouvelles versions au prochain scaffold :
+Edit `src/generated/package-catalog.json` — templates automatically pick up new versions on the next scaffold:
 
 ```json
 {
@@ -161,8 +161,8 @@ bun run --filter="create-furin" tscheck
 }
 ```
 
-### Ajouter un template
+### Adding a template
 
-1. Crée le dossier `templates/<id>/` avec les fichiers souhaités
-2. Ajoute l'entrée dans `templates/manifest.json` (schema v2)
-3. Les fichiers `.ejs` sont rendus via EJS — les autres sont copiés byte-for-byte
+1. Create the `templates/<id>/` folder with the desired files
+2. Add the entry to `templates/manifest.json` (schema v2)
+3. `.ejs` files are rendered via EJS — others are copied byte-for-byte

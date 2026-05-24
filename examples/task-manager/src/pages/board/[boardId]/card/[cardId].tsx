@@ -150,6 +150,7 @@ export default route.page({
                   Title
                 </label>
                 <input
+                  aria-label="Card title"
                   className="w-full rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-white outline-none transition-all placeholder:text-zinc-600 focus:border-violet-500/50 focus:bg-white/6 focus:ring-1 focus:ring-violet-500/20"
                   defaultValue={card.title}
                   id="card-title"
@@ -167,6 +168,7 @@ export default route.page({
                   Description
                 </label>
                 <textarea
+                  aria-label="Card description"
                   className="w-full resize-none rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-sm text-white outline-none transition-all placeholder:text-zinc-600 focus:border-violet-500/50 focus:bg-white/6 focus:ring-1 focus:ring-violet-500/20"
                   defaultValue={card.description}
                   id="card-description"

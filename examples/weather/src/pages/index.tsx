@@ -42,6 +42,7 @@ export default route.page({
             reads via query.city. Works with JavaScript disabled. */}
         <form action="/" className="flex gap-3" method="get">
           <input
+            aria-label="City name"
             className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-white outline-none placeholder:text-zinc-500 focus:border-cyan-400/50 focus:ring-1 focus:ring-cyan-400/30"
             defaultValue={city}
             key={city}

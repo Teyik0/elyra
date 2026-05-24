@@ -115,7 +115,7 @@ function runResolutionScript(
 }
 
 describe("Deferred hydration registry — race orders", () => {
-  test("(a) chunk arrive AVANT l'entry hydrate → resolved après patch", async () => {
+  test("(a) chunk arrives BEFORE hydrate entry → resolved after patch", async () => {
     const reg = bootRegistry(["stats"]);
 
     // Server pushes the resolution chunk *before* hydrate.ts runs.
@@ -130,7 +130,7 @@ describe("Deferred hydration registry — race orders", () => {
     await expect(promise).resolves.toEqual({ count: 42 });
   });
 
-  test("(b) chunk arrive APRÈS l'entry, Await monté AVANT → resolves when chunk lands", async () => {
+  test("(b) chunk arrives AFTER entry, Await mounted BEFORE → resolves when chunk lands", async () => {
     const reg = bootRegistry(["stats"]);
     applyHydrationPatch(reg);
 
@@ -143,7 +143,7 @@ describe("Deferred hydration registry — race orders", () => {
     await expect(promise).resolves.toEqual({ count: 99 });
   });
 
-  test("(c) chunk arrive APRÈS l'entry, Await monté APRÈS le chunk → resolves immediately", async () => {
+  test("(c) chunk arrives AFTER entry, Await mounted AFTER the chunk → resolves immediately", async () => {
     const reg = bootRegistry(["stats"]);
     applyHydrationPatch(reg);
 
@@ -156,7 +156,7 @@ describe("Deferred hydration registry — race orders", () => {
     await expect(promise).resolves.toEqual({ count: 7 });
   });
 
-  test("(d) Await monté, jamais de chunk → reste pending", async () => {
+  test("(d) Await mounted, chunk never arrives → stays pending", async () => {
     const reg = bootRegistry(["stats"]);
     applyHydrationPatch(reg);
 
@@ -174,7 +174,7 @@ describe("Deferred hydration registry — race orders", () => {
     expect(settled).toBe("pending");
   });
 
-  test("rejection : chunk reject avant hydrate → useAsyncError reçoit l'erreur", async () => {
+  test("rejection: reject chunk before hydrate → useAsyncError receives the error", async () => {
     const reg = bootRegistry(["stats"]);
     runResolutionScript(reg, "stats", new Error("server boom"), "reject");
 
@@ -186,7 +186,7 @@ describe("Deferred hydration registry — race orders", () => {
     expect((err as Error).message).toBe("server boom");
   });
 
-  test("multiples clés : ordres mixés résolvent indépendamment", async () => {
+  test("multiple keys: mixed orders resolve independently", async () => {
     const reg = bootRegistry(["a", "b", "c"]);
 
     // "a" arrives before hydrate

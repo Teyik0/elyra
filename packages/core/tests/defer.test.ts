@@ -2,23 +2,23 @@ import { describe, expect, test } from "bun:test";
 import { defer, isDeferred } from "../src/client";
 
 describe("defer()", () => {
-  test("retourne un objet marqué __isDeferred = true", () => {
+  test("returns an object marked __isDeferred = true", () => {
     const result = defer({ board: "x", stats: Promise.resolve(1) });
     expect(result.__isDeferred).toBe(true);
   });
 
-  test("préserve les valeurs synchrones", () => {
+  test("preserves synchronous values", () => {
     const result = defer({ title: "hello", count: 42 });
     expect(result.title).toBe("hello");
     expect(result.count).toBe(42);
   });
 
-  test("préserve les Promises", async () => {
+  test("preserves Promises", async () => {
     const result = defer({ board: "x", stats: Promise.resolve(99) });
     expect(await result.stats).toBe(99);
   });
 
-  test("les champs scalaires ne sont pas des Promises", () => {
+  test("scalar fields are not Promises", () => {
     const result = defer({ board: "x", stats: Promise.resolve(1) });
     expect((result.board as unknown) instanceof Promise).toBe(false);
     expect((result.stats as unknown) instanceof Promise).toBe(true);
@@ -30,7 +30,7 @@ describe("defer() — nested objects (documented limitation)", () => {
   // nested objects are passed through to syncData as-is, NOT split into
   // deferredPromises. This is intentional — less magic, more predictable —
   // and documented here as a regression filet.
-  test("Promise imbriquée dans un objet : reste dans syncData, n'est pas extraite", () => {
+  test("Promise nested inside an object: stays in syncData, is not extracted", () => {
     const innerPromise = Promise.resolve(123);
     const result = defer({
       outer: { inner: innerPromise, plain: "ok" },
@@ -46,21 +46,21 @@ describe("defer() — nested objects (documented limitation)", () => {
 });
 
 describe("isDeferred()", () => {
-  test("retourne true pour un objet créé par defer()", () => {
+  test("returns true for an object created by defer()", () => {
     const result = defer({ x: 1 });
     expect(isDeferred(result)).toBe(true);
   });
 
-  test("retourne false pour un objet ordinaire", () => {
+  test("returns false for a plain object", () => {
     expect(isDeferred({ x: 1 })).toBe(false);
   });
 
-  test("retourne false si la marque est absente, héritée ou falsy", () => {
+  test("returns false if the mark is absent, inherited, or falsy", () => {
     expect(isDeferred({ __isDeferred: false })).toBe(false);
     expect(isDeferred(Object.create({ __isDeferred: true }))).toBe(false);
   });
 
-  test("retourne false pour null/undefined/primitives", () => {
+  test("returns false for null/undefined/primitives", () => {
     expect(isDeferred(null)).toBe(false);
     expect(isDeferred(undefined)).toBe(false);
     expect(isDeferred(42)).toBe(false);
