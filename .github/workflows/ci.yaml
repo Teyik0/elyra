@@ -49,6 +49,9 @@ jobs:
       - name: Knip
         run: bun run knip
 
+      - name: Fetch main branch
+        run: git fetch origin main:main
+
       - name: React Doctor
         run: bunx react-doctor -y --diff main --annotations
 
