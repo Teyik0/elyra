@@ -51,7 +51,7 @@ jobs:
         run: bun run knip
 
       - name: React Doctor
-        run: bunx react-doctor -y --full
+        run: bunx react-doctor --full
 
       - name: Setup auth for Bun
         working-directory: packages/core
