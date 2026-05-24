@@ -5,6 +5,7 @@ import { toCrossJSON, toCrossJSONAsync } from "seroval";
 import { FurinNotFoundError } from "../not-found.ts";
 import type { RootLayout } from "../router.ts";
 import { normalizeHref, RouterContext, type RouterContextValue } from "../router-provider.tsx";
+import { mapWithConcurrency } from "../utils.ts";
 import {
   assembleHTML,
   buildDeferredResolution,
@@ -935,15 +936,17 @@ export async function warmSSGCache(
     | { error: unknown; route: ResolvedRoute }
     | { paramSets: Record<string, string>[]; route: ResolvedRoute };
 
-  const staticParamsResults: StaticParamsResult[] = await Promise.all(
-    targets.map(async (route) => {
+  const staticParamsResults: StaticParamsResult[] = await mapWithConcurrency(
+    targets,
+    SSG_WARM_CONCURRENCY,
+    async (route) => {
       try {
         const paramSets = (await route.page.staticParams?.()) ?? [];
         return { route, paramSets };
       } catch (err) {
         return { error: err, route };
       }
-    })
+    }
   );
 
   const tasks: Array<() => Promise<void>> = [];
@@ -964,6 +967,21 @@ export async function warmSSGCache(
       continue;
     }
     const { route, paramSets } = result;
+    if (!Array.isArray(paramSets)) {
+      const errorLogger = createLogger({});
+      errorLogger.set({
+        furin: {
+          render: "ssg",
+          action: "warmup_failed",
+          route: route.pattern,
+        },
+      });
+      errorLogger.error(
+        new Error(`staticParams() for "${route.pattern}" returned a non-array value`)
+      );
+      errorLogger.emit();
+      continue;
+    }
     for (const params of paramSets) {
       tasks.push(async () => {
         try {

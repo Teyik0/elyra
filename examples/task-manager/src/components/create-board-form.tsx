@@ -1,16 +1,24 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { apiClient } from "@/lib/api";
 
 export function CreateBoardForm() {
   const [name, setName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Synchronous in-flight guard: setIsSubmitting is async, so back-to-back
+  // submits (e.g. rapid Enter presses) can both pass the state check before
+  // React commits the update and fire duplicate POSTs.
+  const inFlightRef = useRef(false);
 
   const handleCreate = async () => {
+    if (inFlightRef.current) {
+      return;
+    }
     const trimmed = name.trim();
     if (!trimmed) {
       return;
     }
+    inFlightRef.current = true;
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
@@ -24,6 +32,7 @@ export function CreateBoardForm() {
         err instanceof Error ? err.message : "Could not create the board. Please try again.";
       setErrorMessage(message);
     } finally {
+      inFlightRef.current = false;
       setIsSubmitting(false);
     }
   };

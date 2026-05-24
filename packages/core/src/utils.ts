@@ -45,6 +45,37 @@ export function hasCycle(route: RuntimeRoute): boolean {
   return false;
 }
 
+/**
+ * Maps over `items` with a bounded worker pool, preserving input order.
+ * Use whenever an `await Promise.all(items.map(...))` would open as many
+ * concurrent async operations as there are items — unbounded fan-out can
+ * exhaust file descriptors, sockets, or memory on large inputs.
+ */
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) {
+    return [];
+  }
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workerCount = Math.min(Math.max(concurrency, 1), items.length);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = cursor++;
+        if (index >= items.length) {
+          return;
+        }
+        results[index] = await fn(items[index] as T, index);
+      }
+    })
+  );
+  return results;
+}
+
 export function validateRouteChain(
   chain: RuntimeRoute[],
   root: RuntimeRoute,
