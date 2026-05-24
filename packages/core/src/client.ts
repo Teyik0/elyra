@@ -72,7 +72,11 @@ type ResolveParent<T> =
     : { data: {}; params: Unset; query: Unset };
 
 interface Resolved<TParentRef, TLoaderData, TParamsSchema = Unset, TQuerySchema = Unset> {
-  data: ToRecord<ResolveParent<TParentRef>["data"] & TLoaderData>;
+  // `Omit<TLoaderData, "__isDeferred">` strips the runtime brand that `defer()`
+  // attaches to its return value. A layout/route loader wrapped with `defer()`
+  // would otherwise leak `__isDeferred: true` into descendant loader contexts
+  // and component props.
+  data: ToRecord<ResolveParent<TParentRef>["data"] & Omit<TLoaderData, "__isDeferred">>;
   params: MergeSchema<ResolveParent<TParentRef>["params"], ResolvedSchema<TParamsSchema>>;
   query: MergeSchema<ResolveParent<TParentRef>["query"], ResolvedSchema<TQuerySchema>>;
 }
@@ -310,7 +314,9 @@ export type DeferredData<T extends Record<string, unknown>> = T & {
  * Wraps loader data so that Promise-valued fields are streamed lazily while
  * scalar fields are embedded in the initial HTML shell immediately.
  *
- * Use inside a page loader only (not in route / layout loaders — v1 restriction).
+ * Use in any loader — page (`route.page({ loader })`) or route/layout
+ * (`createRoute({ loader })`). Promise-valued fields are streamed lazily;
+ * scalar fields are embedded in the initial HTML shell.
  */
 export function defer<T extends Record<string, unknown>>(data: T): DeferredData<T> {
   if (Object.hasOwn(data, DEFERRED_BRAND)) {

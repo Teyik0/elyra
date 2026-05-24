@@ -109,3 +109,34 @@ export default route.page({
   component: ({ user }) => <DashboardHome user={user} />,
 })
 ```
+
+## Streaming slow data from a layout
+
+A layout loader can return `defer({...})` to stream slow fields while the shell renders immediately. The deferred Promise lands on the layout's `children`-receiving component exactly like a page-level deferred field:
+
+```tsx
+// src/pages/dashboard/_route.tsx
+import { createRoute, defer, Await } from "@teyik0/furin/client"
+import { Suspense } from "react"
+
+export const route = createRoute({
+  loader: () =>
+    defer({
+      user: "alice",                   // sync — embedded in the initial shell
+      widgets: fetchSidebarWidgets(),  // Promise — streamed when it resolves
+    }),
+  layout: ({ children, user, widgets }) => (
+    <div>
+      <nav>Hello {user}</nav>
+      <aside>
+        <Suspense fallback={<WidgetSkeleton />}>
+          <Await resolve={widgets}>{(list) => <WidgetList items={list} />}</Await>
+        </Suspense>
+      </aside>
+      <main>{children}</main>
+    </div>
+  ),
+})
+```
+
+See [Deferred Data Streaming](/docs/defer) for the full API.

@@ -273,6 +273,83 @@ describe("GET /_furin/data", () => {
     expect(syncData.params).toEqual({});
   });
 
+  test("layout loader returning defer() streams its deferred field through the NDJSON endpoint", async () => {
+    const { routes } = await scanPages(FIXTURES_DIR);
+    const route = routes.find((r) => r.pattern === "/with-loader");
+    if (!route) {
+      throw new Error("No /with-loader route in fixtures");
+    }
+    const layoutEntry = route.routeChain.find((r) => Boolean(r.loader));
+    if (!layoutEntry) {
+      throw new Error("No layout loader in /with-loader routeChain");
+    }
+    // Shallow-copy the routeChain entry so the deferred loader does not leak
+    // into other tests sharing the same scanPages cache.
+    const patched = {
+      ...layoutEntry,
+      loader: () =>
+        defer({
+          layoutData: "from-layout-defer",
+          asyncWidget: new Promise((resolve) =>
+            setTimeout(() => resolve(["item-a", "item-b"]), 20)
+          ),
+        }),
+    };
+    route.routeChain = route.routeChain.map((r) => (r === layoutEntry ? patched : r));
+
+    const app = new Elysia().use(createDataEndpoint(routes));
+    const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fwith-loader"));
+
+    expect(res.status).toBe(200);
+    const { syncData, deferredPromises } = await parseDeferredNdjson(
+      res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      undefined
+    );
+    expect(syncData.layoutData).toBe("from-layout-defer");
+    expect(deferredPromises.asyncWidget).toBeInstanceOf(Promise);
+    expect(await deferredPromises.asyncWidget).toEqual(["item-a", "item-b"]);
+  });
+
+  test("layout defer + page defer → both deferred Promises arrive as separate NDJSON chunks", async () => {
+    const { routes } = await scanPages(FIXTURES_DIR);
+    const route = routes.find((r) => r.pattern === "/with-loader");
+    if (!route?.page) {
+      throw new Error("No /with-loader route in fixtures");
+    }
+    const layoutEntry = route.routeChain.find((r) => Boolean(r.loader));
+    if (!layoutEntry) {
+      throw new Error("No layout loader in /with-loader routeChain");
+    }
+    const patchedLayout = {
+      ...layoutEntry,
+      loader: () =>
+        defer({
+          layoutData: "from-layout",
+          asyncWidget: new Promise((resolve) => setTimeout(() => resolve("widget-ok"), 10)),
+        }),
+    };
+    route.routeChain = route.routeChain.map((r) => (r === layoutEntry ? patchedLayout : r));
+    route.page = {
+      ...route.page,
+      loader: () =>
+        defer({
+          pageData: "from-page",
+          asyncStats: new Promise((resolve) => setTimeout(() => resolve(99), 15)),
+        }),
+    };
+
+    const app = new Elysia().use(createDataEndpoint(routes));
+    const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fwith-loader"));
+
+    expect(res.status).toBe(200);
+    const text = await new Response(res.body).text();
+    const lines = text.split("\n").filter((l) => l.trim().length > 0);
+    // Line 0 is the initial sync payload. Subsequent lines are resolution chunks
+    // — one per deferred field, regardless of which loader produced it.
+    const resolutionKeys = lines.slice(1).map((line) => (JSON.parse(line) as { key: string }).key);
+    expect(resolutionKeys.sort()).toEqual(["asyncStats", "asyncWidget"]);
+  });
+
   test("emits chunks in resolution order, not insertion order", async () => {
     // 'slow' is inserted FIRST in defer() but resolves LAST. 'fast' is inserted
     // SECOND but resolves FIRST. The on-the-wire stream MUST emit the fast key
