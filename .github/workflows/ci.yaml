@@ -50,11 +50,15 @@ jobs:
         run: bun run knip
 
       - name: Fetch main branch
-        run: |
-          git fetch origin main
-          git branch main origin/main 2>/dev/null || true
+        if: github.ref != 'refs/heads/main'
+        run: git fetch origin main
 
-      - name: React Doctor
+      - name: React Doctor (main)
+        if: github.ref == 'refs/heads/main'
+        run: bunx react-doctor -y --annotations
+
+      - name: React Doctor (PR)
+        if: github.ref != 'refs/heads/main'
         run: bunx react-doctor -y --diff main --annotations
 
       - name: Publish Preview
