@@ -16,8 +16,8 @@ mock.module("evlog", () => ({
   useLogger: () => ({ set() {} }),
 }));
 
-import { isNotFoundError, notFound } from "../src/not-found";
-import { serializeDeferredRejection } from "../src/render/loaders";
+import { serializeDeferredRejection } from "../src/server/render/loaders.ts";
+import { isNotFoundError, notFound } from "../src/shared/not-found.ts";
 
 async function roundtrip(value: unknown): Promise<unknown> {
   const normalized = await serializeDeferredRejection(value);

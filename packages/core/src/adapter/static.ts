@@ -4,12 +4,12 @@ import { buildClient } from "../build/client.ts";
 import { ensureDir, toPosixPath } from "../build/shared.ts";
 import type { BuildAppOptions, StaticTargetBuildManifest } from "../build/types.ts";
 import type { StaticExportConfig } from "../config.ts";
-import { resolvePath } from "../render/assemble.ts";
-import { prerenderSSG } from "../render/index.ts";
-import { generateProdIndexHtml } from "../render/shell.ts";
-import { setProductionTemplateContent } from "../render/template.ts";
-import type { ResolvedRoute, RootLayout } from "../router.ts";
-import { mapWithConcurrency } from "../utils.ts";
+import { resolvePath } from "../server/render/assemble.ts";
+import { prerenderSSG } from "../server/render/index.ts";
+import { generateProdIndexHtml } from "../server/render/shell.ts";
+import { setProductionTemplateContent } from "../server/render/template.ts";
+import type { ResolvedRoute, RootLayout } from "../server/router/index.ts";
+import { mapWithConcurrency } from "../shared/utils.ts";
 
 /** Maximum concurrent pre-render calls (mirrors warmSSGCache). */
 const STATIC_CONCURRENCY = 4;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { rewriteRelativeImports, rewriteSingletonImports } from "../src/dev-page-plugin.ts";
+import { rewriteRelativeImports, rewriteSingletonImports } from "../src/server/dev-page-plugin.ts";
 
 const ABSOLUTE_PATH_RE = /from "\/[^"]+"/;
 

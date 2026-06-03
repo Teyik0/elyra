@@ -4,8 +4,8 @@ import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { toCrossJSON } from "seroval";
-import { Link, RouterProvider } from "../../src/link";
-import type { ClientRoute } from "../../src/router-provider";
+import { Link, RouterProvider } from "../../src/client/link.tsx";
+import type { ClientRoute } from "../../src/client/router/index.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

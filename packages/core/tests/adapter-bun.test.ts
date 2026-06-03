@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { buildBunTarget } from "../src/adapter/bun.ts";
 import type { BuildAppOptions } from "../src/build/types.ts";
-import { scanPages } from "../src/router.ts";
+import { scanPages } from "../src/server/router/index.ts";
 import { createTmpApp } from "./helpers/tmp-app.ts";
 import { withBuildStub } from "./helpers/with-build-stub.ts";
 

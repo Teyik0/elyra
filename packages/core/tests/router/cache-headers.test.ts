@@ -8,9 +8,9 @@ mock.module("evlog/elysia", () => ({
 }));
 
 import { Elysia } from "elysia";
-import { __resetCacheState } from "../../src/render/cache";
-import { createRoutePlugin, scanPages } from "../../src/router";
-import { __setDevMode, IS_DEV } from "../../src/runtime-env";
+import { __resetCacheState } from "../../src/server/cache/index.ts";
+import { createRoutePlugin, scanPages } from "../../src/server/router/index.ts";
+import { __setDevMode, IS_DEV } from "../../src/server/runtime-env.ts";
 
 const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
 

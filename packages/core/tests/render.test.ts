@@ -15,10 +15,9 @@ mock.module("evlog/elysia", () => ({
 
 import type { HTTPHeaders } from "elysia/types";
 import { createElement, Suspense } from "react";
-import { Await } from "../src/await";
 import { defer, type RuntimeRoute } from "../src/client";
-import { Link } from "../src/link.tsx";
-import { notFound } from "../src/not-found";
+import { Link } from "../src/client/link.tsx";
+import { __resetCacheState, isrCache, ssgCache } from "../src/server/cache/index.ts";
 import {
   buildElement,
   handleISR,
@@ -30,12 +29,16 @@ import {
   runLoaders,
   streamToString,
   warmSSGCache,
-} from "../src/render";
-import { __resetCacheState, isrCache, ssgCache } from "../src/render/cache";
-import { __resetTemplateState, setProductionTemplateContent } from "../src/render/template.ts";
-import type { ResolvedRoute } from "../src/router";
-import { scanPages } from "../src/router";
-import { __setDevMode, IS_DEV } from "../src/runtime-env";
+} from "../src/server/render/index.ts";
+import {
+  __resetTemplateState,
+  setProductionTemplateContent,
+} from "../src/server/render/template.ts";
+import type { ResolvedRoute } from "../src/server/router/index.ts";
+import { scanPages } from "../src/server/router/index.ts";
+import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
+import { Await } from "../src/shared/await.tsx";
+import { notFound } from "../src/shared/not-found.ts";
 
 const FIXTURES_DIR = join(import.meta.dirname, "fixtures/pages");
 const DEFER_ERROR_RE = /defer\(\)/;
@@ -277,7 +280,7 @@ describe("render.tsx", () => {
     });
 
     test("handles throw notFound() as not-found result", async () => {
-      const { notFound } = await import("../src/not-found");
+      const { notFound } = await import("../src/shared/not-found.ts");
       const withLoaderRoute = await getRoute("/with-loader");
 
       const ctx = createMockLoaderContext({ path: "/with-loader" });

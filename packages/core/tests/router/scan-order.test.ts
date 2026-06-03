@@ -2,8 +2,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
-import { scanPages } from "../../src/router.ts";
-import { __setDevMode, IS_DEV } from "../../src/runtime-env.ts";
+import { scanPages } from "../../src/server/router/index.ts";
+import { __setDevMode, IS_DEV } from "../../src/server/runtime-env.ts";
 
 // root.tsx — minimal FURIN_ROUTE with a layout, no external imports
 const ROOT_MODULE = `

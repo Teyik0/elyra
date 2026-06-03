@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { scanPages } from "../../src/router";
-import { __setDevMode, IS_DEV } from "../../src/runtime-env";
-import { collectRouteChainFromRoute } from "../../src/utils";
+import { scanPages } from "../../src/server/router/index.ts";
+import { __setDevMode, IS_DEV } from "../../src/server/runtime-env.ts";
+import { collectRouteChainFromRoute } from "../../src/shared/utils.ts";
 import { expectDefined } from "../helpers/utils";
 
 const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");

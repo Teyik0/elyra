@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { createRouteCache } from "../src/render/route-cache";
+import { createRouteCache } from "../src/server/cache/route-cache.ts";
 
 describe("createRouteCache", () => {
   test("invalidates a single page by resolved URL path", () => {

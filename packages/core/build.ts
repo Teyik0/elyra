@@ -23,35 +23,37 @@ const shared = {
 
 await Promise.all([
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/cli/index.ts`] }),
-  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/furin.ts`] }),
+  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/server/furin.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/client.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/build/index.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/config.ts`] }),
-  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/router.ts`] }),
+  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/server/router/index.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/plugin/index.ts`] }),
-  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/link.tsx`] }),
+  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/client/link.tsx`] }),
   // Modules imported directly by the generated compile-entry (entry-template.ts).
   // Must exist as standalone files so the dist/ fallback path works.
-  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/internal.ts`] }),
-  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/runtime-env.ts`] }),
+  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/server/internal.ts`] }),
+  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/server/runtime-env.ts`] }),
 ]);
 
 // Copy ambient declaration so it is available for the ./env export.
 await $`cp src/env.d.ts dist/env.d.ts`;
 
 // Ensure target directories exist before copying runtime source files.
-// dist/build is created by Bun.build above, but dist/render is not —
-// without this, clean builds where tsc is skipped would fail.
+// dist/build is created by Bun.build above, but dist/server/render and
+// dist/server/router are not — without this, clean builds where tsc is
+// skipped would fail.
 mkdirSync(`${import.meta.dir}/dist/build`, { recursive: true });
-mkdirSync(`${import.meta.dir}/dist/render`, { recursive: true });
+mkdirSync(`${import.meta.dir}/dist/server/render`, { recursive: true });
+mkdirSync(`${import.meta.dir}/dist/server/router`, { recursive: true });
 
 // Copy template source files that the adapter reads at runtime.
 await $`cp src/build/compile-entry.ts dist/build/compile-entry.ts`;
 await $`cp src/build/entry-template.ts dist/build/entry-template.ts`;
 await $`cp src/build/server-routes-entry.ts dist/build/server-routes-entry.ts`;
-await $`cp src/render/index.ts dist/render/index.ts`;
-await $`cp src/render/shell.ts dist/render/shell.ts`;
-await $`cp src/router.ts dist/router.ts`;
+await $`cp src/server/render/index.ts dist/server/render/index.ts`;
+await $`cp src/server/render/shell.ts dist/server/render/shell.ts`;
+await $`cp src/server/router/index.ts dist/server/router/index.ts`;
 
 // Prepend shebang to CLI dist file so the OS runs it with Bun (not as a shell script).
 // Guard against duplication: if the shebang is already present (e.g. build run twice),

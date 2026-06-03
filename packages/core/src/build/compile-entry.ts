@@ -1,31 +1,7 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { buildEntrySource } from "./entry-template";
+import { buildEntrySource, type BuildEntryOptions } from "./entry-template";
 import { collectFilesRecursive, ensureDir, toPosixPath } from "./shared";
-
-export interface CompileEntryOptions {
-  buildId: string | undefined;
-  embed: { clientDir: string } | undefined;
-  outDir: string;
-  publicDir: string | undefined;
-  rootConventions: { errorPath: string | undefined; notFoundPath: string | undefined } | undefined;
-  rootPath: string;
-  routeMetadata:
-    | Record<
-        string,
-        {
-          segmentBoundaries: Array<{
-            depth: number;
-            path: string;
-            errorPath: string | undefined;
-            notFoundPath: string | undefined;
-          }>;
-        }
-      >
-    | undefined;
-  routes: Array<{ mode: "ssr" | "ssg" | "isr"; path: string; pattern: string }>;
-  serverEntry: string;
-}
 
 /**
  * Generates a single `_compile-entry.ts` that:
@@ -34,7 +10,7 @@ export interface CompileEntryOptions {
  * 3. Sets production mode and registers everything in a single CompileContext
  * 4. Dynamically imports server.ts to boot the app
  */
-export function generateCompileEntry(options: CompileEntryOptions): string {
+export function generateCompileEntry(options: BuildEntryOptions): string {
   const {
     buildId,
     outDir,

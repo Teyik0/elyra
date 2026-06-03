@@ -10,10 +10,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildStaticTarget } from "../src/adapter/static.ts";
 import type { BuildAppOptions } from "../src/build/types.ts";
-import { __resetCacheState } from "../src/render/cache.ts";
-import { __resetTemplateState } from "../src/render/template.ts";
-import { scanPages } from "../src/router.ts";
-import { __setDevMode, IS_DEV } from "../src/runtime-env.ts";
+import { __resetCacheState } from "../src/server/cache/index.ts";
+import { __resetTemplateState } from "../src/server/render/template.ts";
+import { scanPages } from "../src/server/router/index.ts";
+import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
 import { createTmpApp } from "./helpers/tmp-app.ts";
 import { withBuildStub } from "./helpers/with-build-stub.ts";
 
@@ -117,7 +117,7 @@ describe.serial("buildStaticTarget", () => {
 
   test("__furin_data.ndjson is parseable by parseDeferredNdjson", async () => {
     const { distDir } = await runStaticBuild();
-    const { parseDeferredNdjson } = await import("../src/deferred-ndjson.ts");
+    const { parseDeferredNdjson } = await import("../src/shared/deferred-ndjson.ts");
 
     const ndjsonText = readFileSync(join(distDir, "blog/hello-world/__furin_data.ndjson"), "utf8");
     // Recreate a stream from the file content so we exercise the same

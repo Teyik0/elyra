@@ -15,9 +15,9 @@ mock.module("evlog/elysia", () => ({
 }));
 
 import type { HTTPHeaders } from "elysia/types";
-import { renderSSR, renderToHTML } from "../src/render";
-import { type ResolvedRoute, scanPages } from "../src/router";
-import { __setDevMode, IS_DEV } from "../src/runtime-env";
+import { renderSSR, renderToHTML } from "../src/server/render/index.ts";
+import { type ResolvedRoute, scanPages } from "../src/server/router/index.ts";
+import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
 
 const FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages-error-nested");
 

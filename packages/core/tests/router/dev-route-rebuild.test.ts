@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { RuntimePage, RuntimeRoute } from "../../src/client.ts";
-import { type ResolvedRoute, rebuildDevRoute } from "../../src/router.ts";
+import { type ResolvedRoute, rebuildDevRoute } from "../../src/server/router/index.ts";
 
 function makeRuntimeRoute(overrides: Partial<RuntimeRoute>): RuntimeRoute {
   return { __type: "FURIN_ROUTE", ...overrides };

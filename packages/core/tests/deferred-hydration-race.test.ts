@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { fromCrossJSON, toCrossJSON } from "seroval";
-import { buildDeferredResolution, buildDeferredScript } from "../src/render/assemble";
+import { buildDeferredResolution, buildDeferredScript } from "../src/server/render/assemble.ts";
 
 const SCRIPT_OPEN_RE = /^<script[^>]*>/;
 const SCRIPT_CLOSE_RE = /<\/script>$/;

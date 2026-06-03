@@ -7,10 +7,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Elysia } from "elysia";
 import { furin, revalidatePath } from "furin";
-import { __resetCompileContext } from "../src/internal.ts";
-import { __resetCacheState } from "../src/render/cache.ts";
-import { setProductionTemplateContent, setProductionTemplatePath } from "../src/render/template.ts";
-import { __setDevMode } from "../src/runtime-env.ts";
+import { __resetCacheState } from "../src/server/cache/index.ts";
+import { __resetCompileContext } from "../src/server/internal.ts";
+import {
+  setProductionTemplateContent,
+  setProductionTemplatePath,
+} from "../src/server/render/template.ts";
+import { __setDevMode } from "../src/server/runtime-env.ts";
 import { createTmpApp, writeAppFile } from "./helpers/tmp-app.ts";
 
 const tmpApps: Array<{ cleanup: () => void }> = [];

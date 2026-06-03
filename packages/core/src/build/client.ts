@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { transformForClient } from "../plugin/transform-client";
-import type { ResolvedRoute } from "../router";
+import type { ResolvedRoute } from "../server/router/index.ts";
 import { generateHydrateEntry } from "./hydrate";
 import { CLIENT_MODULE_PATH, LINK_MODULE_PATH } from "./shared";
 import type { BuildClientOptions, BunBuildAliasConfig } from "./types";

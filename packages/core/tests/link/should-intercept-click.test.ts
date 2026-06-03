@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 
 import { afterAll, describe, expect, test } from "bun:test";
-import { shouldInterceptClick } from "../../src/link";
+import { shouldInterceptClick } from "../../src/client/link.tsx";
 
 function makeAnchor(
   href: string,

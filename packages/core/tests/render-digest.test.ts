@@ -4,7 +4,7 @@
  * server-side logs without leaking stack traces to the client.
  */
 import { describe, expect, test } from "bun:test";
-import { computeErrorDigest } from "../src/render/digest.ts";
+import { computeErrorDigest } from "../src/server/render/digest.ts";
 
 const DIGEST_RE = /^[0-9a-f]{10}$/;
 

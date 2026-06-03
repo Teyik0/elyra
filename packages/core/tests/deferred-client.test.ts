@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { toCrossJSON, toCrossJSONAsync } from "seroval";
-import { parseDeferredNdjson } from "../src/deferred-ndjson";
+import { parseDeferredNdjson } from "../src/shared/deferred-ndjson.ts";
 
 // ── parseDeferredNdjson tests ────────────────────────────────────────────────
 //

@@ -7,10 +7,8 @@ mock.module("evlog/elysia", () => ({
 }));
 
 import { Elysia } from "elysia";
-import { createDevInspectorPlugin } from "../../src/dev-inspector";
-import { registerDevPagePlugin } from "../../src/dev-page-plugin.ts";
-import { __resetCacheState } from "../../src/render/cache";
 import {
+  __resetCacheState,
   __resetDevLoaderCacheState,
   type DevLoaderCacheEntry,
   getAllDevSSGLoaderEntries,
@@ -20,10 +18,15 @@ import {
   isDevLoaderCacheFresh,
   setDevISRLoaderCache,
   setDevSSGLoaderCache,
-} from "../../src/render/dev-cache";
-import { __resetTemplateState, setProductionTemplateContent } from "../../src/render/template";
-import { createRoutePlugin, scanPages } from "../../src/router";
-import { __setDevMode, IS_DEV } from "../../src/runtime-env";
+} from "../../src/server/cache/index.ts";
+import { createDevInspectorPlugin } from "../../src/server/dev-inspector.ts";
+import { registerDevPagePlugin } from "../../src/server/dev-page-plugin.ts";
+import {
+  __resetTemplateState,
+  setProductionTemplateContent,
+} from "../../src/server/render/template.ts";
+import { createRoutePlugin, scanPages } from "../../src/server/router/index.ts";
+import { __setDevMode, IS_DEV } from "../../src/server/runtime-env.ts";
 
 registerDevPagePlugin();
 
@@ -492,7 +495,7 @@ import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { isDevLoaderCacheValid } from "../../src/render/dev-cache";
+import { isDevLoaderCacheValid } from "../../src/server/cache/index.ts";
 
 describe("isDevLoaderCacheValid", () => {
   let tmpDir: string;
@@ -647,7 +650,7 @@ describe("isDevLoaderCacheValid", () => {
  */
 import { existsSync as fileExistsSync } from "node:fs";
 
-import { computeRouteDependencies } from "../../src/router";
+import { computeRouteDependencies } from "../../src/server/router/index.ts";
 
 describe("computeRouteDependencies", () => {
   test("only returns paths that exist on disk for nested routes", () => {

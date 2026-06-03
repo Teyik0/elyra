@@ -19,8 +19,8 @@ mock.module("evlog", () => ({
 import type { Context } from "elysia";
 import type { HTTPHeaders } from "elysia/types";
 import { defer } from "../src/client";
-import { runLoaders } from "../src/render/loaders";
-import type { ResolvedRoute } from "../src/router";
+import { runLoaders } from "../src/server/render/loaders.ts";
+import type { ResolvedRoute } from "../src/server/router/index.ts";
 
 function makeCtx(overrides: Partial<Context> = {}): Context {
   return {

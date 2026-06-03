@@ -9,8 +9,8 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createElement, createContext as mainCreateContext, useState as mainUseState } from "react";
 import { renderToString } from "react-dom/server";
-import { registerDevPagePlugin } from "../src/dev-page-plugin.ts";
-import { buildElement } from "../src/render/element.tsx";
+import { registerDevPagePlugin } from "../src/server/dev-page-plugin.ts";
+import { buildElement } from "../src/server/render/element.tsx";
 
 registerDevPagePlugin();
 

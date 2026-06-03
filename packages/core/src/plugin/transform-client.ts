@@ -1,6 +1,7 @@
 import MagicString from "magic-string";
 import { parse, type SourceLang } from "yuku-parser";
-import { detectLangFromPath, unwrapTSExpression } from "../lang-detect";
+import { detectLangFromPath, unwrapTSExpression } from "../server/lang-detect.ts";
+import { type AstNode, walkAST } from "../shared/utils/ast-walk.ts";
 
 // loader: data fetching (runs on server only)
 // query / params: Elysia TypeBox schemas — validated server-side, not used in browser
@@ -10,17 +11,6 @@ interface TransformResult {
   code: string;
   map: ReturnType<MagicString["generateMap"]> | null;
   removedServerCode: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// ESTree node types (minimal subset needed for our walk)
-// ---------------------------------------------------------------------------
-interface AstNode {
-  body?: AstNode[];
-  end: number;
-  start: number;
-  type: string;
-  [key: string]: unknown;
 }
 
 interface Property extends AstNode {
@@ -50,31 +40,6 @@ interface CallExpression extends AstNode {
 interface ImportDeclaration extends AstNode {
   specifiers: Array<AstNode & { local: AstNode & { name: string } }>;
   type: "ImportDeclaration";
-}
-
-// ---------------------------------------------------------------------------
-// AST walking
-// ---------------------------------------------------------------------------
-function walk(node: unknown, visitor: (n: AstNode) => void): void {
-  if (!node || typeof node !== "object") {
-    return;
-  }
-  if (Array.isArray(node)) {
-    for (const child of node) {
-      walk(child, visitor);
-    }
-    return;
-  }
-  const n = node as AstNode;
-  if (typeof n.type === "string") {
-    visitor(n);
-  }
-  for (const key of Object.keys(n)) {
-    if (key === "type" || key === "start" || key === "end") {
-      continue;
-    }
-    walk(n[key], visitor);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +219,7 @@ function collectReferencedNames(program: AstNode): Set<string> {
     // Pass 1 — mark non-reference identifier positions.
     // Only exclude *static* keys (computed=false); computed keys like
     // `{ [someVar]: v }` are genuine identifier references.
-    walk(stmt, (node) => {
+    walkAST(stmt, (node) => {
       if (node.type === "Property" && !node.computed) {
         excluded.add(node.key);
       }
@@ -281,7 +246,7 @@ function collectReferencedNames(program: AstNode): Set<string> {
       continue;
     }
     // Pass 2 — collect genuine identifier references.
-    walk(stmt, (node) => {
+    walkAST(stmt, (node) => {
       if (excluded.has(node)) {
         return;
       }
@@ -387,7 +352,7 @@ export function deadCodeElimination(s: MagicString, lang: SourceLang): MagicStri
 function removeServerExports(s: MagicString, source: string, program: AstNode): boolean {
   let removedServerCode = false;
 
-  walk(program, (node) => {
+  walkAST(program, (node) => {
     if (node.type !== "CallExpression") {
       return;
     }
@@ -397,7 +362,7 @@ function removeServerExports(s: MagicString, source: string, program: AstNode): 
     }
     // Unwrap `createRoute({...} as Config)` / `page({...} satisfies Opts)` etc.
     const arg = call.arguments[0] ? unwrapTSExpression(call.arguments[0]) : undefined;
-    if (!arg || arg.type !== "ObjectExpression") {
+    if (arg?.type !== "ObjectExpression") {
       return;
     }
     if (removeServerProperties(s, source, arg as ObjectExpression)) {

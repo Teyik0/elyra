@@ -18,11 +18,11 @@
 import { describe, expect, test } from "bun:test";
 import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import type { RuntimePage, RuntimeRoute } from "../src/client.ts";
-import type { ErrorComponent } from "../src/error.ts";
-import type { NotFoundComponent } from "../src/not-found.ts";
-import { FurinErrorBoundary, FurinNotFoundBoundary } from "../src/render/boundaries.tsx";
-import { buildElement, buildErrorElement } from "../src/render/element.tsx";
-import type { ResolvedRoute, SegmentBoundary } from "../src/router.ts";
+import { FurinErrorBoundary, FurinNotFoundBoundary } from "../src/server/render/boundaries.tsx";
+import { buildElement, buildErrorElement } from "../src/server/render/element.tsx";
+import type { ResolvedRoute, SegmentBoundary } from "../src/server/router/index.ts";
+import type { ErrorComponent } from "../src/shared/error.ts";
+import type { NotFoundComponent } from "../src/shared/not-found.ts";
 
 // ── Harness ──────────────────────────────────────────────────────────────────
 

@@ -12,7 +12,7 @@ import type { AnySchema, HTTPHeaders, UnwrapSchema } from "elysia/types";
 import type { RequestLogger } from "evlog";
 
 // biome-ignore lint/performance/noBarrelFile: client.ts is the canonical DX entry for furin/client consumers — not a barrel
-export { Await, useAsyncError, useAsyncValue } from "./await.tsx";
+export { Await, useAsyncError, useAsyncValue } from "./shared/await.tsx";
 
 declare const UNSET: unique symbol;
 type Unset = typeof UNSET;

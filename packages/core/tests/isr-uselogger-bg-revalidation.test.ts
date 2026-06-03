@@ -30,12 +30,12 @@ mock.module("evlog/elysia", () => ({
 }));
 
 import { useLogger as evlogUseLogger } from "evlog/elysia";
-import { useLogger as furinUseLogger } from "../src/context-logger.ts";
-import { prerenderSSG } from "../src/render";
-import { __resetCacheState } from "../src/render/cache";
-import type { ResolvedRoute } from "../src/router";
-import { scanPages } from "../src/router";
-import { __setDevMode } from "../src/runtime-env";
+import { __resetCacheState } from "../src/server/cache/index.ts";
+import { useLogger as furinUseLogger } from "../src/server/context-logger.ts";
+import { prerenderSSG } from "../src/server/render/index.ts";
+import type { ResolvedRoute } from "../src/server/router/index.ts";
+import { scanPages } from "../src/server/router/index.ts";
+import { __setDevMode } from "../src/server/runtime-env.ts";
 
 const FIXTURES_DIR = `${import.meta.dirname}/fixtures/pages`;
 

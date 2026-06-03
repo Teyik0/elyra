@@ -6,9 +6,9 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { Elysia } from "elysia";
 import { furin } from "furin";
-import { __resetCompileContext } from "../src/internal.ts";
-import { setProductionTemplatePath } from "../src/render/template.ts";
-import { __setDevMode } from "../src/runtime-env.ts";
+import { __resetCompileContext } from "../src/server/internal.ts";
+import { setProductionTemplatePath } from "../src/server/render/template.ts";
+import { __setDevMode } from "../src/server/runtime-env.ts";
 import { createTmpApp, writeAppFile } from "./helpers/tmp-app.ts";
 
 const tmpApps: Array<{ cleanup: () => void }> = [];

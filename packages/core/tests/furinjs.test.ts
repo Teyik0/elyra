@@ -2,10 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Elysia from "elysia";
-import { furin } from "../src/furin.ts";
-import { __resetCompileContext, __setCompileContext } from "../src/internal.ts";
-import { setProductionTemplatePath } from "../src/render/template.ts";
-import { __setDevMode } from "../src/runtime-env.ts";
+import { furin } from "../src/server/furin.ts";
+import { __resetCompileContext, __setCompileContext } from "../src/server/internal.ts";
+import { setProductionTemplatePath } from "../src/server/render/template.ts";
+import { __setDevMode } from "../src/server/runtime-env.ts";
 import { runCli } from "./helpers/run-cli.ts";
 import { createTmpApp, removeAppPath, writeAppFile } from "./helpers/tmp-app.ts";
 

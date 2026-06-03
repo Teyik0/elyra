@@ -1,12 +1,7 @@
 import { readFileSync } from "node:fs";
 import { parse } from "yuku-parser";
-import { detectLangFromPath, unwrapTSExpression } from "../lang-detect";
-
-// Minimal AST node shapes — just what we need
-interface AstNode {
-  type: string;
-  [key: string]: unknown;
-}
+import { detectLangFromPath, unwrapTSExpression } from "../server/lang-detect.ts";
+import { type AstNode, walkAST } from "../shared/utils/ast-walk.ts";
 
 /**
  * Statically scans a server entry file and returns all `pagesDir` string
@@ -32,11 +27,13 @@ export function scanFurinInstances(serverEntryPath: string): string[] {
   }
 
   const results: string[] = [];
-  walkNode(program as unknown as AstNode, results);
+  walkAST(program as unknown as AstNode, (node) => {
+    if (node.type === "CallExpression") {
+      checkFurinCall(node, results);
+    }
+  });
   return results;
 }
-
-const SKIP_KEYS = new Set(["type", "start", "end"]);
 
 /** Checks whether `node` is a `furin({ pagesDir: "..." })` call and, if so, pushes the value. */
 function checkFurinCall(node: AstNode, out: string[]): void {
@@ -60,35 +57,6 @@ function checkFurinCall(node: AstNode, out: string[]): void {
   if (pagesDir !== null) {
     out.push(pagesDir);
   }
-}
-
-/** Recurses into all child AST node values (arrays and plain objects). */
-function walkChildren(node: AstNode, out: string[]): void {
-  for (const key of Object.keys(node)) {
-    if (SKIP_KEYS.has(key)) {
-      continue;
-    }
-    const child = node[key];
-    if (Array.isArray(child)) {
-      for (const item of child) {
-        if (item && typeof item === "object") {
-          walkNode(item as AstNode, out);
-        }
-      }
-    } else if (child && typeof child === "object") {
-      walkNode(child as AstNode, out);
-    }
-  }
-}
-
-function walkNode(node: AstNode, out: string[]): void {
-  if (!node || typeof node !== "object") {
-    return;
-  }
-  if (node.type === "CallExpression") {
-    checkFurinCall(node, out);
-  }
-  walkChildren(node, out);
 }
 
 function extractStringProperty(obj: AstNode, propName: string): string | null {

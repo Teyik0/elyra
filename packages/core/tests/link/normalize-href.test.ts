@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeHref } from "../../src/link";
+import { normalizeHref } from "../../src/client/link.tsx";
 
 describe("normalizeHref", () => {
   test("strips trailing slash from a path", () => {

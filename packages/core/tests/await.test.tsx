@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createElement, Suspense } from "react";
 import { renderToReadableStream } from "react-dom/server";
-import { AsyncErrorContext, Await, useAsyncError } from "../src/await";
+import { AsyncErrorContext, Await, useAsyncError } from "../src/shared/await.tsx";
 
 async function renderToString(element: React.ReactNode): Promise<string> {
   const stream = await renderToReadableStream(element);
