@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { buildDataEndpoint, detectStaticMode } from "../../src/router-provider";
+import { buildDataEndpoint, detectStaticMode } from "../../src/client/router/index.ts";
 
 describe("buildDataEndpoint — runtime mode (SSR/ISR/dev)", () => {
   test("uses /_furin/data?path= with the percent-encoded logical href", () => {

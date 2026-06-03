@@ -1,5 +1,5 @@
 import type { BuildTarget, StaticExportConfig } from "../config";
-import type { ResolvedRoute } from "../router";
+import type { ResolvedRoute } from "../server/router/index.ts";
 
 export interface BuildClientOptions {
   /**

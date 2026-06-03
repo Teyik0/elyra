@@ -3,16 +3,20 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // import.meta.resolve() runs at runtime (not inlined at bundle time), resolves
-// through package exports, and is the Web-standard API.
-const _pkgRoot = dirname(dirname(fileURLToPath(import.meta.resolve("@teyik0/furin"))));
-const _pkgSrcDirRaw = existsSync(join(_pkgRoot, "src", "furin.ts"))
+// through package exports, and is the Web-standard API. The main entry is
+// `src/server/furin.ts` (or `dist/server/furin.js`), so we strip three
+// path segments to reach the package root.
+const _pkgRoot = dirname(
+  dirname(dirname(fileURLToPath(import.meta.resolve("@teyik0/furin"))))
+);
+const _pkgSrcDirRaw = existsSync(join(_pkgRoot, "src", "server", "furin.ts"))
   ? join(_pkgRoot, "src")
   : join(_pkgRoot, "dist");
 // Normalize to forward slashes so endsWith checks and template paths work on Windows.
 const _pkgSrcDir = _pkgSrcDirRaw.replace(/\\/g, "/");
 const _ext = _pkgSrcDir.endsWith("/src") ? ".ts" : ".js";
-const INTERNAL_MODULE_PATH = `${_pkgSrcDir}/internal${_ext}`;
-const RUNTIME_ENV_MODULE_PATH = `${_pkgSrcDir}/runtime-env${_ext}`;
+const INTERNAL_MODULE_PATH = `${_pkgSrcDir}/server/internal${_ext}`;
+const RUNTIME_ENV_MODULE_PATH = `${_pkgSrcDir}/server/runtime-env${_ext}`;
 
 export interface EntryTemplateOptions {
   buildId?: string;
@@ -34,6 +38,15 @@ export interface EntryTemplateOptions {
   >;
   routes: Array<{ mode: "ssr" | "ssg" | "isr"; path: string; pattern: string }>;
   serverEntry: string;
+}
+
+/** Unified options for generating a build entry (compile or disk-based). */
+export interface BuildEntryOptions extends Omit<EntryTemplateOptions, "headerComment"> {
+  outDir: string;
+  headerComment?: string;
+  /** Embed mode: bundles client assets into the binary via `with { type: "file" }`. */
+  embed?: { clientDir: string };
+  publicDir?: string;
 }
 
 function collectConventionPaths(

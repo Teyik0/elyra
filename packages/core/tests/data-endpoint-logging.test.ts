@@ -32,8 +32,8 @@ mock.module("evlog", () => ({
 }));
 
 import { Elysia } from "elysia";
-import { createDataEndpoint, scanPages } from "../src/router";
-import { __setDevMode, IS_DEV } from "../src/runtime-env";
+import { createDataEndpoint, scanPages } from "../src/server/router/index.ts";
+import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
 
 const FIXTURES_DIR = join(import.meta.dirname, "fixtures/pages");
 

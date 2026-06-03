@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { normalizeHref, toLogical } from "../../src/link";
+import { normalizeHref, toLogical } from "../../src/client/link.tsx";
 
 const DOCS_ROUTE_RE = /^\/docs\/routing$/;
 const ROOT_ROUTE_RE = /^\/$/;

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { buildRouterTree, type RouterContextValue } from "../src/link";
+import { buildRouterTree, type RouterContextValue } from "../src/client/link.tsx";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

@@ -34,17 +34,17 @@
     "LICENSE",
     "README.md"
   ],
-  "main": "./dist/furin.js",
-  "module": "./dist/furin.js",
-  "types": "./dist/furin.d.ts",
+  "main": "./dist/server/furin.js",
+  "module": "./dist/server/furin.js",
+  "types": "./dist/server/furin.d.ts",
   "bin": {
     "furin": "./src/cli/index.ts"
   },
   "exports": {
     ".": {
-      "types": "./dist/furin.d.ts",
-      "bun": "./src/furin.ts",
-      "import": "./dist/furin.js"
+      "types": "./dist/server/furin.d.ts",
+      "bun": "./src/server/furin.ts",
+      "import": "./dist/server/furin.js"
     },
     "./client": {
       "types": "./dist/client.d.ts",
@@ -62,9 +62,9 @@
       "import": "./dist/config.js"
     },
     "./router": {
-      "types": "./dist/router.d.ts",
-      "bun": "./src/router.ts",
-      "import": "./dist/router.js"
+      "types": "./dist/server/router/index.d.ts",
+      "bun": "./src/server/router/index.ts",
+      "import": "./dist/server/router/index.js"
     },
     "./strip-plugin": {
       "types": "./dist/plugin/index.d.ts",
@@ -72,9 +72,9 @@
       "import": "./dist/plugin/index.js"
     },
     "./link": {
-      "types": "./dist/link.d.ts",
-      "bun": "./src/link.tsx",
-      "import": "./dist/link.js"
+      "types": "./dist/client/link.d.ts",
+      "bun": "./src/client/link.tsx",
+      "import": "./dist/client/link.js"
     },
     "./env": {
       "types": "./dist/env.d.ts",
@@ -92,7 +92,7 @@
     "@elysiajs/static": "^1.4.10",
     "magic-string": "^0.30.21",
     "seroval": "^1.5.4",
-    "yuku-parser": "^0.5.15"
+    "yuku-parser": "^0.5.25"
   },
   "devDependencies": {
     "@types/react": "catalog:",

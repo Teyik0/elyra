@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { generateIndexHtml } from "../render/shell";
-import type { ResolvedRoute } from "../router";
+import { generateIndexHtml } from "../server/render/shell.ts";
+import type { ResolvedRoute } from "../server/router/index.ts";
 import { writeRouteTypes } from "./route-types";
 import type { BuildClientOptions } from "./types";
 

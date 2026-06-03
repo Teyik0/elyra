@@ -3,8 +3,12 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RuntimeRoute } from "../../src/client.ts";
-import { scanRootLayout } from "../../src/router.ts";
-import { collectRouteChainFromRoute, hasCycle, validateRouteChain } from "../../src/utils.ts";
+import { scanRootLayout } from "../../src/server/router/index.ts";
+import {
+  collectRouteChainFromRoute,
+  hasCycle,
+  validateRouteChain,
+} from "../../src/shared/utils.ts";
 
 const MUST_INHERIT_FROM_ROOT_RE = /must inherit from root/i;
 const CYCLE_RE = /cycle/i;

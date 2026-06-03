@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { patternToTypeString, schemaToTypeString, writeRouteTypes } from "../src/build";
-import type { ResolvedRoute } from "../src/router";
+import type { ResolvedRoute } from "../src/server/router/index.ts";
 
 // ── patternToTypeString ───────────────────────────────────────────────────────
 

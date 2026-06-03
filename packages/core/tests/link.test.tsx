@@ -11,7 +11,7 @@ import type {
   RouterContextValue,
   RouterProviderProps,
   RouteTo,
-} from "../src/link";
+} from "../src/client/link.tsx";
 import {
   applyRevalidateHeader,
   buildHref,
@@ -24,9 +24,9 @@ import {
   RouterContext,
   shouldAutoRefreshPath,
   shouldRefetch,
-} from "../src/link";
-import type { NotFoundComponent } from "../src/not-found";
-import { FurinErrorBoundary } from "../src/render/boundaries";
+} from "../src/client/link.tsx";
+import { FurinErrorBoundary } from "../src/server/render/boundaries.tsx";
+import type { NotFoundComponent } from "../src/shared/not-found.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

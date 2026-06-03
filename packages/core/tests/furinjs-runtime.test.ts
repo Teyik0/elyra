@@ -3,10 +3,10 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Elysia } from "elysia";
-import { furin } from "../src/furin.ts";
-import { __resetCompileContext, __setCompileContext } from "../src/internal.ts";
-import { getProductionTemplate, setProductionTemplatePath } from "../src/render/template.ts";
-import { __setDevMode } from "../src/runtime-env.ts";
+import { furin } from "../src/server/furin.ts";
+import { __resetCompileContext, __setCompileContext } from "../src/server/internal.ts";
+import { getProductionTemplate, setProductionTemplatePath } from "../src/server/render/template.ts";
+import { __setDevMode } from "../src/server/runtime-env.ts";
 import { createTmpApp } from "./helpers/tmp-app.ts";
 
 const tmpApps: Array<{ cleanup: () => void }> = [];

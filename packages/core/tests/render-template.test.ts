@@ -8,7 +8,7 @@ import {
   getProductionTemplate,
   setProductionTemplateContent,
   setProductionTemplatePath,
-} from "../src/render/template";
+} from "../src/server/render/template.ts";
 
 beforeEach(() => {
   __resetTemplateState();

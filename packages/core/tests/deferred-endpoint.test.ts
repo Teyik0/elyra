@@ -17,9 +17,9 @@ mock.module("evlog", () => ({
 
 import { Elysia } from "elysia";
 import { defer } from "../src/client";
-import { parseDeferredNdjson } from "../src/deferred-ndjson";
-import { createDataEndpoint, scanPages } from "../src/router";
-import { __setDevMode, IS_DEV } from "../src/runtime-env";
+import { createDataEndpoint, scanPages } from "../src/server/router/index.ts";
+import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
+import { parseDeferredNdjson } from "../src/shared/deferred-ndjson.ts";
 
 const FIXTURES_DIR = join(import.meta.dirname, "fixtures/pages");
 const DIGEST_RE = /^[0-9a-f]{10}$/;

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ResolvedRoute } from "../router";
+import type { ResolvedRoute } from "../server/router/index.ts";
 
 /** @internal Exported for unit testing only. */
 export function patternToTypeString(pattern: string): string {

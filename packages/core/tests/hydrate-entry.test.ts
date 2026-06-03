@@ -9,7 +9,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateHydrateEntry } from "../src/build/hydrate.ts";
-import type { ResolvedRoute } from "../src/router.ts";
+import type { ResolvedRoute } from "../src/server/router/index.ts";
 
 // ── Minimal stub ──────────────────────────────────────────────────────────────
 
@@ -40,7 +40,7 @@ describe("generateHydrateEntry", () => {
   test("imports RouterProvider via package specifier so client links share one RouterContext", () => {
     const code = generateHydrateEntry(ROUTES, ROOT, "");
     expect(code).toContain('import { RouterProvider } from "@teyik0/furin/link";');
-    expect(code).not.toContain("/packages/core/src/link.tsx");
+    expect(code).not.toContain("/packages/core/src/client/link.tsx");
   });
 
   test("B12: without basePath — uses window.location.pathname directly", () => {

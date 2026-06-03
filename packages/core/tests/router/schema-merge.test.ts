@@ -24,8 +24,8 @@ import {
   createRoutePlugin,
   mergeRouteSchemas,
   scanPages,
-} from "../../src/router";
-import { __setDevMode, IS_DEV } from "../../src/runtime-env";
+} from "../../src/server/router/index.ts";
+import { __setDevMode, IS_DEV } from "../../src/server/runtime-env.ts";
 
 const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
 const ROUTE_PATTERN = "/schema-merge-parent/child";

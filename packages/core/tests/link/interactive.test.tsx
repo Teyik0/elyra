@@ -3,7 +3,12 @@ import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Link, RouterContext, type RouterContextValue, SSR_FALLBACK_ROUTER } from "../../src/link";
+import {
+  Link,
+  RouterContext,
+  type RouterContextValue,
+  SSR_FALLBACK_ROUTER,
+} from "../../src/client/link.tsx";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

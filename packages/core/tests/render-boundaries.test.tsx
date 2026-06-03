@@ -21,10 +21,10 @@
 import { describe, expect, test } from "bun:test";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { ErrorProps } from "../src/error.ts";
-import { FurinNotFoundError, type NotFoundProps } from "../src/not-found.ts";
-import { FurinErrorBoundary, FurinNotFoundBoundary } from "../src/render/boundaries.tsx";
-import { computeErrorDigest } from "../src/render/digest.ts";
+import { FurinErrorBoundary, FurinNotFoundBoundary } from "../src/server/render/boundaries.tsx";
+import { computeErrorDigest } from "../src/server/render/digest.ts";
+import type { ErrorProps } from "../src/shared/error.ts";
+import { FurinNotFoundError, type NotFoundProps } from "../src/shared/not-found.ts";
 
 const DIGEST_RE = /[0-9a-f]{10}/;
 const CUSTOM_FALLBACK_DIGEST_RE = /digest=[0-9a-f]{10}/;

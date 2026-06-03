@@ -30,29 +30,27 @@ mock.module("evlog/elysia", () => ({
 
 import {
   __resetCacheState,
+  __resetDevLoaderCacheState,
   _runWithRequestInvalidationScope,
   consumePendingInvalidations,
+  type DevLoaderCacheEntry,
   getBuildId,
+  getDevISRLoaderCache,
+  getDevSSGLoaderCache,
   getISRCache,
+  invalidateDevLoaderCacheByPath,
+  invalidateDevLoaderCacheBySource,
   isrCache,
   revalidatePath,
   setBuildId,
   setCachePurger,
+  setDevISRLoaderCache,
+  setDevSSGLoaderCache,
   setISRCache,
   setSSGCache,
   ssgCache,
-} from "../src/render/cache";
-import {
-  __resetDevLoaderCacheState,
-  type DevLoaderCacheEntry,
-  getDevISRLoaderCache,
-  getDevSSGLoaderCache,
-  invalidateDevLoaderCacheByPath,
-  invalidateDevLoaderCacheBySource,
-  setDevISRLoaderCache,
-  setDevSSGLoaderCache,
-} from "../src/render/dev-cache";
-import { __setDevMode } from "../src/runtime-env";
+} from "../src/server/cache/index.ts";
+import { __setDevMode } from "../src/server/runtime-env.ts";
 
 function devEntry(overrides: Partial<DevLoaderCacheEntry>): DevLoaderCacheEntry {
   return {

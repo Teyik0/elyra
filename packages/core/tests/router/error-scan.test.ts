@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { scanPages } from "../../src/router.ts";
+import { scanPages } from "../../src/server/router/index.ts";
 
 const ERROR_FIXTURES_DIR = join(import.meta.dirname, "..", "fixtures", "pages-error-nested");
 

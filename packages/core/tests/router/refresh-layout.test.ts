@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { RuntimeRoute } from "../../src/client.ts";
-import { refreshLayoutChain } from "../../src/router.ts";
+import { refreshLayoutChain } from "../../src/server/router/index.ts";
 
 describe("refreshLayoutChain", () => {
   test("patches layout on intermediate route chain objects after re-import", async () => {

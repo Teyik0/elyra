@@ -1,27 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildEntrySource } from "./entry-template";
+import { buildEntrySource, type BuildEntryOptions } from "./entry-template";
 import { ensureDir } from "./shared";
-
-export interface ServerRoutesEntryOptions {
-  buildId?: string;
-  outDir: string;
-  rootConventions?: { errorPath?: string; notFoundPath?: string };
-  rootPath: string;
-  routeMetadata?: Record<
-    string,
-    {
-      segmentBoundaries: Array<{
-        depth: number;
-        path: string;
-        errorPath?: string;
-        notFoundPath?: string;
-      }>;
-    }
-  >;
-  routes: Array<{ mode: "ssr" | "ssg" | "isr"; path: string; pattern: string }>;
-  serverEntry: string;
-}
 
 /**
  * Generates `server.ts` — an intermediate entry used to produce `server.js`.
@@ -34,7 +14,7 @@ export interface ServerRoutesEntryOptions {
  * This file is intermediate: `adapter/bun.ts` runs `Bun.build()` on it to produce
  * the self-contained `server.js` bundle, then deletes this file.
  */
-export function generateServerRoutesEntry(options: ServerRoutesEntryOptions): string {
+export function generateServerRoutesEntry(options: BuildEntryOptions): string {
   const { buildId, outDir, rootPath, routes, serverEntry, rootConventions, routeMetadata } =
     options;
   ensureDir(outDir);

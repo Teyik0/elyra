@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { filePathToPattern } from "../../src/router";
+import { filePathToPattern } from "../../src/server/router/index.ts";
 
 describe("filePathToPattern", () => {
   test("converts index route to root", () => {

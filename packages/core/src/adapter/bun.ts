@@ -7,22 +7,25 @@ import { generateServerRoutesEntry } from "../build/server-routes-entry.ts";
 import { buildTargetManifest, copyDirRecursive, ensureDir, toPosixPath } from "../build/shared.ts";
 import type { BuildAppOptions, TargetBuildManifest } from "../build/types.ts";
 import type { BuildTarget } from "../config.ts";
-import { generateProdIndexHtml } from "../render/shell.ts";
-import type { ResolvedRoute, RootLayout } from "../router.ts";
+import { generateProdIndexHtml } from "../server/render/shell.ts";
+import type { ResolvedRoute, RootLayout } from "../server/router/index.ts";
 
 // import.meta.resolve() runs at runtime (not inlined at bundle time), resolves
-// through package exports, and is the Web-standard API.
-const _pkgRoot = dirname(dirname(fileURLToPath(import.meta.resolve("@teyik0/furin"))));
-const _pkgSrcDir = existsSync(join(_pkgRoot, "src", "furin.ts"))
+// through package exports, and is the Web-standard API. The main entry is
+// `src/server/furin.ts` (or `dist/server/furin.js`), so we strip three
+// path segments to reach the package root.
+const _pkgRoot = dirname(dirname(dirname(fileURLToPath(import.meta.resolve("@teyik0/furin")))));
+const _pkgSrcDir = existsSync(join(_pkgRoot, "src", "server", "furin.ts"))
   ? join(_pkgRoot, "src")
   : join(_pkgRoot, "dist");
+const _ext = existsSync(join(_pkgSrcDir, "server", "furin.ts")) ? ".ts" : ".js";
 const BUILD_ID_INPUT_PATHS = [
-  `${_pkgSrcDir}/build/compile-entry.ts`,
-  `${_pkgSrcDir}/build/entry-template.ts`,
-  `${_pkgSrcDir}/build/server-routes-entry.ts`,
-  `${_pkgSrcDir}/render/index.ts`,
-  `${_pkgSrcDir}/render/shell.ts`,
-  `${_pkgSrcDir}/router.ts`,
+  `${_pkgSrcDir}/build/compile-entry${_ext}`,
+  `${_pkgSrcDir}/build/entry-template${_ext}`,
+  `${_pkgSrcDir}/build/server-routes-entry${_ext}`,
+  `${_pkgSrcDir}/server/render/index${_ext}`,
+  `${_pkgSrcDir}/server/render/shell${_ext}`,
+  `${_pkgSrcDir}/server/router/index${_ext}`,
 ];
 
 async function createBuildFingerprint(

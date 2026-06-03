@@ -21,11 +21,11 @@ mock.module("evlog/elysia", () => ({
 
 import type { Context } from "elysia";
 import type { HTTPHeaders } from "elysia/types";
-import { notFound } from "../src/not-found";
-import { runLoaders } from "../src/render/loaders";
-import type { ResolvedRoute } from "../src/router";
-import { scanPages } from "../src/router";
-import { __setDevMode, IS_DEV } from "../src/runtime-env";
+import { runLoaders } from "../src/server/render/loaders.ts";
+import type { ResolvedRoute } from "../src/server/router/index.ts";
+import { scanPages } from "../src/server/router/index.ts";
+import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
+import { notFound } from "../src/shared/not-found.ts";
 
 const FIXTURES_DIR = join(import.meta.dirname, "fixtures/pages");
 

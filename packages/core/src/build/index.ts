@@ -3,7 +3,7 @@ import { join, relative, resolve } from "node:path";
 import { buildBunTarget } from "../adapter/bun";
 import { buildStaticTarget } from "../adapter/static";
 import { BUILD_TARGETS, type BuildTarget, type FurinPlugin } from "../config";
-import { scanPages } from "../router";
+import { scanPages } from "../server/router/index.ts";
 import { scanFurinInstances } from "./scan-server";
 import { ensureDir, toBuildRouteManifestEntry, toPosixPath } from "./shared";
 import type { BuildAppOptions, BuildAppResult, BuildManifest } from "./types";

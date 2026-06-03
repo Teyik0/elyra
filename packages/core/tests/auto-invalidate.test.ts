@@ -26,23 +26,25 @@ mock.module("evlog/elysia", () => ({
 }));
 
 import { Elysia } from "elysia";
-import { autoInvalidateRegistry, furinInvalidate, revalidateTag } from "../src/auto-invalidate";
+import {
+  autoInvalidateRegistry,
+  furinInvalidate,
+  revalidateTag,
+} from "../src/server/auto-invalidate/index.ts";
 import {
   __resetCacheState,
+  __resetDevLoaderCacheState,
   _runWithRequestInvalidationScope,
   consumePendingInvalidations,
+  getDevISRLoaderCache,
+  getDevSSGLoaderCache,
   isrCache,
+  setDevISRLoaderCache,
+  setDevSSGLoaderCache,
   setISRCache,
   setSSGCache,
   ssgCache,
-} from "../src/render/cache";
-import {
-  __resetDevLoaderCacheState,
-  getDevISRLoaderCache,
-  getDevSSGLoaderCache,
-  setDevISRLoaderCache,
-  setDevSSGLoaderCache,
-} from "../src/render/dev-cache";
+} from "../src/server/cache/index.ts";
 
 afterEach(() => {
   __resetCacheState();
@@ -145,7 +147,7 @@ describe("furinInvalidate macro", () => {
     // loader fresh, and used to NOT re-register the tag mapping — so a
     // subsequent mutation's `revalidateTag` found nothing and the response
     // shipped no `x-furin-revalidate` header, leaving the UI stale forever.
-    const { scanPages } = await import("../src/router");
+    const { scanPages } = await import("../src/server/router/index.ts");
     const { routes } = await scanPages(`${import.meta.dirname}/fixtures/pages`);
     const route = routes.find((r) => r.pattern === "/with-loader");
     if (!route?.page) {
@@ -156,7 +158,7 @@ describe("furinInvalidate macro", () => {
     // (see ResolvedRoute.tags / collectRouteTags in router.ts).
     (route as unknown as { tags: string[] }).tags = ["boards"];
 
-    const { createDataEndpoint } = await import("../src/router");
+    const { createDataEndpoint } = await import("../src/server/router/index.ts");
     const app = new Elysia().use(createDataEndpoint(routes));
 
     autoInvalidateRegistry.reset();
