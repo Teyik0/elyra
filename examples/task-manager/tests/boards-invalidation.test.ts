@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
-import { __resetCacheState } from "../../../packages/core/src/render/cache";
+import { __resetCacheState } from "../../../packages/core/src/server/cache";
 
 let deleteBoardResult = true;
 let nextBoardId = "board-created";

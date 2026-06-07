@@ -8,7 +8,7 @@ import {
   collectRouteChainFromRoute,
   hasCycle,
   validateRouteChain,
-} from "../../src/shared/utils.ts";
+} from "../../src/shared/utils/index.ts";
 
 const MUST_INHERIT_FROM_ROOT_RE = /must inherit from root/i;
 const CYCLE_RE = /cycle/i;

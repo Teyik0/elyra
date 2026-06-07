@@ -17,9 +17,9 @@
  * regardless of brand.
  */
 import type { CSSProperties, ReactNode } from "react";
-import { Link } from "../../client/link.tsx";
-import type { ErrorComponent } from "../../shared/error.ts";
-import type { NotFoundComponent } from "../../shared/not-found.ts";
+import type { ErrorComponent } from "../shared/error.ts";
+import type { NotFoundComponent } from "../shared/not-found.ts";
+import { Link } from "./link.tsx";
 
 const FONT_SANS =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';

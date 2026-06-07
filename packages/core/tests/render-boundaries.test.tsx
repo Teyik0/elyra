@@ -21,8 +21,8 @@
 import { describe, expect, test } from "bun:test";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { FurinErrorBoundary, FurinNotFoundBoundary } from "../src/server/render/boundaries.tsx";
-import { computeErrorDigest } from "../src/server/render/digest.ts";
+import { FurinErrorBoundary, FurinNotFoundBoundary } from "../src/client/boundaries.tsx";
+import { computeErrorDigest } from "../src/shared/digest.ts";
 import type { ErrorProps } from "../src/shared/error.ts";
 import { FurinNotFoundError, type NotFoundProps } from "../src/shared/not-found.ts";
 

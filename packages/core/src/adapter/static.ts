@@ -9,7 +9,7 @@ import { prerenderSSG } from "../server/render/index.ts";
 import { generateProdIndexHtml } from "../server/render/shell.ts";
 import { setProductionTemplateContent } from "../server/render/template.ts";
 import type { ResolvedRoute, RootLayout } from "../server/router/index.ts";
-import { mapWithConcurrency } from "../shared/utils.ts";
+import { mapWithConcurrency } from "../shared/utils/index.ts";
 
 /** Maximum concurrent pre-render calls (mirrors warmSSGCache). */
 const STATIC_CONCURRENCY = 4;

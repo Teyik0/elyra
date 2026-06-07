@@ -10,7 +10,7 @@ import {
   isFurinRoute,
   mapWithConcurrency,
   validateRouteChain,
-} from "../../shared/utils.ts";
+} from "../../shared/utils/index.ts";
 import { type CompileContext, getCompileContext } from "../internal.ts";
 import { IS_DEV } from "../runtime-env.ts";
 import { filePathToPattern, resolveMode } from "./patterns.ts";

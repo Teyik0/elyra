@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import type { Context } from "elysia";
 import type { RuntimePage, RuntimeRoute } from "../../client.ts";
-import { collectRouteChainFromRoute, isFurinPage, isFurinRoute } from "../../shared/utils.ts";
+import { collectRouteChainFromRoute, isFurinPage, isFurinRoute } from "../../shared/utils/index.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import {
   type DevLoaderCacheEntry,
