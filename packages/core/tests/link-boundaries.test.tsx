@@ -17,10 +17,10 @@ import React, {
   type ReactElement,
   type ReactNode,
 } from "react";
+import { FurinErrorBoundary, FurinNotFoundBoundary } from "../src/client/boundaries.tsx";
 import type { ClientSegmentBoundary, LoadedClientRoute } from "../src/client/link.tsx";
 import { buildPageElement } from "../src/client/link.tsx";
 import type { RuntimeRoute } from "../src/client.ts";
-import { FurinErrorBoundary, FurinNotFoundBoundary } from "../src/server/render/boundaries.tsx";
 import type { ErrorComponent } from "../src/shared/error.ts";
 import type { NotFoundComponent } from "../src/shared/not-found.ts";
 

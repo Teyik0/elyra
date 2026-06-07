@@ -15,7 +15,11 @@ import {
   type RouteContext,
 } from "../src/client";
 import type { CacheTag, InvalidationRule } from "../src/server/furin.ts";
-import { collectRouteChainFromRoute, isFurinPage, isFurinRoute } from "../src/shared/utils.ts";
+import {
+  collectRouteChainFromRoute,
+  isFurinPage,
+  isFurinRoute,
+} from "../src/shared/utils/index.ts";
 
 describe("RouteContext types (for loaders)", () => {
   test("exposes full Elysia context properties", () => {

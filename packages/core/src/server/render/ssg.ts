@@ -1,4 +1,4 @@
-import { mapWithConcurrency } from "../../shared/utils.ts";
+import { mapWithConcurrency } from "../../shared/utils/index.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import type { SsgCacheEntry } from "../cache/isr-ssg.ts";
 import { getSSGCache, setSSGCache } from "../cache/ssg.ts";

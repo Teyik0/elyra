@@ -1,10 +1,10 @@
 import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import type { AnySchema } from "elysia/types";
 import { toCrossJSON, toCrossJSONAsync } from "seroval";
+import { computeErrorDigest } from "../../shared/digest.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { useLogger } from "../context-logger.ts";
 import { resolvePath } from "../render/assemble.ts";
-import { computeErrorDigest } from "../render/digest.ts";
 import {
   handleISR,
   prerenderSSG,

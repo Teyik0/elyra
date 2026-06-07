@@ -9,6 +9,7 @@ import {
   RouterContext,
   type RouterContextValue,
 } from "../../client/router/index.ts";
+import { computeErrorDigest } from "../../shared/digest.ts";
 import { runInSyntheticRenderScope, useLogger } from "../context-logger.ts";
 // FurinNotFoundError is used indirectly via buildNotFoundElement in element.tsx
 import type { ResolvedRoute, RootLayout } from "../router/index.ts";
@@ -21,7 +22,6 @@ import {
   splitTemplate,
   streamToString,
 } from "./assemble.ts";
-import { computeErrorDigest } from "./digest.ts";
 import { buildElement, buildErrorElement, buildNotFoundElement } from "./element.tsx";
 import { type LoaderResult, runLoaders, serializeDeferredRejection } from "./loaders.ts";
 import { buildHeadInjection, generateIndexHtml, safeJson } from "./shell.ts";

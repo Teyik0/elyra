@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { RuntimePage, RuntimeRoute } from "../../src/client.ts";
 import { resolveMode, scanPages } from "../../src/server/router/index.ts";
 import { __setDevMode, IS_DEV } from "../../src/server/runtime-env.ts";
-import { collectRouteChainFromRoute } from "../../src/shared/utils.ts";
+import { collectRouteChainFromRoute } from "../../src/shared/utils/index.ts";
 import { expectDefined } from "../helpers/utils.ts";
 
 const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");

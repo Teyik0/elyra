@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
+import { wrapSegmentBoundaries } from "../../client/boundaries.tsx";
+import { DefaultErrorFallback, DefaultNotFoundFallback } from "../../client/default-screens.tsx";
 import type { RuntimeRoute } from "../../client.ts";
-import { wrapSegmentBoundaries } from "../../shared/boundaries.tsx";
 import type { ErrorComponent } from "../../shared/error.ts";
 import type { FurinNotFoundError, NotFoundComponent } from "../../shared/not-found.ts";
 import type { ResolvedRoute, SegmentBoundary } from "../router/index.ts";
-import { DefaultErrorFallback, DefaultNotFoundFallback } from "./default-screens.tsx";
 
 export function buildElement(
   route: ResolvedRoute,
@@ -28,7 +28,7 @@ export function buildElement(
   // with the boundary declared at this depth (so the boundary sits INSIDE
   // the layout at the same depth), THEN wrap with the layout itself.
   for (let i = route.routeChain.length - 1; i >= 1; i--) {
-    element = wrapSegmentBoundaries(element, byDepth.get(i));
+    element = wrapSegmentBoundaries(element, byDepth.get(i), undefined);
     const routeEntry = route.routeChain[i];
     if (routeEntry?.layout) {
       const Layout = routeEntry.layout;
@@ -38,7 +38,7 @@ export function buildElement(
 
   // Depth 0 = pagesDir itself = the root layout directory. Boundary wraps
   // everything below the root layout; root layout wraps the boundary.
-  element = wrapSegmentBoundaries(element, byDepth.get(0));
+  element = wrapSegmentBoundaries(element, byDepth.get(0), undefined);
 
   if (rootLayout.layout) {
     const RootLayoutComponent = rootLayout.layout;

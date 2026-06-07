@@ -22,7 +22,7 @@ const rehypeShiki = () => async (tree: HastNode) => {
       return;
     }
     const parent = ancestors.at(-1);
-    if (!parent || parent.tagName !== "pre") {
+    if (parent?.tagName !== "pre") {
       return;
     }
 

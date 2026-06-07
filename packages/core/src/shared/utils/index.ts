@@ -1,4 +1,4 @@
-import type { RuntimePage, RuntimeRoute } from "../client";
+import type { RuntimePage, RuntimeRoute } from "../../client";
 
 export function isFurinPage(value: unknown): value is RuntimePage {
   return (

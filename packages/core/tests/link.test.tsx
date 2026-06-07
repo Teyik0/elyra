@@ -3,6 +3,7 @@ import { expectTypeOf } from "expect-type";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { RuntimeRoute } from "../src/client";
+import { FurinErrorBoundary } from "../src/client/boundaries.tsx";
 import type {
   CacheEntry,
   LinkProps,
@@ -25,7 +26,6 @@ import {
   shouldAutoRefreshPath,
   shouldRefetch,
 } from "../src/client/link.tsx";
-import { FurinErrorBoundary } from "../src/server/render/boundaries.tsx";
 import type { NotFoundComponent } from "../src/shared/not-found.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

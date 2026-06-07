@@ -1,7 +1,7 @@
 import type React from "react";
 import { createElement } from "react";
-import { DefaultNotFoundScreen } from "../../server/render/default-screens.tsx";
 import type { NotFoundComponent } from "../../shared/not-found.ts";
+import { DefaultNotFoundScreen } from "../default-screens.tsx";
 import { TRAILING_SLASHES_RE, toLogical } from "./link-utils.ts";
 import type { ClientSegmentBoundary, SpaResponseKind } from "./types.ts";
 
