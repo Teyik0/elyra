@@ -1,3 +1,6 @@
+import { autoInvalidateRegistry } from "../auto-invalidate/registry";
+import { type Cache, createRouteCache } from "./route-cache";
+
 export interface ISRCacheEntry {
   generatedAt: number;
   html: string;
@@ -15,4 +18,23 @@ export interface SsgCacheEntry {
    */
   ndjson: string;
   status: number;
+}
+
+/** Maximum number of pre-rendered HTML entries (per mode) before LRU eviction. */
+const MAX_HTML_CACHE_SIZE = 1000;
+
+/**
+ * Builds the LRU cache backing one render mode's pre-rendered HTML. ISR and SSG
+ * share the same eviction bound and the same `onDelete` hook — which keeps the
+ * auto-invalidate path registry in sync — and differ only in entry shape and
+ * the diagnostic `name`.
+ */
+export function createHtmlRouteCache<Entry>(mode: "isr" | "ssg"): Cache<Entry> {
+  return createRouteCache<Entry>({
+    maxSize: MAX_HTML_CACHE_SIZE,
+    name: `render:${mode}-html`,
+    onDelete: (key) => {
+      autoInvalidateRegistry.unregisterPath(key);
+    },
+  });
 }

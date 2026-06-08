@@ -1,17 +1,6 @@
-import { autoInvalidateRegistry } from "../auto-invalidate/registry";
-import type { ISRCacheEntry } from "./isr-ssg";
-import { createRouteCache } from "./route-cache";
+import { createHtmlRouteCache, type ISRCacheEntry } from "./isr-ssg";
 
-/** Maximum number of ISR cache entries before LRU eviction kicks in. */
-const MAX_ISR_CACHE_SIZE = 1000;
-
-export const isrRouteCache = createRouteCache<ISRCacheEntry>({
-  maxSize: MAX_ISR_CACHE_SIZE,
-  name: "render:isr-html",
-  onDelete: (key) => {
-    autoInvalidateRegistry.unregisterPath(key);
-  },
-});
+export const isrRouteCache = createHtmlRouteCache<ISRCacheEntry>("isr");
 
 export const isrCache = isrRouteCache.store;
 
