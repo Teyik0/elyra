@@ -3,10 +3,13 @@ import type { KnipConfig } from "knip";
 const config: KnipConfig = {
   workspaces: {
     ".": {
+      // doctor.config.ts is consumed by the react-doctor CLI (not imported by
+      // app code); list it as an entry so its `react-doctor/api` type import
+      // also marks the dependency as used.
+      entry: ["doctor.config.ts"],
       // @biomejs/biome is used via biome.jsonc but not directly imported in JS/TS
       // @commitlint/cli is the CLI runner; commitlint plugin detects config-conventional
-      // react-doctor is a standalone CLI tool, not imported
-      ignoreDependencies: ["@biomejs/biome", "@commitlint/cli", "react-doctor"],
+      ignoreDependencies: ["@biomejs/biome", "@commitlint/cli"],
     },
     "packages/core": {
       entry: ["src/cli/index.ts"],
