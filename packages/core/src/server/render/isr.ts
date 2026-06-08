@@ -1,14 +1,17 @@
 import type { Context } from "elysia";
 import { renderToReadableStream } from "react-dom/server";
-import { computeErrorDigest } from "../../shared/digest.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { getISRCache, setISRCache } from "../cache/isr.ts";
 import type { ISRCacheEntry } from "../cache/isr-ssg.ts";
 import { createLogger, useLogger } from "../context-logger.ts";
 import type { ResolvedRoute, RootLayout } from "../router/index.ts";
 import { assembleHTML, type LoaderContext, resolvePath, streamToString } from "./assemble.ts";
-import { buildErrorElement } from "./element.tsx";
-import { type PreparedRender, prepareRender, renderForPath, withSSRRouterContext } from "./ssr.ts";
+import {
+  type PreparedRender,
+  prepareRender,
+  renderElementWithShellFallback,
+  renderForPath,
+} from "./ssr.ts";
 
 /**
  * Builds the Cache-Control header value for an ISR response.
@@ -80,14 +83,16 @@ async function renderISRNon200(
     }
   }
 
-  let reactStream: Awaited<ReturnType<typeof renderToReadableStream>>;
+  const { stream: reactStream, shellError } = await renderElementWithShellFallback(
+    element,
+    route.error ?? root.error,
+    prepared.ssrContext
+  );
   let finalStatus = status;
   let finalDigest = errorDigest;
-  try {
-    reactStream = await renderToReadableStream(element);
-  } catch (shellError) {
+  if (shellError) {
     finalStatus = 500;
-    finalDigest = computeErrorDigest(shellError);
+    finalDigest = shellError.digest;
     useLogger().set({
       furin: {
         render: "isr",
@@ -99,21 +104,6 @@ async function renderISRNon200(
     });
     fallbackProps.__furinError = { digest: finalDigest, status: finalStatus };
     fallbackProps.__furinStatus = 500;
-    try {
-      reactStream = await renderToReadableStream(
-        withSSRRouterContext(
-          buildErrorElement(route.error ?? root.error, shellError, finalDigest, undefined, 500),
-          prepared.ssrContext
-        )
-      );
-    } catch {
-      reactStream = await renderToReadableStream(
-        withSSRRouterContext(
-          buildErrorElement(undefined, shellError, finalDigest, undefined, 500),
-          prepared.ssrContext
-        )
-      );
-    }
   }
   if (!fallbackProps.__furinError && errorDigest) {
     fallbackProps.__furinError = { digest: errorDigest, status };
