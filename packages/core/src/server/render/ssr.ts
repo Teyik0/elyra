@@ -90,6 +90,55 @@ export function withSSRRouterContext(
   return createElement(RouterContext.Provider, { value: contextValue }, element);
 }
 
+interface ShellFallbackResult {
+  /**
+   * Set when the primary element threw synchronously during render and a
+   * fallback error UI was streamed instead. Carries the digest so the caller
+   * can surface it in logs and the `__furinError` payload.
+   */
+  shellError: { error: unknown; digest: string } | undefined;
+  stream: Awaited<ReturnType<typeof renderToReadableStream>>;
+}
+
+/**
+ * Renders `element` to a React stream, recovering from a synchronous shell
+ * throw with a 500 error UI. The supplied error component (route-level, else
+ * root-level) is tried first; if it ALSO throws, the built-in error element is
+ * used, so a broken custom error page can never take down the whole response.
+ *
+ * Shared by SSR (which pipes the stream) and ISR/SSG non-200 (which drains it
+ * to a string) — both start from this same React stream and only diverge in how
+ * they consume it and which fields they log.
+ */
+export async function renderElementWithShellFallback(
+  element: ReactNode,
+  errorComponent: Parameters<typeof buildErrorElement>[0],
+  ssrContext: RouterContextValue
+): Promise<ShellFallbackResult> {
+  try {
+    return { stream: await renderToReadableStream(element), shellError: undefined };
+  } catch (error) {
+    const digest = computeErrorDigest(error);
+    try {
+      const stream = await renderToReadableStream(
+        withSSRRouterContext(
+          buildErrorElement(errorComponent, error, digest, undefined, 500),
+          ssrContext
+        )
+      );
+      return { stream, shellError: { error, digest } };
+    } catch {
+      const stream = await renderToReadableStream(
+        withSSRRouterContext(
+          buildErrorElement(undefined, error, digest, undefined, 500),
+          ssrContext
+        )
+      );
+      return { stream, shellError: { error, digest } };
+    }
+  }
+}
+
 /**
  * defer() streams data progressively — it only makes sense in SSR. In SSG/ISR
  * the HTML is pre-rendered and cached, so the deferred fields would be absent
@@ -391,34 +440,20 @@ export async function renderSSR(
 
   const { headPre, bodyPre, bodyPost } = splitTemplate(template);
 
-  let reactStream: ReadableStream<Uint8Array>;
+  const { stream: reactStream, shellError } = await renderElementWithShellFallback(
+    element,
+    route.error ?? root.error,
+    prepared.ssrContext
+  );
+  const shellErrored = shellError !== undefined;
   let status = prepared.status;
-  let shellErrored = false;
   let finalDigest = prepared.errorDigest;
-  try {
-    reactStream = await renderToReadableStream(element);
-  } catch (shellError) {
-    shellErrored = true;
+  if (shellError) {
     status = 500;
-    finalDigest = computeErrorDigest(shellError);
+    finalDigest = shellError.digest;
     useLogger().set({
       furin: { render: route.mode, route: route.pattern, digest: finalDigest, phase: "shell" },
     });
-    try {
-      reactStream = await renderToReadableStream(
-        withSSRRouterContext(
-          buildErrorElement(route.error ?? root.error, shellError, finalDigest, undefined, 500),
-          prepared.ssrContext
-        )
-      );
-    } catch {
-      reactStream = await renderToReadableStream(
-        withSSRRouterContext(
-          buildErrorElement(undefined, shellError, finalDigest, undefined, 500),
-          prepared.ssrContext
-        )
-      );
-    }
   }
 
   const dataPayload: Record<string, unknown> = shellErrored ? {} : { ...syncData };
