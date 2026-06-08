@@ -122,12 +122,27 @@ export function loadProdRoutes(ctx: CompileContext): {
   return { root, routes };
 }
 
+/**
+ * Normalises OS-native path separators to POSIX "/" so the slash-based path
+ * arithmetic in the scan (relative slicing, `lastIndexOf("/")`,
+ * `${pagesDir}/...`) works on Windows, where `node:path` join/resolve emit
+ * backslashes. `existsSync` and dynamic `import()` both accept forward slashes
+ * on Windows, so the normalised form is safe for filesystem and module access.
+ */
+function toPosixPath(path: string): string {
+  return path.replaceAll("\\", "/");
+}
+
 export async function scanPages(pagesDir: string): Promise<{
   root: RootLayout;
   routes: ResolvedRoute[];
 }> {
-  const root = await scanRootLayout(pagesDir);
-  const routes = await scanPageFiles(pagesDir, root);
+  // Normalise once at the entry point; scanRootLayout and scanPageFiles (plus
+  // every absolute path collectPageFilePaths yields) then operate purely on
+  // POSIX-separated paths.
+  const dir = toPosixPath(pagesDir);
+  const root = await scanRootLayout(dir);
+  const routes = await scanPageFiles(dir, root);
   return { root, routes };
 }
 
@@ -436,7 +451,7 @@ async function collectPageFilePaths(dir: string): Promise<string[]> {
   // original alphabetical entry order so the depth-first interleaving is
   // preserved (file, then its sub-tree, then next file…).
   const resolved = await mapWithConcurrency(entries, DIR_SCAN_CONCURRENCY, async (entry) => {
-    const absolutePath = join(dir, entry.name);
+    const absolutePath = toPosixPath(join(dir, entry.name));
     if (entry.isDirectory()) {
       return await collectPageFilePaths(absolutePath);
     }

@@ -342,6 +342,14 @@ export function RouterProvider({
       navAbortRef.current?.abort();
       const navAbort = new AbortController();
       navAbortRef.current = navAbort;
+      // Abort scope is deliberate. The PRIMARY load runs through the shared
+      // prefetch cache (started with no signal in `prefetch`), so it is never
+      // cancelled here — a hover-prefetch must survive the click that reuses it,
+      // and several Links to the same href share one entry. Render correctness
+      // is guaranteed by `navVersion` (stale results are discarded), not by
+      // aborting. `navSignal` only covers the redirect-follow fetch below
+      // (`resolveRedirectState` → `parseDeferredNdjson`), where a superseded
+      // navigation must release pending deferred resolvers.
       const navSignal = navAbort.signal;
       setIsNavigating(true);
       try {

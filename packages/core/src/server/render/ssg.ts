@@ -39,6 +39,18 @@ export async function prerenderSSG(
   return entry;
 }
 
+/**
+ * Emits a single structured error log for an SSG warm-up/prerender failure.
+ * Centralises the repeated `createLogger → set → error → emit` dance so every
+ * failure path stays consistent.
+ */
+function logSsgError(furin: Record<string, unknown>, error: unknown): void {
+  const logger = createLogger({});
+  logger.set({ furin });
+  logger.error(error instanceof Error ? error : new Error(String(error)));
+  logger.emit();
+}
+
 /** Maximum number of concurrent `prerenderSSG` calls during SSG warm-up. */
 const SSG_WARM_CONCURRENCY = 4;
 
@@ -82,34 +94,18 @@ export async function warmSSGCache(
   const tasks: Array<() => Promise<void>> = [];
   for (const result of staticParamsResults) {
     if ("error" in result) {
-      const errorLogger = createLogger({});
-      errorLogger.set({
-        furin: {
-          render: "ssg",
-          action: "warmup_failed",
-          route: result.route.pattern,
-        },
-      });
-      errorLogger.error(
-        result.error instanceof Error ? result.error : new Error(String(result.error))
+      logSsgError(
+        { render: "ssg", action: "warmup_failed", route: result.route.pattern },
+        result.error
       );
-      errorLogger.emit();
       continue;
     }
     const { route, paramSets } = result;
     if (!Array.isArray(paramSets)) {
-      const errorLogger = createLogger({});
-      errorLogger.set({
-        furin: {
-          render: "ssg",
-          action: "warmup_failed",
-          route: route.pattern,
-        },
-      });
-      errorLogger.error(
+      logSsgError(
+        { render: "ssg", action: "warmup_failed", route: route.pattern },
         new Error(`staticParams() for "${route.pattern}" returned a non-array value`)
       );
-      errorLogger.emit();
       continue;
     }
     for (const params of paramSets) {
@@ -117,16 +113,7 @@ export async function warmSSGCache(
         try {
           await prerenderSSG(route, params, root, origin, undefined);
         } catch (err) {
-          const errorLogger = createLogger({});
-          errorLogger.set({
-            furin: {
-              render: "ssg",
-              action: "prerender_failed",
-              route: route.pattern,
-            },
-          });
-          errorLogger.error(err instanceof Error ? err : new Error(String(err)));
-          errorLogger.emit();
+          logSsgError({ render: "ssg", action: "prerender_failed", route: route.pattern }, err);
         }
       });
     }

@@ -40,11 +40,23 @@ export function resolveMode(page: RuntimePage, routeChain: RuntimeRoute[]): "ssr
 export function filePathToPattern(path: string): string {
   const parts = path.replaceAll("\\", "/").split("/");
   const segments: string[] = [];
+  const lastIndex = parts.length - 1;
 
-  for (const part of parts) {
-    const name = parse(part).name;
+  for (let idx = 0; idx < parts.length; idx++) {
+    const part = parts[idx];
+    if (part === undefined || part.length === 0) {
+      continue;
+    }
 
-    if (name === "index") {
+    // Only the leaf (file) segment carries an extension to strip. Directory
+    // segments are kept verbatim so valid folder names with dots — e.g.
+    // `v1.0` — are not truncated into `v1` by `parse().ext` handling.
+    const isFile = idx === lastIndex;
+    const name = isFile ? parse(part).name : part;
+
+    // `index` collapses to its parent ONLY as a leaf filename. A directory
+    // literally named `index` is a real route segment and must be preserved.
+    if (isFile && name === "index") {
       continue;
     }
 
@@ -73,25 +85,54 @@ export function escapeRegExpChar(ch: string): string {
 }
 
 /**
- * Scores how specific a route pattern is so the `/_furin/data` matcher can
- * prefer a static route over a dynamic sibling that also matches. Per segment:
+ * Ranks a single route segment by how tightly it constrains a URL position:
  * a literal segment outranks a `:param`, which outranks a `*` wildcard.
  */
-export function routeSpecificity(pattern: string): number {
-  let score = 0;
-  for (const segment of pattern.split("/")) {
-    if (segment.length === 0) {
-      continue;
+function segmentSpecificity(segment: string): number {
+  if (segment === "*") {
+    return 1;
+  }
+  if (segment.startsWith(":")) {
+    return 2;
+  }
+  return 3;
+}
+
+/**
+ * Compares two route patterns by specificity so the `/_furin/data` matcher can
+ * prefer the more specific of two siblings that both match a pathname.
+ *
+ * Patterns are compared segment by segment from the left; the first position
+ * where they differ decides (literal > `:param` > `*`). When every shared
+ * position ties, the pattern with more explicit segments wins over a shorter
+ * one whose wildcard absorbs the tail.
+ *
+ * Returns a positive number when `a` is MORE specific than `b`, negative when
+ * less, and `0` only when the two are indistinguishable. This lexicographic
+ * ranking replaces the previous summed-weight score, which produced ties such
+ * as `/blog/new/:section` vs `/blog/:id/edit` (both summed to 8) that resolved
+ * non-deterministically by scan order.
+ */
+export function compareRouteSpecificity(a: string, b: string): number {
+  const aSegments = a.split("/").filter((segment) => segment.length > 0);
+  const bSegments = b.split("/").filter((segment) => segment.length > 0);
+  const length = Math.max(aSegments.length, bSegments.length);
+  for (let i = 0; i < length; i++) {
+    const aSegment = aSegments[i];
+    const bSegment = bSegments[i];
+    // The pattern that still has a segment here constrains one more position.
+    if (aSegment === undefined) {
+      return -1;
     }
-    if (segment === "*") {
-      score += 1;
-    } else if (segment.startsWith(":")) {
-      score += 2;
-    } else {
-      score += 3;
+    if (bSegment === undefined) {
+      return 1;
+    }
+    const diff = segmentSpecificity(aSegment) - segmentSpecificity(bSegment);
+    if (diff !== 0) {
+      return diff;
     }
   }
-  return score;
+  return 0;
 }
 
 /**

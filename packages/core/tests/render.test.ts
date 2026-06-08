@@ -718,6 +718,35 @@ describe("render.tsx", () => {
       expect(response.headers.get("x-loader-ran")).toBe("true");
     });
 
+    test("routes a throwing head() through the error boundary instead of crashing", async () => {
+      const ssrRoute = await getRoute("/ssr-page");
+      const root = await getRoot();
+      const headBoom = new Error("head exploded");
+      const routeWithThrowingHead = {
+        ...ssrRoute,
+        page: {
+          ...ssrRoute.page,
+          head: () => {
+            throw headBoom;
+          },
+        },
+      } as unknown as ResolvedRoute;
+
+      const ctx = createMockLoaderContext({ path: "/ssr-page" });
+      // Must resolve to a 500 Response, never reject — head() is user code and a
+      // throw there has to surface via the framework error UI, not escape the
+      // render pipeline.
+      const response = await renderSSR(routeWithThrowingHead, ctx, root, undefined);
+
+      expect(response).toBeInstanceOf(Response);
+      expect(response.status).toBe(500);
+      const html = await response.text();
+      const match = html.match(FURIN_DATA_REGEX);
+      const data = JSON.parse(match?.[1] ?? "{}");
+      expect(data.__furinError?.status).toBe(500);
+      expect(typeof data.__furinError?.digest).toBe("string");
+    });
+
     test("does not surface React abort errors for deferred Suspense boundaries", async () => {
       setProductionTemplateContent(
         '<!DOCTYPE html><html><head><!--ssr-head--></head><body><div id="root"><!--ssr-outlet--></div><script type="module" src="/_hydrate.js"></script></body></html>'
@@ -881,7 +910,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/isr-page" });
-      const html = await handleISR(isrRoute, ctx, root);
+      const html = await handleISR(isrRoute, ctx, root, undefined);
 
       expect(html).toContain("<html");
       expect(html).toContain("isr-page");
@@ -904,7 +933,7 @@ describe("render.tsx", () => {
       } as ResolvedRoute;
 
       const ctx = createMockLoaderContext({ path: "/isr-page" });
-      const result = await handleISR(redirectRoute, ctx, root);
+      const result = await handleISR(redirectRoute, ctx, root, undefined);
 
       expect(result).toBeInstanceOf(Response);
       if (result instanceof Response) {
@@ -918,7 +947,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/isr-page" });
-      await handleISR(isrRoute, ctx, root);
+      await handleISR(isrRoute, ctx, root, undefined);
 
       const cacheControl = ctx.set.headers["cache-control"];
       expect(cacheControl).toContain("public");
@@ -930,8 +959,8 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/isr-page" });
-      const html1 = await handleISR(isrRoute, ctx, root);
-      const html2 = await handleISR(isrRoute, ctx, root);
+      const html1 = await handleISR(isrRoute, ctx, root, undefined);
+      const html2 = await handleISR(isrRoute, ctx, root, undefined);
 
       expect(html1).toBe(html2);
     });
@@ -990,7 +1019,7 @@ describe("render.tsx", () => {
       } as unknown as ResolvedRoute;
 
       const ctx = createMockLoaderContext({ path: "/isr-page" });
-      const html = await handleISR(throwingComponentRoute, ctx, root);
+      const html = await handleISR(throwingComponentRoute, ctx, root, undefined);
 
       // Should not crash; fallback component renders a generic 500 page.
       expect(html).toContain("500");
@@ -1376,7 +1405,7 @@ describe("render.tsx", () => {
       } as ResolvedRoute;
 
       const ctx = createMockLoaderContext({ path: "/isr-page" });
-      const html = await handleISR(notFoundRoute, ctx, root);
+      const html = await handleISR(notFoundRoute, ctx, root, undefined);
 
       expect(html).toContain("404");
       expect(ctx.set.status).toBe(404);

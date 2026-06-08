@@ -15,24 +15,10 @@ import { type CompileContext, getCompileContext } from "../internal.ts";
 import { resolvePath } from "../render/assemble.ts";
 import { type LoaderResult, renderSSR, runLoaders } from "../render/index.ts";
 import { collectRouteTags, getSourceModuleCandidates, isModuleNotFoundError } from "./discovery.ts";
-import { resolveMode } from "./patterns.ts";
+import { collectIntermediateLayoutDirs, resolveMode } from "./patterns.ts";
 import type { ResolvedRoute, RootLayout } from "./types.ts";
 
 type RouteModuleImport = (specifier: string) => Promise<Record<string, unknown>>;
-
-function collectIntermediateLayoutDirs(pagePath: string, rootPath: string): string[] {
-  const pageDir = pagePath.slice(0, pagePath.lastIndexOf("/"));
-  const pagesDir = rootPath.slice(0, rootPath.lastIndexOf("/"));
-  const layoutDirs: string[] = [];
-  let dir = pageDir;
-
-  while (dir.length > pagesDir.length) {
-    layoutDirs.unshift(dir);
-    dir = dir.slice(0, dir.lastIndexOf("/"));
-  }
-
-  return layoutDirs;
-}
 
 function isResolvedRouteModuleCandidate(
   layoutPath: string,

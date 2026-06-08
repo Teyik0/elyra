@@ -110,6 +110,40 @@ export function assertDeferredModeAllowed(
 }
 
 /**
+ * Builds the success-path element and head injection. `head()` is user code
+ * that runs synchronously, outside the render pipeline's shell-error handling,
+ * so a throw is converted into a 500 error render that surfaces through the
+ * framework error UI instead of escaping `prepareRender` and crashing the
+ * request. Re-throws when `throwOnFailure` is set (build-time SSG) so CI fails
+ * loudly.
+ */
+function buildSuccessRender(
+  route: ResolvedRoute,
+  root: RootLayout,
+  componentProps: Record<string, unknown>,
+  throwOnFailure: boolean
+): { element: ReactNode; headData: string; errorDigest: string | undefined; status: number } {
+  try {
+    const headData = buildHeadInjection(route.page?.head?.(componentProps));
+    const element = buildElement(route, componentProps, root.route);
+    return { element, headData, errorDigest: undefined, status: 200 };
+  } catch (headError) {
+    if (throwOnFailure) {
+      throw headError;
+    }
+    const errorDigest = computeErrorDigest(headError);
+    const element = buildErrorElement(
+      route.error ?? root.error,
+      headError,
+      errorDigest,
+      undefined,
+      500
+    );
+    return { element, headData: "", errorDigest, status: 500 };
+  }
+}
+
+/**
  * Shared pipeline steps used by both `renderToHTML` (buffered) and `renderSSR`
  * (streaming). Runs loaders, builds props, head injection, resolves template,
  * and creates the React element.
@@ -156,14 +190,13 @@ export async function prepareRender(
     path: ctx.path,
   };
 
-  const headData = isFallback ? "" : buildHeadInjection(route.page?.head?.(componentProps));
-
   const prodTemplate = getProductionTemplate();
   const template =
     prodTemplate ??
     (IS_DEV ? await getDevTemplate(new URL(ctx.request.url).origin) : generateIndexHtml());
 
   let element: ReactNode;
+  let headData = "";
   let status = 200;
   let errorDigest: string | undefined;
   let notFoundError: { data?: unknown; message?: string } | undefined;
@@ -182,7 +215,11 @@ export async function prepareRender(
     );
     status = loaderResult.status;
   } else {
-    element = buildElement(route, componentProps, root.route);
+    const success = buildSuccessRender(route, root, componentProps, throwOnFailure);
+    element = success.element;
+    headData = success.headData;
+    errorDigest = success.errorDigest;
+    status = success.status;
   }
 
   const ssrContext: RouterContextValue = {

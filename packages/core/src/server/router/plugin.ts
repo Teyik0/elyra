@@ -15,7 +15,7 @@ import {
 import { extractTitle } from "../render/shell.ts";
 import { IS_DEV } from "../runtime-env.ts";
 import { handleDevRequest } from "./hmr.ts";
-import { buildRouteRegex, routeSpecificity } from "./patterns.ts";
+import { buildRouteRegex, compareRouteSpecificity } from "./patterns.ts";
 import {
   applySchemaDefaults,
   detectQueryDefaultRedirect,
@@ -168,20 +168,20 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       // Find the MOST SPECIFIC matching route. A first-match scan would let a
       // dynamic route (`/users/:id`) shadow a static sibling (`/users/new`)
       // whenever it is scanned first — and `[id]` sorts before `new`, so it
-      // is. Score each match (static segment > :param > wildcard) and keep the
-      // highest, mirroring the precedence Elysia's router applies on the SSR path.
+      // is. Compare each match segment-by-segment (static segment > :param >
+      // wildcard) and keep the most specific, mirroring the precedence Elysia's
+      // router applies on the SSR path.
       const matched = routes.reduce<{
         route: ResolvedRoute;
         params: Record<string, string>;
-        score: number;
       } | null>((acc, route) => {
         const { regex, paramNames } = buildRouteRegex(route.pattern);
         const m = regex.exec(pathname);
         if (!m) {
           return acc;
         }
-        const score = routeSpecificity(route.pattern);
-        if (acc && acc.score >= score) {
+        // Keep the incumbent when it is at least as specific as this candidate.
+        if (acc && compareRouteSpecificity(route.pattern, acc.route.pattern) <= 0) {
           return acc;
         }
         const params: Record<string, string> = {};
@@ -191,7 +191,7 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
             params[name] = m[i + 1] ?? "";
           }
         }
-        return { route, params, score };
+        return { route, params };
       }, null);
 
       if (!matched) {
@@ -329,9 +329,12 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
         return new Response(
           createDeferredNdjsonStream(syncDataWithTitle, result.deferredPromises),
           {
+            // Loader headers first so custom headers survive; the NDJSON
+            // content-type is framework-owned and must win — a loader cannot be
+            // allowed to mislabel the data-endpoint payload.
             headers: {
-              "content-type": "application/x-ndjson",
               ...result.headers,
+              "content-type": "application/x-ndjson",
             },
           }
         );
@@ -341,8 +344,8 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       const serialized = await toCrossJSONAsync(syncDataWithTitle);
       return new Response(`${JSON.stringify(serialized)}\n`, {
         headers: {
-          "content-type": "application/x-ndjson",
           ...result.headers,
+          "content-type": "application/x-ndjson",
         },
       });
     },
