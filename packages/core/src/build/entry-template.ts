@@ -4,12 +4,10 @@ import { fileURLToPath } from "node:url";
 
 // import.meta.resolve() runs at runtime (not inlined at bundle time), resolves
 // through package exports, and is the Web-standard API. The main entry is
-// `src/server/furin.ts` (or `dist/server/furin.js`), so we strip three
-// path segments to reach the package root.
-const _pkgRoot = dirname(
-  dirname(dirname(fileURLToPath(import.meta.resolve("@teyik0/furin"))))
-);
-const _pkgSrcDirRaw = existsSync(join(_pkgRoot, "src", "server", "furin.ts"))
+// `src/furin.ts` (or `dist/furin.js`), so we strip two path segments to reach
+// the package root.
+const _pkgRoot = dirname(dirname(fileURLToPath(import.meta.resolve("@teyik0/furin"))));
+const _pkgSrcDirRaw = existsSync(join(_pkgRoot, "src", "furin.ts"))
   ? join(_pkgRoot, "src")
   : join(_pkgRoot, "dist");
 // Normalize to forward slashes so endsWith checks and template paths work on Windows.

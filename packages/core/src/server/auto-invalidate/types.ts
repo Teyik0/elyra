@@ -1,5 +1,5 @@
+import type { CacheTag } from "../../furin.ts";
 import type { RevalidateType } from "../cache/route-cache.ts";
-import type { CacheTag } from "../furin.ts";
 
 export type InvalidationRule =
   | {

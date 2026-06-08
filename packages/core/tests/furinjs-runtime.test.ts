@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Elysia } from "elysia";
-import { furin } from "../src/server/furin.ts";
+import { furin } from "../src/furin.ts";
 import { __resetCompileContext, __setCompileContext } from "../src/server/internal.ts";
 import { getProductionTemplate, setProductionTemplatePath } from "../src/server/render/template.ts";
 import { __setDevMode } from "../src/server/runtime-env.ts";

@@ -14,7 +14,7 @@ import {
   type InferProps,
   type RouteContext,
 } from "../src/client";
-import type { CacheTag, InvalidationRule } from "../src/server/furin.ts";
+import type { CacheTag, InvalidationRule } from "../src/furin.ts";
 import {
   collectRouteChainFromRoute,
   isFurinPage,
