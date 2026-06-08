@@ -63,45 +63,53 @@ export function buildPageElement(
     ? createElement(RouteErrorThrower, { error })
     : createElement(match.component, data);
 
-  // Collect non-root layouts from the route chain (bottom-up)
-  const allLayouts: React.ComponentType<Record<string, unknown> & { children: React.ReactNode }>[] =
-    [];
+  // Reconstruct the FULL route chain (shallow→deep, index 0 = root) by walking
+  // parents. We keep every route — not only the ones declaring a layout — so a
+  // route's chain index equals its directory depth. This mirrors the server's
+  // `buildElement` exactly, which is what guarantees the per-segment boundaries
+  // and layouts attach at the same depths on both sides (hydration parity).
+  // Compacting to layouts-only (the previous approach) misaligned boundaries
+  // and dropped the first nested layout whenever an ancestor lacked a layout.
+  const chain: RuntimeRoute[] = [];
   let current: RuntimeRoute | undefined = match.pageRoute;
   while (current) {
-    if (current.layout) {
-      allLayouts.unshift(current.layout);
-    }
+    chain.unshift(current);
     current = current.parent;
   }
 
-  // If a root layout exists, the first entry in allLayouts IS the root — skip it here
-  const layouts = root ? allLayouts.slice(1) : allLayouts;
-
-  // Index boundaries by depth for O(1) lookup. `layouts[i]` corresponds to
-  // route-chain depth `i + 1` (depth 0 = root layout, handled separately).
+  // Index boundaries by depth for O(1) lookup. A boundary's `depth` maps 1:1 to
+  // the route-chain index (depth 0 = root layout, handled separately below).
   const byDepth = new Map<number, ClientSegmentBoundary>();
   for (const segment of match.segmentBoundaries ?? []) {
     byDepth.set(segment.depth, segment);
   }
 
-  // Inside-out: at each layout level wrap the subtree with its same-depth
+  // When a root route is present it occupies chain index 0 and is wrapped
+  // separately below (root layout + depth-0 boundary), mirroring the server's
+  // `buildElement`. When `root` is null there is no separate root, so chain
+  // index 0 is an ordinary route whose layout + boundary participate in the
+  // loop too.
+  const rootOffset = root ? 1 : 0;
+
+  // Inside-out: at each non-root depth wrap the subtree with its same-depth
   // boundary (so the boundary sits INSIDE the layout), then wrap with the
-  // layout itself.
-  for (let i = layouts.length - 1; i >= 0; i--) {
-    element = wrapSegmentBoundaries(element, byDepth.get(i + 1), options);
-    const Layout = layouts[i];
+  // layout itself when this route declares one.
+  for (let i = chain.length - 1; i >= rootOffset; i--) {
+    element = wrapSegmentBoundaries(element, byDepth.get(i), options);
+    const Layout = chain[i]?.layout;
     if (Layout) {
       // biome-ignore lint/suspicious/noExplicitAny: spread loses `children` type info for createElement
       element = createElement(Layout, { ...data } as any, element);
     }
   }
 
-  // Depth 0 boundary wraps EVERYTHING below the root layout.
-  element = wrapSegmentBoundaries(element, byDepth.get(0), options);
-
-  if (root?.layout) {
-    // biome-ignore lint/suspicious/noExplicitAny: spread loses `children` type info for createElement
-    element = createElement(root.layout, { ...data } as any, element);
+  if (root) {
+    // Depth 0 boundary wraps EVERYTHING below the root layout.
+    element = wrapSegmentBoundaries(element, byDepth.get(0), options);
+    if (root.layout) {
+      // biome-ignore lint/suspicious/noExplicitAny: spread loses `children` type info for createElement
+      element = createElement(root.layout, { ...data } as any, element);
+    }
   }
 
   return element;

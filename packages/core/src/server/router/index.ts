@@ -11,10 +11,10 @@ export {
 export {
   buildRouteRegex,
   collectIntermediateLayoutDirs,
+  compareRouteSpecificity,
   escapeRegExpChar,
   filePathToPattern,
   resolveMode,
-  routeSpecificity,
 } from "./patterns.ts";
 export { createDataEndpoint, createRoutePlugin } from "./plugin.ts";
 export {

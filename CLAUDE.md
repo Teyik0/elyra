@@ -7,7 +7,6 @@ As an agent, you should help the user develop senior-grade features, as such you
 - Always rethink architecture and patterns to make the most maintainable choice
 - Always check how competitors are doing (Next.js, TanStack Start), compare approaches, and recommend the best solution
 - Avoid default values for function parameters
-- Function parameters must always be passed explicitly by callers — never rely on implicit `undefined` from omitting an argument. Optional parameters must be typed with an explicit union (e.g. `string | undefined`) and call sites must pass the value (or pass `undefined` deliberately) so the intent is visible at every call site.
 - Always run git hooks when committing or pushing to GitHub
 
 ## Project Overview

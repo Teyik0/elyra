@@ -18,7 +18,12 @@ const _pkgRoot = dirname(dirname(dirname(fileURLToPath(import.meta.resolve("@tey
 const _pkgSrcDir = existsSync(join(_pkgRoot, "src", "server", "furin.ts"))
   ? join(_pkgRoot, "src")
   : join(_pkgRoot, "dist");
-const _ext = existsSync(join(_pkgSrcDir, "server", "furin.ts")) ? ".ts" : ".js";
+// The published package always ships `src/` (see package.json "files"), and the
+// "bun" export condition resolves to the TypeScript sources, so the fingerprint
+// inputs are always the `.ts` files. Some of these inputs (e.g. entry-template)
+// are never emitted to `dist/` as `.js`, so detecting the extension off the dist
+// copy would point at files that don't exist and silently weaken the build ID.
+const _ext = ".ts";
 const BUILD_ID_INPUT_PATHS = [
   `${_pkgSrcDir}/build/compile-entry${_ext}`,
   `${_pkgSrcDir}/build/entry-template${_ext}`,

@@ -30,7 +30,7 @@ function serveISRCacheHit(
   cacheKey: string,
   revalidate: number,
   root: RootLayout,
-  buildId: string
+  buildId: string | undefined
 ): string | undefined {
   const isFresh = Date.now() - cached.generatedAt < revalidate * 1000;
 
@@ -69,9 +69,9 @@ async function renderISRNon200(
   root: RootLayout,
   errorDigest: string | undefined,
   renderStart: number,
-  buildId: string
+  buildId: string | undefined
 ): Promise<string> {
-  const { componentProps, element, headData, template, status, notFoundError } = prepared;
+  const { componentProps, element, headData, headers, template, status, notFoundError } = prepared;
   const fallbackProps: Record<string, unknown> = { ...componentProps };
   if (status === 404) {
     fallbackProps.__furinStatus = 404;
@@ -137,6 +137,11 @@ async function renderISRNon200(
   });
 
   const etag = buildId ? `"${buildId}:${generatedAt}"` : null;
+  // Apply loader-set headers first so custom headers survive, then let the
+  // ISR-critical headers win (the cache contract is framework-owned).
+  for (const [key, value] of Object.entries(headers)) {
+    ctx.set.headers[key] = value;
+  }
   ctx.set.headers["content-type"] = "text/html; charset=utf-8";
   ctx.set.headers["cache-control"] = "no-store";
   if (etag) {
@@ -150,7 +155,7 @@ export async function handleISR(
   route: ResolvedRoute,
   ctx: Context,
   root: RootLayout,
-  buildId = ""
+  buildId: string | undefined
 ) {
   const revalidate = route.page._route.revalidate ?? 60;
   const params = ctx.params ?? {};
@@ -168,7 +173,7 @@ export async function handleISR(
     return prepared;
   }
 
-  const { element, headData, syncData, template, status, errorDigest } = prepared;
+  const { element, headData, headers, syncData, template, status, errorDigest } = prepared;
 
   if (status !== 200) {
     return renderISRNon200(prepared, route, ctx, root, errorDigest, renderStart, buildId);
@@ -193,6 +198,11 @@ export async function handleISR(
   autoInvalidateRegistry.registerLoaderTags(cacheKey, route.tags);
 
   const etag = buildId ? `"${buildId}:${generatedAt}"` : null;
+  // Apply loader-set headers first so custom headers survive, then let the
+  // ISR-critical headers win (the cache contract is framework-owned).
+  for (const [key, value] of Object.entries(headers)) {
+    ctx.set.headers[key] = value;
+  }
   ctx.set.headers["content-type"] = "text/html; charset=utf-8";
   ctx.set.headers["cache-control"] = isrCacheControl(true, revalidate);
   if (etag) {
@@ -230,6 +240,24 @@ function revalidateInBackground(
   renderForPath(route, params, root, new URL(originalCtx.request.url).origin, "isr", undefined)
     .then((result) => {
       if (result instanceof Response) {
+        return;
+      }
+      // Only replace the cached entry with a healthy 200 render. A background
+      // revalidation that produced a fallback/error page must NOT overwrite the
+      // still-serving good entry — the next request would otherwise be handed a
+      // cached error page until the route is invalidated.
+      if (result.status !== 200) {
+        const logger = createLogger({});
+        logger.set({
+          furin: {
+            render: "isr",
+            route: route.pattern,
+            cache: "revalidation_skipped",
+            reason: "non_200_render",
+            status: result.status,
+          },
+        });
+        logger.emit();
         return;
       }
       setISRCache(cacheKey, {

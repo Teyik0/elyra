@@ -70,7 +70,17 @@ export async function renderRootNotFound(
     reactStream = await renderToReadableStream(
       withSSRRouterContext(buildNotFoundElement(root.notFound, notFoundError), notFoundContext)
     );
-  } catch {
+  } catch (renderError) {
+    // The user's not-found component itself threw. Fall back to the built-in
+    // screen, but surface the failure — silently swallowing it hides a broken
+    // 404 page from logs and drains.
+    useLogger().set({
+      furin: {
+        render: "not-found",
+        action: "component_render_failed",
+        error: renderError instanceof Error ? renderError.message : String(renderError),
+      },
+    });
     reactStream = await renderToReadableStream(
       withSSRRouterContext(buildNotFoundElement(undefined, notFoundError), notFoundContext)
     );
