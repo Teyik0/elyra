@@ -22,6 +22,14 @@ function isrCacheControl(isFresh: boolean, revalidate: number): string {
 }
 
 /**
+ * ETag for an ISR entry: `"buildId:generatedAt"`. Null when no build ID is
+ * available (dev), which disables conditional requests for that response.
+ */
+function isrEtag(buildId: string | undefined, generatedAt: number): string | null {
+  return buildId ? `"${buildId}:${generatedAt}"` : null;
+}
+
+/**
  * Serves a response from an existing ISR cache entry.
  * Handles stale-while-revalidate background refresh and ETag conditional requests.
  */
@@ -41,7 +49,7 @@ function serveISRCacheHit(
     revalidateInBackground(route, params, cacheKey, revalidate, root, ctx);
   }
 
-  const etag = buildId ? `"${buildId}:${cached.generatedAt}"` : null;
+  const etag = isrEtag(buildId, cached.generatedAt);
   if (etag && ctx.request.headers.get("if-none-match") === etag) {
     ctx.set.status = 304;
     ctx.set.headers.etag = etag;
@@ -126,7 +134,7 @@ async function renderISRNon200(
     },
   });
 
-  const etag = buildId ? `"${buildId}:${generatedAt}"` : null;
+  const etag = isrEtag(buildId, generatedAt);
   // Apply loader-set headers first so custom headers survive, then let the
   // ISR-critical headers win (the cache contract is framework-owned).
   for (const [key, value] of Object.entries(headers)) {
@@ -187,7 +195,7 @@ export async function handleISR(
   setISRCache(cacheKey, { html, generatedAt, revalidate });
   autoInvalidateRegistry.registerLoaderTags(cacheKey, route.tags);
 
-  const etag = buildId ? `"${buildId}:${generatedAt}"` : null;
+  const etag = isrEtag(buildId, generatedAt);
   // Apply loader-set headers first so custom headers survive, then let the
   // ISR-critical headers win (the cache contract is framework-owned).
   for (const [key, value] of Object.entries(headers)) {
