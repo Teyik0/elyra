@@ -1,17 +1,6 @@
-import { autoInvalidateRegistry } from "../auto-invalidate/registry";
-import type { SsgCacheEntry } from "./isr-ssg";
-import { createRouteCache } from "./route-cache";
+import { createHtmlRouteCache, type SsgCacheEntry } from "./isr-ssg";
 
-/** Maximum number of SSG cache entries before LRU eviction kicks in. */
-const MAX_SSG_CACHE_SIZE = 1000;
-
-export const ssgRouteCache = createRouteCache<SsgCacheEntry>({
-  maxSize: MAX_SSG_CACHE_SIZE,
-  name: "render:ssg-html",
-  onDelete: (key) => {
-    autoInvalidateRegistry.unregisterPath(key);
-  },
-});
+export const ssgRouteCache = createHtmlRouteCache<SsgCacheEntry>("ssg");
 
 export const ssgCache = ssgRouteCache.store;
 
