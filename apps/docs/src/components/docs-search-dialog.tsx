@@ -176,7 +176,13 @@ export function DocsSearchDialog() {
 
   // Index load: kicks off when the dialog first opens, then cached for the
   // session (staleTime: Infinity from the QueryClient defaults).
-  const indexQuery = useQuery({
+  const {
+    data: searchIndex,
+    isSuccess: isIndexReady,
+    isError: isIndexError,
+    isLoading: isIndexLoading,
+    refetch: refetchIndex,
+  } = useQuery({
     enabled: open,
     queryFn: () => loadSearchIndex(router.basePath),
     queryKey: ["docs-search-index", router.basePath],
@@ -184,19 +190,19 @@ export function DocsSearchDialog() {
 
   // Search: re-keyed on the debounced query, so React Query owns staleness —
   // an out-of-order resolution can never overwrite a newer query's results.
-  const searchQuery = useQuery({
-    enabled: indexQuery.isSuccess && trimmedDebounced.length >= SEARCH_MIN_QUERY_LENGTH,
+  const { data: searchData, isFetching: isSearchFetching } = useQuery({
+    enabled: isIndexReady && trimmedDebounced.length >= SEARCH_MIN_QUERY_LENGTH,
     placeholderData: keepPreviousData,
-    queryFn: () => runDocsSearch(indexQuery.data as AnyOrama, trimmedDebounced),
+    queryFn: () => runDocsSearch(searchIndex as AnyOrama, trimmedDebounced),
     queryKey: ["docs-search", trimmedDebounced],
   });
 
-  const results = isQueryLongEnough ? (searchQuery.data ?? []) : [];
+  const results = isQueryLongEnough ? (searchData ?? []) : [];
   const isSearching =
     isQueryLongEnough &&
     results.length === 0 &&
-    !indexQuery.isError &&
-    (indexQuery.isLoading || searchQuery.isFetching || trimmedQuery !== trimmedDebounced);
+    !isIndexError &&
+    (isIndexLoading || isSearchFetching || trimmedQuery !== trimmedDebounced);
 
   const navigateToResult = useCallback(
     (href: string): void => {
@@ -249,8 +255,8 @@ export function DocsSearchDialog() {
     setOpen(nextOpen);
     if (nextOpen) {
       // A previous load may have failed permanently — retry on re-open.
-      if (indexQuery.isError) {
-        indexQuery.refetch();
+      if (isIndexError) {
+        refetchIndex();
       }
       return;
     }
@@ -328,7 +334,7 @@ export function DocsSearchDialog() {
         <div className="max-h-[60vh] overflow-y-auto">
           <SearchResultsArea
             activeIndex={activeIndex}
-            indexFailed={indexQuery.isError}
+            indexFailed={isIndexError}
             isQueryLongEnough={isQueryLongEnough}
             isSearching={isSearching}
             onHover={setActiveIndex}
