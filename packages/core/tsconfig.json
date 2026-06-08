@@ -2,7 +2,7 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
-      "furin": ["./src/server/furin.ts"]
+      "furin": ["./src/furin.ts"]
     }
   },
   "include": ["src/**/*", "tests/**/*"],

@@ -25,7 +25,7 @@ export default {
           "src/server/render/**",
           "src/build/index.ts",
           "src/adapter/static.ts",
-          "src/server/furin.ts",
+          "src/furin.ts",
         ],
         rules: [
           "react-doctor/async-await-in-loop",

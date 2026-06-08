@@ -34,17 +34,17 @@
     "LICENSE",
     "README.md"
   ],
-  "main": "./dist/server/furin.js",
-  "module": "./dist/server/furin.js",
-  "types": "./dist/server/furin.d.ts",
+  "main": "./dist/furin.js",
+  "module": "./dist/furin.js",
+  "types": "./dist/furin.d.ts",
   "bin": {
     "furin": "./src/cli/index.ts"
   },
   "exports": {
     ".": {
-      "types": "./dist/server/furin.d.ts",
-      "bun": "./src/server/furin.ts",
-      "import": "./dist/server/furin.js"
+      "types": "./dist/furin.d.ts",
+      "bun": "./src/furin.ts",
+      "import": "./dist/furin.js"
     },
     "./client": {
       "types": "./dist/client.d.ts",

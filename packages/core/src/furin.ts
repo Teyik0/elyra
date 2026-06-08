@@ -10,13 +10,16 @@ import {
   consumePendingInvalidations,
   getBuildId,
   setBuildId,
-} from "./cache/invalidation.ts";
-import type { EmbeddedAppData } from "./internal.ts";
-import { getCompileContext } from "./internal.ts";
-import { renderRootNotFound, warmSSGCache } from "./render/index.ts";
-import { setProductionTemplateContent, setProductionTemplatePath } from "./render/template.ts";
-import { createDataEndpoint, createRoutePlugin, loadProdRoutes } from "./router/index.ts";
-import { IS_DEV } from "./runtime-env.ts";
+} from "./server/cache/invalidation.ts";
+import type { EmbeddedAppData } from "./server/internal.ts";
+import { getCompileContext } from "./server/internal.ts";
+import { renderRootNotFound, warmSSGCache } from "./server/render/index.ts";
+import {
+  setProductionTemplateContent,
+  setProductionTemplatePath,
+} from "./server/render/template.ts";
+import { createDataEndpoint, createRoutePlugin, loadProdRoutes } from "./server/router/index.ts";
+import { IS_DEV } from "./server/runtime-env.ts";
 
 // biome-ignore lint/suspicious/noEmptyInterface: intentionally augmentable via furin-env.d.ts
 export interface FurinCacheTags {}
@@ -244,15 +247,15 @@ export async function furin({
   if (IS_DEV) {
     const furinDir = resolve(cwd, ".furin");
     // Lazy import — build pipeline has native deps not available in compiled binaries
-    const { registerDevPagePlugin } = await import("./dev-page-plugin.ts");
+    const { registerDevPagePlugin } = await import("./server/dev-page-plugin.ts");
     registerDevPagePlugin();
 
-    const { createDevInspectorPlugin } = await import("./dev-inspector.ts");
+    const { createDevInspectorPlugin } = await import("./server/dev-inspector.ts");
 
-    const { scanPages } = await import("./router/index.ts");
+    const { scanPages } = await import("./server/router/index.ts");
     const { root, routes } = await scanPages(resolvedPagesDir);
 
-    const { writeDevFiles } = await import("../build/hydrate.ts");
+    const { writeDevFiles } = await import("./build/hydrate.ts");
     writeDevFiles(
       routes,
       { outDir: furinDir, rootLayout: root.path, basePath: "", publicPath: "/_client/" },
@@ -386,18 +389,18 @@ export async function furin({
 
 // ── Public API re-export ──────────────────────────────────────────────────────
 // biome-ignore-start lint/performance/noBarrelFile: intentional — furin.ts is the public package entry
-export type { DeferredData } from "../client.ts";
-export { defer, isDeferred } from "../client.ts";
-export { Await, useAsyncError, useAsyncValue } from "../shared/await.tsx";
-export type { ErrorComponent, ErrorProps } from "../shared/error.ts";
+export type { DeferredData } from "./client.ts";
+export { defer, isDeferred } from "./client.ts";
+export type { InvalidationInput, InvalidationRule } from "./server/auto-invalidate/index.ts";
+export { furinInvalidate, revalidateTag } from "./server/auto-invalidate/index.ts";
+export { revalidatePath, setCachePurger } from "./server/cache/invalidation.ts";
+export { renderRootNotFound } from "./server/render/index.ts";
+export { Await, useAsyncError, useAsyncValue } from "./shared/await.tsx";
+export type { ErrorComponent, ErrorProps } from "./shared/error.ts";
 export type {
   NotFoundComponent,
   NotFoundOptions,
   NotFoundProps,
-} from "../shared/not-found.ts";
-export { isNotFoundError, notFound } from "../shared/not-found.ts";
-export type { InvalidationInput, InvalidationRule } from "./auto-invalidate/index.ts";
-export { furinInvalidate, revalidateTag } from "./auto-invalidate/index.ts";
-export { revalidatePath, setCachePurger } from "./cache/invalidation.ts";
-export { renderRootNotFound } from "./render/index.ts";
+} from "./shared/not-found.ts";
+export { isNotFoundError, notFound } from "./shared/not-found.ts";
 // biome-ignore-end lint/performance/noBarrelFile: intentional — furin.ts is the public package entry
