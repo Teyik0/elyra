@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { buildClient } from "../src/build/client.ts";
 import { buildApp } from "../src/build/index.ts";
 import { __resetCacheState } from "../src/server/cache/index.ts";
 import { __resetTemplateState } from "../src/server/render/template.ts";
+import { scanPages } from "../src/server/router/index.ts";
 import { runCli } from "./helpers/run-cli.ts";
 import { createTmpApp, removeAppPath, writeAppFile } from "./helpers/tmp-app.ts";
 import { withBuildStub } from "./helpers/with-build-stub.ts";
@@ -45,6 +47,26 @@ describe.serial("CLI/build Bun feature", () => {
     expect(existsSync(join(app.path, ".furin/build/manifest.json"))).toBe(true);
     expect(existsSync(join(app.path, ".furin/build/bun/client/index.html"))).toBe(true);
     expect(existsSync(join(app.path, ".furin/build/bun/public/.gitkeep"))).toBe(true);
+  });
+
+  test("buildApp({ target: 'bun' }) keeps evlog out of the default client bundle", async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+    const { root, routes } = await scanPages(join(app.path, "src/pages"));
+    const outDir = join(app.path, ".furin/build/bundle-guard");
+
+    const result = await buildClient(routes, {
+      outDir,
+      rootLayout: root.path,
+      publicPath: "/_client/",
+      basePath: "",
+      clientLogging: false,
+    });
+
+    const hydrateEntry = readFileSync(join(outDir, "client", basename(result.entryChunk)), "utf8");
+
+    expect(hydrateEntry).not.toContain("createHttpLogDrain");
+    expect(hydrateEntry).not.toContain("evlog/http");
+    expect(hydrateEntry).not.toContain("/_furin/ingest");
   });
 
   test("buildApp() rejects apps without a root.tsx layout", () => {

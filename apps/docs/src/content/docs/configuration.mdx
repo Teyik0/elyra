@@ -11,6 +11,7 @@ export default defineConfig({
   rootDir: ".",
   pagesDir: "src/pages",
   serverEntry: "src/server.ts",
+  clientLogging: false,
   targets: ["bun"],
   plugins: [tailwind],
   bun: {
@@ -50,6 +51,27 @@ Directory containing your page files. Furin scans this directory recursively and
 **Default:** `"src/server.ts"`
 
 Path to the server entrypoint that creates the Elysia instance. Required for `bun` target builds. Not needed for `static` builds.
+
+---
+
+## `clientLogging`
+
+**Type:** `boolean`
+**Default:** `false`
+
+Inject the browser-side evlog logger into the generated hydration entry. Server-side request logging is unaffected by this option.
+
+When disabled, Furin keeps `evlog` and `evlog/http` out of the browser bundle and uses a no-op logger for internal client events. Enable it when you want SPA navigation and custom browser events to be batched to `/_furin/ingest` and re-emitted server-side as `service: "furin:browser"`.
+
+Enabling it adds about 10 KB gzipped to the client bundle.
+
+```ts
+import { defineConfig } from "@teyik0/furin/config";
+
+export default defineConfig({
+  clientLogging: true,
+});
+```
 
 ---
 
