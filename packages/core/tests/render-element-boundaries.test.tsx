@@ -21,8 +21,12 @@ import { FurinErrorBoundary, FurinNotFoundBoundary } from "../src/client/boundar
 import type { RuntimePage, RuntimeRoute } from "../src/client.ts";
 import { buildElement, buildErrorElement } from "../src/server/render/element.tsx";
 import type { ResolvedRoute, SegmentBoundary } from "../src/server/router/index.ts";
+import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
 import type { ErrorComponent } from "../src/shared/error.ts";
 import type { NotFoundComponent } from "../src/shared/not-found.ts";
+
+// Captured once so the dev-mode toggles in the error-message tests restore cleanly.
+const originalDevMode = IS_DEV;
 
 // ── Harness ──────────────────────────────────────────────────────────────────
 
@@ -258,17 +262,50 @@ describe("buildErrorElement — error message extraction", () => {
     expect((el.props as { error: { message: string } }).error.message).toBe("");
   });
 
-  test("uses default message when no component provided (DefaultErrorComponent)", () => {
-    const el = buildErrorElement(
-      undefined,
-      new Error("boom"),
-      "d4",
-      undefined,
-      500
-    ) as ReactElement;
-    expect((el.props as { error: { message: string } }).error.message).toBe(
-      "An unexpected error occurred."
-    );
+  test("prod: generic message when no component provided (no internal leak)", () => {
+    __setDevMode(false);
+    try {
+      const el = buildErrorElement(
+        undefined,
+        new Error("boom"),
+        "d4",
+        undefined,
+        500
+      ) as ReactElement;
+      expect((el.props as { error: { message: string } }).error.message).toBe(
+        "An unexpected error occurred."
+      );
+    } finally {
+      __setDevMode(originalDevMode);
+    }
+  });
+
+  test("dev: surfaces the real error message when no component provided", () => {
+    __setDevMode(true);
+    try {
+      const el = buildErrorElement(
+        undefined,
+        new Error("boom"),
+        "d4",
+        undefined,
+        500
+      ) as ReactElement;
+      expect((el.props as { error: { message: string } }).error.message).toBe("boom");
+    } finally {
+      __setDevMode(originalDevMode);
+    }
+  });
+
+  test("dev: falls back to generic message when the error has no message", () => {
+    __setDevMode(true);
+    try {
+      const el = buildErrorElement(undefined, 42, "d4b", undefined, 500) as ReactElement;
+      expect((el.props as { error: { message: string } }).error.message).toBe(
+        "An unexpected error occurred."
+      );
+    } finally {
+      __setDevMode(originalDevMode);
+    }
   });
 
   test("messageOverride wins over errorMessageOf — used by the loader pipeline for Response throws", () => {
