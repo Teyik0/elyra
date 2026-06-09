@@ -168,3 +168,47 @@ export function buildRouteRegex(pattern: string): { regex: RegExp; paramNames: s
   }
   return { regex: new RegExp(`^${source}$`), paramNames };
 }
+
+export interface RoutePatternLike {
+  pattern: string;
+}
+
+export interface RouteMatch<TRoute extends RoutePatternLike> {
+  params: Record<string, string>;
+  route: TRoute;
+}
+
+interface CompiledRoutePattern<TRoute extends RoutePatternLike> {
+  paramNames: string[];
+  regex: RegExp;
+  route: TRoute;
+}
+
+export function buildRouteMatcher<TRoute extends RoutePatternLike>(
+  routes: TRoute[]
+): (pathname: string) => RouteMatch<TRoute> | null {
+  const compiled = routes
+    .map((route): CompiledRoutePattern<TRoute> => {
+      const { regex, paramNames } = buildRouteRegex(route.pattern);
+      return { paramNames, regex, route };
+    })
+    .sort((a, b) => compareRouteSpecificity(b.route.pattern, a.route.pattern));
+
+  return (pathname) => {
+    for (const candidate of compiled) {
+      const match = candidate.regex.exec(pathname);
+      if (!match) {
+        continue;
+      }
+      const params: Record<string, string> = {};
+      for (let i = 0; i < candidate.paramNames.length; i++) {
+        const name = candidate.paramNames[i];
+        if (name !== undefined) {
+          params[name] = match[i + 1] ?? "";
+        }
+      }
+      return { route: candidate.route, params };
+    }
+    return null;
+  };
+}

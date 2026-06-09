@@ -109,6 +109,17 @@ describe("generateHydrateEntry", () => {
     expect(code).toContain("window.location.pathname.replace(/\\/+$/");
   });
 
+  test("route regexes escape static regex metacharacters", () => {
+    const code = generateHydrateEntry(
+      [makeRoute("/v1.0", "/app/src/pages/v1.0.tsx")],
+      ROOT,
+      "",
+      false
+    );
+
+    expect(code).toContain('new RegExp("^\\\\/v1\\\\.0$")');
+  });
+
   test("B13c: with basePath — log drain endpoint is prefixed", () => {
     const code = generateHydrateEntry(ROUTES, ROOT, "/furin", true);
     // endpoint should be basePath + "/_furin/ingest"
@@ -208,12 +219,10 @@ describe("generateHydrateEntry", () => {
 // ── Boundary chain emission (Slice 6) ─────────────────────────────────────────
 //
 // The client must render the same interleaved React tree as the server.
-// To do that, each route entry carries a `segmentBoundaries` array of
-// { depth, error?, notFound? } triples. The emitted code:
-//   1. Emits ONE static `import` per unique convention file (across all routes).
-//   2. References those identifiers inside each route's `segmentBoundaries`.
-//   3. Skips the field entirely when a route has no boundaries, so existing
-//      tests asserting "no basePath / no boundaries" still pass.
+// To do that, each loaded route carries a `segmentBoundaries` array of
+// { depth, error?, notFound? } triples. Boundary modules are non-critical:
+// they should be imported lazily with the page module, not statically in the
+// hydrate entry, so they don't inflate the initial shared chunk.
 
 /** Builds a ResolvedRoute with a populated `segmentBoundaries` list. */
 function makeRouteWithBoundaries(
@@ -245,40 +254,38 @@ function makeRouteWithBoundaries(
 // Hoisted regex literals — Biome's `useTopLevelRegex` rule requires them out
 // of the hot path; declaring them at module scope also makes the intent (what
 // the hydrate output is expected to look like) clearer.
-const ERROR_IMPORT_RE = /import __furin_bnd_\d+ from "\/app\/src\/pages\/error\.tsx";/;
-const ERROR_IMPORT_RE_G = /import __furin_bnd_\d+ from "\/app\/src\/pages\/error\.tsx";/g;
-const ERROR_IMPORT_CAPTURE_RE = /import (__furin_bnd_\d+) from "\/app\/src\/pages\/error\.tsx";/;
-const NOT_FOUND_IMPORT_RE =
-  /import __furin_bnd_\d+ from "\/app\/src\/pages\/blog\/not-found\.tsx";/;
+const STATIC_BOUNDARY_IMPORT_RE = /import __furin_bnd_\d+ from/;
+const ERROR_LAZY_IMPORT_RE = /import\("\/app\/src\/pages\/error\.tsx"\)/;
+const NOT_FOUND_LAZY_IMPORT_RE = /import\("\/app\/src\/pages\/blog\/not-found\.tsx"\)/;
 const ERROR_BOUNDARY_DEPTH0_RE =
   /segmentBoundaries:\s*\[\s*\{\s*depth:\s*0,\s*error:\s*__furin_bnd_\d+/;
 const NOT_FOUND_BOUNDARY_DEPTH1_RE =
   /segmentBoundaries:\s*\[\s*\{\s*depth:\s*1,\s*notFound:\s*__furin_bnd_\d+/;
 const ERROR_AND_NOT_FOUND_BOUNDARY_RE =
-  /\{\s*depth:\s*0,\s*error:\s*__furin_bnd_\d+,\s*notFound:\s*__furin_bnd_\d+\s*\}/;
+  /\{\s*depth:\s*0,\s*error:\s*__furin_bnd_\d+\.default,\s*notFound:\s*__furin_bnd_\d+\.default\s*\}/;
 
 describe("generateHydrateEntry — boundary chain emission", () => {
   test("no segmentBoundaries → no `segmentBoundaries:` field in the emitted route", () => {
     const routes = [makeRoute("/", "/app/src/pages/index.tsx")];
     const code = generateHydrateEntry(routes, ROOT, "", false);
-    expect(code).not.toContain("segmentBoundaries:");
+    expect(code).not.toContain("segmentBoundaries: [");
   });
 
-  test("route with error boundary at depth 0 → static import + segmentBoundaries field", () => {
+  test("route with error boundary at depth 0 → lazy import + segmentBoundaries field", () => {
     const errorPath = "/app/src/pages/error.tsx";
     const routes = [
       makeRouteWithBoundaries("/", "/app/src/pages/index.tsx", [{ depth: 0, errorPath }]),
     ];
     const code = generateHydrateEntry(routes, ROOT, "", false);
 
-    // A static import was emitted for the convention file.
-    expect(code).toMatch(ERROR_IMPORT_RE);
+    expect(code).not.toMatch(STATIC_BOUNDARY_IMPORT_RE);
+    expect(code).toMatch(ERROR_LAZY_IMPORT_RE);
 
     // The route entry carries `segmentBoundaries` referencing that identifier.
     expect(code).toMatch(ERROR_BOUNDARY_DEPTH0_RE);
   });
 
-  test("route with notFound boundary at middle depth → static import + field", () => {
+  test("route with notFound boundary at middle depth → lazy import + field", () => {
     const notFoundPath = "/app/src/pages/blog/not-found.tsx";
     const routes = [
       makeRouteWithBoundaries("/blog/:slug", "/app/src/pages/blog/[slug].tsx", [
@@ -286,11 +293,12 @@ describe("generateHydrateEntry — boundary chain emission", () => {
       ]),
     ];
     const code = generateHydrateEntry(routes, ROOT, "", false);
-    expect(code).toMatch(NOT_FOUND_IMPORT_RE);
+    expect(code).not.toMatch(STATIC_BOUNDARY_IMPORT_RE);
+    expect(code).toMatch(NOT_FOUND_LAZY_IMPORT_RE);
     expect(code).toMatch(NOT_FOUND_BOUNDARY_DEPTH1_RE);
   });
 
-  test("same convention file shared across two routes → imported exactly once", () => {
+  test("same convention file shared across two routes → emitted as lazy import once per route", () => {
     const errorPath = "/app/src/pages/error.tsx";
     const routes = [
       makeRouteWithBoundaries("/", "/app/src/pages/index.tsx", [{ depth: 0, errorPath }]),
@@ -298,15 +306,9 @@ describe("generateHydrateEntry — boundary chain emission", () => {
     ];
     const code = generateHydrateEntry(routes, ROOT, "", false);
 
-    const importMatches = code.match(ERROR_IMPORT_RE_G);
-    expect(importMatches?.length ?? 0).toBe(1);
-
-    // Both routes should reference the same identifier.
-    const identMatch = code.match(ERROR_IMPORT_CAPTURE_RE);
-    const ident = identMatch?.[1];
-    expect(ident).toBeDefined();
-    const usages = code.match(new RegExp(`error:\\s*${ident}`, "g"));
-    expect(usages?.length ?? 0).toBe(2);
+    expect(code).not.toMatch(STATIC_BOUNDARY_IMPORT_RE);
+    const lazyMatches = code.match(/import\("\/app\/src\/pages\/error\.tsx"\)/g);
+    expect(lazyMatches?.length ?? 0).toBe(2);
   });
 
   test("error + notFound at the same depth → both idents in one boundary entry", () => {

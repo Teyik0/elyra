@@ -47,6 +47,19 @@ function joinPath(baseDir: string, assetPath: string): string {
   return `${baseDir}/${cleanAssetPath}`;
 }
 
+function isLocalAssetPath(assetPath: string): boolean {
+  if (assetPath.startsWith("//")) {
+    return false;
+  }
+
+  try {
+    new URL(assetPath);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 function extractClientAssetPaths(html: string): string[] {
   const assetPaths = new Set<string>();
   const attributePattern = /\b(?:src|href)=["']([^"']+\.(?:js|css)(?:[?#][^"']*)?)["']/g;
@@ -54,7 +67,7 @@ function extractClientAssetPaths(html: string): string[] {
   for (const match of html.matchAll(attributePattern)) {
     const assetPath = match[1];
 
-    if (assetPath !== undefined) {
+    if (assetPath !== undefined && isLocalAssetPath(assetPath)) {
       assetPaths.add(assetPath);
     }
   }

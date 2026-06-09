@@ -15,7 +15,7 @@ import {
 import { extractTitle } from "../render/shell.ts";
 import { IS_DEV } from "../runtime-env.ts";
 import { handleDevRequest } from "./hmr.ts";
-import { buildRouteRegex, compareRouteSpecificity } from "./patterns.ts";
+import { buildRouteMatcher } from "./patterns.ts";
 import {
   applySchemaDefaults,
   detectQueryDefaultRedirect,
@@ -141,6 +141,7 @@ export function createRoutePlugin(
  */
 export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
   const plugin = new Elysia();
+  const matchRoute = buildRouteMatcher(routes);
 
   plugin.get(
     "/_furin/data",
@@ -165,34 +166,9 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       const wideEventLog = useLogger();
       wideEventLog.set({ path: rawPath });
 
-      // Find the MOST SPECIFIC matching route. A first-match scan would let a
-      // dynamic route (`/users/:id`) shadow a static sibling (`/users/new`)
-      // whenever it is scanned first — and `[id]` sorts before `new`, so it
-      // is. Compare each match segment-by-segment (static segment > :param >
-      // wildcard) and keep the most specific, mirroring the precedence Elysia's
-      // router applies on the SSR path.
-      const matched = routes.reduce<{
-        route: ResolvedRoute;
-        params: Record<string, string>;
-      } | null>((acc, route) => {
-        const { regex, paramNames } = buildRouteRegex(route.pattern);
-        const m = regex.exec(pathname);
-        if (!m) {
-          return acc;
-        }
-        // Keep the incumbent when it is at least as specific as this candidate.
-        if (acc && compareRouteSpecificity(route.pattern, acc.route.pattern) <= 0) {
-          return acc;
-        }
-        const params: Record<string, string> = {};
-        for (let i = 0; i < paramNames.length; i++) {
-          const name = paramNames[i];
-          if (name !== undefined) {
-            params[name] = m[i + 1] ?? "";
-          }
-        }
-        return { route, params };
-      }, null);
+      // Precompiled at plugin creation: route regexes are built once, sorted
+      // most-specific first, then the hot path only executes regex matches.
+      const matched = matchRoute(pathname);
 
       if (!matched) {
         return new Response("Route not found", { status: 404 });

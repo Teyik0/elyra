@@ -94,7 +94,7 @@ export async function buildClient(
     format: "esm",
     splitting: true,
     minify: true,
-    sourcemap: "linked",
+    sourcemap: "none",
     // Hash the entry point name so it gets immutable caching like chunks.
     // Without this, _hydrate.js keeps the same name across builds and browsers
     // serve stale versions that reference old chunk hashes → dynamic import 404.

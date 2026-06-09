@@ -39,10 +39,10 @@ export const configSchema = t.Object({
   pagesDir: t.Optional(t.String()),
   serverEntry: t.Optional(t.String()),
   /**
-   * Inject the evlog client logger into the browser hydration entry. Off by
-   * default — enabling it adds evlog + evlog/http (~10 KB gzipped) to the
-   * client bundle. Server-side logging is unaffected (configured via the
-   * `furin({ logger })` plugin option).
+   * Initialize the browser HTTP log drain in the hydration entry. Off by
+   * default — enabling it adds `evlog/http` drain setup and points browser
+   * events at `/_furin/ingest`. Server-side logging is unaffected (configured
+   * via the `furin({ logger })` plugin option).
    */
   clientLogging: t.Optional(t.Boolean()),
   targets: t.Optional(t.Array(buildTargetSchema)),

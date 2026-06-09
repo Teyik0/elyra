@@ -1388,6 +1388,37 @@ describe("render.tsx", () => {
 
       expect(isrCache.get("/isr-page")?.html).toBe(staleHtml);
     });
+
+    test("invalidates stale cached HTML when background revalidation resolves to notFound", async () => {
+      __resetCacheState();
+      const isrRoute = await getRoute("/isr-page");
+      const root = await getRoot();
+
+      const staleHtml = "<html>stale-not-found</html>";
+      isrCache.set("/isr-page", { generatedAt: 0, html: staleHtml, revalidate: 60 });
+
+      const notFoundRoute = {
+        ...isrRoute,
+        page: {
+          ...isrRoute.page,
+          loader: () => notFound({ message: "gone" }),
+        },
+      } as ResolvedRoute;
+
+      const staleCtx = createMockLoaderContext({ path: "/isr-page" });
+      const html = await handleISR(notFoundRoute, staleCtx, root, "");
+
+      expect(html).toBe(staleHtml);
+
+      await new Promise<void>((resolve) => setTimeout(resolve, 20));
+
+      expect(isrCache.has("/isr-page")).toBe(false);
+
+      const missCtx = createMockLoaderContext({ path: "/isr-page" });
+      await handleISR(notFoundRoute, missCtx, root, "");
+
+      expect(missCtx.set.status).toBe(404);
+    });
   });
 
   describe("handleISR — non-200 coverage", () => {

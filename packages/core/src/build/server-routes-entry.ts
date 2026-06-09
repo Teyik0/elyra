@@ -15,7 +15,7 @@ import { ensureDir } from "./shared";
  * the self-contained `server.js` bundle, then deletes this file.
  */
 export function generateServerRoutesEntry(options: BuildEntryOptions): string {
-  const { buildId, outDir, rootPath, routes, serverEntry, rootConventions, routeMetadata } =
+  const { buildId, outDir, rootPath, routes, serverEntry, rootConventions, routeMetadata, ssgCache } =
     options;
   ensureDir(outDir);
   const source = buildEntrySource({
@@ -26,6 +26,7 @@ export function generateServerRoutesEntry(options: BuildEntryOptions): string {
     serverEntry,
     rootConventions,
     routeMetadata,
+    ssgCache,
   });
 
   // Named "server.ts" so Bun.build() outputs "server.js"

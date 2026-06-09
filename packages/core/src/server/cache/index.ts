@@ -25,7 +25,7 @@ export {
   setBuildId,
   setCachePurger,
 } from "./invalidation";
-export { getISRCache, isrCache, setISRCache } from "./isr";
+export { deleteISRCache, getISRCache, isrCache, setISRCache } from "./isr";
 export type { ISRCacheEntry, SsgCacheEntry } from "./isr-ssg";
 export type { CacheInvalidator } from "./registry";
 export { registerCacheInvalidator } from "./registry";

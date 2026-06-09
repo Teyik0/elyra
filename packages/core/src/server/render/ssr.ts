@@ -96,7 +96,7 @@ interface ShellFallbackResult {
    * fallback error UI was streamed instead. Carries the digest so the caller
    * can surface it in logs and the `__furinError` payload.
    */
-  shellError: { error: unknown; digest: string } | undefined;
+  shellError: { digest: string } | undefined;
   stream: Awaited<ReturnType<typeof renderToReadableStream>>;
 }
 
@@ -126,7 +126,7 @@ export async function renderElementWithShellFallback(
           ssrContext
         )
       );
-      return { stream, shellError: { error, digest } };
+      return { stream, shellError: { digest } };
     } catch {
       const stream = await renderToReadableStream(
         withSSRRouterContext(
@@ -134,7 +134,7 @@ export async function renderElementWithShellFallback(
           ssrContext
         )
       );
-      return { stream, shellError: { error, digest } };
+      return { stream, shellError: { digest } };
     }
   }
 }

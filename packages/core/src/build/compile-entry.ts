@@ -21,6 +21,7 @@ export function generateCompileEntry(options: BuildEntryOptions): string {
     publicDir,
     rootConventions,
     routeMetadata,
+    ssgCache,
   } = options;
   ensureDir(outDir);
 
@@ -33,7 +34,9 @@ export function generateCompileEntry(options: BuildEntryOptions): string {
         `[furin] Client directory not found: ${embed.clientDir}. Run the client build first.`
       );
     }
-    const clientFiles = collectFilesRecursive(embed.clientDir);
+    const clientFiles = collectFilesRecursive(embed.clientDir).filter(
+      (file) => !file.endsWith(".map")
+    );
     const assetEntries: string[] = [];
     let templateVarName: string | null = null;
 
@@ -97,6 +100,7 @@ export function generateCompileEntry(options: BuildEntryOptions): string {
     extraContext: embeddedBlock,
     rootConventions,
     routeMetadata,
+    ssgCache,
   });
 
   const entryPath = join(outDir, "_compile-entry.ts");

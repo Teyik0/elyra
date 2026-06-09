@@ -2,9 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { buildClient } from "../src/build/client.ts";
-import { buildApp } from "../src/build/index.ts";
+import { buildApp, buildSSGCacheSnapshot } from "../src/build/index.ts";
 import { __resetCacheState } from "../src/server/cache/index.ts";
-import { __resetTemplateState } from "../src/server/render/template.ts";
+import {
+  __resetTemplateState,
+  setProductionTemplateContent,
+} from "../src/server/render/template.ts";
 import { scanPages } from "../src/server/router/index.ts";
 import { runCli } from "./helpers/run-cli.ts";
 import { createTmpApp, removeAppPath, writeAppFile } from "./helpers/tmp-app.ts";
@@ -67,6 +70,38 @@ describe.serial("CLI/build Bun feature", () => {
     expect(hydrateEntry).not.toContain("createHttpLogDrain");
     expect(hydrateEntry).not.toContain("evlog/http");
     expect(hydrateEntry).not.toContain("/_furin/ingest");
+  });
+
+  test("buildClient disables production sourcemaps by default", async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+    const { root, routes } = await scanPages(join(app.path, "src/pages"));
+    const outDir = join(app.path, ".furin/build/no-sourcemaps");
+    let sourcemap: unknown;
+
+    Bun.build = ((config: Parameters<typeof Bun.build>[0]) => {
+      sourcemap = config.sourcemap;
+      return Promise.resolve({
+        logs: [],
+        outputs: [
+          {
+            kind: "entry-point",
+            path: join(outDir, "client", "_hydrate.js"),
+            size: 128,
+          },
+        ],
+        success: true,
+      } as unknown as Awaited<ReturnType<typeof Bun.build>>);
+    }) as typeof Bun.build;
+
+    await buildClient(routes, {
+      outDir,
+      rootLayout: root.path,
+      publicPath: "/_client/",
+      basePath: "",
+      clientLogging: false,
+    });
+
+    expect(sourcemap).toBe("none");
   });
 
   test("buildApp() rejects apps without a root.tsx layout", () => {
@@ -189,6 +224,18 @@ describe.serial("CLI/build Bun feature", () => {
 
     expect(result.targets.static).toBeDefined();
     expect(existsSync(join(distDir, "index.html"))).toBe(true);
+  });
+
+  test("buildSSGCacheSnapshot pre-renders SSG staticParams during build", async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+    const { root, routes } = await scanPages(join(app.path, "src/pages"));
+    setProductionTemplateContent("<html><body><!--ssr-outlet--></body></html>");
+
+    const snapshot = await buildSSGCacheSnapshot(routes, root, "http://localhost");
+
+    expect(snapshot["/blog/hello-world"]?.status).toBe(200);
+    expect(snapshot["/blog/hello-world"]?.html).toContain("Blog post page");
+    expect(snapshot["/blog/hello-world"]?.ndjson).toContain("\n");
   });
 
   test("buildApp({ target: 'bun', serverEntry }) uses the explicit entry path", async () => {

@@ -5,9 +5,11 @@ import { buildClient } from "../build/client.ts";
 import { generateCompileEntry } from "../build/compile-entry.ts";
 import { generateServerRoutesEntry } from "../build/server-routes-entry.ts";
 import { buildTargetManifest, copyDirRecursive, ensureDir, toPosixPath } from "../build/shared.ts";
+import { buildSSGCacheSnapshot } from "../build/ssg-cache.ts";
 import type { BuildAppOptions, TargetBuildManifest } from "../build/types.ts";
 import type { BuildTarget } from "../config.ts";
 import { generateProdIndexHtml } from "../server/render/shell.ts";
+import { setProductionTemplateContent } from "../server/render/template.ts";
 import type { ResolvedRoute, RootLayout } from "../server/router/index.ts";
 
 // import.meta.resolve() runs at runtime (not inlined at bundle time), resolves
@@ -157,12 +159,12 @@ export async function buildBunTarget(
   // Write index.html with the buildId meta tag injected so the client can
   // detect stale deploys via X-Furin-Build-ID header comparison.
   const clientDir = join(targetDir, "client");
-  writeFileSync(
-    join(clientDir, "index.html"),
-    generateProdIndexHtml(entryChunk, cssChunks, buildId, undefined, false)
-  );
+  const indexHtml = generateProdIndexHtml(entryChunk, cssChunks, buildId, undefined, false);
+  writeFileSync(join(clientDir, "index.html"), indexHtml);
+  setProductionTemplateContent(indexHtml);
 
   const routeManifest = routes.map((r) => ({ pattern: r.pattern, path: r.path, mode: r.mode }));
+  const ssgCache = await buildSSGCacheSnapshot(routes, root, "http://localhost");
   const publicDir = existsSync(join(rootDir, "public")) ? join(rootDir, "public") : undefined;
   const targetPublicDir = publicDir ? join(targetDir, "public") : undefined;
 
@@ -186,13 +188,14 @@ export async function buildBunTarget(
       publicDir,
       rootConventions,
       routeMetadata,
+      ssgCache,
     });
 
     await Bun.build({
       entrypoints: [entryPath],
       compile: { outfile },
       minify: true,
-      sourcemap: "linked",
+      sourcemap: "none",
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
       plugins: options.plugins,
     });
@@ -217,6 +220,7 @@ export async function buildBunTarget(
       outDir: targetDir,
       rootConventions,
       routeMetadata,
+      ssgCache,
     });
 
     await Bun.build({
@@ -224,7 +228,7 @@ export async function buildBunTarget(
       outdir: targetDir,
       target: "bun",
       minify: true,
-      sourcemap: "linked",
+      sourcemap: "none",
       plugins: options.plugins,
     });
     console.log(

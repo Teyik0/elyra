@@ -12,6 +12,7 @@ import type { BuildAppOptions, BuildAppResult, BuildManifest } from "./types";
 export { buildClient } from "./client";
 export { writeDevFiles } from "./hydrate";
 export { patternToTypeString, schemaToTypeString, writeRouteTypes } from "./route-types";
+export { buildSSGCacheSnapshot, type SSGCacheSnapshot } from "./ssg-cache";
 export type {
   BuildAppOptions,
   BuildAppResult,

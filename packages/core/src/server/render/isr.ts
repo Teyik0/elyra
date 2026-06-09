@@ -1,7 +1,8 @@
 import type { Context } from "elysia";
 import { renderToReadableStream } from "react-dom/server";
+import { isNotFoundError } from "../../shared/not-found.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
-import { getISRCache, setISRCache } from "../cache/isr.ts";
+import { deleteISRCache, getISRCache, setISRCache } from "../cache/isr.ts";
 import type { ISRCacheEntry } from "../cache/isr-ssg.ts";
 import { createLogger, useLogger } from "../context-logger.ts";
 import type { ResolvedRoute, RootLayout } from "../router/index.ts";
@@ -240,10 +241,9 @@ function revalidateInBackground(
       if (result instanceof Response) {
         return;
       }
-      // Only replace the cached entry with a healthy 200 render. A background
-      // revalidation that produced a fallback/error page must NOT overwrite the
-      // still-serving good entry — the next request would otherwise be handed a
-      // cached error page until the route is invalidated.
+      // Only replace the cached entry with a healthy 200 render. The current
+      // ISR cache stores HTML only, so caching non-200 output would serve it
+      // back as a 200 on the next hit.
       if (result.status !== 200) {
         const logger = createLogger({});
         logger.set({
@@ -266,6 +266,19 @@ function revalidateInBackground(
     })
     .catch((err: unknown) => {
       const logger = createLogger({});
+      if (isNotFoundError(err)) {
+        deleteISRCache(cacheKey);
+        logger.set({
+          furin: {
+            render: "isr",
+            route: route.pattern,
+            cache: "revalidation_invalidated",
+            reason: "not_found",
+          },
+        });
+        logger.emit();
+        return;
+      }
       logger.set({
         furin: {
           render: "isr",

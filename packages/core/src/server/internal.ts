@@ -34,6 +34,15 @@ export interface CompileContext {
     }
   >;
   routes: CompileContextRoute[];
+  ssgCache?: Record<
+    string,
+    {
+      cachedAt: number;
+      html: string;
+      ndjson: string;
+      status: number;
+    }
+  >;
 }
 
 let _compileCtx: CompileContext | null = null;

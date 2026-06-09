@@ -8,17 +8,18 @@ When you call `furin()`, server logging is enabled automatically:
 
 **Server side** — the `evlog/elysia` middleware runs on every request and emits a structured wide event with method, path, status, duration, and any fields you add during the request.
 
-**Client side** — disabled by default. The generated hydration entry uses a no-op logger unless you enable `clientLogging`. Keeping it off avoids adding `evlog` and `evlog/http` to the browser bundle.
+**Client side** — disabled by default. The generated hydration entry does not initialize the HTTP drain unless you enable `clientLogging`, so browser events are not batched to `/_furin/ingest` by default.
 
-Internal paths are excluded from request logging by default:
+Internal asset paths are excluded from request logging by default:
 
 ```
 /_client/**
 /public/**
 /favicon.ico
-/_furin/* (except /_furin/ingest itself)
 /_bun_hmr_entry/**
 ```
+
+`/_furin/data` is logged intentionally, but its event path is rewritten to the logical route being navigated to. `/_furin/ingest` is also logged so browser-side events can be re-emitted through the server drain.
 
 ## Customising the Logger
 
@@ -170,7 +171,7 @@ await furin({
 
 ## Client-Side Logging
 
-Enable browser-side logging with `clientLogging: true`. This adds `evlog` and `evlog/http` to the browser bundle, then points the generated hydration entry at `/_furin/ingest`.
+Enable browser-side logging with `clientLogging: true`. This initializes the browser HTTP drain and points it at `/_furin/ingest`.
 
 ```ts
 // furin.config.ts

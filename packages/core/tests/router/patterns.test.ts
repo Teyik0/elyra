@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { compareRouteSpecificity, filePathToPattern } from "../../src/server/router/index.ts";
+import {
+  buildRouteMatcher,
+  buildRouteRegex,
+  compareRouteSpecificity,
+  filePathToPattern,
+  routeSpecificity,
+} from "../../src/server/router/index.ts";
 
 describe("filePathToPattern", () => {
   test("converts index route to root", () => {
@@ -64,6 +70,10 @@ describe("filePathToPattern", () => {
 describe("compareRouteSpecificity", () => {
   const moreSpecific = (a: string, b: string) => compareRouteSpecificity(a, b) > 0;
 
+  test("keeps the legacy routeSpecificity export as an alias", () => {
+    expect(routeSpecificity).toBe(compareRouteSpecificity);
+  });
+
   test("literal segment outranks :param at the same position", () => {
     expect(moreSpecific("/users/new", "/users/:id")).toBe(true);
     expect(compareRouteSpecificity("/users/:id", "/users/new")).toBeLessThan(0);
@@ -94,5 +104,34 @@ describe("compareRouteSpecificity", () => {
 
   test("returns 0 for identical patterns", () => {
     expect(compareRouteSpecificity("/blog/:id", "/blog/:id")).toBe(0);
+  });
+});
+
+describe("buildRouteRegex", () => {
+  test("escapes regex metacharacters in static route segments", () => {
+    const { regex } = buildRouteRegex("/release/v1.0+stable");
+
+    expect(regex.test("/release/v1.0+stable")).toBe(true);
+    expect(regex.test("/release/v1x0+stable")).toBe(false);
+    expect(regex.test("/release/v1.00stable")).toBe(false);
+  });
+});
+
+describe("buildRouteMatcher", () => {
+  test("precompiles route regexes and returns the most specific match", () => {
+    const staticRoute = { pattern: "/users/new" };
+    const dynamicRoute = { pattern: "/users/:id" };
+    const matcher = buildRouteMatcher([dynamicRoute, staticRoute]);
+
+    expect(matcher("/users/new")).toEqual({ route: staticRoute, params: {} });
+    expect(matcher("/users/123")).toEqual({ route: dynamicRoute, params: { id: "123" } });
+  });
+
+  test("does not treat static dots as wildcards", () => {
+    const route = { pattern: "/v1.0" };
+    const matcher = buildRouteMatcher([route]);
+
+    expect(matcher("/v1.0")).toEqual({ route, params: {} });
+    expect(matcher("/v1x0")).toBeNull();
   });
 });
