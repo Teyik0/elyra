@@ -12,7 +12,6 @@ const config: KnipConfig = {
       ignoreDependencies: ["@biomejs/biome", "@commitlint/cli"],
     },
     "packages/core": {
-      entry: ["src/cli/index.ts"],
       project: ["src/**/*.{ts,tsx}"],
     },
     "apps/docs": {
@@ -37,8 +36,6 @@ const config: KnipConfig = {
       ignoreDependencies: ["tailwindcss"],
     },
   },
-  // tsconfig.base.json "types": ["react"] creates a phantom unresolved import at root level
-  ignoreUnresolved: ["^react$"],
   ignoreExportsUsedInFile: true,
 };
 

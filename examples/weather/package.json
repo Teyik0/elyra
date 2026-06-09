@@ -8,6 +8,7 @@
     "dev": "bun --hot src/server.ts",
     "tscheck": "tsc --noEmit",
     "build": "furin build --target bun --compile embed",
+    "measure:client": "furin build --target bun && bun ../../scripts/measure-client-bundle.ts .furin/build/bun/client/index.html",
     "start": "./.furin/build/bun/server"
   },
   "dependencies": {

@@ -1,14 +1,14 @@
 # Logging
 
-Furin ships with [evlog](https://evlog.dev) wired in on both sides of the stack — no setup required for the basics.
+Furin ships with [evlog](https://evlog.dev) wired into the server runtime by default. Browser-side logging is available too, but it is opt-in so the default client bundle stays small.
 
 ## What Ships by Default
 
-When you call `furin()`, two things happen automatically:
+When you call `furin()`, server logging is enabled automatically:
 
 **Server side** — the `evlog/elysia` middleware runs on every request and emits a structured wide event with method, path, status, duration, and any fields you add during the request.
 
-**Client side** — the generated hydration entry calls `initLogger` with an HTTP drain pointed at `/_furin/ingest`. Navigation events (`hydrate_complete`, `navigate_server_error`, `navigate_failed`, etc.) are logged from `RouterProvider` automatically. Those events are batched, sent to the server, and re-emitted there as `service: "furin:browser"` so everything lands in one stream.
+**Client side** — disabled by default. The generated hydration entry uses a no-op logger unless you enable `clientLogging`. Keeping it off avoids adding `evlog` and `evlog/http` to the browser bundle.
 
 Internal paths are excluded from request logging by default:
 
@@ -170,7 +170,26 @@ await furin({
 
 ## Client-Side Logging
 
-The hydration entry already calls `initLogger` for you. To emit your own events from a component or browser utility, import `log` directly:
+Enable browser-side logging with `clientLogging: true`. This adds `evlog` and `evlog/http` to the browser bundle, then points the generated hydration entry at `/_furin/ingest`.
+
+```ts
+// furin.config.ts
+import { defineConfig } from "@teyik0/furin/config"
+
+export default defineConfig({
+  clientLogging: true,
+})
+```
+
+You can also enable it directly in the runtime plugin:
+
+```ts
+await furin({
+  clientLogging: true,
+})
+```
+
+Once enabled, navigation events (`hydrate_complete`, `navigate_server_error`, `navigate_failed`, etc.) are logged from `RouterProvider` automatically. To emit your own events from a component or browser utility, import `log` directly:
 
 ```ts
 import { log } from "evlog"
