@@ -8,6 +8,8 @@ export interface BuildClientOptions {
    * correct physical URLs. Pass "" for root deployments.
    */
   basePath: string;
+  /** Inject the evlog client logger into the hydrate entry. Off by default. */
+  clientLogging: boolean;
   outDir: string;
   pagesDir?: string;
   plugins?: Bun.BunPlugin[];
@@ -53,6 +55,8 @@ export interface BuildManifest {
 }
 
 export interface BuildAppOptions {
+  /** Inject the evlog client logger into the hydrate entry. Defaults to false. */
+  clientLogging?: boolean;
   compile?: "server" | "embed";
   pagesDir?: string;
   plugins?: Bun.BunPlugin[];

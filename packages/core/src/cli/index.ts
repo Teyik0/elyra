@@ -93,6 +93,7 @@ if (command === "build") {
     serverEntry: resolvedServerEntry,
     plugins: config.plugins,
     staticConfig: config.static,
+    clientLogging: config.clientLogging ?? false,
   });
 
   const built = Object.keys(result.targets).join(", ") || "none";

@@ -310,6 +310,7 @@ export async function buildStaticTarget(
     plugins: options.plugins,
     publicPath,
     basePath,
+    clientLogging: Boolean(options.clientLogging),
   });
 
   // ── 4. Generate HTML shell template ──────────────────────────────────────
