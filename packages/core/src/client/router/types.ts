@@ -132,6 +132,7 @@ export interface ClientRoute {
   component?: React.ComponentType<Record<string, unknown>>;
   load: () => Promise<{
     default: { component: React.ComponentType<Record<string, unknown>>; _route: RuntimeRoute };
+    segmentBoundaries?: ClientSegmentBoundary[];
   }>;
   pageRoute?: RuntimeRoute;
   pattern: string;

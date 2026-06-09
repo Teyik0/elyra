@@ -9,9 +9,11 @@ export {
   renderDevSSGWithLoaderCache,
 } from "./hmr.ts";
 export {
+  buildRouteMatcher,
   buildRouteRegex,
   collectIntermediateLayoutDirs,
   compareRouteSpecificity,
+  compareRouteSpecificity as routeSpecificity,
   escapeRegExpChar,
   filePathToPattern,
   resolveMode,

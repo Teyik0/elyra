@@ -8,6 +8,7 @@ As an agent, you should help the user develop senior-grade features, as such you
 - Always check how competitors are doing (Next.js, TanStack Start), compare approaches, and recommend the best solution
 - Avoid default values for function parameters
 - Always run git hooks when committing or pushing to GitHub
+- Avoid usage of Record<string, unknown> as it does not represent correctly the types, always prefer strict types if possible
 
 ## Project Overview
 
@@ -19,7 +20,7 @@ As an agent, you should help the user develop senior-grade features, as such you
 - `bun run fix` — Auto-fix lint issues
 - `bun run test` — Run tests
 - `bun run build` — Build the library to `dist/`
-- `bun run start` — Run the example app in production mode
+- `bun run start` — Run all workspace apps that define a production `start` script
 - `bun run tscheck` — Type-check without emitting
 
 ## Tooling

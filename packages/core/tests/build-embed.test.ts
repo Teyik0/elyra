@@ -91,6 +91,36 @@ describe.serial("compile: embed", () => {
     expect(content).toContain("/public/sub/logo.png");
   });
 
+  test("generateCompileEntry with embed excludes client sourcemaps", () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+
+    const clientDir = join(app.path, "fake-client");
+    mkdirSync(clientDir, { recursive: true });
+    writeFileSync(join(clientDir, "index.html"), "<html></html>");
+    writeFileSync(join(clientDir, "chunk-abc.js"), "console.log()");
+    writeFileSync(join(clientDir, "chunk-abc.js.map"), "{}");
+    writeFileSync(join(clientDir, "style.css"), "body{}");
+    writeFileSync(join(clientDir, "style.css.map"), "{}");
+
+    const entryPath = generateCompileEntry({
+      buildId: undefined,
+      rootPath: join(app.path, "src/pages/root.tsx"),
+      routes: [{ pattern: "/", path: join(app.path, "src/pages/index.tsx"), mode: "ssg" }],
+      serverEntry: join(app.path, "src/server.ts"),
+      outDir: app.path,
+      embed: { clientDir },
+      publicDir: undefined,
+      rootConventions: undefined,
+      routeMetadata: undefined,
+    });
+
+    const content = readFileSync(entryPath, "utf8");
+
+    expect(content).toContain("/_client/chunk-abc.js");
+    expect(content).toContain("/_client/style.css");
+    expect(content).not.toContain(".map");
+  });
+
   test("generateCompileEntry without embed does not contain embedded block", () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
 

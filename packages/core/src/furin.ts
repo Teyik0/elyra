@@ -11,7 +11,8 @@ import {
   getBuildId,
   setBuildId,
 } from "./server/cache/invalidation.ts";
-import type { EmbeddedAppData } from "./server/internal.ts";
+import { setSSGCache } from "./server/cache/ssg.ts";
+import type { CompileContext, EmbeddedAppData } from "./server/internal.ts";
 import { getCompileContext } from "./server/internal.ts";
 import { renderRootNotFound, warmSSGCache } from "./server/render/index.ts";
 import {
@@ -159,6 +160,15 @@ function wrapWithRequestScope(app: AnyElysia): Elysia {
   );
 }
 
+function hydrateSSGCacheFromCompileContext(ctx: CompileContext): void {
+  if (!ctx.ssgCache) {
+    return;
+  }
+  for (const [path, entry] of Object.entries(ctx.ssgCache)) {
+    setSSGCache(path, entry);
+  }
+}
+
 /**
  * Main Furin plugin.
  *
@@ -181,9 +191,10 @@ export async function furin({
   pagesDir?: string;
   logger?: EvlogElysiaOptions;
   /**
-   * Inject the evlog client logger into the browser hydration entry. Off by
-   * default — enabling it ships evlog + evlog/http (~10 KB gzipped) to the
-   * client. Server-side logging is configured via `logger` and unaffected.
+   * Initialize the browser HTTP log drain in the hydration entry. Off by
+   * default — enabling it adds `evlog/http` drain setup and points browser
+   * events at `/_furin/ingest`. Server-side logging is configured via `logger`
+   * and unaffected.
    */
   clientLogging?: boolean;
 }) {
@@ -320,6 +331,7 @@ export async function furin({
   const { root, routes } = loadProdRoutes(ctx);
   const prodBuildId = ctx.buildId ?? "";
   setBuildId(prodBuildId);
+  hydrateSSGCacheFromCompileContext(ctx);
 
   const embedded = ctx?.embedded;
   const clientDir = embedded ? "" : resolveClientDirFromArgv();
@@ -350,6 +362,9 @@ export async function furin({
       }
     })
     .onStart(async ({ server }) => {
+      if (ctx.ssgCache) {
+        return;
+      }
       const origin = server?.url?.origin ?? "http://localhost:3000";
       await warmSSGCache(routes, root, origin);
     })

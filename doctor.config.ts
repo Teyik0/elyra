@@ -7,7 +7,8 @@ export default {
       {
         // Server router handlers call `useLogger()` (an Elysia, not React,
         // hook) and render elements host hooks the rule can't statically
-        // prove. `src/pages/**` targets the docs app.
+        // prove. Patterns are package-relative; `src/pages/**` applies to each
+        // React Doctor project that has file-based pages.
         files: [
           "src/server/render/**",
           "src/server/router/**",

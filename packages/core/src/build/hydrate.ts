@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateIndexHtml } from "../server/render/shell.ts";
+import { buildRouteRegex } from "../server/router/patterns.ts";
 import type { ResolvedRoute } from "../server/router/index.ts";
 import { writeRouteTypes } from "./route-types";
 import type { BuildClientOptions } from "./types";
@@ -25,20 +26,16 @@ export function generateHydrateEntry(
   basePath: string,
   clientLogging: boolean
 ): string {
-  // Deduplicate convention-file paths across all routes so each physical file
-  // produces ONE static import, even when shared by many routes (e.g. the
-  // pages-dir-level error.tsx covers every page at depth 0).
-  const conventionIdents = new Map<string, string>();
-  const getIdent = (filePath: string | undefined): string | undefined => {
+  const getBoundaryIdent = (idents: Map<string, string>, filePath: string | undefined) => {
     if (!filePath) {
       return;
     }
-    const existing = conventionIdents.get(filePath);
+    const existing = idents.get(filePath);
     if (existing) {
       return existing;
     }
-    const ident = `__furin_bnd_${conventionIdents.size}`;
-    conventionIdents.set(filePath, ident);
+    const ident = `__furin_bnd_${idents.size}`;
+    idents.set(filePath, ident);
     return ident;
   };
 
@@ -46,40 +43,44 @@ export function generateHydrateEntry(
 
   for (const route of routes) {
     const resolvedPage = route.path.replace(/\\/g, "/");
-    const regexPattern = route.pattern.replace(/:[^/]+/g, "([^/]+)").replace(/\*/g, "(.*)");
+    const regexPattern = buildRouteRegex(route.pattern).regex.source;
+    const boundaryIdents = new Map<string, string>();
 
     // Emit one boundary literal per segment that actually carries a convention
     // file — segments that only declare one of the two are emitted with the
     // missing field omitted entirely (keeps the generated JS tidy).
     const boundaryLiterals: string[] = [];
     for (const seg of route.segmentBoundaries ?? []) {
-      const errorIdent = getIdent(seg.errorPath);
-      const notFoundIdent = getIdent(seg.notFoundPath);
+      const errorIdent = getBoundaryIdent(boundaryIdents, seg.errorPath);
+      const notFoundIdent = getBoundaryIdent(boundaryIdents, seg.notFoundPath);
       if (!(errorIdent || notFoundIdent)) {
         continue;
       }
       const parts = [`depth: ${seg.depth}`];
       if (errorIdent) {
-        parts.push(`error: ${errorIdent}`);
+        parts.push(`error: ${errorIdent}.default`);
       }
       if (notFoundIdent) {
-        parts.push(`notFound: ${notFoundIdent}`);
+        parts.push(`notFound: ${notFoundIdent}.default`);
       }
       boundaryLiterals.push(`{ ${parts.join(", ")} }`);
     }
-    const boundariesField =
-      boundaryLiterals.length > 0 ? `, segmentBoundaries: [${boundaryLiterals.join(", ")}]` : "";
+
+    const lazyImports = [
+      `import("${resolvedPage}")`,
+      ...[...boundaryIdents.keys()].map((filePath) => `import("${filePath.replace(/\\/g, "/")}")`),
+    ];
+    const loadBody =
+      boundaryLiterals.length > 0
+        ? `Promise.all([${lazyImports.join(", ")}]).then(([__furin_page, ${[
+            ...boundaryIdents.values(),
+          ].join(", ")}]) => ({ default: __furin_page.default, segmentBoundaries: [${boundaryLiterals.join(", ")}] }))`
+        : `import("${resolvedPage}")`;
 
     routeEntries.push(
-      ` { pattern: "${route.pattern}", regex: new RegExp("^${regexPattern}$"), load: () => import("${resolvedPage}")${boundariesField} }`
+      ` { pattern: "${route.pattern}", regex: new RegExp(${JSON.stringify(regexPattern)}), load: () => ${loadBody} }`
     );
   }
-
-  // Collect all deduplicated convention-file imports. Emitted BEFORE the
-  // route array so the idents are in scope when the array literal is built.
-  const conventionImportLines = [...conventionIdents.entries()]
-    .map(([filePath, ident]) => `import ${ident} from "${filePath.replace(/\\/g, "/")}";`)
-    .join("\n");
 
   // basePath stripping: when deployed to a sub-path (e.g. /furin), strip the
   // prefix before route matching so patterns like /docs/routing still work.
@@ -98,10 +99,9 @@ export function generateHydrateEntry(
     ? `${JSON.stringify(basePath)} + "/_furin/ingest"`
     : `"/_furin/ingest"`;
 
-  // Client-side logging is opt-in (config `clientLogging`). When disabled we
-  // emit neither the evlog imports nor initLogger — so evlog/evlog-http never
-  // enter the browser bundle — and define a no-op `log` shim so the hydration
-  // body's log.* calls stay valid without any runtime cost.
+  // Client-side HTTP draining is opt-in (config `clientLogging`). When disabled
+  // we emit neither the hydrate-entry evlog imports nor initLogger, and define a
+  // no-op `log` shim so the hydration body's log.* calls stay valid.
   const loggingImports = clientLogging
     ? 'import { initLogger, log } from "evlog";\nimport { createHttpLogDrain } from "evlog/http";\n'
     : "";
@@ -112,14 +112,12 @@ export function generateHydrateEntry(
   // RouterProvider receives basePath so navigate() / Link push physical paths.
   const routerProviderDefaults = `\n      autoRefresh: true,\n      basePath: ${basePathLiteral},\n      defaultPreload: "intent",\n      defaultPreloadDelay: 50,\n      defaultPreloadStaleTime: 30000,\n      prefetchCacheSize: 50,`;
 
-  const conventionImportsBlock = conventionImportLines ? `\n${conventionImportLines}` : "";
-
   return `import { hydrateRoot, createRoot } from "react-dom/client";
 import { createElement } from "react";
 ${loggingImports}import { RouterProvider } from "@teyik0/furin/link";
 import { fromCrossJSON } from "@teyik0/furin/link";
 import type { SerovalNode } from "seroval";
-import { route as root } from "${rootLayout.replace(/\\/g, "/")}";${conventionImportsBlock}
+import { route as root } from "${rootLayout.replace(/\\/g, "/")}";
 
 ${loggerSetup}
 
@@ -213,7 +211,12 @@ const rootEl = document.getElementById("root") as HTMLElement;
   let app;
   if (_match) {
     const _mod = await _match.load();
-    const match = { ..._match, component: _mod.default.component, pageRoute: _mod.default._route };
+    const match = {
+      ..._match,
+      component: _mod.default.component,
+      pageRoute: _mod.default._route,
+      segmentBoundaries: _mod.segmentBoundaries ?? _match.segmentBoundaries,
+    };
 
     const isNotFound = loaderData.__furinStatus === 404;
 

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Elysia } from "elysia";
 import { furin } from "../src/furin.ts";
+import { __resetCacheState, getSSGCache } from "../src/server/cache/index.ts";
 import { __resetCompileContext, __setCompileContext } from "../src/server/internal.ts";
 import { getProductionTemplate, setProductionTemplatePath } from "../src/server/render/template.ts";
 import { __setDevMode } from "../src/server/runtime-env.ts";
@@ -65,6 +66,7 @@ function resetProcessState(): void {
 afterEach(() => {
   __setDevMode(true);
   setProductionTemplatePath(null);
+  __resetCacheState();
   __resetCompileContext();
   resetProcessState();
   globalThis.URL = originalURL;
@@ -219,6 +221,46 @@ describe.serial("furin() production runtime resolution", () => {
 
     expect(instance).toBeInstanceOf(Elysia);
     expect(getProductionTemplate()).toContain("fallback-client");
+  });
+
+  test("hydrates the production SSG cache from CompileContext", async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+    __setDevMode(false);
+    process.chdir(app.path);
+
+    const clientDir = join(app.path, "client");
+    mkdirSync(clientDir, { recursive: true });
+    writeFileSync(join(clientDir, "index.html"), "<html><!--ssr-outlet--></html>");
+    process.env.FURIN_CLIENT_DIR = "client";
+
+    const rootPath = join(app.path, "src/pages/root.tsx");
+    const indexPath = join(app.path, "src/pages/index.tsx");
+    const [rootMod, indexMod] = await Promise.all([import(rootPath), import(indexPath)]);
+    __setCompileContext({
+      rootPath,
+      modules: {
+        [rootPath]: rootMod,
+        [indexPath]: indexMod,
+      },
+      routes: [{ pattern: "/", path: indexPath, mode: "ssg" }],
+      rootConventions: {},
+      routeMetadata: {
+        [indexPath]: { segmentBoundaries: [] },
+      },
+      ssgCache: {
+        "/": {
+          cachedAt: 123,
+          html: "<html>prebuilt</html>",
+          ndjson: "{}\n",
+          status: 200,
+        },
+      },
+    });
+
+    const instance = await furin({ pagesDir: join(app.path, "src/pages") });
+
+    expect(instance).toBeInstanceOf(Elysia);
+    expect(getSSGCache("/")?.html).toBe("<html>prebuilt</html>");
   });
 
   test("fallback uses ./client when build client is missing", async () => {

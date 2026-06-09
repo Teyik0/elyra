@@ -36,6 +36,15 @@ export interface EntryTemplateOptions {
   >;
   routes: Array<{ mode: "ssr" | "ssg" | "isr"; path: string; pattern: string }>;
   serverEntry: string;
+  ssgCache?: Record<
+    string,
+    {
+      cachedAt: number;
+      html: string;
+      ndjson: string;
+      status: number;
+    }
+  >;
 }
 
 /** Unified options for generating a build entry (compile or disk-based). */
@@ -74,8 +83,16 @@ function collectConventionPaths(
 }
 
 export function buildEntrySource(options: EntryTemplateOptions): string {
-  const { buildId, headerComment, rootPath, routes, serverEntry, rootConventions, routeMetadata } =
-    options;
+  const {
+    buildId,
+    headerComment,
+    rootPath,
+    routes,
+    serverEntry,
+    rootConventions,
+    routeMetadata,
+    ssgCache,
+  } = options;
   let { extraImports, extraContext } = options;
   if (extraImports === undefined) {
     extraImports = [];
@@ -110,6 +127,7 @@ export function buildEntrySource(options: EntryTemplateOptions): string {
   const routeMetadataLine = routeMetadata
     ? `  routeMetadata: ${JSON.stringify(routeMetadata)},`
     : "";
+  const ssgCacheLine = ssgCache ? `  ssgCache: ${JSON.stringify(ssgCache)},` : "";
 
   const lines = [
     headerComment,
@@ -133,6 +151,7 @@ export function buildEntrySource(options: EntryTemplateOptions): string {
     ...routeEntries,
     "  ],",
     routeMetadataLine,
+    ssgCacheLine,
     ...extraContext,
     "});",
     "",

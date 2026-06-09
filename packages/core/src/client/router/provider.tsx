@@ -227,6 +227,7 @@ export function RouterProvider({
           ...match,
           component: loadedMod.default.component,
           pageRoute: loadedMod.default._route,
+          segmentBoundaries: loadedMod.segmentBoundaries ?? match.segmentBoundaries,
         };
 
         // Loader threw a non-redirect Response (or an Error).
