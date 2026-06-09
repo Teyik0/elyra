@@ -33,7 +33,7 @@ export interface BuildClientResult {
  */
 export async function buildClient(
   routes: ResolvedRoute[],
-  { outDir, rootLayout, plugins, publicPath, basePath }: BuildClientOptions
+  { outDir, rootLayout, plugins, publicPath, basePath, clientLogging }: BuildClientOptions
 ): Promise<BuildClientResult> {
   const clientDir = join(outDir, "client");
 
@@ -44,7 +44,7 @@ export async function buildClient(
     mkdirSync(clientDir, { recursive: true });
   }
 
-  const hydrateCode = generateHydrateEntry(routes, rootLayout, basePath);
+  const hydrateCode = generateHydrateEntry(routes, rootLayout, basePath, clientLogging);
   const hydratePath = join(outDir, "_hydrate.tsx");
   writeFileSync(hydratePath, hydrateCode);
 

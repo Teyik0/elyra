@@ -38,13 +38,13 @@ const INITIAL_DIGEST_PROP_RE = /initialDigest:/;
 
 describe("generateHydrateEntry", () => {
   test("imports RouterProvider via package specifier so client links share one RouterContext", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     expect(code).toContain('import { RouterProvider } from "@teyik0/furin/link";');
     expect(code).not.toContain("/packages/core/src/client/link.tsx");
   });
 
   test("B12: without basePath — uses window.location.pathname directly", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     // No basePath stripping logic
     expect(code).toContain("window.location.pathname");
     expect(code).not.toContain("startsWith");
@@ -52,7 +52,7 @@ describe("generateHydrateEntry", () => {
   });
 
   test("B12b: without basePath — log drain endpoint is the bare path", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    const code = generateHydrateEntry(ROUTES, ROOT, "", true);
     // endpoint should be the bare string, not a concatenation
     expect(code).toContain('endpoint: "/_furin/ingest"');
     // No string concatenation for the endpoint
@@ -60,14 +60,31 @@ describe("generateHydrateEntry", () => {
   });
 
   test("B12c: without basePath — RouterProvider has basePath: ''", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     expect(code).toContain('basePath: ""');
+  });
+
+  test("clientLogging off (default) — omits evlog from the client entry", () => {
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
+    expect(code).not.toContain('from "evlog"');
+    expect(code).not.toContain('from "evlog/http"');
+    expect(code).not.toContain("initLogger(");
+    // log.* calls in the hydration body still need a binding — a no-op shim.
+    expect(code).toContain("const log = { error() {}, info() {} };");
+  });
+
+  test("clientLogging on — injects evlog imports and initLogger", () => {
+    const code = generateHydrateEntry(ROUTES, ROOT, "", true);
+    expect(code).toContain('import { initLogger, log } from "evlog";');
+    expect(code).toContain('import { createHttpLogDrain } from "evlog/http";');
+    expect(code).toContain("initLogger(");
+    expect(code).not.toContain("const log = { error() {}, info() {} };");
   });
 
   // ── B13: with basePath — stripping logic injected ────────────────────────────
 
   test("B13: with basePath='/furin' — code strips prefix before route matching", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "/furin");
+    const code = generateHydrateEntry(ROUTES, ROOT, "/furin", false);
     // The generated pathname expression uses a `b` variable for the basePath literal
     expect(code).toContain('const b = "/furin"');
     expect(code).toContain("startsWith(b)");
@@ -75,25 +92,25 @@ describe("generateHydrateEntry", () => {
   });
 
   test("B13b: with basePath — falls back to '/' when pathname equals basePath exactly", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "/furin");
+    const code = generateHydrateEntry(ROUTES, ROOT, "/furin", false);
     // e.g. "window.location.pathname.slice(...) || '/'"
     expect(code).toContain('|| "/"');
   });
 
   test("B13c: strips trailing slash from pathname before route matching", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "/furin");
+    const code = generateHydrateEntry(ROUTES, ROOT, "/furin", false);
     // The generated pathname expression must strip trailing slashes so that
     // "/furin/docs/routing/" → "/docs/routing" and matches the regex.
     expect(code).toContain(".replace(/\\/+$/");
   });
 
   test("B13d: without basePath — strips trailing slash from window.location.pathname", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     expect(code).toContain("window.location.pathname.replace(/\\/+$/");
   });
 
   test("B13c: with basePath — log drain endpoint is prefixed", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "/furin");
+    const code = generateHydrateEntry(ROUTES, ROOT, "/furin", true);
     // endpoint should be basePath + "/_furin/ingest"
     expect(code).toContain('"/furin"');
     expect(code).toContain('"/_furin/ingest"');
@@ -102,12 +119,12 @@ describe("generateHydrateEntry", () => {
   // ── B14: basePath passed to RouterProvider ────────────────────────────────────
 
   test("B14: with basePath — RouterProvider receives basePath prop", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "/furin");
+    const code = generateHydrateEntry(ROUTES, ROOT, "/furin", false);
     expect(code).toContain('basePath: "/furin"');
   });
 
   test("B14b: different basePath value is correctly injected", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "/my-app");
+    const code = generateHydrateEntry(ROUTES, ROOT, "/my-app", false);
     expect(code).toContain('basePath: "/my-app"');
     expect(code).toContain('const b = "/my-app"');
     expect(code).toContain("startsWith(b)");
@@ -146,7 +163,10 @@ describe("generateHydrateEntry", () => {
         ].join("\n")
       );
 
-      writeFileSync(hydratePath, generateHydrateEntry([makeRoute("/", pagePath)], rootPath, ""));
+      writeFileSync(
+        hydratePath,
+        generateHydrateEntry([makeRoute("/", pagePath)], rootPath, "", false)
+      );
 
       const result = Bun.spawnSync(
         [
@@ -240,7 +260,7 @@ const ERROR_AND_NOT_FOUND_BOUNDARY_RE =
 describe("generateHydrateEntry — boundary chain emission", () => {
   test("no segmentBoundaries → no `segmentBoundaries:` field in the emitted route", () => {
     const routes = [makeRoute("/", "/app/src/pages/index.tsx")];
-    const code = generateHydrateEntry(routes, ROOT, "");
+    const code = generateHydrateEntry(routes, ROOT, "", false);
     expect(code).not.toContain("segmentBoundaries:");
   });
 
@@ -249,7 +269,7 @@ describe("generateHydrateEntry — boundary chain emission", () => {
     const routes = [
       makeRouteWithBoundaries("/", "/app/src/pages/index.tsx", [{ depth: 0, errorPath }]),
     ];
-    const code = generateHydrateEntry(routes, ROOT, "");
+    const code = generateHydrateEntry(routes, ROOT, "", false);
 
     // A static import was emitted for the convention file.
     expect(code).toMatch(ERROR_IMPORT_RE);
@@ -265,7 +285,7 @@ describe("generateHydrateEntry — boundary chain emission", () => {
         { depth: 1, notFoundPath },
       ]),
     ];
-    const code = generateHydrateEntry(routes, ROOT, "");
+    const code = generateHydrateEntry(routes, ROOT, "", false);
     expect(code).toMatch(NOT_FOUND_IMPORT_RE);
     expect(code).toMatch(NOT_FOUND_BOUNDARY_DEPTH1_RE);
   });
@@ -276,7 +296,7 @@ describe("generateHydrateEntry — boundary chain emission", () => {
       makeRouteWithBoundaries("/", "/app/src/pages/index.tsx", [{ depth: 0, errorPath }]),
       makeRouteWithBoundaries("/about", "/app/src/pages/about.tsx", [{ depth: 0, errorPath }]),
     ];
-    const code = generateHydrateEntry(routes, ROOT, "");
+    const code = generateHydrateEntry(routes, ROOT, "", false);
 
     const importMatches = code.match(ERROR_IMPORT_RE_G);
     expect(importMatches?.length ?? 0).toBe(1);
@@ -297,7 +317,7 @@ describe("generateHydrateEntry — boundary chain emission", () => {
         { depth: 0, errorPath, notFoundPath },
       ]),
     ];
-    const code = generateHydrateEntry(routes, ROOT, "");
+    const code = generateHydrateEntry(routes, ROOT, "", false);
     expect(code).toMatch(ERROR_AND_NOT_FOUND_BOUNDARY_RE);
   });
 });
@@ -314,7 +334,7 @@ describe("generateHydrateEntry — boundary chain emission", () => {
 
 describe("generateHydrateEntry — digest rehydration (Slice 10)", () => {
   test("reads __furinError.digest off the parsed loader data", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     // The generated code must *extract* the digest from loaderData before
     // passing it to RouterProvider. We tolerate minor formatting (optional
     // chaining, intermediate vars) but the chain must be present somewhere.
@@ -322,14 +342,14 @@ describe("generateHydrateEntry — digest rehydration (Slice 10)", () => {
   });
 
   test("passes initialDigest prop onto RouterProvider", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     // The prop is emitted as `initialDigest:` in the RouterProvider props
     // object literal (alongside routes, root, initialMatch, initialData).
     expect(code).toMatch(INITIAL_DIGEST_PROP_RE);
   });
 
   test("the initialDigest value is DERIVED from loader data (not a hardcoded string)", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     // Guard against a regression where someone hardcodes `initialDigest: ""`
     // or similar — the value must be a JS expression referencing loaderData.
     expect(code).toMatch(INITIAL_DIGEST_BOUND_RE);
@@ -345,35 +365,35 @@ describe("generateHydrateEntry — digest rehydration (Slice 10)", () => {
 
 describe("generateHydrateEntry — HMR hardening", () => {
   test("uses window.__FURIN_ROOT__ as the HMR root persistence mechanism", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     expect(code).toContain("(window as any).__FURIN_ROOT__");
   });
 
   test("reads window.__FURIN_ROOT__ before deciding to hydrate or reconcile", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     expect(code).toContain("const existingRoot = (window as any).__FURIN_ROOT__;");
   });
 
   test("stores the React root in window.__FURIN_ROOT__ after initial mount", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     expect(code).toContain("(window as any).__FURIN_ROOT__ = root;");
   });
 
   test("reconciles (not hydrates) when the root already exists", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     // When existingRoot is truthy: existingRoot.render(app) — no hydrateRoot call
     expect(code).toContain("if (existingRoot) {");
     expect(code).toContain("existingRoot.render(app);");
   });
 
   test("triggers a loader-data refresh via __FURIN_HMR_REFRESH__ on HMR", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     expect(code).toContain("__FURIN_HMR_REFRESH__");
     expect(code).toContain("requestAnimationFrame(() => hmrRefresh());");
   });
 
   test("does NOT emit import.meta.hot.accept after the IIFE", () => {
-    const code = generateHydrateEntry(ROUTES, ROOT, "");
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     // The accept handler was removed because Bun re-evaluates the entry module
     // anyway, so the IIFE itself handles both mount and re-render paths.
     expect(code).not.toContain("import.meta.hot.accept(() => {");

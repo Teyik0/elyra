@@ -176,9 +176,16 @@ function wrapWithRequestScope(app: AnyElysia): Elysia {
 export async function furin({
   pagesDir,
   logger,
+  clientLogging,
 }: {
   pagesDir?: string;
   logger?: EvlogElysiaOptions;
+  /**
+   * Inject the evlog client logger into the browser hydration entry. Off by
+   * default — enabling it ships evlog + evlog/http (~10 KB gzipped) to the
+   * client. Server-side logging is configured via `logger` and unaffected.
+   */
+  clientLogging?: boolean;
 }) {
   const { exclude: userExclude, ...evlogOptions } = logger ?? {};
   initLogger({ env: { service: "furin" } });
@@ -258,7 +265,13 @@ export async function furin({
     const { writeDevFiles } = await import("./build/hydrate.ts");
     writeDevFiles(
       routes,
-      { outDir: furinDir, rootLayout: root.path, basePath: "", publicPath: "/_client/" },
+      {
+        outDir: furinDir,
+        rootLayout: root.path,
+        basePath: "",
+        publicPath: "/_client/",
+        clientLogging: clientLogging ?? false,
+      },
       cwd
     );
 

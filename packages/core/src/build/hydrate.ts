@@ -22,7 +22,8 @@ import type { BuildClientOptions } from "./types";
 export function generateHydrateEntry(
   routes: ResolvedRoute[],
   rootLayout: string,
-  basePath: string
+  basePath: string,
+  clientLogging: boolean
 ): string {
   // Deduplicate convention-file paths across all routes so each physical file
   // produces ONE static import, even when shared by many routes (e.g. the
@@ -97,6 +98,17 @@ export function generateHydrateEntry(
     ? `${JSON.stringify(basePath)} + "/_furin/ingest"`
     : `"/_furin/ingest"`;
 
+  // Client-side logging is opt-in (config `clientLogging`). When disabled we
+  // emit neither the evlog imports nor initLogger — so evlog/evlog-http never
+  // enter the browser bundle — and define a no-op `log` shim so the hydration
+  // body's log.* calls stay valid without any runtime cost.
+  const loggingImports = clientLogging
+    ? 'import { initLogger, log } from "evlog";\nimport { createHttpLogDrain } from "evlog/http";\n'
+    : "";
+  const loggerSetup = clientLogging
+    ? `initLogger({ drain: createHttpLogDrain({ drain: { endpoint: ${logEndpoint} } }) });`
+    : "const log = { error() {}, info() {} };";
+
   // RouterProvider receives basePath so navigate() / Link push physical paths.
   const routerProviderDefaults = `\n      autoRefresh: true,\n      basePath: ${basePathLiteral},\n      defaultPreload: "intent",\n      defaultPreloadDelay: 50,\n      defaultPreloadStaleTime: 30000,\n      prefetchCacheSize: 50,`;
 
@@ -104,14 +116,12 @@ export function generateHydrateEntry(
 
   return `import { hydrateRoot, createRoot } from "react-dom/client";
 import { createElement } from "react";
-import { initLogger, log } from "evlog";
-import { createHttpLogDrain } from "evlog/http";
-import { RouterProvider } from "@teyik0/furin/link";
+${loggingImports}import { RouterProvider } from "@teyik0/furin/link";
 import { fromCrossJSON } from "@teyik0/furin/link";
 import type { SerovalNode } from "seroval";
 import { route as root } from "${rootLayout.replace(/\\/g, "/")}";${conventionImportsBlock}
 
-initLogger({ drain: createHttpLogDrain({ drain: { endpoint: ${logEndpoint} } }) });
+${loggerSetup}
 
 const routes = [
 ${routeEntries.join(",\n")}
@@ -289,14 +299,14 @@ const rootEl = document.getElementById("root") as HTMLElement;
  */
 export function writeDevFiles(
   routes: ResolvedRoute[],
-  { outDir, rootLayout, basePath }: BuildClientOptions,
+  { outDir, rootLayout, basePath, clientLogging }: BuildClientOptions,
   projectRoot: string
 ): void {
   if (!existsSync(outDir)) {
     mkdirSync(outDir, { recursive: true });
   }
 
-  const hydrateCode = generateHydrateEntry(routes, rootLayout, basePath);
+  const hydrateCode = generateHydrateEntry(routes, rootLayout, basePath, clientLogging);
   const hydratePath = join(outDir, "_hydrate.tsx");
   const existingHydrate = existsSync(hydratePath) ? readFileSync(hydratePath, "utf8") : "";
   if (hydrateCode !== existingHydrate) {
