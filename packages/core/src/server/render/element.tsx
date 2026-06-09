@@ -5,6 +5,7 @@ import type { RuntimeRoute } from "../../client.ts";
 import type { ErrorComponent } from "../../shared/error.ts";
 import type { FurinNotFoundError, NotFoundComponent } from "../../shared/not-found.ts";
 import type { ResolvedRoute, SegmentBoundary } from "../router/index.ts";
+import { IS_DEV } from "../runtime-env.ts";
 
 export function buildElement(
   route: ResolvedRoute,
@@ -70,6 +71,8 @@ const SERVER_RESET_NOOP = () => {
   /* reset is a client-only action; the response is already committed here */
 };
 
+const GENERIC_ERROR_MESSAGE = "An unexpected error occurred.";
+
 /**
  * Builds the error element rendered when a loader (or the SSR shell) fails.
  *
@@ -97,8 +100,14 @@ export function buildErrorElement(
   let message: string;
   if (component) {
     message = messageOverride ?? errorMessageOf(error);
+  } else if (IS_DEV) {
+    // No user error.tsx: in dev, surface the real error message so the
+    // developer can see what actually broke instead of a generic placeholder.
+    // Production stays generic to avoid leaking internals — the digest still
+    // correlates the rendered page with the full server-side log entry.
+    message = (messageOverride ?? errorMessageOf(error)) || GENERIC_ERROR_MESSAGE;
   } else {
-    message = "An unexpected error occurred.";
+    message = GENERIC_ERROR_MESSAGE;
   }
   return <ErrorView error={{ message, digest, status }} reset={SERVER_RESET_NOOP} />;
 }
