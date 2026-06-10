@@ -38,8 +38,8 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
-async function silenceAbortError<T>(promise: Promise<T>): Promise<T> {
-  return await promise.catch((error: unknown) => {
+function silenceAbortError<T>(promise: Promise<T>): Promise<T> {
+  return promise.catch((error: unknown) => {
     if (isAbortError(error)) {
       return new Promise<T>(() => {
         /* keep superseded deferred data suspended until React replaces the tree */

@@ -71,6 +71,13 @@ export function updateCard(id: string, data: UpdateCardData): Card | undefined {
   }
 
   if (data.column !== undefined || data.position !== undefined) {
+    if (keepsCardPosition(existing, data)) {
+      if (Object.keys(nextValues).length === 0) {
+        return existing;
+      }
+      db.update(cards).set(nextValues).where(eq(cards.id, id)).run();
+      return db.select().from(cards).where(eq(cards.id, id)).get() ?? undefined;
+    }
     return reorderCard(existing, data, nextValues);
   }
 
@@ -87,6 +94,17 @@ function clampPosition(position: number, maxPosition: number): number {
     return maxPosition;
   }
   return Math.max(0, Math.min(Math.trunc(position), maxPosition));
+}
+
+function keepsCardPosition(existing: Card, data: UpdateCardData): boolean {
+  const targetColumn = data.column ?? existing.column;
+  if (targetColumn !== existing.column) {
+    return false;
+  }
+  if (data.position === undefined) {
+    return true;
+  }
+  return Number.isFinite(data.position) && Math.trunc(data.position) === existing.position;
 }
 
 function reorderCard(existing: Card, data: UpdateCardData, nextValues: UpdateCardData): Card {
