@@ -1,0 +1,70 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { and, asc, eq } from "drizzle-orm";
+import { updateCard } from "../src/api/modules/cards/service";
+import { db } from "../src/db";
+import { boards, cards } from "../src/db/schema";
+
+const BOARD_ID = "test-board-reorder";
+
+function insertCard(id: string, column: "backlog" | "todo" | "doing" | "done", position: number) {
+  db.insert(cards)
+    .values({
+      id,
+      boardId: BOARD_ID,
+      column,
+      title: id,
+      description: "",
+      position,
+      createdAt: "2026-06-10T00:00:00.000Z",
+    })
+    .run();
+}
+
+function listColumn(column: "backlog" | "todo" | "doing" | "done") {
+  return db
+    .select({
+      id: cards.id,
+      position: cards.position,
+    })
+    .from(cards)
+    .where(and(eq(cards.boardId, BOARD_ID), eq(cards.column, column)))
+    .orderBy(asc(cards.position))
+    .all();
+}
+
+describe("cards reorder service", () => {
+  beforeEach(() => {
+    db.delete(cards).where(eq(cards.boardId, BOARD_ID)).run();
+    db.delete(boards).where(eq(boards.id, BOARD_ID)).run();
+    db.insert(boards)
+      .values({
+        id: BOARD_ID,
+        name: "Reorder test",
+        createdAt: "2026-06-10T00:00:00.000Z",
+      })
+      .run();
+
+    insertCard("test-card-todo-0", "todo", 0);
+    insertCard("test-card-todo-1", "todo", 1);
+    insertCard("test-card-doing-0", "doing", 0);
+    insertCard("test-card-doing-1", "doing", 1);
+  });
+
+  afterEach(() => {
+    db.delete(cards).where(eq(cards.boardId, BOARD_ID)).run();
+    db.delete(boards).where(eq(boards.id, BOARD_ID)).run();
+  });
+
+  test("moving one card reorders source and destination columns in one service call", () => {
+    const moved = updateCard("test-card-todo-0", { column: "doing", position: 1 });
+
+    expect(moved?.column).toBe("doing");
+    expect(moved?.position).toBe(1);
+    expect(listColumn("todo")).toEqual([{ id: "test-card-todo-1", position: 0 }]);
+    expect(listColumn("doing")).toEqual([
+      { id: "test-card-doing-0", position: 0 },
+      { id: "test-card-todo-0", position: 1 },
+      { id: "test-card-doing-1", position: 2 },
+    ]);
+  });
+});

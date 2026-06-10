@@ -49,6 +49,21 @@ new Elysia()
     );
   });
 
+  test("detects pagesDir when object contains spread properties", async () => {
+    await withTmpFile(
+      `
+import { furin } from "furin";
+import Elysia from "elysia";
+const shared = { mode: "ssr" };
+new Elysia().use(furin({ ...shared, pagesDir: "./src/pages" })).listen(3000);
+`,
+      (path) => {
+        const result = scanFurinInstances(path);
+        expect(result).toEqual(["./src/pages"]);
+      }
+    );
+  });
+
   test("returns [] for a template literal pagesDir (dynamic path)", async () => {
     await withTmpFile(
       `

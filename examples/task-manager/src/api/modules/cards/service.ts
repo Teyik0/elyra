@@ -1,10 +1,12 @@
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { cards } from "@/db/schema";
 
 export type { Card, ColumnType } from "@/db/schema";
 
 import type { Card, ColumnType } from "@/db/schema";
+
+type UpdateCardData = Partial<Pick<Card, "title" | "description" | "column" | "position">>;
 
 // ---------------------------------------------------------------------------
 // Cards queries
@@ -54,27 +56,22 @@ export function createCard(boardId: string, title: string, column: ColumnType): 
   return card;
 }
 
-export function updateCard(
-  id: string,
-  data: Partial<Pick<Card, "title" | "description" | "column" | "position">>
-): Card | undefined {
+export function updateCard(id: string, data: UpdateCardData): Card | undefined {
   const existing = db.select().from(cards).where(eq(cards.id, id)).get();
   if (!existing) {
     return;
   }
 
-  const nextValues: Partial<Pick<Card, "title" | "description" | "column" | "position">> = {};
+  const nextValues: UpdateCardData = {};
   if (data.title !== undefined) {
     nextValues.title = data.title;
   }
   if (data.description !== undefined) {
     nextValues.description = data.description;
   }
-  if (data.column !== undefined) {
-    nextValues.column = data.column;
-  }
-  if (data.position !== undefined) {
-    nextValues.position = data.position;
+
+  if (data.column !== undefined || data.position !== undefined) {
+    return reorderCard(existing, data, nextValues);
   }
 
   if (Object.keys(nextValues).length === 0) {
@@ -83,6 +80,75 @@ export function updateCard(
 
   db.update(cards).set(nextValues).where(eq(cards.id, id)).run();
   return db.select().from(cards).where(eq(cards.id, id)).get() ?? undefined;
+}
+
+function clampPosition(position: number, maxPosition: number): number {
+  if (!Number.isFinite(position)) {
+    return maxPosition;
+  }
+  return Math.max(0, Math.min(Math.trunc(position), maxPosition));
+}
+
+function reorderCard(existing: Card, data: UpdateCardData, nextValues: UpdateCardData): Card {
+  return db.transaction((tx) => {
+    const targetColumn = data.column ?? existing.column;
+    const targetSiblings = tx
+      .select()
+      .from(cards)
+      .where(and(eq(cards.boardId, existing.boardId), eq(cards.column, targetColumn)))
+      .orderBy(asc(cards.position))
+      .all()
+      .filter((card) => card.id !== existing.id);
+
+    const fallbackPosition =
+      targetColumn === existing.column
+        ? targetSiblings.findIndex((card) => card.position > existing.position)
+        : targetSiblings.length;
+    const targetPosition = clampPosition(
+      data.position ?? (fallbackPosition === -1 ? targetSiblings.length : fallbackPosition),
+      targetSiblings.length
+    );
+
+    const movedCard: Card = {
+      ...existing,
+      ...nextValues,
+      column: targetColumn,
+      position: targetPosition,
+    };
+    const targetCards = [...targetSiblings];
+    targetCards.splice(targetPosition, 0, movedCard);
+
+    for (const [position, card] of targetCards.entries()) {
+      tx.update(cards)
+        .set({
+          ...(card.id === existing.id ? nextValues : {}),
+          column: targetColumn,
+          position,
+        })
+        .where(eq(cards.id, card.id))
+        .run();
+    }
+
+    if (existing.column !== targetColumn) {
+      const sourceCards = tx
+        .select()
+        .from(cards)
+        .where(and(eq(cards.boardId, existing.boardId), eq(cards.column, existing.column)))
+        .orderBy(asc(cards.position))
+        .all()
+        .filter((card) => card.id !== existing.id);
+
+      for (const [position, card] of sourceCards.entries()) {
+        tx.update(cards).set({ position }).where(eq(cards.id, card.id)).run();
+      }
+    }
+
+    const updated = tx.select().from(cards).where(eq(cards.id, existing.id)).get();
+    if (!updated) {
+      throw new Error(`Failed to reorder card "${existing.id}"`);
+    }
+    return updated;
+  });
 }
 
 export function deleteCard(id: string): boolean {

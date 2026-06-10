@@ -1,16 +1,24 @@
+import type { BaseNode, Node as YukuNode } from "yuku-parser";
+
 /**
  * Minimal ESTree node interface used by AST-walking utilities across the
  * framework (build scanning, client transform, etc.).
  */
-export interface AstNode {
+export interface AstNode extends BaseNode {
   body?: AstNode[];
-  end: number;
-  start: number;
-  type: string;
+  type: YukuNode["type"] | string;
   [key: string]: unknown;
 }
 
-const SKIP_KEYS = new Set(["type", "start", "end"]);
+const SKIP_KEYS = new Set(["type", "start", "end", "comments"]);
+
+function isAstNode(value: unknown): value is AstNode {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as Partial<AstNode>;
+  return typeof candidate.type === "string";
+}
 
 /**
  * Walks an ESTree-compatible AST node recursively, calling `visitor` for every
@@ -29,10 +37,11 @@ export function walkAST(node: unknown, visitor: (n: AstNode) => void): void {
     }
     return;
   }
-  const n = node as AstNode;
-  if (typeof n.type === "string") {
-    visitor(n);
+  if (!isAstNode(node)) {
+    return;
   }
+  const n = node;
+  visitor(n);
   for (const key of Object.keys(n)) {
     if (SKIP_KEYS.has(key)) {
       continue;
