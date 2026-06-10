@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { SsgCacheEntry } from "../server/cache/index.ts";
 
 // import.meta.resolve() runs at runtime (not inlined at bundle time), resolves
 // through package exports, and is the Web-standard API. The main entry is
@@ -36,15 +37,7 @@ export interface EntryTemplateOptions {
   >;
   routes: Array<{ mode: "ssr" | "ssg" | "isr"; path: string; pattern: string }>;
   serverEntry: string;
-  ssgCache?: Record<
-    string,
-    {
-      cachedAt: number;
-      html: string;
-      ndjson: string;
-      status: number;
-    }
-  >;
+  ssgCache?: Record<string, SsgCacheEntry>;
 }
 
 /** Unified options for generating a build entry (compile or disk-based). */

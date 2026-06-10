@@ -1,5 +1,4 @@
 import { mapWithConcurrency } from "../../shared/utils/index.ts";
-import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import type { SsgCacheEntry } from "../cache/isr-ssg.ts";
 import { getSSGCache, setSSGCache } from "../cache/ssg.ts";
 import { createLogger } from "../context-logger.ts";
@@ -18,7 +17,12 @@ export async function prerenderSSG(
 
   const cached = getSSGCache(resolvedPath);
   if (cached) {
-    return cached;
+    if (cached.tags === route.tags) {
+      return cached;
+    }
+    const taggedEntry: SsgCacheEntry = { ...cached, tags: route.tags };
+    setSSGCache(resolvedPath, taggedEntry);
+    return taggedEntry;
   }
 
   const renderResult = await renderForPath(route, params, root, origin, "ssg", basePath);
@@ -32,9 +36,9 @@ export async function prerenderSSG(
     html: result.html,
     ndjson: result.ndjson,
     status: result.status,
+    tags: route.tags,
   };
   setSSGCache(resolvedPath, entry);
-  autoInvalidateRegistry.registerLoaderTags(resolvedPath, route.tags);
 
   return entry;
 }

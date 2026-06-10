@@ -57,6 +57,19 @@ export async function parseDeferredNdjson(
     });
   };
 
+  if (signal?.aborted) {
+    const err = makeAbortError(signal.reason);
+    await reader.cancel(err).catch(() => {
+      /* reader may already be closed */
+    });
+    try {
+      reader.releaseLock();
+    } catch {
+      /* already released */
+    }
+    return { syncData: {}, deferredPromises: {} };
+  }
+
   if (signal !== undefined && !signal.aborted) {
     abortHandler = () => cancelReader(makeAbortError(signal.reason));
     signal.addEventListener("abort", abortHandler, { once: true });

@@ -164,7 +164,9 @@ export async function buildBunTarget(
   setProductionTemplateContent(indexHtml);
 
   const routeManifest = routes.map((r) => ({ pattern: r.pattern, path: r.path, mode: r.mode }));
-  const ssgCache = await buildSSGCacheSnapshot(routes, root, "http://localhost");
+  const ssgCache = serverEntry
+    ? await buildSSGCacheSnapshot(routes, root, "http://localhost")
+    : undefined;
   const publicDir = existsSync(join(rootDir, "public")) ? join(rootDir, "public") : undefined;
   const targetPublicDir = publicDir ? join(targetDir, "public") : undefined;
 

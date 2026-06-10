@@ -9,6 +9,8 @@ import {
   type RouterContextValue,
   SSR_FALLBACK_ROUTER,
 } from "../../src/client/link.tsx";
+import { setPrefetchCacheEntry } from "../../src/client/router/provider.tsx";
+import type { CacheEntry } from "../../src/client/router/types.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -349,6 +351,27 @@ describe("Link SSR path", () => {
     } finally {
       globalThis.window = originalWindow;
     }
+  });
+});
+
+describe("prefetch cache helpers", () => {
+  test("setPrefetchCacheEntry evicts the oldest entry when the cap is exceeded", () => {
+    const cache = new Map<string, CacheEntry>();
+    const entry = (id: string): CacheEntry => ({
+      createdAt: Date.now(),
+      promise: Promise.resolve({
+        data: { id },
+        match: null,
+        notFound: { message: id },
+      }),
+      staleTime: 30_000,
+    });
+
+    setPrefetchCacheEntry(cache, "/a", entry("a"), 2);
+    setPrefetchCacheEntry(cache, "/b", entry("b"), 2);
+    setPrefetchCacheEntry(cache, "/c", entry("c"), 2);
+
+    expect([...cache.keys()]).toEqual(["/b", "/c"]);
   });
 });
 
