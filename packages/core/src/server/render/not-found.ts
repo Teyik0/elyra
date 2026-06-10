@@ -43,6 +43,7 @@ export async function renderRootNotFound(
   const notFoundContext: RouterContextValue = {
     basePath: "",
     currentHref: request ? normalizeHref(new URL(request.url).pathname) : "/",
+    search: {},
     navigate: (_href, _opts) => Promise.resolve(),
     prefetch: (_href, _opts) => {
       /* noop */

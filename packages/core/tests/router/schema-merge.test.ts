@@ -87,6 +87,26 @@ describe("mergeRouteSchemas", () => {
     const sharedSchema = merged.properties.shared as { [key: string]: unknown };
     expect(JSON.stringify(sharedSchema)).toContain('"child"');
   });
+
+  test("returns a single non-TypeBox schema unchanged", () => {
+    const schema = { "~standard": {} };
+    const chain = [{ __type: "FURIN_ROUTE" as const, query: schema }];
+
+    expect(mergeRouteSchemas(chain as RuntimeRoute[], "query")).toBe(schema);
+  });
+
+  test("throws a clear error when multi-route query merge is not TypeBox", () => {
+    const parent = t.Object({ parentField: t.Optional(t.String()) });
+    const child = { "~standard": {} };
+    const chain = [
+      { __type: "FURIN_ROUTE" as const, query: parent },
+      { __type: "FURIN_ROUTE" as const, query: child },
+    ];
+
+    expect(() => mergeRouteSchemas(chain as RuntimeRoute[], "query")).toThrow(
+      "[furin] Merging query schemas across the route chain requires TypeBox in V1. Use TypeBox for parent/child query, or define query only on leaf routes."
+    );
+  });
 });
 
 describe("collectRouteTags", () => {

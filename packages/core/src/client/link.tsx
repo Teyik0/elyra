@@ -238,6 +238,7 @@ function LinkInteractive<To extends RouteTo>({
 export const SSR_FALLBACK_ROUTER: RouterContextValue = {
   basePath: "",
   currentHref: "/",
+  search: {},
   navigate: (_href, _opts) => Promise.resolve(),
   prefetch: (_href, _opts) => {
     /* noop */

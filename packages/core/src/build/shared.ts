@@ -10,6 +10,7 @@ import type { BuildRouteManifestEntry, TargetBuildManifest } from "./types";
 // exports. This is the Web-standard approach (Bun, Node 20.6+, browsers).
 export const CLIENT_MODULE_PATH = new URL(import.meta.resolve("@teyik0/furin/client")).pathname;
 export const LINK_MODULE_PATH = new URL(import.meta.resolve("@teyik0/furin/link")).pathname;
+export const SEARCH_MODULE_PATH = new URL(import.meta.resolve("@teyik0/furin/search")).pathname;
 
 export function ensureDir(path: string): void {
   if (!existsSync(path)) {

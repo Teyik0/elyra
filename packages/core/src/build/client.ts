@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import { transformForClient } from "../plugin/transform-client";
 import type { ResolvedRoute } from "../server/router/index.ts";
 import { generateHydrateEntry } from "./hydrate";
-import { CLIENT_MODULE_PATH, LINK_MODULE_PATH } from "./shared";
+import { CLIENT_MODULE_PATH, LINK_MODULE_PATH, SEARCH_MODULE_PATH } from "./shared";
 import type { BuildClientOptions, BunBuildAliasConfig } from "./types";
 
 const TS_FILE_FILTER = /\.(tsx|ts)$/;
@@ -69,7 +69,9 @@ export async function buildClient(
             .replaceAll(`"@teyik0/furin/client"`, JSON.stringify(CLIENT_MODULE_PATH))
             .replaceAll(`'furin/client'`, JSON.stringify(CLIENT_MODULE_PATH))
             .replaceAll(`"@teyik0/furin/link"`, JSON.stringify(LINK_MODULE_PATH))
-            .replaceAll(`'furin/link'`, JSON.stringify(LINK_MODULE_PATH));
+            .replaceAll(`'furin/link'`, JSON.stringify(LINK_MODULE_PATH))
+            .replaceAll(`"@teyik0/furin/search"`, JSON.stringify(SEARCH_MODULE_PATH))
+            .replaceAll(`'furin/search'`, JSON.stringify(SEARCH_MODULE_PATH));
 
           return {
             contents: transformed,
@@ -110,6 +112,7 @@ export async function buildClient(
     alias: {
       "@teyik0/furin/client": CLIENT_MODULE_PATH,
       "@teyik0/furin/link": LINK_MODULE_PATH,
+      "@teyik0/furin/search": SEARCH_MODULE_PATH,
     },
     define: {
       "process.env.NODE_ENV": JSON.stringify("production"),

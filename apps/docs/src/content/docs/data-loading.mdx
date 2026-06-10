@@ -101,6 +101,37 @@ export default route.page({
 })
 ```
 
+### Query schema merging across the route chain
+
+When a route inherits from multiple `_route.tsx` files (layout chain), their `query` schemas are merged into a single search type for that route. The generated `furin-env.d.ts` reflects the union of all query fields in the chain.
+
+```tsx
+// src/pages/products/_route.tsx
+export const route = createRoute({
+  parent: rootRoute,
+  query: t.Object({ sort: t.Optional(t.String()) }),
+});
+
+// src/pages/products/index.tsx
+export default route.page({
+  query: t.Object({ page: t.Optional(t.Number({ default: 1 })) }),
+  // generated search type: { sort?: string; page: number }
+});
+```
+
+> **Merging rules.** All query schemas in the chain must be TypeBox objects. Mixing a non-TypeBox schema (e.g. a plain Zod object) with a TypeBox parent or child throws a clear runtime error at build time.
+
+### Default values in generated types
+
+Query fields declared with a non-null `default` are emitted as **required** properties in `furin-env.d.ts`. The runtime still validates them as optional (falling back to the default), but the type system reflects the guaranteed presence after Elysia validation.
+
+```tsx
+query: t.Object({
+  page: t.Optional(t.Number({ default: 1 })), // emitted as `page: number`
+  tag: t.Optional(t.String()),                 // emitted as `tag?: string`
+})
+```
+
 ## Typed Params
 
 Params are also declared on `createRoute()`.

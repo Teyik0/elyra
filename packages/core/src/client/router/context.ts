@@ -8,6 +8,7 @@ export const CLIENT_FALLBACK_ROUTER: RouterContextValue = {
   // Use the same "/" as SSR_FALLBACK_ROUTER so SSR and client render the
   // same active-state when no RouterProvider is present, avoiding hydration mismatches.
   currentHref: "/",
+  search: {},
   navigate: (href, _opts) => {
     window.location.href = href;
     return Promise.resolve();

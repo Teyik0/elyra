@@ -131,6 +131,78 @@ Prefer `refresh()` over `router.navigate(window.location.pathname)` after a muta
 
 ---
 
+## `useSearch` and `useSetSearch`
+
+Read and update the current route's query params with full type safety.
+
+```tsx
+import { useSearch, useSetSearch } from "@teyik0/furin/search";
+
+function ProductList() {
+  const search = useSearch("/products");
+  const setSearch = useSetSearch("/products");
+
+  return (
+    <div>
+      <p>Page {search.page}</p>
+      <button
+        onClick={() => setSearch({ page: search.page + 1 }, { replace: true })}
+      >
+        Next page
+      </button>
+    </div>
+  );
+}
+```
+
+### `useSearch(to)`
+
+Returns the server-resolved query object for the current route. The type is inferred from the `query` schema declared on the route chain (`createRoute({ query })` in layout or page `_route.tsx` files).
+
+```tsx
+// Route declares: query: t.Object({ page: t.Optional(t.Number({ default: 1 })), tag: t.Optional(t.String()) })
+const search = useSearch("/products");
+// search: { page: number; tag?: string }
+```
+
+### `useSetSearch(to)`
+
+Returns a function that patches the current search and navigates to the updated URL. The patch is shallow-merged with the existing query params.
+
+```tsx
+const setSearch = useSetSearch("/products");
+
+// Partial patch — keeps existing params
+setSearch({ page: 2 }, { replace: true });
+
+// Functional update — receives current resolved search
+setSearch((prev) => ({ page: prev.page + 1 }), { replace: false });
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `replace` | `boolean` | `false` | Use `history.replaceState` instead of `pushState`. |
+
+### Query schema merging across the route chain
+
+When a route inherits from multiple `_route.tsx` files (layout chain), their `query` schemas are merged. The generated `furin-env.d.ts` reflects the union of all query fields in the chain.
+
+```tsx
+// src/pages/products/_route.tsx
+export const route = createRoute({
+  parent: rootRoute,
+  query: t.Object({ sort: t.Optional(t.String()) }),
+});
+
+// src/pages/products/index.tsx
+export default route.page({
+  query: t.Object({ page: t.Optional(t.Number({ default: 1 })) }),
+  // generated search type: { sort?: string; page: number }
+});
+```
+
+---
+
 ## Hash-only navigation
 
 When the pathname is identical and only the hash differs, Furin lets the browser handle scrolling natively instead of triggering a full SPA fetch:

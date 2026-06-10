@@ -100,7 +100,7 @@ export const route = createRoute({
 
 ## Typed Navigation
 
-Furin generates `furin-env.d.ts` so `<Link />` can type the `to` pathname and per-route `search` object.
+Furin generates `furin-env.d.ts` so `<Link />`, `useSearch`, and `useSetSearch` are fully typed from the route manifest.
 
 ```tsx
 import { Link } from "@teyik0/furin/link"
@@ -112,6 +112,15 @@ When a route declares a `query` schema, `search` is typed from that schema.
 
 ```tsx
 <Link to="/search" search={{ page: 2 }} />
+```
+
+The same types drive `useSearch` and `useSetSearch` from `@teyik0/furin/search`:
+
+```tsx
+import { useSearch, useSetSearch } from "@teyik0/furin/search";
+
+const search = useSearch("/products");
+const setSearch = useSetSearch("/products");
 ```
 
 Make sure `furin-env.d.ts` is included in your app `tsconfig.json`:
