@@ -700,6 +700,7 @@ export function RouterProvider({
     {
       basePath,
       currentHref,
+      search: (state.data.query as Record<string, unknown> | undefined) ?? {},
       navigate,
       prefetch,
       refresh,

@@ -274,6 +274,7 @@ export async function prepareRender(
   const ssrContext: RouterContextValue = {
     basePath: basePath ?? "",
     currentHref: normalizeHref(ctx.path),
+    search: (ctx.query as Record<string, unknown> | undefined) ?? {},
     navigate: (_href, _opts) => Promise.resolve(),
     prefetch: (_href, _opts) => {
       /* noop */

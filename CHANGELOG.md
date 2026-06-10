@@ -4,7 +4,34 @@ All notable changes to Furin will be documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0-alpha.15] — Unreleased
+## [Unreleased]
+
+### Added
+- **`useSearch` and `useSetSearch`** — new hooks exported from `@teyik0/furin/search` for reading and mutating URL query params with full type safety. `useSearch("/products")` returns the server-resolved query object for the current route. `useSetSearch("/products")` patches the current search and navigates to the updated URL (push or replace). Both are typed from the generated `furin-env.d.ts` route manifest.
+- **Route-chain query schema merging** — when a route chain contains multiple `query` schemas (e.g. a layout `_route.tsx` with `query: t.Object({ sort: t.String() })` and a page with `query: t.Object({ page: t.Number() })`), the generated `furin-env.d.ts` merges them into a single `{ sort?: string; page?: number }` search type for that route. `mergeRouteSchemas` now validates that all chained schemas are TypeBox objects (throws a clear error if a non-TypeBox schema is mixed in the chain).
+- **Default-value fields are present in generated types** — query fields declared with `t.Optional(t.String({ default: "all" }))` (or any non-null `default`) are emitted as required properties in `furin-env.d.ts`. The runtime still validates them as optional, but the type system reflects the guaranteed presence after Elysia validation applies the default.
+
+## [0.2.0-alpha.1] — 2026-06-10
+
+### Added
+- **Client-side `evlog` logging is now opt-in** — `furin.config.ts` supports `clientLogging: true` to ship structured evlog events from the browser. Previously enabled by default; now disabled by default to reduce bundle size for apps that do not need it.
+- **Real error messages in dev when no `error.tsx`** — if a route has no custom `error.tsx` boundary, the dev-mode error page now surfaces the actual error message and stack trace instead of the generic fallback.
+
+### Changed
+- **Core restructured into `server/`, `client/`, and `shared/` directories** — all source files in `packages/core/src` are now organized by runtime boundary. This replaces the previous flat layout and makes it immediately obvious which code runs where.
+- **Enforced import layering** — CI and a test guard (`test(core): enforce server->client->shared layering`) prevent `server/` from importing `client/` or `shared/` from importing either. The `build.ts` file is the only allowed bridge.
+- **`furin.ts` relocated to package src root** — the main library entry point is now at `packages/core/src/furin.ts` for clearer path resolution.
+- **Extracted shared HTML route-cache factory** — deduplicated cache construction logic between SSR and ISR render paths.
+- **Extracted shared shell-error fallback** — the server-side shell recovery when `renderToReadableStream` throws is now a single shared helper.
+- **Deduped ISR ETag formatting** — ETag string construction is now centralized.
+- **Migrated `react-doctor` config to TypeScript** — with path remapping for cleaner type checking.
+
+### Fixed
+- **Docs search dialog** — `useQuery` results are now destructured correctly in the search dialog component.
+- **Yuku parser upgrade** — upgraded to a version with better TypeScript types, removing manual type workarounds.
+- **CI and test flakiness** — multiple review comment fixes and CI stability improvements.
+
+## [0.1.0-alpha.15] — 2026-05-24
 
 ### Added
 - **`defer()` in layout loaders** — `createRoute({ loader })` can now return `defer({...})`. Deferred fields from layouts and pages are streamed together over a single transport (SSR `<script>` chunks or `/_furin/data` NDJSON), letting a layout flush its shell (nav, sidebar) while a slow widget streams in. The previous v1 restriction that fail-fast'd a deferred layout loader is removed.
@@ -12,6 +39,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 - **Tag-based revalidation now survives SPA navigation** — `/_furin/data` (the SPA loader-fetch endpoint) did not re-register the route's `tags` after running its loader, so the first mutation would invalidate the path and drop its tag mapping while subsequent mutations on the same tag found no path and the `x-furin-revalidate` header was silently omitted. The data endpoint now registers loader tags on every successful run, mirroring the full-HTML render path.
 - **Cross-map cleanup on layout/page key collision** — when a layout returned `defer({stats: Promise})` and the page returned `{stats: 42}` (or vice-versa), both the sync and deferred maps kept their entry for the same key, so the wire carried two contradictory values. The later loader now drops any stale entry from the opposite map.
+- **`furin-env.d.ts` entries are now sorted deterministically** — generated route manifest entries are sorted by pattern to prevent non-deterministic diffs across rebuilds.
+- **String HTTP status handling** — the router now correctly normalizes string status codes (e.g. `"404"`) to numbers before rendering error boundaries.
+- **`react-doctor` diff base branch** — corrected the base branch reference for `react-doctor` automated review diffs.
+- **Registry and runtime fixes** — PR review fixes across the route registry, runtime error handling, and test suite stability.
 
 ## [0.1.0-alpha.14] — 2026-05-24
 
@@ -192,6 +223,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `writeRouteTypes()` generating `furin-env.d.ts` for per-route type inference
 - Bun-native HMR with React Fast Refresh — single process, no Vite
 
+[Unreleased]: https://github.com/teyik0/furin/compare/v0.2.0-alpha.1...HEAD
+[0.2.0-alpha.1]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.15...v0.2.0-alpha.1
 [0.1.0-alpha.15]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.14...v0.1.0-alpha.15
 [0.1.0-alpha.14]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.13...v0.1.0-alpha.14
 [0.1.0-alpha.13]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.12...v0.1.0-alpha.13

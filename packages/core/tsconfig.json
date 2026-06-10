@@ -2,7 +2,9 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
+      "@teyik0/furin/search": ["./src/client/router/search/index.ts"],
       "furin": ["./src/furin.ts"],
+      "furin/search": ["./src/client/router/search/index.ts"],
       "furin/*": ["./src/*"]
     }
   },

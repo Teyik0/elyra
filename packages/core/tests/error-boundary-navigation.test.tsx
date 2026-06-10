@@ -9,6 +9,7 @@ function makeRouterContext(overrides: Partial<RouterContextValue> | undefined): 
   return {
     basePath: "",
     currentHref: "/",
+    search: {},
     navigate: () => Promise.resolve(),
     prefetch: () => {
       /* noop */

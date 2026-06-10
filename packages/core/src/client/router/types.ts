@@ -115,6 +115,8 @@ export interface RouterContextValue {
    * Prefer this over `navigate(window.location.pathname)` after a mutation.
    */
   refresh: (opts?: { resetScroll?: boolean }) => Promise<void>;
+  /** Current server-resolved query params for the rendered route. */
+  search: Record<string, unknown>;
 }
 
 /**

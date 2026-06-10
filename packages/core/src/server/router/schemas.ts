@@ -116,6 +116,12 @@ export function mergeRouteSchemas(
     return schemas[0] as AnySchema;
   }
 
+  if (schemas.some((s) => !s.properties || typeof s.properties !== "object")) {
+    throw new Error(
+      "[furin] Merging query schemas across the route chain requires TypeBox in V1. Use TypeBox for parent/child query, or define query only on leaf routes."
+    );
+  }
+
   const mergedProperties = Object.assign(
     {},
     ...schemas.map((s) => (s.properties as Record<string, unknown>) ?? {})
