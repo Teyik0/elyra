@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
-import { parse } from "yuku-parser";
+import { parse, type CallExpression, type ObjectExpression, type ObjectProperty } from "yuku-parser";
 import { detectLangFromPath, unwrapTSExpression } from "../server/lang-detect.ts";
-import { type AstNode, walkAST } from "../shared/utils/ast-walk.ts";
+import { walkAST } from "../shared/utils/ast-walk.ts";
 
 /**
  * Statically scans a server entry file and returns all `pagesDir` string
@@ -27,29 +27,30 @@ export function scanFurinInstances(serverEntryPath: string): string[] {
   }
 
   const results: string[] = [];
-  walkAST(program as unknown as AstNode, (node) => {
+  walkAST(program, (node) => {
     if (node.type === "CallExpression") {
-      checkFurinCall(node, results);
+      checkFurinCall(node as unknown as CallExpression, results);
     }
   });
   return results;
 }
 
 /** Checks whether `node` is a `furin({ pagesDir: "..." })` call and, if so, pushes the value. */
-function checkFurinCall(node: AstNode, out: string[]): void {
-  const callee = node.callee as AstNode | undefined;
-  const args = node.arguments as AstNode[] | undefined;
-  const isFurinCall =
-    callee?.type === "Identifier" && (callee as { name?: string }).name === "furin";
+function checkFurinCall(node: CallExpression, out: string[]): void {
+  const isFurinCall = node.callee.type === "Identifier" && node.callee.name === "furin";
 
-  if (!(isFurinCall && Array.isArray(args)) || args.length === 0) {
+  if (!isFurinCall || node.arguments.length === 0) {
     return;
   }
 
   // Unwrap TS expression wrappers like `furin({...} as Config)` or
   // `furin({...} satisfies Options)` so we still see the ObjectExpression.
-  const firstArg = unwrapTSExpression(args[0] as AstNode);
-  if (firstArg?.type !== "ObjectExpression") {
+  const firstArgNode = node.arguments[0];
+  if (!firstArgNode) {
+    return;
+  }
+  const firstArg = unwrapTSExpression(firstArgNode);
+  if (!isObjectExpressionNode(firstArg)) {
     return;
   }
 
@@ -59,32 +60,36 @@ function checkFurinCall(node: AstNode, out: string[]): void {
   }
 }
 
-function extractStringProperty(obj: AstNode, propName: string): string | null {
-  const properties = obj.properties as AstNode[] | undefined;
-  if (!Array.isArray(properties)) {
-    return null;
-  }
+function isObjectExpressionNode(node: { type: string }): node is ObjectExpression {
+  return node.type === "ObjectExpression";
+}
 
-  for (const prop of properties) {
+function extractStringProperty(obj: ObjectExpression, propName: string): string | null {
+  for (const prop of obj.properties) {
     if (prop.type !== "Property") {
       continue;
     }
-    const key = prop.key as AstNode & { name?: string; value?: unknown };
-    const value = prop.value as AstNode & { value?: unknown };
+    const value = getStringPropertyValue(prop, propName);
 
-    const keyMatches =
-      (key.type === "Identifier" && key.name === propName) ||
-      (key.type === "Literal" && key.value === propName);
-
-    if (!keyMatches) {
-      continue;
+    if (value !== undefined) {
+      return value;
     }
-
-    // Only accept string literals — ignore template literals, identifiers, etc.
-    if (value?.type === "Literal" && typeof value.value === "string") {
-      return value.value;
-    }
-    return null; // dynamic path — silently skip
   }
   return null;
+}
+
+function getStringPropertyValue(prop: ObjectProperty, propName: string): string | null | undefined {
+  const keyMatches =
+    (prop.key.type === "Identifier" && prop.key.name === propName) ||
+    (prop.key.type === "Literal" && prop.key.value === propName);
+
+  if (!keyMatches) {
+    return undefined;
+  }
+
+  // Only accept string literals — ignore template literals, identifiers, etc.
+  if (prop.value.type === "Literal" && typeof prop.value.value === "string") {
+    return prop.value.value;
+  }
+  return null; // dynamic path — silently skip
 }

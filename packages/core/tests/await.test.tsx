@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createElement, Suspense } from "react";
+import { flushSync } from "react-dom";
+import { createRoot, type Root } from "react-dom/client";
 import { renderToReadableStream } from "react-dom/server";
 import { AsyncErrorContext, Await, useAsyncError } from "../src/shared/await.tsx";
 
@@ -102,6 +104,51 @@ describe("<Await>", () => {
       )
     );
     expect(html).toContain("Alice:42");
+  });
+
+  test("keeps AbortError rejections suspended instead of rendering errorElement", async () => {
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    let root: Root | undefined;
+    let rejectPromise!: (error: unknown) => void;
+    const abortingPromise = new Promise<string>((_, reject) => {
+      rejectPromise = reject;
+    });
+
+    function ErrorFallback() {
+      return createElement("p", null, "error");
+    }
+
+    try {
+      root = createRoot(container);
+      flushSync(() => {
+        root?.render(
+          createElement(
+            Suspense,
+            { fallback: createElement("p", null, "loading") },
+            createElement(Await<string>, {
+              resolve: abortingPromise,
+              errorElement: createElement(ErrorFallback, null),
+              // biome-ignore lint/correctness/noChildrenProp: render-prop pattern — children is a function, not a ReactNode
+              children: (val: string) => createElement("p", null, val),
+            })
+          )
+        );
+      });
+
+      const abortError = new Error("signal is aborted without reason");
+      abortError.name = "AbortError";
+      rejectPromise(abortError);
+      await Promise.resolve();
+
+      expect(container.textContent).toContain("loading");
+      expect(container.textContent).not.toContain("error");
+    } finally {
+      flushSync(() => {
+        root?.unmount();
+      });
+      container.remove();
+    }
   });
 });
 

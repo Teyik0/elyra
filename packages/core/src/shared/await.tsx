@@ -1,4 +1,4 @@
-import { Component, createContext, createElement, type ReactNode, use } from "react";
+import { Component, createContext, createElement, type ReactNode, use, useMemo } from "react";
 
 // ── Async error context ────────────────────────────────────────────────────────
 
@@ -33,6 +33,21 @@ export function useAsyncValue<T>(): T {
 }
 
 const AwaitValueContext = createContext<{ promise: Promise<unknown> } | undefined>(undefined);
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+async function silenceAbortError<T>(promise: Promise<T>): Promise<T> {
+  return await promise.catch((error: unknown) => {
+    if (isAbortError(error)) {
+      return new Promise<T>(() => {
+        /* keep superseded deferred data suspended until React replaces the tree */
+      });
+    }
+    throw error;
+  });
+}
 
 // ── Error boundary ─────────────────────────────────────────────────────────────
 
@@ -147,11 +162,13 @@ export interface AwaitProps<T> {
  * ```
  */
 export function Await<T>({ resolve, errorElement, children }: AwaitProps<T>): ReactNode {
+  const guardedResolve = useMemo(() => silenceAbortError(resolve), [resolve]);
+
   return createElement(
     AsyncErrorBoundary,
-    { errorElement, resolve: resolve as Promise<unknown> },
+    { errorElement, resolve: guardedResolve as Promise<unknown> },
     // react-doctor-disable-next-line react/no-children-prop
-    createElement(AwaitInner<T>, { resolve, children })
+    createElement(AwaitInner<T>, { resolve: guardedResolve, children })
   );
 }
 

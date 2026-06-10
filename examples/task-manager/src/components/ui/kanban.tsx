@@ -263,21 +263,6 @@ const Column = ({
     }
 
     onMutation?.();
-
-    // Recompute sequential positions for every card in the affected column(s)
-    // so DB positions stay contiguous and reflect the visual order.
-    // These are fire-and-forget — the UI is already correct.
-    for (const [idx, c] of destColumnCards.entries()) {
-      if (c.id !== cardId) {
-        apiClient.api.cards({ id: c.id }).patch({ position: idx });
-      }
-    }
-    if (previousColumn !== column) {
-      const srcColumnCards = moveResult.nextCards.filter((c) => c.column === previousColumn);
-      for (const [idx, c] of srcColumnCards.entries()) {
-        apiClient.api.cards({ id: c.id }).patch({ position: idx });
-      }
-    }
   };
 
   const handleDragOver = (e: DragEvent) => {

@@ -1,5 +1,13 @@
 import MagicString from "magic-string";
-import { parse, type SourceLang } from "yuku-parser";
+import {
+  type CallExpression,
+  type ImportDeclaration,
+  type ObjectExpression,
+  type ObjectProperty,
+  type Program,
+  parse,
+  type SourceLang,
+} from "yuku-parser";
 import { detectLangFromPath, unwrapTSExpression } from "../server/lang-detect.ts";
 import { type AstNode, walkAST } from "../shared/utils/ast-walk.ts";
 
@@ -11,35 +19,6 @@ interface TransformResult {
   code: string;
   map: ReturnType<MagicString["generateMap"]> | null;
   removedServerCode: boolean;
-}
-
-interface Property extends AstNode {
-  // Identifier key: { loader: fn }  →  key.name === "loader"
-  // Literal key:    { "loader": fn } →  key.value === "loader"
-  key: AstNode & { name?: string; value?: unknown };
-  type: "Property";
-}
-
-interface SpreadElement extends AstNode {
-  argument: AstNode;
-  type: "SpreadElement";
-}
-
-interface ObjectExpression extends AstNode {
-  // properties may include SpreadElement nodes, e.g. { ...spread, loader: fn }
-  properties: Array<Property | SpreadElement>;
-  type: "ObjectExpression";
-}
-
-interface CallExpression extends AstNode {
-  arguments: AstNode[];
-  callee: AstNode & { name?: string; property?: AstNode & { name?: string } };
-  type: "CallExpression";
-}
-
-interface ImportDeclaration extends AstNode {
-  specifiers: Array<AstNode & { local: AstNode & { name: string } }>;
-  type: "ImportDeclaration";
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +33,11 @@ function isRoutePageCall(node: CallExpression): boolean {
   if (callee.type === "Identifier" && callee.name === "page") {
     return true;
   }
-  if (callee.type === "MemberExpression" && callee.property?.name === "page") {
+  if (
+    callee.type === "MemberExpression" &&
+    callee.property.type === "Identifier" &&
+    callee.property.name === "page"
+  ) {
     return true;
   }
   return false;
@@ -64,12 +47,16 @@ function isTargetCall(node: CallExpression): boolean {
   return isCreateRouteCall(node) || isRoutePageCall(node);
 }
 
+function isObjectExpressionNode(node: { type: string }): node is ObjectExpression {
+  return node.type === "ObjectExpression";
+}
+
 // ---------------------------------------------------------------------------
 // Remove server-only properties from an ObjectExpression using MagicString.
 // Returns true if any property was removed.
 // ---------------------------------------------------------------------------
 function removeServerProperties(s: MagicString, source: string, obj: ObjectExpression): boolean {
-  const toRemove = obj.properties.filter((p): p is Property => {
+  const toRemove = obj.properties.filter((p): p is ObjectProperty => {
     // Skip spread elements — they have no key.
     if (p.type !== "Property") {
       return false;
@@ -207,12 +194,12 @@ function excludeTypePositionIdentifiers(node: AstNode, excluded: Set<unknown>): 
 // switch from Bun.Transpiler to yuku-parser) silently drops imports that
 // are only used as JSX tags.
 // ---------------------------------------------------------------------------
-function collectReferencedNames(program: AstNode): Set<string> {
+function collectReferencedNames(program: Program): Set<string> {
   const refs = new Set<string>();
   // Nodes that occupy a non-reference Identifier / JSXIdentifier position.
   const excluded = new Set<unknown>();
 
-  for (const stmt of program.body ?? []) {
+  for (const stmt of program.body) {
     if (stmt.type === "ImportDeclaration") {
       continue;
     }
@@ -241,7 +228,7 @@ function collectReferencedNames(program: AstNode): Set<string> {
     });
   }
 
-  for (const stmt of program.body ?? []) {
+  for (const stmt of program.body) {
     if (stmt.type === "ImportDeclaration") {
       continue;
     }
@@ -316,10 +303,9 @@ export function deadCodeElimination(s: MagicString, lang: SourceLang): MagicStri
   }
 
   const fresh = new MagicString(code);
-  const programNode = program as unknown as AstNode;
-  const refs = collectReferencedNames(programNode);
+  const refs = collectReferencedNames(program);
 
-  const body = programNode.body ?? [];
+  const body = program.body;
   for (let i = body.length - 1; i >= 0; i--) {
     const stmt = body[i];
     if (!stmt) {
@@ -349,23 +335,27 @@ export function deadCodeElimination(s: MagicString, lang: SourceLang): MagicStri
 // Remove server-only properties from createRoute() / page() / route.page()
 // calls found anywhere in the AST.
 // ---------------------------------------------------------------------------
-function removeServerExports(s: MagicString, source: string, program: AstNode): boolean {
+function removeServerExports(s: MagicString, source: string, program: Program): boolean {
   let removedServerCode = false;
 
   walkAST(program, (node) => {
     if (node.type !== "CallExpression") {
       return;
     }
-    const call = node as CallExpression;
+    const call = node as unknown as CallExpression;
     if (!isTargetCall(call)) {
       return;
     }
     // Unwrap `createRoute({...} as Config)` / `page({...} satisfies Opts)` etc.
-    const arg = call.arguments[0] ? unwrapTSExpression(call.arguments[0]) : undefined;
-    if (arg?.type !== "ObjectExpression") {
+    const firstArg = call.arguments[0];
+    if (!firstArg) {
       return;
     }
-    if (removeServerProperties(s, source, arg as ObjectExpression)) {
+    const arg = unwrapTSExpression(firstArg);
+    if (!isObjectExpressionNode(arg)) {
+      return;
+    }
+    if (removeServerProperties(s, source, arg)) {
       removedServerCode = true;
     }
   });
@@ -391,7 +381,7 @@ export function transformForClient(code: string, filename: string): TransformRes
 
   // Pass 2 — MagicString: surgically remove server-only properties.
   let s = new MagicString(code);
-  const removedServerCode = removeServerExports(s, code, program as unknown as AstNode);
+  const removedServerCode = removeServerExports(s, code, program);
 
   // Pass 3 — DCE: prune imports that are no longer referenced.
   // deadCodeElimination returns a fresh MagicString keyed on the current

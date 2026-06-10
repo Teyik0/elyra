@@ -520,6 +520,28 @@ describe("transformForClient — TypeScript syntax", () => {
     expect(result.code).not.toMatch(IMPORT_DB_RE);
   });
 
+  test("preserves imports referenced after directive prologues and spread elements", () => {
+    const input = `
+      import { makeConfig, renderWidget } from "./db";
+      const shared = { component: () => renderWidget() };
+      export default page({
+        loader: async () => ({ config: makeConfig() }),
+        ...shared,
+        component: () => {
+          "use memo";
+          return renderWidget();
+        },
+      });
+    `;
+    const result = transformForClient(input, "test.tsx");
+
+    expect(result.removedServerCode).toBe(true);
+    expect(result.code).not.toContain("makeConfig");
+    expect(result.code).toContain("renderWidget");
+    expect(result.code).toContain('"use memo"');
+    expect(result.code).toContain("...shared");
+  });
+
   test("type alias declaration does not keep its referenced names as runtime references", () => {
     const input = `
       import { DbUser } from "./db";
