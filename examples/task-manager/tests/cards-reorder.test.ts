@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import { updateCard } from "../src/api/modules/cards/service";
 import { db } from "../src/db";
 import { boards, cards } from "../src/db/schema";
@@ -30,6 +30,15 @@ function listColumn(column: "backlog" | "todo" | "doing" | "done") {
     .where(and(eq(cards.boardId, BOARD_ID), eq(cards.column, column)))
     .orderBy(asc(cards.position))
     .all();
+}
+
+function totalChanges() {
+  const result = db.get(sql<[number]>`select total_changes()`);
+  const total = result?.[0];
+  if (total === undefined) {
+    throw new Error("Failed to read SQLite total_changes()");
+  }
+  return total;
 }
 
 describe("cards reorder service", () => {
@@ -66,5 +75,18 @@ describe("cards reorder service", () => {
       { id: "test-card-todo-0", position: 1 },
       { id: "test-card-doing-1", position: 2 },
     ]);
+  });
+
+  test("ignores drag updates that keep the card in the same column and position", () => {
+    const beforeChanges = totalChanges();
+    const moved = updateCard("test-card-todo-1", { column: "todo", position: 1 });
+
+    expect(moved?.column).toBe("todo");
+    expect(moved?.position).toBe(1);
+    expect(listColumn("todo")).toEqual([
+      { id: "test-card-todo-0", position: 0 },
+      { id: "test-card-todo-1", position: 1 },
+    ]);
+    expect(totalChanges()).toBe(beforeChanges);
   });
 });
