@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildBunTarget } from "../src/adapter/bun.ts";
 import type { BuildAppOptions } from "../src/build/types.ts";
@@ -76,5 +76,29 @@ describe.serial("buildBunTarget compile branches", () => {
 
     const targetDir = join(app.path, ".furin/build/bun");
     expect(existsSync(join(targetDir, "client"))).toBe(false);
+  });
+
+  test("client-only Bun build does not run SSG staticParams snapshot", async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+    writeFileSync(
+      join(app.path, "src/pages/index.tsx"),
+      [
+        'import { createRoute } from "@teyik0/furin/client";',
+        'const route = createRoute({ mode: "ssg" });',
+        "export default route.page({",
+        "  component: () => <main>Home</main>,",
+        '  staticParams: async () => { throw new Error("snapshot should not run"); },',
+        "});",
+      ].join("\n")
+    );
+    const { root, routes } = await scanPages(join(app.path, "src/pages"));
+
+    await withBuildStub(async () => {
+      await expect(
+        buildBunTarget(routes, app.path, join(app.path, ".furin/build"), root, null, {
+          target: "bun",
+        })
+      ).resolves.toBeDefined();
+    });
   });
 });

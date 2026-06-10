@@ -1,3 +1,5 @@
+import type { SsgCacheEntry } from "./cache/index.ts";
+
 // ── Compile-time context for compiled binaries ──────────────────────────────
 // The generated compile entry calls `__setCompileContext()` before importing
 // server.ts. At runtime, `router.ts` and `furin.ts` use `getCompileContext()`
@@ -34,15 +36,7 @@ export interface CompileContext {
     }
   >;
   routes: CompileContextRoute[];
-  ssgCache?: Record<
-    string,
-    {
-      cachedAt: number;
-      html: string;
-      ndjson: string;
-      status: number;
-    }
-  >;
+  ssgCache?: Record<string, SsgCacheEntry>;
 }
 
 let _compileCtx: CompileContext | null = null;

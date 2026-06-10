@@ -105,7 +105,7 @@ describe("parseDeferredNdjson — AbortSignal", () => {
     expect((errB as { name?: string }).name).toBe("AbortError");
   });
 
-  test("signal already aborted before the call → pending promises reject immediately", async () => {
+  test("signal already aborted before the call → cancels before reading bytes", async () => {
     const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["a"] }));
     const { stream } = makeControlledStream(initial);
 
@@ -113,12 +113,22 @@ describe("parseDeferredNdjson — AbortSignal", () => {
     abort.abort();
 
     const result = await parseDeferredNdjson(stream, abort.signal);
-    const pA = result.deferredPromises.a as Promise<unknown>;
-    expect(pA).toBeInstanceOf(Promise);
+    expect(result.syncData).toEqual({});
+    expect(result.deferredPromises).toEqual({});
+  });
 
-    const err = await pA.then(() => null).catch((e: unknown) => e);
-    expect(err).toBeDefined();
-    expect((err as { name?: string }).name).toBe("AbortError");
+  test("signal already aborted before first bytes arrive → does not hang on reader.read()", async () => {
+    const stream = new ReadableStream<Uint8Array>();
+    const abort = new AbortController();
+    abort.abort();
+
+    const result = await Promise.race([
+      parseDeferredNdjson(stream, abort.signal),
+      new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 50)),
+    ]);
+
+    expect(result).not.toBe("pending");
+    expect(result).toEqual({ syncData: {}, deferredPromises: {} });
   });
 
   test("undefined signal → works as before, promises resolved by chunks", async () => {

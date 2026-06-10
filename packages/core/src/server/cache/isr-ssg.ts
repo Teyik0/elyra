@@ -18,6 +18,7 @@ export interface SsgCacheEntry {
    */
   ndjson: string;
   status: number;
+  tags?: string[];
 }
 
 /** Maximum number of pre-rendered HTML entries (per mode) before LRU eviction. */

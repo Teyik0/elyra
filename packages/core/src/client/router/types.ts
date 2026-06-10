@@ -105,11 +105,8 @@ export interface RouterContextValue {
    */
   invalidatePrefetch: (path: string, type: "page" | "layout") => void;
   isNavigating: boolean;
-  navigate: (
-    href: string,
-    opts: { replace?: boolean; resetScroll?: boolean } | undefined
-  ) => Promise<void>;
-  prefetch: (href: string, opts: { staleTime?: number } | undefined) => void;
+  navigate: (href: string, opts?: { replace?: boolean; resetScroll?: boolean }) => Promise<void>;
+  prefetch: (href: string, opts?: { staleTime?: number }) => void;
   /**
    * Re-fetches the current page in-place: busts the prefetch cache entry, re-runs
    * loaders, and updates the rendered tree — without adding a history entry or
@@ -117,7 +114,7 @@ export interface RouterContextValue {
    *
    * Prefer this over `navigate(window.location.pathname)` after a mutation.
    */
-  refresh: (opts: { resetScroll?: boolean } | undefined) => Promise<void>;
+  refresh: (opts?: { resetScroll?: boolean }) => Promise<void>;
 }
 
 /**

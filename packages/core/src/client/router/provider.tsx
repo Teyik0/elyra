@@ -34,6 +34,24 @@ import type {
   RouterState,
 } from "./types.ts";
 
+export function setPrefetchCacheEntry(
+  cache: Map<string, CacheEntry>,
+  href: string,
+  entry: CacheEntry,
+  maxSize: number
+): void {
+  if (cache.has(href)) {
+    cache.delete(href);
+  }
+  cache.set(href, entry);
+  if (cache.size > maxSize) {
+    const oldest = cache.keys().next().value;
+    if (typeof oldest === "string") {
+      cache.delete(oldest);
+    }
+  }
+}
+
 export function RouterProvider({
   routes,
   root,
@@ -303,16 +321,16 @@ export function RouterProvider({
       if (existing && !shouldRefetch(existing)) {
         return;
       }
-      prefetchCache.current.set(href, {
-        promise: fetchPageState(href, undefined),
-        createdAt: Date.now(),
-        staleTime,
-      });
-      // Evict the oldest entry when the cap is exceeded
-      if (prefetchCache.current.size > prefetchCacheSize) {
-        const oldest = prefetchCache.current.keys().next().value as string;
-        prefetchCache.current.delete(oldest);
-      }
+      setPrefetchCacheEntry(
+        prefetchCache.current,
+        href,
+        {
+          promise: fetchPageState(href, undefined),
+          createdAt: Date.now(),
+          staleTime,
+        },
+        prefetchCacheSize
+      );
     },
     [fetchPageState, defaultPreloadStaleTime, prefetchCacheSize]
   );
@@ -357,11 +375,16 @@ export function RouterProvider({
           return;
         }
         if (newState && (!cached || shouldRefetch(cached))) {
-          prefetchCache.current.set(logicalHref, {
-            promise: Promise.resolve(newState),
-            createdAt: Date.now(),
-            staleTime: defaultPreloadStaleTime,
-          });
+          setPrefetchCacheEntry(
+            prefetchCache.current,
+            logicalHref,
+            {
+              promise: Promise.resolve(newState),
+              createdAt: Date.now(),
+              staleTime: defaultPreloadStaleTime,
+            },
+            prefetchCacheSize
+          );
         }
         if (!newState) {
           log.warn({
@@ -432,7 +455,7 @@ export function RouterProvider({
         }
       }
     },
-    [basePath, fetchPageState, defaultPreloadStaleTime]
+    [basePath, fetchPageState, defaultPreloadStaleTime, prefetchCacheSize]
   );
 
   const refresh = useCallback(
