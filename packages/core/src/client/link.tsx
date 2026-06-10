@@ -2,6 +2,7 @@ import type React from "react";
 import { createElement, useCallback, useEffect, useRef } from "react";
 import {
   buildHref,
+  CLIENT_FALLBACK_ROUTER,
   type LinkProps,
   normalizeHref,
   RouterContext,
@@ -178,7 +179,7 @@ function LinkInteractive<To extends RouteTo>({
     e.preventDefault();
     // When there is no RouterProvider, fall back to a full-page navigation so
     // the link is still functional (e.g. in storybooks or third-party pages).
-    if (typeof window !== "undefined" && router.navigate === SSR_FALLBACK_ROUTER.navigate) {
+    if (typeof window !== "undefined" && router.navigate === CLIENT_FALLBACK_ROUTER.navigate) {
       window.location.href = href;
       return;
     }
@@ -237,14 +238,14 @@ function LinkInteractive<To extends RouteTo>({
 export const SSR_FALLBACK_ROUTER: RouterContextValue = {
   basePath: "",
   currentHref: "/",
-  navigate: () => Promise.resolve(),
-  prefetch: () => {
+  navigate: (_href, _opts) => Promise.resolve(),
+  prefetch: (_href, _opts) => {
     /* noop */
   },
-  invalidatePrefetch: () => {
+  invalidatePrefetch: (_path, _type) => {
     /* noop */
   },
-  refresh: () => Promise.resolve(),
+  refresh: (_opts) => Promise.resolve(),
   isNavigating: false,
   defaultPreload: "intent",
   defaultPreloadDelay: 50,

@@ -274,14 +274,14 @@ export async function prepareRender(
   const ssrContext: RouterContextValue = {
     basePath: basePath ?? "",
     currentHref: normalizeHref(ctx.path),
-    navigate: () => Promise.resolve(),
-    prefetch: () => {
+    navigate: (_href, _opts) => Promise.resolve(),
+    prefetch: (_href, _opts) => {
       /* noop */
     },
-    invalidatePrefetch: () => {
+    invalidatePrefetch: (_path, _type) => {
       /* noop */
     },
-    refresh: () => Promise.resolve(),
+    refresh: (_opts) => Promise.resolve(),
     isNavigating: false,
     defaultPreload: "intent",
     defaultPreloadDelay: 50,

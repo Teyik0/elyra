@@ -41,6 +41,7 @@ function makeAbortError(reason: unknown): Error {
  *                 `AbortError`. Pass `undefined` to opt out (no implicit
  *                 default — see CLAUDE.md).
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: NDJSON streaming parser handles sync, deferred, abort, and malformed-stream paths in one state machine
 export async function parseDeferredNdjson(
   stream: ReadableStream<Uint8Array>,
   signal: AbortSignal | undefined
@@ -48,6 +49,25 @@ export async function parseDeferredNdjson(
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let abortHandler: (() => void) | undefined;
+
+  const cancelReader = (reason: unknown): void => {
+    reader.cancel(reason).catch(() => {
+      /* reader may already be closed */
+    });
+  };
+
+  if (signal !== undefined && !signal.aborted) {
+    abortHandler = () => cancelReader(makeAbortError(signal.reason));
+    signal.addEventListener("abort", abortHandler, { once: true });
+  }
+
+  const cleanupAbortHandler = (): void => {
+    if (signal !== undefined && abortHandler !== undefined) {
+      signal.removeEventListener("abort", abortHandler);
+      abortHandler = undefined;
+    }
+  };
 
   async function readLine(): Promise<string | undefined> {
     for (;;) {
@@ -75,6 +95,7 @@ export async function parseDeferredNdjson(
 
   const firstLine = await readLine();
   if (!firstLine) {
+    cleanupAbortHandler();
     try {
       reader.releaseLock();
     } catch {
@@ -116,6 +137,7 @@ export async function parseDeferredNdjson(
   }
 
   if (deferredKeys.length === 0) {
+    cleanupAbortHandler();
     try {
       reader.releaseLock();
     } catch {
@@ -131,9 +153,7 @@ export async function parseDeferredNdjson(
       resolvers[key]?.reject(reason);
       delete resolvers[key];
     }
-    reader.cancel(reason).catch(() => {
-      /* reader may already be closed */
-    });
+    cancelReader(reason);
   };
 
   if (signal !== undefined) {
@@ -141,13 +161,11 @@ export async function parseDeferredNdjson(
       rejectAllPending(makeAbortError(signal.reason));
       return { syncData, deferredPromises };
     }
-    signal.addEventListener(
-      "abort",
-      () => {
-        rejectAllPending(makeAbortError(signal.reason));
-      },
-      { once: true }
-    );
+    cleanupAbortHandler();
+    abortHandler = () => {
+      rejectAllPending(makeAbortError(signal.reason));
+    };
+    signal.addEventListener("abort", abortHandler, { once: true });
   }
 
   readDeferredLines(readLine, resolvers)
@@ -167,6 +185,7 @@ export async function parseDeferredNdjson(
       }
     })
     .finally(() => {
+      cleanupAbortHandler();
       try {
         reader.releaseLock();
       } catch {

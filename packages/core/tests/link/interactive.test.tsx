@@ -126,10 +126,10 @@ describe("Link SSR path", () => {
   });
 
   test("SSR_FALLBACK_ROUTER methods are safe no-ops", async () => {
-    expect(await SSR_FALLBACK_ROUTER.navigate("/")).toBe(undefined);
-    expect(SSR_FALLBACK_ROUTER.prefetch("/")).toBe(undefined);
-    expect(SSR_FALLBACK_ROUTER.invalidatePrefetch("/")).toBe(undefined);
-    expect(await SSR_FALLBACK_ROUTER.refresh()).toBe(undefined);
+    expect(await SSR_FALLBACK_ROUTER.navigate("/", undefined)).toBe(undefined);
+    expect(SSR_FALLBACK_ROUTER.prefetch("/", undefined)).toBe(undefined);
+    expect(SSR_FALLBACK_ROUTER.invalidatePrefetch("/", "page")).toBe(undefined);
+    expect(await SSR_FALLBACK_ROUTER.refresh(undefined)).toBe(undefined);
   });
 
   test("SSR: uses basePath from RouterContext.Provider", () => {

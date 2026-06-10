@@ -18,14 +18,14 @@ mock.module("evlog/elysia", () => ({
 }));
 
 import { Elysia, t } from "elysia";
-import type { RuntimeRoute } from "../../src/client";
+import type { RuntimeRoute } from "furin";
 import {
   collectRouteTags,
   createRoutePlugin,
   mergeRouteSchemas,
   scanPages,
-} from "../../src/server/router/index.ts";
-import { __setDevMode, IS_DEV } from "../../src/server/runtime-env.ts";
+} from "furin/server/router";
+import { __setDevMode, IS_DEV } from "furin/server/runtime-env";
 
 const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
 const ROUTE_PATTERN = "/schema-merge-parent/child";

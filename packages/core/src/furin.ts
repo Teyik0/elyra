@@ -415,14 +415,17 @@ export async function furin({
   return wrapWithRequestScope(prodApp);
 }
 
+// biome-ignore lint/performance/noBarrelFile: furin.ts is the public package entry
+export { FurinErrorBoundary, FurinNotFoundBoundary } from "./client/boundaries.tsx";
 // ── Public API re-export ──────────────────────────────────────────────────────
 // biome-ignore-start lint/performance/noBarrelFile: intentional — furin.ts is the public package entry
-export type { DeferredData } from "./client.ts";
+export type { DeferredData, RuntimePage, RuntimeRoute } from "./client.ts";
 export { defer, isDeferred } from "./client.ts";
 export type { InvalidationInput, InvalidationRule } from "./server/auto-invalidate/index.ts";
 export { furinInvalidate, revalidateTag } from "./server/auto-invalidate/index.ts";
 export { revalidatePath, setCachePurger } from "./server/cache/invalidation.ts";
-export { renderRootNotFound } from "./server/render/index.ts";
+export { buildElement, buildErrorElement, renderRootNotFound } from "./server/render/index.ts";
+export type { ResolvedRoute, SegmentBoundary } from "./server/router/index.ts";
 export { Await, useAsyncError, useAsyncValue } from "./shared/await.tsx";
 export type { ErrorComponent, ErrorProps } from "./shared/error.ts";
 export type {

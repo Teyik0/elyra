@@ -1,6 +1,6 @@
 // biome-ignore-all lint/performance/noBarrelFile: client/router barrel — public surface of the SPA router
 export { buildPageElement, buildRouterTree } from "./boundary-tree.tsx";
-export { RouterContext, useRouter } from "./context.ts";
+export { CLIENT_FALLBACK_ROUTER, RouterContext, useRouter } from "./context.ts";
 export {
   generateHistoryKey,
   getHistoryKey,
