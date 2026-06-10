@@ -119,8 +119,8 @@ export function RouterProvider({
    * (rather than triggering a jarring full-page reload).
    */
   const resolveNoMatchState = useCallback(
-    async (physicalHref: string): Promise<RouterState | null> => {
-      const res = await fetch(physicalHref);
+    async (physicalHref: string, signal: AbortSignal | undefined): Promise<RouterState | null> => {
+      const res = await fetch(physicalHref, { signal });
       if (isStaleDeployResponse(res)) {
         window.location.href = physicalHref;
         return null;
@@ -162,12 +162,12 @@ export function RouterProvider({
         const logicalPathname = toLogical(url.pathname, basePath);
         const match = routes.find((r) => r.regex.test(logicalPathname));
         if (!match) {
-          return await resolveNoMatchState(physicalHref);
+          return await resolveNoMatchState(physicalHref, signal);
         }
 
         // ── NDJSON data endpoint + JS chunk load (parallel) ──────────────────
         const dataEndpoint = buildDataEndpoint(basePath, logicalHref, staticModeRef.current);
-        const [res, loadedMod] = await Promise.all([fetch(dataEndpoint), match.load()]);
+        const [res, loadedMod] = await Promise.all([fetch(dataEndpoint, { signal }), match.load()]);
 
         // Stale-deploy detection: force a full page reload to pick up the new bundle.
         if (isStaleDeployResponse(res)) {
@@ -271,7 +271,7 @@ export function RouterProvider({
     [routes, basePath, resolveNoMatchState]
   );
 
-  const invalidatePrefetch = useCallback((path: string, type: "page" | "layout" = "page") => {
+  const invalidatePrefetch = useCallback((path: string, type: "page" | "layout") => {
     const normalizedPath = stripHashFromHref(path);
 
     if (type === "page") {
@@ -297,7 +297,7 @@ export function RouterProvider({
   }, []);
 
   const prefetch = useCallback(
-    (href: string, opts?: { staleTime?: number }) => {
+    (href: string, opts: { staleTime?: number } | undefined) => {
       const staleTime = opts?.staleTime ?? defaultPreloadStaleTime;
       const existing = prefetchCache.current.get(href);
       if (existing && !shouldRefetch(existing)) {
@@ -336,27 +336,32 @@ export function RouterProvider({
 
   const navigate = useCallback(
     // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: SPA navigation orchestrator — redirect follow, history management, and scroll handling require this depth
-    async (rawLogicalHref: string, opts?: { replace?: boolean; resetScroll?: boolean }) => {
+    async function navigateTo(
+      rawLogicalHref: string,
+      opts: { replace?: boolean; resetScroll?: boolean } | undefined
+    ) {
       const logicalHref = normalizeHref(rawLogicalHref);
-      prefetch(logicalHref);
       const myVersion = ++navVersion.current;
       navAbortRef.current?.abort();
       const navAbort = new AbortController();
       navAbortRef.current = navAbort;
-      // Abort scope is deliberate. The PRIMARY load runs through the shared
-      // prefetch cache (started with no signal in `prefetch`), so it is never
-      // cancelled here — a hover-prefetch must survive the click that reuses it,
-      // and several Links to the same href share one entry. Render correctness
-      // is guaranteed by `navVersion` (stale results are discarded), not by
-      // aborting. `navSignal` only covers the redirect-follow fetch below
-      // (`resolveRedirectState` → `parseDeferredNdjson`), where a superseded
-      // navigation must release pending deferred resolvers.
       const navSignal = navAbort.signal;
       setIsNavigating(true);
       try {
-        let newState = await prefetchCache.current.get(logicalHref)?.promise;
+        const cached = prefetchCache.current.get(logicalHref);
+        let newState =
+          cached && !shouldRefetch(cached)
+            ? await cached.promise
+            : await fetchPageState(logicalHref, navSignal);
         if (navVersion.current !== myVersion) {
           return;
+        }
+        if (newState && (!cached || shouldRefetch(cached))) {
+          prefetchCache.current.set(logicalHref, {
+            promise: Promise.resolve(newState),
+            createdAt: Date.now(),
+            staleTime: defaultPreloadStaleTime,
+          });
         }
         if (!newState) {
           log.warn({
@@ -427,11 +432,11 @@ export function RouterProvider({
         }
       }
     },
-    [prefetch, basePath]
+    [basePath, fetchPageState, defaultPreloadStaleTime]
   );
 
   const refresh = useCallback(
-    async (opts?: { resetScroll?: boolean }) => {
+    async (opts: { resetScroll?: boolean } | undefined) => {
       const logicalPath = toLogical(window.location.pathname, basePath);
       const logicalHref = logicalPath + window.location.search;
       invalidatePrefetch(logicalHref, "page");
@@ -631,7 +636,7 @@ export function RouterProvider({
           normalizeHref(toLogical(window.location.pathname, basePath)) + window.location.search;
         if (shouldAutoRefreshPath(currentLogicalPath, invalidated)) {
           // fire-and-forget: don't block the original fetch caller
-          refresh();
+          refresh(undefined);
         }
       }
       return response;
@@ -657,7 +662,11 @@ export function RouterProvider({
       root,
       state.data,
       {
-        onReset: refresh,
+        onReset: () => {
+          refresh(undefined).catch((err: unknown) => {
+            log.error({ action: "boundary_reset_failed", error: String(err) });
+          });
+        },
         resetKey: currentHref,
       },
       state.error
@@ -680,7 +689,11 @@ export function RouterProvider({
     pageElement,
     {
       digest: initialDigest,
-      onReset: refresh,
+      onReset: () => {
+        refresh(undefined).catch((err: unknown) => {
+          log.error({ action: "boundary_reset_failed", error: String(err) });
+        });
+      },
       resetKey: currentHref,
     }
   );

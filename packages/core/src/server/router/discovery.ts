@@ -133,6 +133,12 @@ function toPosixPath(path: string): string {
   return path.replaceAll("\\", "/");
 }
 
+function routeRelativePath(pagesDir: string, absolutePath: string): string {
+  const dir = toPosixPath(pagesDir).replace(/\/+$/g, "");
+  const path = toPosixPath(absolutePath);
+  return path.startsWith(`${dir}/`) ? path.slice(dir.length + 1) : path;
+}
+
 export async function scanPages(pagesDir: string): Promise<{
   root: RootLayout;
   routes: ResolvedRoute[];
@@ -228,7 +234,7 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
       continue;
     }
 
-    const relativePath = absolutePath.replace(`${pagesDir}/`, "");
+    const relativePath = routeRelativePath(pagesDir, absolutePath);
     const fileName = parse(relativePath).name;
 
     // Skip root.tsx, convention files (not-found, error), and files starting with _

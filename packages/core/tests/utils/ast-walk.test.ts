@@ -60,7 +60,7 @@ describe("walkAST", () => {
     expect(visited).toEqual(["Root", "NestedA", "NestedB"]);
   });
 
-  test("visitor can abort further traversal for a branch by not recursing", () => {
+  test("visitor cannot abort traversal; walkAST always recurses deeply", () => {
     // walkAST always recurses deeply; the visitor cannot abort traversal.
     // This test simply documents that behaviour.
     const visited: string[] = [];

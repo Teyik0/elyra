@@ -112,31 +112,31 @@ describe("shouldRefetch", () => {
 
 describe("buildHref", () => {
   test("no search or hash — returns the pathname as-is", () => {
-    expect(buildHref("/blog")).toBe("/blog");
+    expect(buildHref("/blog", undefined, undefined)).toBe("/blog");
   });
 
   test("search with a single key — appends query string", () => {
-    expect(buildHref("/blog", { page: 2 })).toBe("/blog?page=2");
+    expect(buildHref("/blog", { page: 2 }, undefined)).toBe("/blog?page=2");
   });
 
   test("search with multiple keys — appends all non-null values", () => {
-    const result = buildHref("/blog", { page: 1, tag: "react" });
+    const result = buildHref("/blog", { page: 1, tag: "react" }, undefined);
     expect(result).toContain("page=1");
     expect(result).toContain("tag=react");
     expect(result.startsWith("/blog?")).toBe(true);
   });
 
   test("null/undefined search values are omitted", () => {
-    expect(buildHref("/blog", { page: 1, tag: null })).toBe("/blog?page=1");
-    expect(buildHref("/blog", { page: 1, tag: undefined })).toBe("/blog?page=1");
+    expect(buildHref("/blog", { page: 1, tag: null }, undefined)).toBe("/blog?page=1");
+    expect(buildHref("/blog", { page: 1, tag: undefined }, undefined)).toBe("/blog?page=1");
   });
 
   test("empty search object — no query string appended", () => {
-    expect(buildHref("/blog", {})).toBe("/blog");
+    expect(buildHref("/blog", {}, undefined)).toBe("/blog");
   });
 
   test("null search — no query string appended", () => {
-    expect(buildHref("/blog", null)).toBe("/blog");
+    expect(buildHref("/blog", null, undefined)).toBe("/blog");
   });
 
   test("hash only — appends fragment", () => {
@@ -148,7 +148,7 @@ describe("buildHref", () => {
   });
 
   test("boolean search value — stringified", () => {
-    expect(buildHref("/search", { active: true })).toBe("/search?active=true");
+    expect(buildHref("/search", { active: true }, undefined)).toBe("/search?active=true");
   });
 });
 
@@ -408,8 +408,8 @@ describe("types", () => {
     expectTypeOf<RouterContextValue["currentHref"]>().toEqualTypeOf<string>();
   });
 
-  test("RouterContextValue.refresh returns Promise<void> and accepts optional resetScroll", () => {
-    expectTypeOf<RouterContextValue["refresh"]>().toBeCallableWith();
+  test("RouterContextValue.refresh returns Promise<void> and accepts explicit resetScroll options", () => {
+    expectTypeOf<RouterContextValue["refresh"]>().toBeCallableWith(undefined);
     expectTypeOf<RouterContextValue["refresh"]>().toBeCallableWith({ resetScroll: true });
     expectTypeOf<RouterContextValue["refresh"]>().toBeCallableWith({ resetScroll: false });
     expectTypeOf<ReturnType<RouterContextValue["refresh"]>>().toEqualTypeOf<Promise<void>>();

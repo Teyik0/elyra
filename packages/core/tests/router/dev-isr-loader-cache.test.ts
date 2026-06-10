@@ -18,15 +18,12 @@ import {
   isDevLoaderCacheFresh,
   setDevISRLoaderCache,
   setDevSSGLoaderCache,
-} from "../../src/server/cache/index.ts";
-import { createDevInspectorPlugin } from "../../src/server/dev-inspector.ts";
-import { registerDevPagePlugin } from "../../src/server/dev-page-plugin.ts";
-import {
-  __resetTemplateState,
-  setProductionTemplateContent,
-} from "../../src/server/render/template.ts";
-import { createRoutePlugin, scanPages } from "../../src/server/router/index.ts";
-import { __setDevMode, IS_DEV } from "../../src/server/runtime-env.ts";
+} from "furin/server/cache";
+import { createDevInspectorPlugin } from "furin/server/dev-inspector";
+import { registerDevPagePlugin } from "furin/server/dev-page-plugin";
+import { __resetTemplateState, setProductionTemplateContent } from "furin/server/render/template";
+import { createRoutePlugin, scanPages } from "furin/server/router";
+import { __setDevMode, IS_DEV } from "furin/server/runtime-env";
 
 registerDevPagePlugin();
 
@@ -495,7 +492,7 @@ import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { isDevLoaderCacheValid } from "../../src/server/cache/index.ts";
+import { isDevLoaderCacheValid } from "furin/server/cache";
 
 describe("isDevLoaderCacheValid", () => {
   let tmpDir: string;
@@ -650,7 +647,7 @@ describe("isDevLoaderCacheValid", () => {
  */
 import { existsSync as fileExistsSync } from "node:fs";
 
-import { computeRouteDependencies } from "../../src/server/router/index.ts";
+import { computeRouteDependencies } from "furin/server/router";
 
 describe("computeRouteDependencies", () => {
   test("only returns paths that exist on disk for nested routes", () => {

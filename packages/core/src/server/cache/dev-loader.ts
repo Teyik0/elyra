@@ -142,9 +142,6 @@ export function invalidateDevLoaderCacheByPath(
   return { cleared, isr, ssg };
 }
 
-registerCacheInvalidator(devISRLoaderCache);
-registerCacheInvalidator(devSSGLoaderCache);
-
 export function invalidateDevLoaderCacheBySource(filePath: string): InvalidateOutcome {
   const keys = sourceFileToCacheKeys.get(filePath);
   if (!keys || keys.size === 0) {

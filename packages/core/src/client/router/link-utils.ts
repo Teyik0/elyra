@@ -12,8 +12,8 @@ export const TRAILING_SLASHES_RE = /\/+$/;
  */
 export function buildHref(
   to: string,
-  search?: Record<string, unknown> | null,
-  hash?: string
+  search: Record<string, unknown> | null | undefined,
+  hash: string | undefined
 ): string {
   let url = to;
   if (search && Object.keys(search).length > 0) {
@@ -40,7 +40,7 @@ export function buildHref(
  */
 export function applyRevalidateHeader(
   headers: Headers,
-  invalidate: (path: string, type?: "page" | "layout") => void
+  invalidate: (path: string, type: "page" | "layout" | undefined) => void
 ): void {
   const headerValue = headers.get("x-furin-revalidate");
   if (!headerValue) {
