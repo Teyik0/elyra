@@ -7,7 +7,8 @@
   "workspaces": [
     "apps/*",
     "packages/*",
-    "examples/*"
+    "examples/*",
+    "benchmarks/*"
   ],
   "scripts": {
     "prepare": "lefthook install",
@@ -19,6 +20,7 @@
     "build": "bun run --filter '@teyik0/furin' build && bun run --parallel --filter '!@teyik0/furin' build",
     "start": "bun run --parallel --filter '*' --if-present start",
     "measure:client": "bun scripts/measure-client-bundle.ts",
+    "benchmark:bundle-size": "bun run --filter '@benchmarks/bundle-size' measure",
     "cache:clean": "rm -rf node_modules examples/*/node_modules packages/*/node_modules && bun pm cache rm",
     "iup": "bun update --interactive --recursive",
     "knip": "knip"
