@@ -7,6 +7,7 @@ import { t } from "elysia";
 import type { HTTPHeaders } from "elysia/types";
 import type { RequestLogger } from "evlog";
 import { expectTypeOf } from "expect-type";
+import { number as zNumber, object as zObject, string as zString } from "zod";
 import {
   type ComponentProps,
   createRoute,
@@ -467,6 +468,74 @@ describe("nested layouts", () => {
 });
 
 describe("page-level loader", () => {
+  test("page query merges with inherited route query for loader, head and component", () => {
+    const parentRoute = createRoute({
+      query: t.Object({ sort: t.Optional(t.String()) }),
+    });
+
+    const childRoute = createRoute({
+      parent: parentRoute,
+      query: t.Object({ page: t.Optional(t.Number({ default: 1 })) }),
+    });
+
+    childRoute.page({
+      query: t.Object({ view: t.Optional(t.String()) }),
+      loader: ({ query }) => {
+        expectTypeOf(query.sort).toEqualTypeOf<string | undefined>();
+        expectTypeOf(query.page).toEqualTypeOf<number | undefined>();
+        expectTypeOf(query.view).toEqualTypeOf<string | undefined>();
+        return { loaded: true };
+      },
+      head: ({ query, loaded }) => {
+        expectTypeOf(query.sort).toEqualTypeOf<string | undefined>();
+        expectTypeOf(query.page).toEqualTypeOf<number | undefined>();
+        expectTypeOf(query.view).toEqualTypeOf<string | undefined>();
+        expectTypeOf(loaded).toEqualTypeOf<boolean>();
+        return { meta: [{ title: query.view ?? "Products" }] };
+      },
+      component: ({ query, loaded }) => {
+        expectTypeOf(query.sort).toEqualTypeOf<string | undefined>();
+        expectTypeOf(query.page).toEqualTypeOf<number | undefined>();
+        expectTypeOf(query.view).toEqualTypeOf<string | undefined>();
+        expectTypeOf(loaded).toEqualTypeOf<boolean>();
+        return null;
+      },
+    });
+  });
+
+  test("child query overrides parent query type on key conflict", () => {
+    const parentRoute = createRoute({
+      query: t.Object({ shared: t.Optional(t.String()) }),
+    });
+
+    const childRoute = createRoute({
+      parent: parentRoute,
+      query: t.Object({ shared: t.Optional(t.Number()) }),
+    });
+
+    childRoute.page({
+      component: ({ query }) => {
+        expectTypeOf(query.shared).toEqualTypeOf<number | undefined>();
+        return null;
+      },
+    });
+  });
+
+  test("Zod route and page query schemas infer through Standard Schema output", () => {
+    const route = createRoute({
+      query: zObject({ sort: zString().optional() }),
+    });
+
+    route.page({
+      query: zObject({ page: zNumber().default(1) }),
+      component: ({ query }) => {
+        expectTypeOf(query.sort).toEqualTypeOf<string | undefined>();
+        expectTypeOf(query.page).toEqualTypeOf<number>();
+        return null;
+      },
+    });
+  });
+
   test("page loader data flows to component", () => {
     const route = createRoute({
       loader: async () => ({ user: { id: 1 } }),

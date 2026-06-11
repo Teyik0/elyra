@@ -18,6 +18,7 @@ import { handleDevRequest } from "./hmr.ts";
 import { buildRouteMatcher } from "./patterns.ts";
 import {
   applySchemaDefaults,
+  collectRouteSchemaSources,
   detectQueryDefaultRedirect,
   mergeRouteSchemas,
   parseDataEndpointPath,
@@ -66,10 +67,11 @@ export function createRoutePlugin(
   buildId?: string
 ): AnyElysia {
   const resolvedBuildId = buildId ?? "";
-  const { pattern, routeChain } = route;
+  const { pattern } = route;
+  const schemaSources = collectRouteSchemaSources(route);
 
-  const allParams = mergeRouteSchemas(routeChain, "params");
-  const allQuery = mergeRouteSchemas(routeChain, "query");
+  const allParams = mergeRouteSchemas(schemaSources, "params");
+  const allQuery = mergeRouteSchemas(schemaSources, "query");
   const hasQuerySchema = !!allQuery;
 
   // Guard and handler MUST live in the same Elysia scope so that validation
@@ -208,8 +210,9 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
 
       // Normalize params and query through the same merged schemas used by
       // createRoutePlugin so loaders see identical typed/defaulted inputs.
-      const mergedParams = mergeRouteSchemas(matched.route.routeChain, "params");
-      const mergedQuery = mergeRouteSchemas(matched.route.routeChain, "query");
+      const schemaSources = collectRouteSchemaSources(matched.route);
+      const mergedParams = mergeRouteSchemas(schemaSources, "params");
+      const mergedQuery = mergeRouteSchemas(schemaSources, "query");
       syntheticCtx.params = applySchemaDefaults(
         mergedParams as Record<string, unknown> | undefined,
         syntheticCtx.params as Record<string, unknown>

@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { t } from "elysia";
 import { patternToTypeString, schemaToTypeString, writeRouteTypes } from "../src/build";
 import type { ResolvedRoute } from "../src/server/router/index.ts";
 
@@ -172,6 +173,30 @@ describe("writeRouteTypes", () => {
 
     const content = readFileSync(join(tmpDir, "furin-env.d.ts"), "utf8");
     expect(content).toContain('"/blog": { search?: { page?: number; tag?: string } }');
+  });
+
+  test("static route with inherited and page query schemas emits merged typed search", () => {
+    const route = {
+      pattern: "/products",
+      tags: [],
+      routeChain: [
+        {
+          __type: "FURIN_ROUTE" as const,
+          query: t.Object({ sort: t.Optional(t.String()) }),
+        },
+      ],
+      page: {
+        __type: "FURIN_PAGE" as const,
+        _route: { __type: "FURIN_ROUTE" as const },
+        query: t.Object({ page: t.Number({ default: 1 }) }),
+        component: () => null,
+      },
+    } as unknown as ResolvedRoute;
+
+    writeRouteTypes([route], tmpDir);
+
+    const content = readFileSync(join(tmpDir, "furin-env.d.ts"), "utf8");
+    expect(content).toContain('"/products": { search?: { sort?: string; page: number } }');
   });
 
   test("dynamic route — uses index signature syntax", () => {

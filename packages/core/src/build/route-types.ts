@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ResolvedRoute } from "../server/router/index.ts";
+import { collectRouteSchemaSources, mergeRouteSchemaJson } from "../server/router/schemas.ts";
 
 /** @internal Exported for unit testing only. */
 export function patternToTypeString(pattern: string): string {
@@ -29,6 +30,16 @@ export function schemaToTypeString(schema: unknown): string {
     }
     return parts.join(" | ") || "unknown";
   }
+  if (s.oneOf && Array.isArray(s.oneOf)) {
+    const parts: string[] = [];
+    for (const item of s.oneOf as unknown[]) {
+      const t = schemaToTypeString(item);
+      if (t !== "null") {
+        parts.push(t);
+      }
+    }
+    return parts.join(" | ") || "unknown";
+  }
   switch (s.type) {
     case "string":
       return "string";
@@ -39,13 +50,21 @@ export function schemaToTypeString(schema: unknown): string {
       return "boolean";
     case "null":
       return "null";
+    case "array": {
+      const itemType = schemaToTypeString(s.items);
+      return `${itemType}[]`;
+    }
     case "object": {
       if (!s.properties || typeof s.properties !== "object") {
         return "Record<string, unknown>";
       }
       const required = new Set<string>(Array.isArray(s.required) ? (s.required as string[]) : []);
       const props = Object.entries(s.properties as Record<string, unknown>)
-        .map(([k, v]) => `${k}${required.has(k) ? "" : "?"}: ${schemaToTypeString(v)}`)
+        .map(([k, v]) => {
+          const propertySchema = v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+          const hasDefault = "default" in propertySchema;
+          return `${k}${required.has(k) || hasDefault ? "" : "?"}: ${schemaToTypeString(v)}`;
+        })
         .join("; ");
       return `{ ${props} }`;
     }
@@ -81,7 +100,7 @@ export function writeRouteTypes(routes: ResolvedRoute[], projectRoot: string): v
   const entries = sortedRoutes.map((r) => {
     const typeKey = patternToTypeString(r.pattern);
     const isDynamic = typeKey.startsWith("`");
-    const querySchema = r.routeChain?.find((rt) => rt.query)?.query;
+    const querySchema = mergeRouteSchemaJson(collectRouteSchemaSources(r), "query");
     const searchType = querySchema ? schemaToTypeString(querySchema) : "never";
     return isDynamic
       ? `    [key: ${typeKey}]: { search?: ${searchType} }`

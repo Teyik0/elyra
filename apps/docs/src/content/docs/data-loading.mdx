@@ -53,7 +53,7 @@ Loaders receive a context object with:
 | --- | --- | --- |
 | `request` | `Request` | the incoming `Request` — direct value |
 | `params` | `TParams` | validated params from `createRoute({ params })` — direct value |
-| `query` | `TQuery` | validated query values from `createRoute({ query })` — direct value |
+| `query` | `TQuery` | validated query values from the route chain and page query schema — direct value |
 | `set`, `headers`, `cookie`, `redirect` | — | server helpers — direct values |
 | _parent data fields_ | `Promise<T>` | each field returned by an ancestor loader is an **individually-awaitable `Promise<T>`** |
 
@@ -71,7 +71,7 @@ The flat-merge of results into component props is unchanged — components alway
 
 ## Typed Query Schemas
 
-`query` belongs to `createRoute()`, not `route.page()`.
+Declare `query` on `_route.tsx` files for layout-wide search params, or on `route.page()` for params that belong only to a single page. Furin merges every query schema in the route chain from parent to leaf, then merges the page query schema last.
 
 ```tsx
 // src/pages/search/_route.tsx
@@ -90,16 +90,28 @@ export const route = createRoute({
 
 ```tsx
 // src/pages/search/index.tsx
+import { t } from "elysia"
 import { route } from "./_route"
 
 export default route.page({
+  query: t.Object({
+    view: t.Optional(t.String()),
+  }),
   loader: async ({ query }) => {
+    query.page
+    query.tag
+    query.view
+
     const posts = await db.getPosts(query)
     return { posts }
   },
   component: ({ posts }) => <PostList posts={posts} />,
 })
 ```
+
+When the same key appears more than once, the leaf or page schema wins. Query schemas can be TypeBox objects, Zod 4 objects, Valibot schemas converted with `toStandardJsonSchema()`, or plain JSON Schema object schemas. The runtime and generated `furin-env.d.ts` use the same merged schema resolver, so `<Link search={...}>`, `RouteSearch<"/search">`, loaders, `head()`, and components all see the same shape.
+
+TypeBox defaults are read from the actual schema object at runtime and during `furin-env.d.ts` generation. For example, `t.Optional(t.Number({ default: 1 }))` validates as optional input but appears as a resolved `number` in generated route search types because Furin can see the `default` field on the schema.
 
 ## Typed Params
 

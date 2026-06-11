@@ -108,11 +108,38 @@ import { Link } from "@teyik0/furin/link"
 <Link to="/docs/rendering">Rendering</Link>
 ```
 
-When a route declares a `query` schema, `search` is typed from that schema.
+When a route declares a `query` schema, `search` is typed from that schema. Furin merges query schemas from every `_route.tsx` in the layout chain and the page-level `query` schema, so navigation uses the same resolved search type as loaders and components.
 
 ```tsx
 <Link to="/search" search={{ page: 2 }} />
 ```
+
+```tsx
+// src/pages/products/_route.tsx
+export const route = createRoute({
+  parent: rootRoute,
+  query: t.Object({
+    sort: t.Optional(t.String()),
+  }),
+})
+```
+
+```tsx
+// src/pages/products/index.tsx
+export default route.page({
+  query: t.Object({
+    page: t.Optional(t.Number({ default: 1 })),
+  }),
+  component: ({ query }) => {
+    query.sort
+    query.page
+
+    return null
+  },
+})
+```
+
+The generated `RouteSearch<"/products">` includes both fields. TypeBox defaults are read from the generated runtime schema, so `page` is treated as resolved when the default is applied.
 
 Make sure `furin-env.d.ts` is included in your app `tsconfig.json`:
 

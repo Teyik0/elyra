@@ -17,15 +17,19 @@ mock.module("evlog/elysia", () => ({
   evlog: () => (app: unknown) => app,
 }));
 
+import { toStandardJsonSchema } from "@valibot/to-json-schema";
 import { Elysia, t } from "elysia";
 import type { RuntimeRoute } from "furin";
 import {
+  collectRouteSchemaSources,
   collectRouteTags,
   createRoutePlugin,
   mergeRouteSchemas,
   scanPages,
 } from "furin/server/router";
 import { __setDevMode, IS_DEV } from "furin/server/runtime-env";
+import { number as vNumber, object as vObject, optional as vOptional } from "valibot";
+import { number as zNumber, object as zObject, string as zString } from "zod";
 
 const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
 const ROUTE_PATTERN = "/schema-merge-parent/child";
@@ -86,6 +90,65 @@ describe("mergeRouteSchemas", () => {
     // child is last → its Optional(childVal) wins
     const sharedSchema = merged.properties.shared as { [key: string]: unknown };
     expect(JSON.stringify(sharedSchema)).toContain('"child"');
+  });
+
+  // ── Cross-validator merging ────────────────────────────────────────────────
+
+  test("merges TypeBox + Zod — properties from both schemas", () => {
+    const parent = t.Object({ sort: t.Optional(t.String()) });
+    const child = zObject({ page: zNumber().default(1) });
+    const chain: RuntimeRoute[] = [
+      { __type: "FURIN_ROUTE", query: parent },
+      { __type: "FURIN_ROUTE", query: child },
+    ];
+
+    const merged = mergeRouteSchemas(chain, "query") as ReturnType<typeof t.Object>;
+
+    expect(merged).toBeDefined();
+    expect(merged.properties).toHaveProperty("sort");
+    expect(merged.properties).toHaveProperty("page");
+  });
+
+  test("merges TypeBox + Valibot — properties from both schemas", () => {
+    const parent = t.Object({ sort: t.Optional(t.String()) });
+    const child = toStandardJsonSchema(vObject({ page: vOptional(vNumber(), 1) }));
+    const chain: RuntimeRoute[] = [
+      { __type: "FURIN_ROUTE", query: parent },
+      { __type: "FURIN_ROUTE", query: child },
+    ];
+
+    const merged = mergeRouteSchemas(chain, "query") as ReturnType<typeof t.Object>;
+
+    expect(merged).toBeDefined();
+    expect(merged.properties).toHaveProperty("sort");
+    expect(merged.properties).toHaveProperty("page");
+  });
+
+  test("merges Zod + Zod — leaf wins on key conflict", () => {
+    const parent = zObject({ shared: zString().default("parent") });
+    const child = zObject({ shared: zString().default("child") });
+    const chain: RuntimeRoute[] = [
+      { __type: "FURIN_ROUTE", query: parent },
+      { __type: "FURIN_ROUTE", query: child },
+    ];
+
+    const merged = mergeRouteSchemas(chain, "query") as ReturnType<typeof t.Object>;
+    const sharedSchema = merged.properties.shared as { [key: string]: unknown };
+    expect(JSON.stringify(sharedSchema)).toContain('"child"');
+  });
+
+  test("throws clear error when a non-convertible schema is passed", () => {
+    const chain: RuntimeRoute[] = [
+      { __type: "FURIN_ROUTE", query: { plain: "object" } as unknown },
+    ];
+
+    expect(() => mergeRouteSchemas(chain, "query")).toThrow("Unsupported query schema");
+  });
+
+  test("throws clear error when a converted schema is not an object", () => {
+    const chain: RuntimeRoute[] = [{ __type: "FURIN_ROUTE", query: zString() }];
+
+    expect(() => mergeRouteSchemas(chain, "query")).toThrow("query schemas must be objects");
   });
 });
 
@@ -165,5 +228,121 @@ describe("schema merge — parent + child both declare query schemas", () => {
     );
 
     expect(res.status).toBe(200);
+  });
+});
+
+// ── Integration: cross-validator query defaults ──────────────────────────────
+
+describe("cross-validator schema merge — TypeBox + Zod defaults", () => {
+  test("merged guard fills defaults from both TypeBox and Zod", async () => {
+    const parentRoute = {
+      __type: "FURIN_ROUTE" as const,
+      query: t.Object({ parentFilter: t.Optional(t.String({ default: "parent-default" })) }),
+    };
+    const childRoute = {
+      __type: "FURIN_ROUTE" as const,
+      query: zObject({ childFilter: zString().default("child-default") }),
+      parent: parentRoute,
+    };
+    const page = { __type: "FURIN_PAGE" as const, _route: childRoute, component: () => null };
+
+    const route = {
+      pattern: "/cross-validator",
+      page,
+      path: "/cross-validator.tsx",
+      routeChain: [parentRoute, childRoute],
+      mode: "ssr" as const,
+      segmentBoundaries: [],
+    };
+
+    const root = {
+      path: "root.tsx",
+      route: { __type: "FURIN_ROUTE" as const, layout: () => null },
+    };
+    const app = new Elysia().use(createRoutePlugin(route, root));
+
+    const res = await app.handle(new Request("http://localhost/cross-validator"));
+
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("childFilter=child-default");
+    expect(location).toContain("parentFilter=parent-default");
+  });
+
+  test("no redirect when all cross-validator defaults are already in the URL", async () => {
+    const parentRoute = {
+      __type: "FURIN_ROUTE" as const,
+      query: t.Object({ parentFilter: t.Optional(t.String({ default: "parent-default" })) }),
+    };
+    const childRoute = {
+      __type: "FURIN_ROUTE" as const,
+      query: zObject({ childFilter: zString().default("child-default") }),
+      parent: parentRoute,
+    };
+    const page = { __type: "FURIN_PAGE" as const, _route: childRoute, component: () => null };
+
+    const route = {
+      pattern: "/cross-validator",
+      page,
+      path: "/cross-validator.tsx",
+      routeChain: [parentRoute, childRoute],
+      mode: "ssr" as const,
+      segmentBoundaries: [],
+    };
+
+    const root = {
+      path: "root.tsx",
+      route: { __type: "FURIN_ROUTE" as const, layout: () => null },
+    };
+    const app = new Elysia().use(createRoutePlugin(route, root));
+
+    const res = await app.handle(
+      new Request(
+        "http://localhost/cross-validator?parentFilter=parent-default&childFilter=child-default"
+      )
+    );
+
+    expect(res.status).toBe(200);
+  });
+
+  test("page-level query participates in runtime guard defaults", async () => {
+    const parentRoute = {
+      __type: "FURIN_ROUTE" as const,
+      query: t.Object({ parentFilter: t.Optional(t.String({ default: "parent-default" })) }),
+    };
+    const childRoute = {
+      __type: "FURIN_ROUTE" as const,
+      parent: parentRoute,
+    };
+    const page = {
+      __type: "FURIN_PAGE" as const,
+      _route: childRoute,
+      query: zObject({ pageFilter: zString().default("page-default") }),
+      component: () => null,
+    };
+
+    const route = {
+      pattern: "/page-query",
+      page,
+      path: "/page-query.tsx",
+      routeChain: [parentRoute, childRoute],
+      mode: "ssr" as const,
+      segmentBoundaries: [],
+    };
+
+    expect(collectRouteSchemaSources(route)).toHaveLength(3);
+
+    const root = {
+      path: "root.tsx",
+      route: { __type: "FURIN_ROUTE" as const, layout: () => null },
+    };
+    const app = new Elysia().use(createRoutePlugin(route, root));
+
+    const res = await app.handle(new Request("http://localhost/page-query"));
+
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("pageFilter=page-default");
+    expect(location).toContain("parentFilter=parent-default");
   });
 });

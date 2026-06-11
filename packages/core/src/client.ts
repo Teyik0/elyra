@@ -21,17 +21,41 @@ type Unset = typeof UNSET;
 // Interfaces lack an implicit index signature; mapped types have one.
 type ToRecord<T> = { [K in keyof T]: T[K] };
 
+interface StandardSchemaLike {
+  readonly "~standard": {
+    readonly jsonSchema?: unknown;
+    readonly types?: {
+      readonly output: unknown;
+    };
+  };
+}
+
+interface JsonSchemaObjectLike {
+  readonly properties?: unknown;
+  readonly type: "object";
+}
+
+type SupportedRouteSchema = AnySchema | StandardSchemaLike | JsonSchemaObjectLike;
+
 type ResolvedSchema<T> = [T] extends [Unset]
   ? Unset
   : T extends AnySchema
     ? UnwrapSchema<T>
-    : Unset;
+    : T extends { readonly "~standard": { readonly types: { readonly output: infer Output } } }
+      ? Output
+      : T extends JsonSchemaObjectLike
+        ? unknown
+        : Unset;
 
 type MergeSchema<TParent, TOwn> = [TParent] extends [Unset]
   ? TOwn
   : [TOwn] extends [Unset]
     ? TParent
-    : TParent & TOwn;
+    : [TParent] extends [object]
+      ? [TOwn] extends [object]
+        ? ToRecord<Omit<TParent, keyof TOwn> & TOwn>
+        : TOwn
+      : TOwn;
 
 type NormalizeUnset<T> = [T] extends [Unset] ? {} : T;
 
@@ -165,6 +189,7 @@ export interface RuntimePage {
   component: React.FC<Record<string, unknown>>;
   head?(ctx: Record<string, unknown>): HeadOptions;
   loader?(ctx: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
+  query?: unknown;
   staticParams?(): Promise<Record<string, string>[]> | Record<string, string>[];
   tags?: string[];
 }
@@ -181,16 +206,18 @@ export interface RouteRef<
 interface PageResult<
   TData extends Record<string, unknown>,
   TParams,
-  TQuery,
+  TRouteQuery,
+  TPageQuery,
   TPageLoaderData extends object,
 > {
   __type: "FURIN_PAGE";
-  _route: Route<TData, TParams, TQuery>;
-  component: React.FC<TData & TPageLoaderData & ComponentProps<TParams, TQuery>>;
-  head?: (ctx: ComponentProps<TParams, TQuery> & TData & TPageLoaderData) => HeadOptions;
+  _route: Route<TData, TParams, TRouteQuery>;
+  component: React.FC<TData & TPageLoaderData & ComponentProps<TParams, TPageQuery>>;
+  head?: (ctx: ComponentProps<TParams, TPageQuery> & TData & TPageLoaderData) => HeadOptions;
   loader?: (
-    ctx: RouteContext<TParams, TQuery> & PromisifyData<TData>
+    ctx: RouteContext<TParams, TPageQuery> & PromisifyData<TData>
   ) => Promise<TPageLoaderData> | TPageLoaderData;
+  query?: unknown;
   tags?: string[];
 }
 
@@ -207,29 +234,48 @@ export interface Route<TParentData extends Record<string, unknown>, TParams, TQu
   // has no inference sites (all NoInfer) so TypeScript applies its default AFTER TLoader is
   // resolved — making declaration order of head/component irrelevant.
   page<
-    TLoader extends (ctx: RouteContext<TParams, TQuery> & PromisifyData<TParentData>) => unknown,
+    TPageQuerySchema extends SupportedRouteSchema | Unset = Unset,
+    TPageQuery = MergeSchema<TQuery, ResolvedSchema<TPageQuerySchema>>,
+    TLoader extends (
+      ctx: RouteContext<TParams, TPageQuery> & PromisifyData<TParentData>
+    ) => unknown = (ctx: RouteContext<TParams, TPageQuery> & PromisifyData<TParentData>) => unknown,
     TPageLoaderData extends object = ExtractLoaderReturn<TLoader>,
   >(config: {
     loader: TLoader;
     mode?: "ssr" | "ssg" | "isr";
+    query?: TPageQuerySchema;
     revalidate?: number;
     staticParams?: () => Promise<NormalizeUnset<TParams>[]> | NormalizeUnset<TParams>[];
     tags?: string[];
-    component: React.FC<NoInfer<TParentData & TPageLoaderData & ComponentProps<TParams, TQuery>>>;
+    component: React.FC<
+      NoInfer<TParentData & TPageLoaderData & ComponentProps<TParams, TPageQuery>>
+    >;
     head?: (
-      ctx: NoInfer<ComponentProps<TParams, TQuery> & TParentData & TPageLoaderData>
+      ctx: NoInfer<ComponentProps<TParams, TPageQuery> & TParentData & TPageLoaderData>
     ) => HeadOptions;
-  }): PageResult<TParentData, TParams, TQuery, TPageLoaderData>;
+  }): PageResult<TParentData, TParams, TQuery, TPageQuery, TPageLoaderData>;
 
   // Overload 2 — no loader.
-  page(config: {
+  page<TPageQuerySchema extends SupportedRouteSchema | Unset = Unset>(config: {
     mode?: "ssr" | "ssg" | "isr";
+    query?: TPageQuerySchema;
     revalidate?: number;
     staticParams?: () => Promise<NormalizeUnset<TParams>[]> | NormalizeUnset<TParams>[];
     tags?: string[];
-    component: React.FC<TParentData & ComponentProps<TParams, TQuery>>;
-    head?: (ctx: ComponentProps<TParams, TQuery> & TParentData) => HeadOptions;
-  }): PageResult<TParentData, TParams, TQuery, {}>;
+    component: React.FC<
+      TParentData & ComponentProps<TParams, MergeSchema<TQuery, ResolvedSchema<TPageQuerySchema>>>
+    >;
+    head?: (
+      ctx: ComponentProps<TParams, MergeSchema<TQuery, ResolvedSchema<TPageQuerySchema>>> &
+        TParentData
+    ) => HeadOptions;
+  }): PageResult<
+    TParentData,
+    TParams,
+    TQuery,
+    MergeSchema<TQuery, ResolvedSchema<TPageQuerySchema>>,
+    {}
+  >;
 
   params?: unknown;
   parent?: RuntimeRoute;
@@ -243,8 +289,8 @@ export interface Route<TParentData extends Record<string, unknown>, TParams, TQu
 
 export function createRoute<
   TParentRef extends RouteRef | undefined = undefined,
-  TParamsSchema extends AnySchema | Unset = Unset,
-  TQuerySchema extends AnySchema | Unset = Unset,
+  TParamsSchema extends SupportedRouteSchema | Unset = Unset,
+  TQuerySchema extends SupportedRouteSchema | Unset = Unset,
   TLoaderData extends object = {},
 >(config?: {
   parent?: { ref: TParentRef } & { __type: "FURIN_ROUTE" };

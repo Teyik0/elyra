@@ -21,7 +21,9 @@ export {
 export { createDataEndpoint, createRoutePlugin } from "./plugin.ts";
 export {
   applySchemaDefaults,
+  collectRouteSchemaSources,
   detectQueryDefaultRedirect,
+  mergeRouteSchemaJson,
   mergeRouteSchemas,
   parseDataEndpointPath,
   queryDefaultRedirectHook,
