@@ -21,9 +21,8 @@ export {
 export { createDataEndpoint, createRoutePlugin } from "./plugin.ts";
 export {
   applySchemaDefaults,
-  detectQueryDefaultRedirect,
+  createSearchRouteMetadata,
   mergeRouteSchemas,
   parseDataEndpointPath,
-  queryDefaultRedirectHook,
 } from "./schemas.ts";
 export type { ResolvedRoute, RootLayout, SegmentBoundary } from "./types.ts";

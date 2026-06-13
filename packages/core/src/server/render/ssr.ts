@@ -8,9 +8,14 @@ import {
   normalizeHref,
   RouterContext,
   type RouterContextValue,
+  SearchStoreContext,
 } from "../../client/router/index.ts";
+import {
+  createSearchStore,
+  searchSnapshotFromRouterContext,
+} from "../../client/router/search-store.ts";
 import { computeErrorDigest } from "../../shared/digest.ts";
-import type { SearchParamsInput } from "../../shared/search-params.ts";
+import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
 import { runInSyntheticRenderScope, useLogger } from "../context-logger.ts";
 // FurinNotFoundError is used indirectly via buildNotFoundElement in element.tsx
 import type { ResolvedRoute, RootLayout } from "../router/index.ts";
@@ -88,7 +93,11 @@ export function withSSRRouterContext(
   element: ReactNode,
   contextValue: RouterContextValue
 ): ReactNode {
-  return createElement(RouterContext.Provider, { value: contextValue }, element);
+  return createElement(
+    SearchStoreContext.Provider,
+    { value: createSearchStore(searchSnapshotFromRouterContext(contextValue)) },
+    createElement(RouterContext.Provider, { value: contextValue }, element)
+  );
 }
 
 interface ShellFallbackResult {
@@ -213,7 +222,8 @@ export async function prepareRender(
   root: RootLayout,
   basePath: string | undefined,
   throwOnFailure: boolean,
-  precomputedLoaderResult: LoaderResult | undefined
+  precomputedLoaderResult: LoaderResult | undefined,
+  searchRoutes?: SearchRouteMetadata[]
 ): Promise<PreparedRender | Response> {
   const loaderStart = Date.now();
   const loaderResult = precomputedLoaderResult ?? (await runLoaders(route, ctx));
@@ -282,6 +292,7 @@ export async function prepareRender(
     basePath: basePath ?? "",
     currentHref: currentHrefFromContext(ctx),
     search: (ctx.query as SearchParamsInput | undefined) ?? {},
+    searchRoutes: searchRoutes ?? [],
     navigate: (_href, _opts) => Promise.resolve(),
     prefetch: (_href, _opts) => {
       /* noop */
@@ -427,9 +438,18 @@ export async function renderSSR(
   route: ResolvedRoute,
   ctx: Context,
   root: RootLayout,
-  precomputedLoaderResult: LoaderResult | undefined
+  precomputedLoaderResult: LoaderResult | undefined,
+  searchRoutes?: SearchRouteMetadata[]
 ): Promise<Response> {
-  const prepared = await prepareRender(route, ctx, root, undefined, false, precomputedLoaderResult);
+  const prepared = await prepareRender(
+    route,
+    ctx,
+    root,
+    undefined,
+    false,
+    precomputedLoaderResult,
+    searchRoutes
+  );
 
   if (prepared instanceof Response) {
     return prepared;

@@ -20,6 +20,7 @@ import {
   stripHashFromHref,
   toLogical,
 } from "./link-utils.ts";
+import { createSearchStore, type SearchStore, SearchStoreContext } from "./search-store.ts";
 import {
   buildDataEndpoint,
   buildNotFoundPageElement,
@@ -34,6 +35,8 @@ import type {
   RouterProviderProps,
   RouterState,
 } from "./types.ts";
+
+const EMPTY_SEARCH: SearchParamsInput = {};
 
 export function setPrefetchCacheEntry(
   cache: Map<string, CacheEntry>,
@@ -114,6 +117,8 @@ export function RouterProvider({
    * `__furin_data.ndjson` for static exports.
    */
   const staticModeRef = useRef<boolean>(detectStaticMode());
+  const resolvedSearch = (state.data.query as SearchParamsInput | undefined) ?? EMPTY_SEARCH;
+  const searchStoreRef = useRef<SearchStore | null>(null);
 
   /**
    * Depth-0 boundary (pagesDir root level) for the "no client route matched" 404
@@ -459,6 +464,27 @@ export function RouterProvider({
     [basePath, fetchPageState, defaultPreloadStaleTime, prefetchCacheSize]
   );
 
+  if (searchStoreRef.current === null) {
+    searchStoreRef.current = createSearchStore({
+      currentHref,
+      navigate,
+      search: resolvedSearch,
+      searchRoutes: routes,
+    });
+  }
+  const searchStore = searchStoreRef.current;
+
+  searchStore.setSnapshot({
+    currentHref,
+    navigate,
+    search: resolvedSearch,
+    searchRoutes: routes,
+  });
+
+  useLayoutEffect(() => {
+    searchStore.flush();
+  });
+
   const refresh = useCallback(
     async (opts: { resetScroll?: boolean } | undefined) => {
       const logicalPath = toLogical(window.location.pathname, basePath);
@@ -697,29 +723,34 @@ export function RouterProvider({
     );
   }
 
-  return buildRouterTree(
-    {
-      basePath,
-      currentHref,
-      search: (state.data.query as SearchParamsInput | undefined) ?? {},
-      navigate,
-      prefetch,
-      refresh,
-      invalidatePrefetch,
-      isNavigating,
-      defaultPreload,
-      defaultPreloadDelay,
-      defaultPreloadStaleTime,
-    },
-    pageElement,
-    {
-      digest: initialDigest,
-      onReset: () => {
-        refresh(undefined).catch((err: unknown) => {
-          log.error({ action: "boundary_reset_failed", error: String(err) });
-        });
-      },
-      resetKey: currentHref,
-    }
+  return (
+    <SearchStoreContext.Provider value={searchStore}>
+      {buildRouterTree(
+        {
+          basePath,
+          currentHref,
+          search: resolvedSearch,
+          searchRoutes: routes,
+          navigate,
+          prefetch,
+          refresh,
+          invalidatePrefetch,
+          isNavigating,
+          defaultPreload,
+          defaultPreloadDelay,
+          defaultPreloadStaleTime,
+        },
+        pageElement,
+        {
+          digest: initialDigest,
+          onReset: () => {
+            refresh(undefined).catch((err: unknown) => {
+              log.error({ action: "boundary_reset_failed", error: String(err) });
+            });
+          },
+          resetKey: currentHref,
+        }
+      )}
+    </SearchStoreContext.Provider>
   );
 }

@@ -98,6 +98,24 @@ describe("resolveMode", () => {
     expect(resolveMode(page, chain)).toBe("ssg");
   });
 
+  test("returns ssr when route chain declares query state", () => {
+    const page = {
+      __type: "FURIN_PAGE",
+      _route: { __type: "FURIN_ROUTE" },
+    } as RuntimePage;
+    const chain = [
+      {
+        __type: "FURIN_ROUTE",
+        query: {
+          type: "object",
+          properties: { page: { type: "number", default: 1 } },
+        },
+      },
+    ] as RuntimeRoute[];
+
+    expect(resolveMode(page, chain)).toBe("ssr");
+  });
+
   test("returns ssr when has loader but no revalidate", () => {
     const page = {
       __type: "FURIN_PAGE",

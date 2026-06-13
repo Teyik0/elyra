@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import type { Context } from "elysia";
 import type { RuntimePage, RuntimeRoute } from "../../client.ts";
+import type { SearchRouteMetadata } from "../../shared/search-params.ts";
 import { collectRouteChainFromRoute, isFurinPage, isFurinRoute } from "../../shared/utils/index.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import {
@@ -183,7 +184,8 @@ export function rebuildDevRoute(
 export async function handleDevRequest(
   route: ResolvedRoute,
   ctx: Context,
-  root: RootLayout
+  root: RootLayout,
+  searchRoutes?: SearchRouteMetadata[]
 ): Promise<unknown> {
   // Load the page via ?furin-server virtual namespace so it stays out of
   // --hot's file watcher, then hand off to renderSSR which runs loaders,
@@ -231,7 +233,7 @@ export async function handleDevRequest(
       // a fresh entry exists.  HTML re-assembles every time so the dev shell
       // chunk URL is always current.
       if (refreshedRoute.mode === "isr") {
-        return renderDevISRWithLoaderCache(refreshedRoute, ctx, currentRoot);
+        return renderDevISRWithLoaderCache(refreshedRoute, ctx, currentRoot, searchRoutes);
       }
 
       // Live SSG — same trick as Live ISR, but the cache entry is forever-fresh
@@ -241,10 +243,10 @@ export async function handleDevRequest(
       // loader on every refresh — which would make expensive loaders (DB
       // queries, MDX parsing, sitemap reads) painful in dev.
       if (refreshedRoute.mode === "ssg") {
-        return renderDevSSGWithLoaderCache(refreshedRoute, ctx, currentRoot);
+        return renderDevSSGWithLoaderCache(refreshedRoute, ctx, currentRoot, searchRoutes);
       }
 
-      return renderSSR(refreshedRoute, ctx, currentRoot, undefined);
+      return renderSSR(refreshedRoute, ctx, currentRoot, undefined, searchRoutes);
     }
   } catch (err) {
     console.error(`[furin] Dev page load error for ${route.path}:`, err);
@@ -266,7 +268,8 @@ export async function handleDevRequest(
 export async function renderDevISRWithLoaderCache(
   route: ResolvedRoute,
   ctx: Context,
-  root: RootLayout
+  root: RootLayout,
+  searchRoutes?: SearchRouteMetadata[]
 ): Promise<Response> {
   const cacheKey = `${root.path}:${resolvePath(route.pattern, ctx.params ?? {})}`;
   const cached = getDevISRLoaderCache(cacheKey);
@@ -278,7 +281,7 @@ export async function renderDevISRWithLoaderCache(
       deferredPromises: undefined,
       headers: cached.headers,
     };
-    return renderSSR(route, ctx, root, precomputed);
+    return renderSSR(route, ctx, root, precomputed, searchRoutes);
   }
 
   const result = await runLoaders(route, ctx);
@@ -298,7 +301,7 @@ export async function renderDevISRWithLoaderCache(
       route.tags
     );
   }
-  return renderSSR(route, ctx, root, result);
+  return renderSSR(route, ctx, root, result, searchRoutes);
 }
 
 /**
@@ -311,7 +314,8 @@ export async function renderDevISRWithLoaderCache(
 export async function renderDevSSGWithLoaderCache(
   route: ResolvedRoute,
   ctx: Context,
-  root: RootLayout
+  root: RootLayout,
+  searchRoutes?: SearchRouteMetadata[]
 ): Promise<Response> {
   const cacheKey = `${root.path}:${resolvePath(route.pattern, ctx.params ?? {})}`;
   const cached = getDevSSGLoaderCache(cacheKey);
@@ -323,7 +327,7 @@ export async function renderDevSSGWithLoaderCache(
       deferredPromises: undefined,
       headers: cached.headers,
     };
-    return renderSSR(route, ctx, root, precomputed);
+    return renderSSR(route, ctx, root, precomputed, searchRoutes);
   }
 
   const result = await runLoaders(route, ctx);
@@ -343,7 +347,7 @@ export async function renderDevSSGWithLoaderCache(
       route.tags
     );
   }
-  return renderSSR(route, ctx, root, result);
+  return renderSSR(route, ctx, root, result, searchRoutes);
 }
 
 /**

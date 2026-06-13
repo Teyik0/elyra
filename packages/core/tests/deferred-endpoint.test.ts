@@ -70,12 +70,7 @@ describe("GET /_furin/data", () => {
     expect(res.status).toBe(400);
   });
 
-  test("emits the __furinRedirect NDJSON sentinel when a query default is applied", async () => {
-    // Regression: previously the query-default redirect returned an HTTP 302
-    // (Response) directly from the handler. The SPA client reads NDJSON via
-    // `parseDeferredNdjson` — a 302 is unparseable and would crash the
-    // navigation pipeline. The endpoint must now produce an NDJSON document
-    // carrying the `__furinRedirect` sentinel instead.
+  test("resolves query defaults without emitting a redirect sentinel", async () => {
     const { routes } = await scanPages(FIXTURES_DIR);
     const app = new Elysia().use(createDataEndpoint(routes));
 
@@ -88,7 +83,8 @@ describe("GET /_furin/data", () => {
       res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
       undefined
     );
-    expect(syncData.__furinRedirect).toBe("/query-default?city=Paris");
+    expect(syncData.__furinRedirect).toBeUndefined();
+    expect(syncData.query).toEqual({ city: "Paris" });
   });
 
   test("passes schema-coerced query values to loaders during SPA navigation", async () => {

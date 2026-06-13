@@ -9,6 +9,7 @@ export const CLIENT_FALLBACK_ROUTER: RouterContextValue = {
   // same active-state when no RouterProvider is present, avoiding hydration mismatches.
   currentHref: "/",
   search: {},
+  searchRoutes: [],
   navigate: (href, _opts) => {
     window.location.href = href;
     return Promise.resolve();

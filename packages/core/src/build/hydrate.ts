@@ -1,8 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateIndexHtml } from "../server/render/shell.ts";
+import { mergeRouteSchemas } from "../server/router/index.ts";
 import { buildRouteRegex } from "../server/router/patterns.ts";
 import type { ResolvedRoute } from "../server/router/index.ts";
+import { collectSearchDefaults } from "../shared/search-params.ts";
 import { writeRouteTypes } from "./route-types";
 import type { BuildClientOptions } from "./types";
 
@@ -44,6 +46,7 @@ export function generateHydrateEntry(
   for (const route of routes) {
     const resolvedPage = route.path.replace(/\\/g, "/");
     const regexPattern = buildRouteRegex(route.pattern).regex.source;
+    const searchDefaults = collectSearchDefaults(mergeRouteSchemas(route.routeChain ?? [], "query"));
     const boundaryIdents = new Map<string, string>();
 
     // Emit one boundary literal per segment that actually carries a convention
@@ -77,8 +80,11 @@ export function generateHydrateEntry(
           ].join(", ")}]) => ({ default: __furin_page.default, segmentBoundaries: [${boundaryLiterals.join(", ")}] }))`
         : `import("${resolvedPage}")`;
 
+    const searchDefaultsEntry = searchDefaults
+      ? `, searchDefaults: ${JSON.stringify(searchDefaults)}`
+      : "";
     routeEntries.push(
-      ` { pattern: "${route.pattern}", regex: new RegExp(${JSON.stringify(regexPattern)}), load: () => ${loadBody} }`
+      ` { pattern: "${route.pattern}", regex: new RegExp(${JSON.stringify(regexPattern)}), load: () => ${loadBody}${searchDefaultsEntry} }`
     );
   }
 

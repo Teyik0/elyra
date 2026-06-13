@@ -1,15 +1,25 @@
 import { describe, expect, mock, test } from "bun:test";
-import { act, createElement, useEffect } from "react";
+import { act, createElement, memo, useEffect } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { RouterContext, type RouterContextValue } from "../../src/client/link.tsx";
-import { useSearch, useSetSearch } from "../../src/client/router/search/index.ts";
+import { useNavigate } from "../../src/client/router/navigation.ts";
+import { useSearch } from "../../src/client/router/search/index.ts";
+import {
+  createSearchStore,
+  type SearchStore,
+  SearchStoreContext,
+  searchSnapshotFromRouterContext,
+} from "../../src/client/router/search-store.ts";
+
+const PRODUCTS_RE = /^\/products$/;
 
 function makeRouterContext(overrides: Partial<RouterContextValue> | undefined): RouterContextValue {
   return {
     basePath: "",
     currentHref: "/",
     search: {},
+    searchRoutes: [],
     navigate: (_href, _opts) => Promise.resolve(),
     prefetch: (_href, _opts) => {
       /* noop */
@@ -33,18 +43,27 @@ function renderWithRouter(
   cleanup: () => void;
   container: HTMLDivElement;
   root: Root;
+  searchStore: SearchStore;
 } {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
+  const searchStore = createSearchStore(searchSnapshotFromRouterContext(ctx));
 
   flushSync(() => {
-    root.render(createElement(RouterContext.Provider, { value: ctx }, element));
+    root.render(
+      createElement(
+        SearchStoreContext.Provider,
+        { value: searchStore },
+        createElement(RouterContext.Provider, { value: ctx }, element)
+      )
+    );
   });
 
   return {
     container,
     root,
+    searchStore,
     cleanup: () => {
       flushSync(() => {
         root.unmount();
@@ -57,7 +76,7 @@ function renderWithRouter(
 describe("useSearch", () => {
   test("reads the current server-resolved search from router context", () => {
     function Page(): React.ReactElement {
-      const search = useSearch("/products");
+      const [search] = useSearch("/products");
       return createElement("output", null, String(search.page));
     }
 
@@ -72,7 +91,7 @@ describe("useSearch", () => {
 
   test("returns an empty object for routes without search", () => {
     function Page(): React.ReactElement {
-      const search = useSearch("/");
+      const [search] = useSearch("/");
       return createElement("output", null, JSON.stringify(search));
     }
 
@@ -81,16 +100,101 @@ describe("useSearch", () => {
     expect(rendered.container.textContent).toBe("{}");
     rendered.cleanup();
   });
+
+  test("selector subscribers do not rerender when the selected value is unchanged", () => {
+    let renders = 0;
+
+    const PageSelector = memo(function PageSelector(): React.ReactElement {
+      renders++;
+      const [page] = useSearch("/products", (search) => search.page);
+      return createElement("output", null, String(page));
+    });
+
+    const rendered = renderWithRouter(
+      createElement(PageSelector),
+      makeRouterContext({
+        currentHref: "/products?page=1&q=react",
+        search: { page: 1, q: "react" },
+      })
+    );
+
+    expect(rendered.container.textContent).toBe("1");
+    expect(renders).toBe(1);
+
+    flushSync(() => {
+      rendered.searchStore.setSnapshot({
+        currentHref: "/products?page=1&q=bun",
+        navigate: () => Promise.resolve(),
+        search: { page: 1, q: "bun" },
+        searchRoutes: [],
+      });
+      rendered.searchStore.flush();
+    });
+
+    expect(rendered.container.textContent).toBe("1");
+    expect(renders).toBe(1);
+
+    flushSync(() => {
+      rendered.searchStore.setSnapshot({
+        currentHref: "/products?page=2&q=bun",
+        navigate: () => Promise.resolve(),
+        search: { page: 2, q: "bun" },
+        searchRoutes: [],
+      });
+      rendered.searchStore.flush();
+    });
+
+    expect(rendered.container.textContent).toBe("2");
+    expect(renders).toBe(2);
+    rendered.cleanup();
+  });
 });
 
-describe("useSetSearch", () => {
+describe("useNavigate", () => {
+  test("navigates with typed search and omits default-equivalent values", async () => {
+    const navigate = mock<RouterContextValue["navigate"]>(() => Promise.resolve());
+
+    function Page(): React.ReactElement {
+      const go = useNavigate();
+      useEffect(() => {
+        go({ to: "/products", search: { page: 1 } });
+      }, [go]);
+      return createElement("output");
+    }
+
+    const rendered = renderWithRouter(
+      createElement(Page),
+      makeRouterContext({
+        navigate,
+        searchRoutes: [
+          {
+            pattern: "/products",
+            regex: PRODUCTS_RE,
+            searchDefaults: { page: 1 },
+          },
+        ],
+      })
+    );
+
+    try {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(navigate).toHaveBeenCalledWith("/products", undefined);
+    } finally {
+      rendered.cleanup();
+    }
+  });
+});
+
+describe("useSearch setter", () => {
   test("updates search by navigating from the current logical pathname", async () => {
     const navigate = mock<RouterContextValue["navigate"]>(() => Promise.resolve());
 
     function Page(): React.ReactElement {
-      const setSearch = useSetSearch("/products");
+      const [, setSearch] = useSearch("/products");
       useEffect(() => {
-        setSearch({ page: 2 }, undefined);
+        setSearch({ page: 2 });
       }, [setSearch]);
       return createElement("output");
     }
@@ -108,7 +212,7 @@ describe("useSetSearch", () => {
       await act(async () => {
         await Promise.resolve();
       });
-      expect(navigate).toHaveBeenCalledWith("/products?page=2", { replace: false });
+      expect(navigate).toHaveBeenCalledWith("/products?page=2", undefined);
     } finally {
       rendered.cleanup();
     }
@@ -118,9 +222,9 @@ describe("useSetSearch", () => {
     const navigate = mock<RouterContextValue["navigate"]>(() => Promise.resolve());
 
     function Page(): React.ReactElement {
-      const setSearch = useSetSearch("/products");
+      const [, setSearch] = useSearch("/products");
       useEffect(() => {
-        setSearch((prev) => ({ page: Number(prev.page) + 1 }), undefined);
+        setSearch((prev) => ({ page: Number(prev.page) + 1 }));
       }, [setSearch]);
       return createElement("output");
     }
@@ -138,19 +242,19 @@ describe("useSetSearch", () => {
       await act(async () => {
         await Promise.resolve();
       });
-      expect(navigate).toHaveBeenCalledWith("/products?page=2&tag=react", { replace: false });
+      expect(navigate).toHaveBeenCalledWith("/products?page=2&tag=react", undefined);
     } finally {
       rendered.cleanup();
     }
   });
 
-  test("passes replace option to router navigation", async () => {
+  test("omits default-equivalent values from the navigated URL", async () => {
     const navigate = mock<RouterContextValue["navigate"]>(() => Promise.resolve());
 
     function Page(): React.ReactElement {
-      const setSearch = useSetSearch("/products");
+      const [, setSearch] = useSearch("/products");
       useEffect(() => {
-        setSearch({ page: 2 }, { replace: true });
+        setSearch({ page: 1 });
       }, [setSearch]);
       return createElement("output");
     }
@@ -158,17 +262,24 @@ describe("useSetSearch", () => {
     const rendered = renderWithRouter(
       createElement(Page),
       makeRouterContext({
-        currentHref: "/products?page=1",
+        currentHref: "/products?page=2",
         navigate,
-        search: { page: 1 },
-      })
+        search: { page: 2 },
+        searchRoutes: [
+          {
+            pattern: "/products",
+            regex: PRODUCTS_RE,
+            searchDefaults: { page: 1 },
+          },
+        ],
+      } as Partial<RouterContextValue>)
     );
 
     try {
       await act(async () => {
         await Promise.resolve();
       });
-      expect(navigate).toHaveBeenCalledWith("/products?page=2", { replace: true });
+      expect(navigate).toHaveBeenCalledWith("/products", undefined);
     } finally {
       rendered.cleanup();
     }

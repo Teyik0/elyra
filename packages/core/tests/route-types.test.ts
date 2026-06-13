@@ -183,11 +183,11 @@ describe("writeRouteTypes", () => {
     expect(content).toContain("interface RouteManifest");
   });
 
-  test("static route without query — emits search?: never", () => {
+  test("static route without query — emits search and searchInput as never", () => {
     writeRouteTypes(routes(["/"], undefined, undefined), tmpDir);
 
     const content = readFileSync(join(tmpDir, "furin-env.d.ts"), "utf8");
-    expect(content).toContain('"/": { search?: never }');
+    expect(content).toContain('"/": { search?: never; searchInput?: never }');
   });
 
   test("static route with query schema — emits typed search", () => {
@@ -199,7 +199,23 @@ describe("writeRouteTypes", () => {
     writeRouteTypes(routes(["/blog"], { "/blog": querySchema }, undefined), tmpDir);
 
     const content = readFileSync(join(tmpDir, "furin-env.d.ts"), "utf8");
-    expect(content).toContain('"/blog": { search?: { page?: number; tag?: string } }');
+    expect(content).toContain(
+      '"/blog": { search?: { page?: number; tag?: string }; searchInput?: { page?: number; tag?: string } }'
+    );
+  });
+
+  test("static route with query defaults — emits resolved read type and optional write input", () => {
+    const querySchema = {
+      type: "object",
+      properties: { page: { type: "number", default: 1 }, tag: { type: "string" } },
+      required: [],
+    };
+    writeRouteTypes(routes(["/products"], { "/products": querySchema }, undefined), tmpDir);
+
+    const content = readFileSync(join(tmpDir, "furin-env.d.ts"), "utf8");
+    expect(content).toContain(
+      '"/products": { search?: { page: number; tag?: string }; searchInput?: { page?: number; tag?: string } }'
+    );
   });
 
   test("route-chain query schemas are merged in generated search types", () => {
@@ -223,7 +239,7 @@ describe("writeRouteTypes", () => {
 
     const content = readFileSync(join(tmpDir, "furin-env.d.ts"), "utf8");
     expect(content).toContain(
-      '"/parent/child": { search?: { parentFilter?: string; childFilter?: string } }'
+      '"/parent/child": { search?: { parentFilter?: string; childFilter?: string }; searchInput?: { parentFilter?: string; childFilter?: string } }'
     );
   });
 
@@ -231,17 +247,17 @@ describe("writeRouteTypes", () => {
     writeRouteTypes(routes(["/blog/:slug"], undefined, undefined), tmpDir);
 
     const content = readFileSync(join(tmpDir, "furin-env.d.ts"), "utf8");
-    // The file literally contains: [key: `/blog/${string}`]: { search?: never }
-    expect(content).toContain("[key: `/blog/${string}`]: { search?: never }");
+    // The file literally contains: [key: `/blog/${string}`]: { search?: never; searchInput?: never }
+    expect(content).toContain("[key: `/blog/${string}`]: { search?: never; searchInput?: never }");
   });
 
   test("mixed static and dynamic routes", () => {
     writeRouteTypes(routes(["/", "/blog", "/blog/:slug"], undefined, undefined), tmpDir);
 
     const content = readFileSync(join(tmpDir, "furin-env.d.ts"), "utf8");
-    expect(content).toContain('"/": { search?: never }');
-    expect(content).toContain('"/blog": { search?: never }');
-    expect(content).toContain("[key: `/blog/${string}`]: { search?: never }");
+    expect(content).toContain('"/": { search?: never; searchInput?: never }');
+    expect(content).toContain('"/blog": { search?: never; searchInput?: never }');
+    expect(content).toContain("[key: `/blog/${string}`]: { search?: never; searchInput?: never }");
   });
 
   test("idempotent — calling twice with the same routes produces identical output", () => {

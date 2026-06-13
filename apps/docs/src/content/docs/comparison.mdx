@@ -188,7 +188,7 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 |---|---|---|---|
 | **Typed links (`href`)** | ❌ (strings) | ✅ (`to={"/about"}`) | ✅ (`to={"/about"}` with autocomplete) |
 | **Typed search params** | ❌ (manual) | ✅ (`validateSearch`) | ✅ (`query: t.Object(...)`) |
-| **Typed search read / update** | ❌ (manual `useSearchParams`) | ✅ (`useSearch`, `useSearchParams`) | ✅ (`useSearch("/products")`, `useSetSearch("/products")`) |
+| **Typed search read / update** | ❌ (manual `useSearchParams`) | ✅ (`useSearch`, `useSearchParams`) | ✅ (`const [search, setSearch] = useSearch("/products")`) |
 | **Typed route params** | ❌ (manual `params: Promise<{ id: string }>`) | ✅ (`params`) | ✅ (`params: t.Object(...)`) |
 | **Typed API routes** | ❌ (manual) | ⚠️ (TanStack Router types, no native E2E API inference) | ✅ (Elysia tRPC-like inference) |
 | **End-to-end type inference** | ❌ | ✅ (TanStack Query + Router) | ⚠️ (Router + client types, no Query equivalent) |

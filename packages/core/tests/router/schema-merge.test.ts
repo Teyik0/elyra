@@ -172,7 +172,7 @@ describe("collectRouteTags", () => {
   });
 });
 
-// ── Integration: HTTP redirect applies defaults from all ancestors ────────────
+// ── Integration: HTTP requests resolve defaults from all ancestors ────────────
 
 describe("schema merge — parent + child both declare query schemas", () => {
   test("routeChain contains query schemas from both parent and child _route.tsx", async () => {
@@ -187,7 +187,7 @@ describe("schema merge — parent + child both declare query schemas", () => {
     expect(chainEntries.length).toBe(2);
   });
 
-  test("query default redirect applies defaults from ALL ancestors, not just the leaf", async () => {
+  test("query defaults from all ancestors resolve without redirecting", async () => {
     const result = await scanPages(FIXTURES_DIR);
     const route = result.routes.find((r) => r.pattern === ROUTE_PATTERN);
 
@@ -197,18 +197,13 @@ describe("schema merge — parent + child both declare query schemas", () => {
 
     const app = new Elysia().use(createRoutePlugin(route, result.root));
 
-    // No query params → merged guard fills both defaults
-    // → queryDefaultRedirectHook detects applied defaults → 302 to canonical URL
     const res = await app.handle(new Request(`http://localhost${ROUTE_PATTERN}`));
 
-    expect(res.status).toBe(302);
-
-    const location = res.headers.get("location") ?? "";
-    expect(location).toContain("childFilter=child-default");
-    expect(location).toContain("parentFilter=parent-default");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
   });
 
-  test("no redirect when all merged defaults are already in the URL", async () => {
+  test("keeps serving when all merged defaults are already in the URL", async () => {
     const result = await scanPages(FIXTURES_DIR);
     const route = result.routes.find((r) => r.pattern === ROUTE_PATTERN);
 

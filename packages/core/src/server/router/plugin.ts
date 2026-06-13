@@ -2,6 +2,7 @@ import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import type { AnySchema } from "elysia/types";
 import { toCrossJSON, toCrossJSONAsync } from "seroval";
 import { computeErrorDigest } from "../../shared/digest.ts";
+import type { SearchRouteMetadata } from "../../shared/search-params.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { useLogger } from "../context-logger.ts";
 import { resolvePath } from "../render/assemble.ts";
@@ -18,11 +19,9 @@ import { handleDevRequest } from "./hmr.ts";
 import { buildRouteMatcher } from "./patterns.ts";
 import {
   applySchemaDefaults,
-  detectQueryDefaultRedirect,
   mergeRouteSchemas,
   parseDataEndpointPath,
   parseRouteQuery,
-  queryDefaultRedirectHook,
 } from "./schemas.ts";
 import type { ResolvedRoute, RootLayout } from "./types.ts";
 
@@ -64,14 +63,14 @@ async function handleSSGRequest(
 export function createRoutePlugin(
   route: ResolvedRoute,
   root: RootLayout,
-  buildId?: string
+  buildId?: string,
+  searchRoutes?: SearchRouteMetadata[]
 ): AnyElysia {
   const resolvedBuildId = buildId ?? "";
   const { pattern, routeChain } = route;
 
   const allParams = mergeRouteSchemas(routeChain, "params");
   const allQuery = mergeRouteSchemas(routeChain, "query");
-  const hasQuerySchema = !!allQuery;
 
   // Guard and handler MUST live in the same Elysia scope so that validation
   // (including default-filling) applies to the route handler's ctx.query.
@@ -85,14 +84,6 @@ export function createRoutePlugin(
   }
 
   plugin.get(pattern, (ctx) => {
-    // Redirect when Elysia applied query defaults (validator-agnostic)
-    if (hasQuerySchema) {
-      const redirect = queryDefaultRedirectHook(ctx);
-      if (redirect) {
-        return redirect;
-      }
-    }
-
     // Dev mode: re-imports page + layouts on every request via the
     // ?furin-server cache-buster, then dispatches into one of:
     //   - renderDevISRWithLoaderCache  (mode === "isr")
@@ -106,7 +97,7 @@ export function createRoutePlugin(
     // cache is invalidated source-aware via `isDevLoaderCacheValid`
     // (mtime-checked dependency walk on every read).
     if (IS_DEV) {
-      return handleDevRequest(route, ctx, root);
+      return handleDevRequest(route, ctx, root, searchRoutes);
     }
 
     if (route.mode === "ssg") {
@@ -118,7 +109,7 @@ export function createRoutePlugin(
       return handleISR(route, ctx, root, resolvedBuildId);
     }
 
-    return renderSSR(route, ctx, root, undefined);
+    return renderSSR(route, ctx, root, undefined, searchRoutes);
   });
 
   return plugin;
@@ -146,7 +137,6 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
 
   plugin.get(
     "/_furin/data",
-    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: data endpoint handler validates path, resolves loaders, handles deferred/SPA/ISR modes — each branch is a distinct protocol case; splitting would spread context across many functions
     async (ctx) => {
       const rawPath = ctx.query.path;
       if (!rawPath || typeof rawPath !== "string") {
@@ -202,8 +192,7 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
         // Synthetic `status` helper: numeric codes only. Callers that reach
         // this endpoint never dispatch a string-keyed status; rejecting them
         // is safer than coercing via `Number(code)` and silently producing
-        // `NaN`. Query-default redirects no longer flow through this helper —
-        // they are detected via `detectQueryDefaultRedirect` below.
+        // `NaN`.
         status: (code: number) => new Response(null, { status: code }),
       } as unknown as Context;
 
@@ -223,23 +212,6 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
         syntheticCtx.params as Record<string, unknown>
       ) as Record<string, string>;
       syntheticCtx.query = parsedQuery.query as Record<string, string>;
-
-      // Query-default redirect: detect via the pure helper so we can emit the
-      // NDJSON `__furinRedirect` sentinel (the SPA client cannot parse a real
-      // HTTP 302 — it never sees one because `parseDeferredNdjson` reads the
-      // body, not the redirect chain).
-      if (mergedQuery) {
-        const redirectLocation = detectQueryDefaultRedirect(
-          syntheticRequest,
-          syntheticCtx.query as Record<string, unknown>
-        );
-        if (redirectLocation) {
-          const serialized = await toCrossJSONAsync({ __furinRedirect: redirectLocation });
-          return new Response(`${JSON.stringify(serialized)}\n`, {
-            headers: { "content-type": "application/x-ndjson" },
-          });
-        }
-      }
 
       const result = await runLoaders(matched.route, syntheticCtx);
 

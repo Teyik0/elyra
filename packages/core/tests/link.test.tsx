@@ -28,6 +28,8 @@ import {
 } from "../src/client/link.tsx";
 import type { NotFoundComponent } from "../src/shared/not-found.ts";
 
+const PRODUCTS_RE = /^\/products$/;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function makeRouterContext(overrides: Partial<RouterContextValue> | undefined): RouterContextValue {
@@ -35,6 +37,7 @@ function makeRouterContext(overrides: Partial<RouterContextValue> | undefined): 
     basePath: "",
     currentHref: "/",
     search: {},
+    searchRoutes: [],
     navigate: () => Promise.resolve(),
     prefetch: () => {
       /* noop */
@@ -161,6 +164,18 @@ describe("buildHref", () => {
   test("object search value — serializes as JSON", () => {
     expect(buildHref("/search", { filter: { tag: "react" } }, undefined)).toBe(
       "/search?filter=%7B%22tag%22%3A%22react%22%7D"
+    );
+  });
+
+  test("default-equivalent search values are omitted when defaults are known", () => {
+    expect(buildHref("/products", { page: 1, q: "" }, undefined, { page: 1, q: "" })).toBe(
+      "/products"
+    );
+  });
+
+  test("non-default search values remain visible when defaults are known", () => {
+    expect(buildHref("/products", { page: 2, q: "" }, undefined, { page: 1, q: "" })).toBe(
+      "/products?page=2"
     );
   });
 });
@@ -290,6 +305,19 @@ describe("Link", () => {
       createElement(Link, { to: "/blog" as string, search: { page: 2 } }, "Next")
     );
     expect(html).toBe('<a href="/blog?page=2" data-furin-link="true">Next</a>');
+  });
+
+  test("search params equal to route defaults are omitted from the href", () => {
+    const ctx = makeRouterContext({
+      searchRoutes: [{ pattern: "/products", regex: PRODUCTS_RE, searchDefaults: { page: 1 } }],
+    } as Partial<RouterContextValue>);
+
+    const html = renderWithRouter(
+      createElement(Link, { to: "/products" as string, search: { page: 1 } }, "Products"),
+      ctx
+    );
+
+    expect(html).toBe('<a href="/products" data-furin-link="true">Products</a>');
   });
 
   test("hash is appended to the href", () => {

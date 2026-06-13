@@ -97,7 +97,7 @@ function PostActions() {
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `navigate(href, opts?)` | `(string, { replace?, resetScroll? }) => Promise<void>` | SPA navigation |
+| `navigate(href, opts?)` | `(string, { resetScroll? }) => Promise<void>` | SPA navigation |
 | `refresh(opts?)` | `({ resetScroll? }) => Promise<void>` | Re-fetch current page (cache bust + replaceState) |
 | `prefetch(href, opts?)` | `(string, { staleTime? }) => void` | Manual prefetch |
 | `invalidatePrefetch(path, type?)` | `(string, "page" \| "layout"?) => void` | Evict prefetch cache entries |
@@ -110,9 +110,6 @@ function PostActions() {
 ```tsx
 // Push new history entry
 router.navigate("/blog/my-post");
-
-// Replace current entry
-router.navigate("/blog/my-post", { replace: true });
 
 // Navigate without scrolling
 router.navigate("/tabs/settings", { resetScroll: false });
@@ -131,23 +128,20 @@ Prefer `refresh()` over `router.navigate(window.location.pathname)` after a muta
 
 ---
 
-## `useSearch` and `useSetSearch`
+## `useSearch`
 
 Read and update the current route's query params with full type safety.
 
 ```tsx
-import { useSearch, useSetSearch } from "@teyik0/furin/search";
+import { useSearch } from "@teyik0/furin/search";
 
 function ProductList() {
-  const search = useSearch("/products");
-  const setSearch = useSetSearch("/products");
+  const [search, setSearch] = useSearch("/products");
 
   return (
     <div>
       <p>Page {search.page}</p>
-      <button
-        onClick={() => setSearch({ page: search.page + 1 }, { replace: true })}
-      >
+      <button onClick={() => setSearch({ page: search.page + 1 })}>
         Next page
       </button>
     </div>
@@ -157,31 +151,44 @@ function ProductList() {
 
 ### `useSearch(to)`
 
-Returns the server-resolved query object for the current route. The type is inferred from the `query` schema declared on the route chain (`createRoute({ query })` in layout or page `_route.tsx` files).
+Returns a tuple with the server-resolved query object and a setter. The type is inferred from the `query` schema declared on the route chain (`createRoute({ query })` in layout or page `_route.tsx` files).
 
 ```tsx
 // Route declares: query: t.Object({ page: t.Optional(t.Number({ default: 1 })), tag: t.Optional(t.String()) })
-const search = useSearch("/products");
+const [search, setSearch] = useSearch("/products");
 // search: { page: number; tag?: string }
 ```
 
-### `useSetSearch(to)`
+### Updating search
 
-Returns a function that patches the current search and navigates to the updated URL. The patch is shallow-merged with the existing query params.
+The setter shallow-merges patches with the current query params and navigates to the updated URL.
 
 ```tsx
-const setSearch = useSetSearch("/products");
+const [search, setSearch] = useSearch("/products");
 
 // Partial patch — keeps existing params
-setSearch({ page: 2 }, { replace: true });
+setSearch({ page: 2 });
 
 // Functional update — receives current resolved search
-setSearch((prev) => ({ page: prev.page + 1 }), { replace: false });
+setSearch((prev) => ({ page: prev.page + 1 }));
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `replace` | `boolean` | `false` | Use `history.replaceState` instead of `pushState`. |
+Defaults declared in the query schema are resolved in `search` but omitted from generated URLs. If `page` defaults to `1`, `setSearch({ page: 1 })` navigates to `/products`; `setSearch({ page: 2 })` navigates to `/products?page=2`.
+
+### `useNavigate()`
+
+Use typed navigation when the destination route is not represented by a rendered link.
+
+```tsx
+import { useNavigate } from "@teyik0/furin/link";
+
+const navigate = useNavigate();
+
+navigate({
+  to: "/products",
+  search: { page: 2 },
+});
+```
 
 ### Query schema merging across the route chain
 

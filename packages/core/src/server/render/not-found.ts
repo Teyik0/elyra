@@ -44,6 +44,7 @@ export async function renderRootNotFound(
     basePath: "",
     currentHref: request ? normalizeHref(new URL(request.url).pathname) : "/",
     search: {},
+    searchRoutes: [],
     navigate: (_href, _opts) => Promise.resolve(),
     prefetch: (_href, _opts) => {
       /* noop */

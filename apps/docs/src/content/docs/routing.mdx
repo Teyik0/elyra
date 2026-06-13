@@ -100,7 +100,7 @@ export const route = createRoute({
 
 ## Typed Navigation
 
-Furin generates `furin-env.d.ts` so `<Link />`, `useSearch`, and `useSetSearch` are fully typed from the route manifest.
+Furin generates `furin-env.d.ts` so `<Link />` and `useSearch` are fully typed from the route manifest.
 
 ```tsx
 import { Link } from "@teyik0/furin/link"
@@ -114,14 +114,15 @@ When a route declares a `query` schema, `search` is typed from that schema.
 <Link to="/search" search={{ page: 2 }} />
 ```
 
-The same types drive `useSearch` and `useSetSearch` from `@teyik0/furin/search`:
+The same types drive `useSearch` from `@teyik0/furin/search`:
 
 ```tsx
-import { useSearch, useSetSearch } from "@teyik0/furin/search";
+import { useSearch } from "@teyik0/furin/search";
 
-const search = useSearch("/products");
-const setSearch = useSetSearch("/products");
+const [search, setSearch] = useSearch("/products");
 ```
+
+Query defaults declared in the schema are available in `search`, but Furin omits them from generated URLs. `setSearch({ page: 1 })` navigates to `/products` when `page` defaults to `1`; `setSearch({ page: 2 })` navigates to `/products?page=2`.
 
 Make sure `furin-env.d.ts` is included in your app `tsconfig.json`:
 

@@ -64,6 +64,25 @@ describe("generateHydrateEntry", () => {
     expect(code).toContain('basePath: ""');
   });
 
+  test("emits query defaults into client route metadata", () => {
+    const route = {
+      ...makeRoute("/products", "/app/src/pages/products.tsx"),
+      routeChain: [
+        {
+          __type: "FURIN_ROUTE" as const,
+          query: {
+            type: "object",
+            properties: { page: { type: "number", default: 1 } },
+          },
+        },
+      ],
+    } as ResolvedRoute;
+
+    const code = generateHydrateEntry([route], ROOT, "", false);
+
+    expect(code).toContain('searchDefaults: {"page":1}');
+  });
+
   test("clientLogging off (default) — omits evlog from the client entry", () => {
     const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     expect(code).not.toContain('from "evlog"');
@@ -141,7 +160,7 @@ describe("generateHydrateEntry", () => {
     expect(code).toContain("startsWith(b)");
   });
 
-  test("client bundle keeps a single RouterContext when a page imports Link", () => {
+  test("client bundle keeps shared router contexts when a page imports Link", () => {
     const tmpRoot = mkdtempSync(join(import.meta.dir, ".tmp-hydrate-entry-"));
     const outDir = join(tmpRoot, "out");
     mkdirSync(outDir, { recursive: true });
@@ -209,7 +228,9 @@ describe("generateHydrateEntry", () => {
       }
       const bundleText = chunks.join("\n");
 
-      expect((bundleText.match(/createContext\(null\)/g) ?? []).length).toBe(1);
+      // RouterContext + SearchStoreContext. If the page-level Link import pulled
+      // in a second copy of Furin's router module, both contexts would duplicate.
+      expect((bundleText.match(/createContext\(null\)/g) ?? []).length).toBe(2);
     } finally {
       rmSync(tmpRoot, { force: true, recursive: true });
     }

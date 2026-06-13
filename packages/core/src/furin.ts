@@ -19,7 +19,12 @@ import {
   setProductionTemplateContent,
   setProductionTemplatePath,
 } from "./server/render/template.ts";
-import { createDataEndpoint, createRoutePlugin, loadProdRoutes } from "./server/router/index.ts";
+import {
+  createDataEndpoint,
+  createRoutePlugin,
+  createSearchRouteMetadata,
+  loadProdRoutes,
+} from "./server/router/index.ts";
 import { IS_DEV } from "./server/runtime-env.ts";
 
 // biome-ignore lint/suspicious/noEmptyInterface: intentionally augmentable via furin-env.d.ts
@@ -272,6 +277,7 @@ export async function furin({
 
     const { scanPages } = await import("./server/router/index.ts");
     const { root, routes } = await scanPages(resolvedPagesDir);
+    const searchRoutes = createSearchRouteMetadata(routes);
 
     const { writeDevFiles } = await import("./build/hydrate.ts");
     writeDevFiles(
@@ -317,7 +323,7 @@ export async function furin({
       .use(createDataEndpoint(routes))
       .use((app) => {
         for (const route of routes) {
-          app.use(createRoutePlugin(route, root));
+          app.use(createRoutePlugin(route, root, undefined, searchRoutes));
         }
         return app;
       });
@@ -329,6 +335,7 @@ export async function furin({
     throw new Error("[furin] No pre-built assets found. Run `bunx furin build` first.");
   }
   const { root, routes } = loadProdRoutes(ctx);
+  const searchRoutes = createSearchRouteMetadata(routes);
   const prodBuildId = ctx.buildId ?? "";
   setBuildId(prodBuildId);
   hydrateSSGCacheFromCompileContext(ctx);
@@ -408,7 +415,7 @@ export async function furin({
     .use(createDataEndpoint(routes))
     .use((app) => {
       for (const route of routes) {
-        app.use(createRoutePlugin(route, root, prodBuildId));
+        app.use(createRoutePlugin(route, root, prodBuildId, searchRoutes));
       }
       return app;
     });
