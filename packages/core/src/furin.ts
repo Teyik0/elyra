@@ -373,7 +373,7 @@ export async function furin({
         return;
       }
       const origin = server?.url?.origin ?? "http://localhost:3000";
-      await warmSSGCache(routes, root, origin);
+      await warmSSGCache(routes, root, origin, searchRoutes);
     })
     .use(
       await (async () => {

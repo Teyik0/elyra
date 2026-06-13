@@ -1,6 +1,7 @@
 import type { Context } from "elysia";
 import { renderToReadableStream } from "react-dom/server";
 import { isNotFoundError } from "../../shared/not-found.ts";
+import type { SearchRouteMetadata } from "../../shared/search-params.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { deleteISRCache, getISRCache, setISRCache } from "../cache/isr.ts";
 import type { ISRCacheEntry } from "../cache/isr-ssg.ts";
@@ -42,12 +43,13 @@ function serveISRCacheHit(
   cacheKey: string,
   revalidate: number,
   root: RootLayout,
-  buildId: string | undefined
+  buildId: string | undefined,
+  searchRoutes?: SearchRouteMetadata[]
 ): string | undefined {
   const isFresh = Date.now() - cached.generatedAt < revalidate * 1000;
 
   if (!isFresh) {
-    revalidateInBackground(route, params, cacheKey, revalidate, root, ctx);
+    revalidateInBackground(route, params, cacheKey, revalidate, root, ctx, searchRoutes);
   }
 
   const etag = isrEtag(buildId, cached.generatedAt);
@@ -154,7 +156,8 @@ export async function handleISR(
   route: ResolvedRoute,
   ctx: Context,
   root: RootLayout,
-  buildId: string | undefined
+  buildId: string | undefined,
+  searchRoutes?: SearchRouteMetadata[]
 ) {
   const revalidate = route.page._route.revalidate ?? 60;
   const params = ctx.params ?? {};
@@ -162,11 +165,21 @@ export async function handleISR(
 
   const cached = getISRCache(cacheKey);
   if (cached) {
-    return serveISRCacheHit(cached, ctx, route, params, cacheKey, revalidate, root, buildId);
+    return serveISRCacheHit(
+      cached,
+      ctx,
+      route,
+      params,
+      cacheKey,
+      revalidate,
+      root,
+      buildId,
+      searchRoutes
+    );
   }
 
   const renderStart = Date.now();
-  const prepared = await prepareRender(route, ctx, root, undefined, false, undefined);
+  const prepared = await prepareRender(route, ctx, root, undefined, false, undefined, searchRoutes);
 
   if (prepared instanceof Response) {
     return prepared;
@@ -219,7 +232,8 @@ function revalidateInBackground(
   cacheKey: string,
   revalidate: number,
   root: RootLayout,
-  originalCtx: LoaderContext
+  originalCtx: LoaderContext,
+  searchRoutes?: SearchRouteMetadata[]
 ) {
   if (pendingRevalidations.has(cacheKey)) {
     const logger = createLogger({});
@@ -236,7 +250,15 @@ function revalidateInBackground(
   }
   pendingRevalidations.add(cacheKey);
 
-  renderForPath(route, params, root, new URL(originalCtx.request.url).origin, "isr", undefined)
+  renderForPath(
+    route,
+    params,
+    root,
+    new URL(originalCtx.request.url).origin,
+    "isr",
+    undefined,
+    searchRoutes
+  )
     .then((result) => {
       if (result instanceof Response) {
         return;

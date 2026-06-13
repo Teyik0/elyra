@@ -1,6 +1,9 @@
 import type React from "react";
 import { createElement, useCallback, useEffect, useRef } from "react";
-import { findSearchDefaults, type SearchParamsInput } from "../shared/search-params.ts";
+import {
+  findSearchDefaultsForRouteTarget,
+  type SearchParamsInput,
+} from "../shared/search-params.ts";
 import {
   buildHref,
   CLIENT_FALLBACK_ROUTER,
@@ -25,18 +28,6 @@ interface LinkView {
   resolvedChildren: React.ReactNode;
 }
 
-function findSearchDefaultsForTo(
-  to: string,
-  router: RouterContextValue
-): SearchParamsInput | undefined {
-  try {
-    const pathname = new URL(to, "http://furin.local").pathname;
-    return findSearchDefaults(pathname, router.searchRoutes ?? []);
-  } catch {
-    return;
-  }
-}
-
 /**
  * Shared href/active-state/props computation used by both LinkInteractive (CSR)
  * and renderLinkElement (SSR). Centralising this keeps the two render paths in sync.
@@ -52,7 +43,7 @@ function computeLinkView<To extends RouteTo>(
   }: Pick<LinkProps<To>, "to" | "search" | "hash" | "children" | "activeProps" | "inactiveProps">,
   router: RouterContextValue
 ): LinkView {
-  const searchDefaults = findSearchDefaultsForTo(to as string, router);
+  const searchDefaults = findSearchDefaultsForRouteTarget(to as string, router.searchRoutes);
   const logicalHref = buildHref(
     to as string,
     search as SearchParamsInput | null | undefined,

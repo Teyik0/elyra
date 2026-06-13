@@ -97,7 +97,7 @@ function PostActions() {
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `navigate(href, opts?)` | `(string, { resetScroll? }) => Promise<void>` | SPA navigation |
+| `navigate(href, opts?)` | `(string, { replace?, resetScroll? }) => Promise<void>` | SPA navigation |
 | `refresh(opts?)` | `({ resetScroll? }) => Promise<void>` | Re-fetch current page (cache bust + replaceState) |
 | `prefetch(href, opts?)` | `(string, { staleTime? }) => void` | Manual prefetch |
 | `invalidatePrefetch(path, type?)` | `(string, "page" \| "layout"?) => void` | Evict prefetch cache entries |
@@ -113,6 +113,9 @@ router.navigate("/blog/my-post");
 
 // Navigate without scrolling
 router.navigate("/tabs/settings", { resetScroll: false });
+
+// Replace the current history entry
+router.navigate("/search?q=react", { replace: true });
 ```
 
 ### `refresh()`

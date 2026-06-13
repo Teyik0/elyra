@@ -3,7 +3,11 @@ import { parseQueryFromURL, parseQueryStandardSchema } from "elysia/parse-query"
 import { getSchemaValidator } from "elysia/schema";
 import type { AnySchema } from "elysia/types";
 import type { RuntimeRoute } from "../../client.ts";
-import { collectSearchDefaults, type SearchRouteMetadata } from "../../shared/search-params.ts";
+import {
+  collectSearchDefaults,
+  type SearchParamsInput,
+  type SearchRouteMetadata,
+} from "../../shared/search-params.ts";
 import { buildRouteRegex } from "./patterns.ts";
 
 interface UnknownObject {
@@ -122,7 +126,7 @@ function parseJsonQueryObjects(
 }
 
 export type ParseRouteQueryResult =
-  | { ok: true; query: UnknownObject }
+  | { ok: true; query: SearchParamsInput }
   | { errors: unknown; ok: false };
 
 /**
@@ -137,7 +141,7 @@ export async function parseRouteQuery(
   schema: AnySchema | undefined
 ): Promise<ParseRouteQueryResult> {
   if (!schema) {
-    return { ok: true, query: parseQueryStandardSchema(url.search, 1) as UnknownObject };
+    return { ok: true, query: parseQueryFromURL(url.search, 1) as SearchParamsInput };
   }
 
   if (isStandardSchema(schema)) {
@@ -148,9 +152,9 @@ export async function parseRouteQuery(
       return { errors: checked.issues, ok: false };
     }
     if (checked && typeof checked === "object" && "value" in checked) {
-      return { ok: true, query: checked.value as UnknownObject };
+      return { ok: true, query: checked.value as SearchParamsInput };
     }
-    return { ok: true, query: rawQuery };
+    return { ok: true, query: rawQuery as SearchParamsInput };
   }
 
   const rawQuery = parseJsonQueryObjects(
@@ -165,7 +169,7 @@ export async function parseRouteQuery(
 
   return {
     ok: true,
-    query: (validator?.parse(queryWithDefaults) ?? queryWithDefaults) as UnknownObject,
+    query: (validator?.parse(queryWithDefaults) ?? queryWithDefaults) as SearchParamsInput,
   };
 }
 

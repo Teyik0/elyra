@@ -1,6 +1,9 @@
 import type { RouteManifest as LinkRouteManifest, RouteSearch, RouteTo } from "@teyik0/furin/link";
 import { useCallback, useContext, useRef, useSyncExternalStore } from "react";
-import { findSearchDefaults, type SearchParamsInput } from "../../../shared/search-params.ts";
+import {
+  findSearchDefaultsForRouteTarget,
+  type SearchParamsInput,
+} from "../../../shared/search-params.ts";
 import { buildHref } from "../link-utils.ts";
 import { FALLBACK_SEARCH_STORE, SearchStoreContext } from "../search-store.ts";
 
@@ -29,7 +32,15 @@ export type SetSearchInput<To extends SearchRouteTo> =
   | Partial<ResolvedRouteSearch<To>>
   | ((prev: ResolvedRouteSearch<To>) => Partial<ResolvedRouteSearch<To>>);
 
-export type SetSearch<To extends SearchRouteTo> = (next: SetSearchInput<To>) => Promise<void>;
+export interface SetSearchOptions {
+  replace?: boolean;
+  resetScroll?: boolean;
+}
+
+export type SetSearch<To extends SearchRouteTo> = (
+  next: SetSearchInput<To>,
+  opts?: SetSearchOptions
+) => Promise<void>;
 
 function pathnameFromLogicalHref(logicalHref: string): string {
   return new URL(logicalHref, "http://furin.local").pathname;
@@ -71,15 +82,15 @@ export function useSearch<To extends SearchRouteTo, TSelected>(
   );
 
   const setSearch = useCallback<SetSearch<To>>(
-    (next) => {
+    (next, opts) => {
       const snapshot = store.getSnapshot();
       const search = snapshot.search as ResolvedRouteSearch<To>;
       const patch = typeof next === "function" ? next(search) : next;
       const merged = { ...search, ...patch } as SearchParamsInput;
       const pathname = pathnameFromLogicalHref(snapshot.currentHref);
-      const searchDefaults = findSearchDefaults(pathname, snapshot.searchRoutes);
+      const searchDefaults = findSearchDefaultsForRouteTarget(pathname, snapshot.searchRoutes);
       const href = buildHref(pathname, merged, undefined, searchDefaults);
-      return snapshot.navigate(href, undefined);
+      return snapshot.navigate(href, opts);
     },
     [store]
   );

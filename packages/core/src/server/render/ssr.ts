@@ -332,7 +332,8 @@ export function renderForPath(
   root: RootLayout,
   origin: string,
   mode: "ssg" | "isr",
-  basePath: string | undefined
+  basePath?: string,
+  searchRoutes?: SearchRouteMetadata[]
 ): Promise<RenderResult | Response> {
   return runInSyntheticRenderScope(
     async () => {
@@ -349,7 +350,15 @@ export function renderForPath(
         path: resolvedPath,
       } as Context;
 
-      const prepared = await prepareRender(route, ctx, root, basePath, true, undefined);
+      const prepared = await prepareRender(
+        route,
+        ctx,
+        root,
+        basePath,
+        true,
+        undefined,
+        searchRoutes
+      );
       if (prepared instanceof Response) {
         return prepared;
       }

@@ -1,3 +1,4 @@
+import type { SearchRouteMetadata } from "../../shared/search-params.ts";
 import { mapWithConcurrency } from "../../shared/utils/index.ts";
 import type { SsgCacheEntry } from "../cache/isr-ssg.ts";
 import { getSSGCache, setSSGCache } from "../cache/ssg.ts";
@@ -11,7 +12,8 @@ export async function prerenderSSG(
   params: Record<string, string>,
   root: RootLayout,
   origin: string,
-  basePath: string | undefined
+  basePath?: string,
+  searchRoutes?: SearchRouteMetadata[]
 ): Promise<SsgCacheEntry | Response> {
   const resolvedPath = resolvePath(route.pattern, params);
 
@@ -25,7 +27,15 @@ export async function prerenderSSG(
     return taggedEntry;
   }
 
-  const renderResult = await renderForPath(route, params, root, origin, "ssg", basePath);
+  const renderResult = await renderForPath(
+    route,
+    params,
+    root,
+    origin,
+    "ssg",
+    basePath,
+    searchRoutes
+  );
   if (renderResult instanceof Response) {
     return renderResult;
   }
@@ -65,7 +75,8 @@ const SSG_WARM_CONCURRENCY = 4;
 export async function warmSSGCache(
   routes: ResolvedRoute[],
   root: RootLayout,
-  origin: string
+  origin: string,
+  searchRoutes?: SearchRouteMetadata[]
 ): Promise<void> {
   const targets = routes.filter((r) => r.mode === "ssg" && r.page.staticParams);
   const warmupLogger = createLogger({});
@@ -115,7 +126,7 @@ export async function warmSSGCache(
     for (const params of paramSets) {
       tasks.push(async () => {
         try {
-          await prerenderSSG(route, params, root, origin, undefined);
+          await prerenderSSG(route, params, root, origin, undefined, searchRoutes);
         } catch (err) {
           logSsgError({ render: "ssg", action: "prerender_failed", route: route.pattern }, err);
         }
