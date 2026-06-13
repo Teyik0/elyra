@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.0-alpha.2] — 2026-06-13
+
 ### Added
 - **`useSearch` and `useSetSearch`** — new hooks exported from `@teyik0/furin/search` for reading and mutating URL query params with full type safety. `useSearch("/products")` returns the server-resolved query object for the current route. `useSetSearch("/products")` patches the current search and navigates to the updated URL (push or replace). Both are typed from the generated `furin-env.d.ts` route manifest.
 - **Route-chain query schema merging** — when a route chain contains multiple `query` schemas (e.g. a layout `_route.tsx` with `query: t.Object({ sort: t.String() })` and a page with `query: t.Object({ page: t.Number() })`), the generated `furin-env.d.ts` merges them into a single `{ sort?: string; page?: number }` search type for that route. `mergeRouteSchemas` now validates that all chained schemas are TypeBox objects (throws a clear error if a non-TypeBox schema is mixed in the chain).
