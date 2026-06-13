@@ -309,7 +309,7 @@ export async function buildStaticTarget(
 
   // ── 1. Validate SSR/ISR routes before doing any work ─────────────────────
   const ssgRoutes = collectSsgRoutes(routes, onSSR, skippedRoutes);
-  const searchRoutes = createSearchRouteMetadata(routes);
+  const searchRoutes = createSearchRouteMetadata(ssgRoutes);
 
   // ── 2. Clean & create output directories ─────────────────────────────────
   rmSync(outDir, { force: true, recursive: true });

@@ -409,9 +409,10 @@ export async function serializeLoaderDataNdjson(
 export async function renderToHTML(
   route: ResolvedRoute,
   ctx: Context,
-  root: RootLayout
+  root: RootLayout,
+  searchRoutes?: SearchRouteMetadata[]
 ): Promise<RenderResult> {
-  const prepared = await prepareRender(route, ctx, root, undefined, false, undefined);
+  const prepared = await prepareRender(route, ctx, root, undefined, false, undefined, searchRoutes);
 
   if (prepared instanceof Response) {
     throw prepared;
