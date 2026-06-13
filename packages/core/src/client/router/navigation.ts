@@ -19,6 +19,9 @@ export type Navigate = <To extends RouteTo>(next: NavigateInput<To>) => Promise<
 type NavigateOptions = Parameters<ReturnType<typeof useRouter>["navigate"]>[1];
 
 function isExternalAbsoluteHref(href: string): boolean {
+  if (href.startsWith("//")) {
+    return true;
+  }
   if (!(href.startsWith("http://") || href.startsWith("https://"))) {
     return false;
   }
