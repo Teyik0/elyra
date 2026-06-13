@@ -185,6 +185,32 @@ describe("useNavigate", () => {
       rendered.cleanup();
     }
   });
+
+  test("passes replace and resetScroll options to router navigation", async () => {
+    const navigate = mock<RouterContextValue["navigate"]>(() => Promise.resolve());
+
+    function Page(): React.ReactElement {
+      const go = useNavigate();
+      useEffect(() => {
+        go({ to: "/products", replace: true, resetScroll: false });
+      }, [go]);
+      return createElement("output");
+    }
+
+    const rendered = renderWithRouter(createElement(Page), makeRouterContext({ navigate }));
+
+    try {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(navigate).toHaveBeenCalledWith("/products", {
+        replace: true,
+        resetScroll: false,
+      });
+    } finally {
+      rendered.cleanup();
+    }
+  });
 });
 
 describe("useSearch setter", () => {
@@ -213,6 +239,39 @@ describe("useSearch setter", () => {
         await Promise.resolve();
       });
       expect(navigate).toHaveBeenCalledWith("/products?page=2", undefined);
+    } finally {
+      rendered.cleanup();
+    }
+  });
+
+  test("can replace the current history entry", async () => {
+    const navigate = mock<RouterContextValue["navigate"]>(() => Promise.resolve());
+
+    function Page(): React.ReactElement {
+      const [, setSearch] = useSearch("/products");
+      useEffect(() => {
+        setSearch({ page: 2 }, { replace: true, resetScroll: false });
+      }, [setSearch]);
+      return createElement("output");
+    }
+
+    const rendered = renderWithRouter(
+      createElement(Page),
+      makeRouterContext({
+        currentHref: "/products?page=1",
+        navigate,
+        search: { page: 1 },
+      })
+    );
+
+    try {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(navigate).toHaveBeenCalledWith("/products?page=2", {
+        replace: true,
+        resetScroll: false,
+      });
     } finally {
       rendered.cleanup();
     }

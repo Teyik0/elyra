@@ -17,6 +17,37 @@ export interface SearchRouteMetadata {
   searchDefaults?: SearchParamsInput;
 }
 
+function routeSegmentSpecificity(segment: string): number {
+  if (segment === "*") {
+    return 1;
+  }
+  if (segment.startsWith(":")) {
+    return 2;
+  }
+  return 3;
+}
+
+function compareSearchRouteSpecificity(a: string, b: string): number {
+  const aSegments = a.split("/").filter((segment) => segment.length > 0);
+  const bSegments = b.split("/").filter((segment) => segment.length > 0);
+  const length = Math.max(aSegments.length, bSegments.length);
+  for (let i = 0; i < length; i++) {
+    const aSegment = aSegments[i];
+    const bSegment = bSegments[i];
+    if (aSegment === undefined) {
+      return -1;
+    }
+    if (bSegment === undefined) {
+      return 1;
+    }
+    const diff = routeSegmentSpecificity(aSegment) - routeSegmentSpecificity(bSegment);
+    if (diff !== 0) {
+      return diff;
+    }
+  }
+  return 0;
+}
+
 function isObject(value: unknown): value is { [key: string]: unknown } {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -123,6 +154,29 @@ export function findSearchDefaults(
   pathname: string,
   routes: readonly SearchRouteMetadata[]
 ): SearchParamsInput | undefined {
-  const match = routes.find((route) => route.regex.test(pathname));
+  let match: SearchRouteMetadata | undefined;
+  for (const route of routes) {
+    if (!route.regex.test(pathname)) {
+      continue;
+    }
+    if (!match || compareSearchRouteSpecificity(route.pattern, match.pattern) > 0) {
+      match = route;
+    }
+  }
   return match?.searchDefaults;
+}
+
+export function findSearchDefaultsForRouteTarget(
+  to: string,
+  routes: readonly SearchRouteMetadata[]
+): SearchParamsInput | undefined {
+  if (to.startsWith("http://") || to.startsWith("https://") || to.startsWith("//")) {
+    return;
+  }
+  try {
+    const pathname = new URL(to, "http://furin.local").pathname;
+    return findSearchDefaults(pathname, routes);
+  } catch {
+    return;
+  }
 }

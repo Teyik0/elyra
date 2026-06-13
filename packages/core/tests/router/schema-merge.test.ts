@@ -128,6 +128,21 @@ describe("mergeRouteSchemas", () => {
 });
 
 describe("parseRouteQuery", () => {
+  test("matches Elysia query parsing when no query schema exists", async () => {
+    const app = new Elysia().get("/products", ({ query }) => Response.json(query));
+    const response = await app.handle(
+      new Request("http://localhost/products?tag=react&tag=furin&active=true")
+    );
+    const elysiaQuery = await response.json();
+
+    const result = await parseRouteQuery(
+      new URL("http://localhost/products?tag=react&tag=furin&active=true"),
+      undefined
+    );
+
+    expect(result).toEqual({ ok: true, query: elysiaQuery });
+  });
+
   test("coerces anyOf array and object query schemas", async () => {
     const schema = t.Object({
       filter: t.Union([t.Object({ category: t.String() }), t.Null()]),

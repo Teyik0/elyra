@@ -2,7 +2,7 @@ import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import type { AnySchema } from "elysia/types";
 import { toCrossJSON, toCrossJSONAsync } from "seroval";
 import { computeErrorDigest } from "../../shared/digest.ts";
-import type { SearchRouteMetadata } from "../../shared/search-params.ts";
+import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { useLogger } from "../context-logger.ts";
 import { resolvePath } from "../render/assemble.ts";
@@ -25,15 +25,21 @@ import {
 } from "./schemas.ts";
 import type { ResolvedRoute, RootLayout } from "./types.ts";
 
+type SyntheticDataContext = Omit<Context, "params" | "query"> & {
+  params: Record<string, string>;
+  query: SearchParamsInput;
+};
+
 /** @internal Handles a production SSG route — sets ETags, Cache-Control, and Cache-Tag. */
 async function handleSSGRequest(
   route: ResolvedRoute,
   ctx: Context,
   root: RootLayout,
-  buildId: string
+  buildId: string,
+  searchRoutes: SearchRouteMetadata[] | undefined
 ): Promise<unknown> {
   const origin = new URL(ctx.request.url).origin;
-  const entry = await prerenderSSG(route, ctx.params, root, origin, undefined);
+  const entry = await prerenderSSG(route, ctx.params, root, origin, undefined, searchRoutes);
 
   // Loader issued a redirect — forward it directly to the client.
   if (entry instanceof Response) {
@@ -101,12 +107,12 @@ export function createRoutePlugin(
     }
 
     if (route.mode === "ssg") {
-      return handleSSGRequest(route, ctx, root, resolvedBuildId);
+      return handleSSGRequest(route, ctx, root, resolvedBuildId, searchRoutes);
     }
 
     if (route.mode === "isr") {
       ctx.set.headers["cache-tag"] = resolvePath(route.pattern, ctx.params ?? {});
-      return handleISR(route, ctx, root, resolvedBuildId);
+      return handleISR(route, ctx, root, resolvedBuildId, searchRoutes);
     }
 
     return renderSSR(route, ctx, root, undefined, searchRoutes);
@@ -176,7 +182,7 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       // foreign origin into `syntheticRequest.url`.
       const syntheticRequest = new Request(new URL(pathname + url.search, ctx.request.url));
       const syntheticSet = { headers: {} as Record<string, string>, status: 200 as number };
-      const syntheticCtx = {
+      const syntheticCtx: SyntheticDataContext = {
         request: syntheticRequest,
         params: matched.params,
         query: Object.fromEntries(url.searchParams),
@@ -194,7 +200,7 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
         // is safer than coercing via `Number(code)` and silently producing
         // `NaN`.
         status: (code: number) => new Response(null, { status: code }),
-      } as unknown as Context;
+      } as unknown as SyntheticDataContext;
 
       // Normalize params and query through the same merged schemas used by
       // createRoutePlugin so loaders see identical typed/defaulted inputs.
@@ -211,9 +217,9 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
         mergedParams as Record<string, unknown> | undefined,
         syntheticCtx.params as Record<string, unknown>
       ) as Record<string, string>;
-      syntheticCtx.query = parsedQuery.query as Record<string, string>;
+      syntheticCtx.query = parsedQuery.query as SearchParamsInput;
 
-      const result = await runLoaders(matched.route, syntheticCtx);
+      const result = await runLoaders(matched.route, syntheticCtx as unknown as Context);
 
       // Keep the auto-invalidate registry in sync with whatever path was just
       // served, so subsequent `revalidateTag(...)` calls (e.g. from a mutation

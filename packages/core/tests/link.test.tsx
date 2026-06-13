@@ -27,8 +27,11 @@ import {
   shouldRefetch,
 } from "../src/client/link.tsx";
 import type { NotFoundComponent } from "../src/shared/not-found.ts";
+import { findSearchDefaults } from "../src/shared/search-params.ts";
 
 const PRODUCTS_RE = /^\/products$/;
+const PRODUCT_DETAIL_RE = /^\/products\/([^/]+)$/;
+const PRODUCT_NEW_RE = /^\/products\/new$/;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -180,6 +183,21 @@ describe("buildHref", () => {
   });
 });
 
+describe("findSearchDefaults", () => {
+  test("uses the most specific matching route", () => {
+    expect(
+      findSearchDefaults("/products/new", [
+        { pattern: "/products/:id", regex: PRODUCT_DETAIL_RE, searchDefaults: { tab: "id" } },
+        {
+          pattern: "/products/new",
+          regex: PRODUCT_NEW_RE,
+          searchDefaults: { tab: "new" },
+        },
+      ])
+    ).toEqual({ tab: "new" });
+  });
+});
+
 // ── buildPageElement ──────────────────────────────────────────────────────────
 
 describe("buildPageElement", () => {
@@ -318,6 +336,25 @@ describe("Link", () => {
     );
 
     expect(html).toBe('<a href="/products" data-furin-link="true">Products</a>');
+  });
+
+  test("external href search params are not stripped by internal route defaults", () => {
+    const ctx = makeRouterContext({
+      searchRoutes: [{ pattern: "/products", regex: PRODUCTS_RE, searchDefaults: { page: 1 } }],
+    } as Partial<RouterContextValue>);
+
+    const html = renderWithRouter(
+      createElement(
+        Link,
+        { to: "https://example.com/products" as string, search: { page: 1 } },
+        "Products"
+      ),
+      ctx
+    );
+
+    expect(html).toBe(
+      '<a href="https://example.com/products?page=1" data-furin-link="true">Products</a>'
+    );
   });
 
   test("hash is appended to the href", () => {

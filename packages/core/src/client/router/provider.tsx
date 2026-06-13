@@ -473,17 +473,20 @@ export function RouterProvider({
     });
   }
   const searchStore = searchStoreRef.current;
-
-  searchStore.setSnapshot({
-    currentHref,
-    navigate,
-    search: resolvedSearch,
-    searchRoutes: routes,
-  });
+  const searchSnapshot = useMemo(
+    () => ({
+      currentHref,
+      navigate,
+      search: resolvedSearch,
+      searchRoutes: routes,
+    }),
+    [currentHref, navigate, resolvedSearch, routes]
+  );
 
   useLayoutEffect(() => {
+    searchStore.setSnapshot(searchSnapshot);
     searchStore.flush();
-  });
+  }, [searchStore, searchSnapshot]);
 
   const refresh = useCallback(
     async (opts: { resetScroll?: boolean } | undefined) => {

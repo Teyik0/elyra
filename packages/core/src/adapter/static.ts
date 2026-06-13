@@ -8,7 +8,12 @@ import { resolvePath } from "../server/render/assemble.ts";
 import { prerenderSSG } from "../server/render/index.ts";
 import { generateProdIndexHtml } from "../server/render/shell.ts";
 import { setProductionTemplateContent } from "../server/render/template.ts";
-import type { ResolvedRoute, RootLayout } from "../server/router/index.ts";
+import {
+  createSearchRouteMetadata,
+  type ResolvedRoute,
+  type RootLayout,
+} from "../server/router/index.ts";
+import type { SearchRouteMetadata } from "../shared/search-params.ts";
 import { mapWithConcurrency } from "../shared/utils/index.ts";
 
 /** Maximum concurrent pre-render calls (mirrors warmSSGCache). */
@@ -55,14 +60,22 @@ async function prerenderAndWrite(
   outDir: string,
   renderedRoutes: string[],
   skippedRoutes: string[],
-  basePath: string
+  basePath: string,
+  searchRoutes: SearchRouteMetadata[]
 ): Promise<void> {
   const urlPath = resolvePath(route.pattern, params);
   const htmlOutputFile = pathToOutputFile(urlPath, outDir, "index.html");
   const dataOutputFile = pathToOutputFile(urlPath, outDir, "__furin_data.ndjson");
 
   try {
-    const entry = await prerenderSSG(route, params, root, "http://localhost", basePath);
+    const entry = await prerenderSSG(
+      route,
+      params,
+      root,
+      "http://localhost",
+      basePath,
+      searchRoutes
+    );
 
     if (entry instanceof Response) {
       console.warn(
@@ -138,7 +151,8 @@ async function buildTaskQueue(
   outDir: string,
   renderedRoutes: string[],
   skippedRoutes: string[],
-  basePath: string
+  basePath: string,
+  searchRoutes: SearchRouteMetadata[]
 ): Promise<Array<() => Promise<void>>> {
   const tasks: Array<() => Promise<void>> = [];
 
@@ -200,7 +214,8 @@ async function buildTaskQueue(
           outDir,
           renderedRoutes,
           skippedRoutes,
-          basePath
+          basePath,
+          searchRoutes
         )
       );
     }
@@ -294,6 +309,7 @@ export async function buildStaticTarget(
 
   // ── 1. Validate SSR/ISR routes before doing any work ─────────────────────
   const ssgRoutes = collectSsgRoutes(routes, onSSR, skippedRoutes);
+  const searchRoutes = createSearchRouteMetadata(routes);
 
   // ── 2. Clean & create output directories ─────────────────────────────────
   rmSync(outDir, { force: true, recursive: true });
@@ -345,7 +361,8 @@ export async function buildStaticTarget(
     outDir,
     renderedRoutes,
     skippedRoutes,
-    basePath
+    basePath,
+    searchRoutes
   );
   // Snapshot after queue-building: routes skipped due to missing staticParams() are
   // already recorded; only routes added during task execution are prerender failures.
