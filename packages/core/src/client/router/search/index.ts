@@ -29,7 +29,9 @@ export function useSearch<To extends SearchRouteTo>(_from: To): ResolvedRouteSea
   return useRouter().search as ResolvedRouteSearch<To>;
 }
 
-export type SetSearchOptions = { replace: boolean } | undefined;
+export interface SetSearchOptions {
+  replace?: boolean;
+}
 
 export type SetSearchInput<To extends SearchRouteTo> =
   | Partial<ResolvedRouteSearch<To>>
@@ -41,11 +43,11 @@ function pathnameFromLogicalHref(logicalHref: string): string {
 
 export function useSetSearch<To extends SearchRouteTo>(
   _from: To
-): (next: SetSearchInput<To>, opts: SetSearchOptions) => Promise<void> {
+): (next: SetSearchInput<To>, opts?: SetSearchOptions) => Promise<void> {
   const router = useRouter();
 
   return useCallback(
-    (next: SetSearchInput<To>, opts: SetSearchOptions) => {
+    (next: SetSearchInput<To>, opts?: SetSearchOptions) => {
       const prev = router.search as ResolvedRouteSearch<To>;
       const patch = typeof next === "function" ? next(prev) : next;
       const merged = { ...prev, ...patch } as Record<string, unknown>;

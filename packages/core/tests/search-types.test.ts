@@ -33,6 +33,7 @@ describe("@teyik0/furin/search types", () => {
   test("types setSearch input from the route manifest", () => {
     type SetProductsSearch = ReturnType<typeof useSetSearch<"/products">>;
 
+    expectTypeOf<SetProductsSearch>().toBeCallableWith({ page: 2 });
     expectTypeOf<SetProductsSearch>().toBeCallableWith({ page: 2 }, undefined);
     expectTypeOf<SetProductsSearch>().toBeCallableWith((prev) => ({ page: prev.page + 1 }), {
       replace: true,

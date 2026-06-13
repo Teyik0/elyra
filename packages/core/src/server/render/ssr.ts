@@ -158,6 +158,12 @@ export function assertDeferredModeAllowed(
   }
 }
 
+function currentHrefFromContext(ctx: Context): string {
+  const pathUrl = new URL(ctx.path, "http://furin.local");
+  const requestUrl = new URL(ctx.request.url);
+  return normalizeHref(pathUrl.pathname) + (pathUrl.search || requestUrl.search);
+}
+
 /**
  * Builds the success-path element and head injection. `head()` is user code
  * that runs synchronously, outside the render pipeline's shell-error handling,
@@ -273,7 +279,7 @@ export async function prepareRender(
 
   const ssrContext: RouterContextValue = {
     basePath: basePath ?? "",
-    currentHref: normalizeHref(ctx.path),
+    currentHref: currentHrefFromContext(ctx),
     search: (ctx.query as Record<string, unknown> | undefined) ?? {},
     navigate: (_href, _opts) => Promise.resolve(),
     prefetch: (_href, _opts) => {

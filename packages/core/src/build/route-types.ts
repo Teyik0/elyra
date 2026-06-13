@@ -39,6 +39,8 @@ export function schemaToTypeString(schema: unknown): string {
       return "boolean";
     case "null":
       return "null";
+    case "array":
+      return `${schemaToTypeString(s.items)}[]`;
     case "object": {
       if (!s.properties || typeof s.properties !== "object") {
         return "Record<string, unknown>";
