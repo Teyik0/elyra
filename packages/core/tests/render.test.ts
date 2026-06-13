@@ -697,6 +697,35 @@ describe("render.tsx", () => {
       expect(html).toContain('aria-label="inactive-home"');
     });
 
+    test("Link active-state includes search params during SSR", async () => {
+      const root = await getRoot();
+      const ssrRoute = await getRoute("/ssr-page");
+
+      const routeWithSearchLink: ResolvedRoute = {
+        ...ssrRoute,
+        page: {
+          ...ssrRoute.page,
+          component: () =>
+            createElement(Link, {
+              to: "/ssr-page",
+              search: { page: 2 },
+              activeProps: ({ isActive }) => (isActive ? { "aria-label": "active-page" } : {}),
+              // biome-ignore lint/correctness/noChildrenProp: createElement accepts children as prop
+              children: "Page 2",
+            }),
+        },
+      };
+
+      const ctx = createMockLoaderContext({
+        path: "/ssr-page",
+        request: new Request("http://localhost/ssr-page?page=2"),
+      });
+      const response = await renderSSR(routeWithSearchLink, ctx, root, undefined);
+      const html = await response.text();
+
+      expect(html).toContain('aria-label="active-page"');
+    });
+
     test("sets correct headers (no-cache)", async () => {
       const ssrRoute = await getRoute("/ssr-page");
       const root = await getRoot();

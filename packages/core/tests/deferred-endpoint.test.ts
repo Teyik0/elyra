@@ -91,6 +91,73 @@ describe("GET /_furin/data", () => {
     expect(syncData.__furinRedirect).toBe("/query-default?city=Paris");
   });
 
+  test("passes schema-coerced query values to loaders during SPA navigation", async () => {
+    const { routes } = await scanPages(FIXTURES_DIR);
+    const app = new Elysia().use(createDataEndpoint(routes));
+
+    const res = await app.handle(
+      new Request(
+        "http://localhost/_furin/data?path=%2Fquery-types%3Fpage%3D2%26active%3Dtrue%26tags%3Dreact%26tags%3Dfurin"
+      )
+    );
+
+    expect(res.status).toBe(200);
+
+    const { syncData } = await parseDeferredNdjson(
+      res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      undefined
+    );
+
+    expect(syncData.query).toEqual({ active: true, page: 2, tags: ["react", "furin"] });
+    expect(syncData.queryFromLoader).toEqual({
+      active: true,
+      page: 2,
+      tags: ["react", "furin"],
+    });
+  });
+
+  test("passes JSON object query values to loaders during SPA navigation", async () => {
+    const { routes } = await scanPages(FIXTURES_DIR);
+    const app = new Elysia().use(createDataEndpoint(routes));
+
+    const res = await app.handle(
+      new Request(
+        `http://localhost/_furin/data?path=${encodeURIComponent(
+          '/query-types?page=2&active=true&filter={"category":"framework"}'
+        )}`
+      )
+    );
+
+    expect(res.status).toBe(200);
+
+    const { syncData } = await parseDeferredNdjson(
+      res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      undefined
+    );
+
+    expect(syncData.query).toMatchObject({
+      filter: { category: "framework" },
+    });
+    expect(syncData.queryFromLoader).toMatchObject({
+      filter: { category: "framework" },
+    });
+  });
+
+  test("rejects invalid schema query values before running loaders during SPA navigation", async () => {
+    const { routes } = await scanPages(FIXTURES_DIR);
+    const app = new Elysia().use(createDataEndpoint(routes));
+
+    const res = await app.handle(
+      new Request("http://localhost/_furin/data?path=%2Fquery-types%3Fpage%3Dnope%26active%3Dtrue")
+    );
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({
+      message: "Invalid query",
+      type: "validation",
+    });
+  });
+
   test("returns 404 if no route matches the path", async () => {
     const { routes } = await scanPages(FIXTURES_DIR);
     const app = new Elysia().use(createDataEndpoint(routes));

@@ -151,6 +151,18 @@ describe("buildHref", () => {
   test("boolean search value — stringified", () => {
     expect(buildHref("/search", { active: true }, undefined)).toBe("/search?active=true");
   });
+
+  test("array search value — appends one entry per item", () => {
+    expect(buildHref("/search", { tag: ["react", "furin"] }, undefined)).toBe(
+      "/search?tag=react&tag=furin"
+    );
+  });
+
+  test("object search value — serializes as JSON", () => {
+    expect(buildHref("/search", { filter: { tag: "react" } }, undefined)).toBe(
+      "/search?filter=%7B%22tag%22%3A%22react%22%7D"
+    );
+  });
 });
 
 // ── buildPageElement ──────────────────────────────────────────────────────────

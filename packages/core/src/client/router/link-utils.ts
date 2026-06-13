@@ -1,3 +1,4 @@
+import { buildSearchParams, type SearchParamsInput } from "../../shared/search-params.ts";
 import type { CacheEntry } from "./types.ts";
 
 const HASH_FRAGMENT_RE = /#.*$/;
@@ -12,17 +13,12 @@ export const TRAILING_SLASHES_RE = /\/+$/;
  */
 export function buildHref(
   to: string,
-  search: Record<string, unknown> | null | undefined,
+  search: SearchParamsInput | null | undefined,
   hash: string | undefined
 ): string {
   let url = to;
   if (search && Object.keys(search).length > 0) {
-    const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(search)) {
-      if (v != null) {
-        params.set(k, String(v));
-      }
-    }
+    const params = buildSearchParams(search);
     const qs = params.toString();
     if (qs) {
       url += `?${qs}`;

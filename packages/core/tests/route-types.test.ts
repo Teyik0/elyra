@@ -97,6 +97,15 @@ describe("schemaToTypeString", () => {
     expect(schemaToTypeString(schema)).toBe("{ id: string; page?: number }");
   });
 
+  test("array schema — emits array item type", () => {
+    const schema = {
+      type: "object",
+      properties: { tags: { type: "array", items: { type: "string" } } },
+      required: [],
+    };
+    expect(schemaToTypeString(schema)).toBe("{ tags?: string[] }");
+  });
+
   test("object schema — no required array (all optional)", () => {
     const schema = {
       type: "object",

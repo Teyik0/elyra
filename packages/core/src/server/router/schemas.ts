@@ -1,7 +1,18 @@
 import type { Context } from "elysia";
 import { t } from "elysia";
+import { parseQueryFromURL, parseQueryStandardSchema } from "elysia/parse-query";
+import { getSchemaValidator } from "elysia/schema";
 import type { AnySchema } from "elysia/types";
 import type { RuntimeRoute } from "../../client.ts";
+import { appendSearchParamValue } from "../../shared/search-params.ts";
+
+interface UnknownObject {
+  [key: string]: unknown;
+}
+
+interface QueryKeyMap {
+  [key: string]: 1;
+}
 
 // ── Query-default redirect ──────────────────────────────────────────────────
 // Validator-agnostic: after Elysia applies defaults (TypeBox, Zod, Valibot…),
@@ -23,7 +34,7 @@ import type { RuntimeRoute } from "../../client.ts";
  */
 export function detectQueryDefaultRedirect(
   request: Request,
-  resolvedQuery: Record<string, unknown>
+  resolvedQuery: UnknownObject
 ): string | undefined {
   const queryKeys = Object.keys(resolvedQuery);
   if (queryKeys.length === 0) {
@@ -44,9 +55,8 @@ export function detectQueryDefaultRedirect(
 
   const url = new URL(request.url);
   for (const [k, v] of Object.entries(resolvedQuery)) {
-    if (v != null) {
-      url.searchParams.set(k, String(v));
-    }
+    url.searchParams.delete(k);
+    appendSearchParamValue(url.searchParams, k, v);
   }
   return url.pathname + url.search;
 }
@@ -80,9 +90,118 @@ export function parseDataEndpointPath(rawPath: string): { url: URL; pathname: st
   return { url, pathname: url.pathname };
 }
 
+function isObjectSchema(schema: unknown): schema is UnknownObject {
+  return !!schema && typeof schema === "object";
+}
+
+function isStandardSchema(schema: unknown): boolean {
+  return isObjectSchema(schema) && "~standard" in schema;
+}
+
+function collectQueryArrayKeys(schema: unknown): QueryKeyMap | undefined {
+  if (!(isObjectSchema(schema) && isObjectSchema(schema.properties))) {
+    return;
+  }
+
+  const keys: QueryKeyMap = {};
+  for (const [key, value] of Object.entries(schema.properties)) {
+    if (isObjectSchema(value) && value.type === "array") {
+      keys[key] = 1;
+    }
+  }
+
+  return Object.keys(keys).length > 0 ? keys : undefined;
+}
+
+function collectQueryObjectKeys(schema: unknown): QueryKeyMap | undefined {
+  if (!(isObjectSchema(schema) && isObjectSchema(schema.properties))) {
+    return;
+  }
+
+  const keys: QueryKeyMap = {};
+  for (const [key, value] of Object.entries(schema.properties)) {
+    if (isObjectSchema(value) && value.type === "object") {
+      keys[key] = 1;
+    }
+  }
+
+  return Object.keys(keys).length > 0 ? keys : undefined;
+}
+
+function parseJsonQueryObjects(
+  query: UnknownObject,
+  objectKeys: QueryKeyMap | undefined
+): UnknownObject {
+  if (!objectKeys) {
+    return query;
+  }
+
+  const parsed = { ...query };
+  for (const key of Object.keys(objectKeys)) {
+    const value = parsed[key];
+    if (typeof value !== "string") {
+      continue;
+    }
+    try {
+      parsed[key] = JSON.parse(value);
+    } catch {
+      parsed[key] = value;
+    }
+  }
+  return parsed;
+}
+
+export type ParseRouteQueryResult =
+  | { ok: true; query: UnknownObject }
+  | { errors: unknown; ok: false };
+
+/**
+ * Parses and validates a logical route URL's search string for the synthetic
+ * `/_furin/data` request path. This keeps SPA navigations aligned with the
+ * Elysia guard used by the full SSR route.
+ *
+ * @internal Exported for unit testing.
+ */
+export async function parseRouteQuery(
+  url: URL,
+  schema: AnySchema | undefined
+): Promise<ParseRouteQueryResult> {
+  if (!schema) {
+    return { ok: true, query: parseQueryStandardSchema(url.search, 1) as UnknownObject };
+  }
+
+  if (isStandardSchema(schema)) {
+    const rawQuery = parseQueryStandardSchema(url.search, 1) as UnknownObject;
+    const validator = getSchemaValidator(schema, { dynamic: true });
+    const checked = await validator?.Check(rawQuery);
+    if (checked && typeof checked === "object" && "issues" in checked) {
+      return { errors: checked.issues, ok: false };
+    }
+    if (checked && typeof checked === "object" && "value" in checked) {
+      return { ok: true, query: checked.value as UnknownObject };
+    }
+    return { ok: true, query: rawQuery };
+  }
+
+  const rawQuery = parseJsonQueryObjects(
+    parseQueryFromURL(url.search, 1, collectQueryArrayKeys(schema)) as UnknownObject,
+    collectQueryObjectKeys(schema)
+  );
+  const queryWithDefaults = applySchemaDefaults(schema as UnknownObject, rawQuery);
+  const validator = getSchemaValidator(schema, { coerce: true, dynamic: true });
+  if (validator?.Check(queryWithDefaults) === false) {
+    return { errors: [...(validator?.Errors(queryWithDefaults) ?? [])], ok: false };
+  }
+
+  return {
+    ok: true,
+    query: (validator?.parse(queryWithDefaults) ?? queryWithDefaults) as UnknownObject,
+  };
+}
+
 /** @internal Exported for unit testing. */
 export function queryDefaultRedirectHook({ request, query, status, set }: Context) {
-  const location = detectQueryDefaultRedirect(request, query as Record<string, unknown>);
+  const location = detectQueryDefaultRedirect(request, query as UnknownObject);
   if (!location) {
     return;
   }
@@ -118,7 +237,7 @@ export function mergeRouteSchemas(
 
   if (schemas.some((s) => !s.properties || typeof s.properties !== "object")) {
     throw new Error(
-      "[furin] Merging query schemas across the route chain requires TypeBox in V1. Use TypeBox for parent/child query, or define query only on leaf routes."
+      `[furin] Merging ${key} schemas across the route chain requires TypeBox in V1. Use TypeBox for parent/child ${key}, or define ${key} only on leaf routes.`
     );
   }
 
@@ -143,18 +262,18 @@ export function mergeRouteSchemas(
  * defaulted query objects that the SSR path produces via Elysia's guard.
  */
 export function applySchemaDefaults(
-  schema: Record<string, unknown> | undefined,
-  values: Record<string, unknown>
-): Record<string, unknown> {
+  schema: UnknownObject | undefined,
+  values: UnknownObject
+): UnknownObject {
   if (!schema || typeof schema !== "object") {
     return values;
   }
-  const s = schema as Record<string, unknown>;
+  const s = schema;
   if (s.type !== "object" || !s.properties || typeof s.properties !== "object") {
     return values;
   }
   const result = { ...values };
-  const properties = s.properties as Record<string, Record<string, unknown>>;
+  const properties = s.properties as { [key: string]: UnknownObject };
   for (const [key, propSchema] of Object.entries(properties)) {
     if (
       !(key in result) &&

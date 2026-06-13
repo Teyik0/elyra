@@ -21,6 +21,7 @@ import {
   detectQueryDefaultRedirect,
   mergeRouteSchemas,
   parseDataEndpointPath,
+  parseRouteQuery,
   queryDefaultRedirectHook,
 } from "./schemas.ts";
 import type { ResolvedRoute, RootLayout } from "./types.ts";
@@ -210,14 +211,18 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       // createRoutePlugin so loaders see identical typed/defaulted inputs.
       const mergedParams = mergeRouteSchemas(matched.route.routeChain, "params");
       const mergedQuery = mergeRouteSchemas(matched.route.routeChain, "query");
+      const parsedQuery = await parseRouteQuery(url, mergedQuery);
+      if (!parsedQuery.ok) {
+        return Response.json(
+          { errors: parsedQuery.errors, message: "Invalid query", type: "validation" },
+          { status: 422 }
+        );
+      }
       syntheticCtx.params = applySchemaDefaults(
         mergedParams as Record<string, unknown> | undefined,
         syntheticCtx.params as Record<string, unknown>
       ) as Record<string, string>;
-      syntheticCtx.query = applySchemaDefaults(
-        mergedQuery as Record<string, unknown> | undefined,
-        syntheticCtx.query as Record<string, unknown>
-      ) as Record<string, string>;
+      syntheticCtx.query = parsedQuery.query as Record<string, string>;
 
       // Query-default redirect: detect via the pure helper so we can emit the
       // NDJSON `__furinRedirect` sentinel (the SPA client cannot parse a real
