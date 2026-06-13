@@ -2,6 +2,7 @@ import type React from "react";
 import type { RuntimeRoute } from "../../client.ts";
 import type { ErrorComponent } from "../../shared/error.ts";
 import type { NotFoundComponent } from "../../shared/not-found.ts";
+import type { SearchParamsInput } from "../../shared/search-params.ts";
 
 /**
  * Augment this interface via declaration merging in furin-env.d.ts
@@ -35,7 +36,7 @@ export type RouteTo = keyof RouteManifest extends never
  * Falls back to a permissive record when RouteManifest is not augmented.
  */
 export type RouteSearch<To extends RouteTo> = keyof RouteManifest extends never
-  ? Record<string, string | number | boolean | null | undefined>
+  ? SearchParamsInput
   : To extends keyof RouteManifest
     ? RouteManifest[To] extends { search?: infer S }
       ? S
@@ -116,7 +117,7 @@ export interface RouterContextValue {
    */
   refresh: (opts?: { resetScroll?: boolean }) => Promise<void>;
   /** Current server-resolved query params for the rendered route. */
-  search: Record<string, unknown>;
+  search: SearchParamsInput;
 }
 
 /**

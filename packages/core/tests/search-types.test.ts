@@ -5,16 +5,8 @@ import type { EmptyRouteSearch, useSearch, useSetSearch } from "@teyik0/furin/se
 import { expectTypeOf } from "expect-type";
 
 import "@teyik0/furin/link";
-import "@teyik0/furin/search";
 
 declare module "@teyik0/furin/link" {
-  interface RouteManifest {
-    "/": { search?: never };
-    "/products": { search?: { page: number; tag?: string } };
-  }
-}
-
-declare module "@teyik0/furin/search" {
   interface RouteManifest {
     "/": { search?: never };
     "/products": { search?: { page: number; tag?: string } };

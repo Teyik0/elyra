@@ -119,7 +119,7 @@ export default route.page({
 });
 ```
 
-> **Merging rules.** All query schemas in the chain must be TypeBox objects. Mixing a non-TypeBox schema (e.g. a plain Zod object) with a TypeBox parent or child throws a clear runtime error at build time.
+> **Merging rules.** All query schemas in the chain must be TypeBox objects. Mixing a non-TypeBox schema (e.g. a plain Zod object) with a TypeBox parent or child throws a clear error during the build process.
 
 ### Default values in generated types
 

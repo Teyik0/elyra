@@ -26,6 +26,7 @@ import {
   scanPages,
 } from "furin/server/router";
 import { __setDevMode, IS_DEV } from "furin/server/runtime-env";
+import { parseRouteQuery } from "../../src/server/router/schemas.ts";
 
 const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
 const ROUTE_PATTERN = "/schema-merge-parent/child";
@@ -106,6 +107,45 @@ describe("mergeRouteSchemas", () => {
     expect(() => mergeRouteSchemas(chain as RuntimeRoute[], "query")).toThrow(
       "[furin] Merging query schemas across the route chain requires TypeBox in V1. Use TypeBox for parent/child query, or define query only on leaf routes."
     );
+  });
+
+  test("throws when multi-route schemas include a plain JSON Schema object", () => {
+    const parent = t.Object({ parentField: t.Optional(t.String()) });
+    const child = {
+      type: "object",
+      properties: { childField: { type: "string" } },
+      required: ["childField"],
+    };
+    const chain = [
+      { __type: "FURIN_ROUTE" as const, query: parent },
+      { __type: "FURIN_ROUTE" as const, query: child },
+    ];
+
+    expect(() => mergeRouteSchemas(chain as RuntimeRoute[], "query")).toThrow(
+      "[furin] Merging query schemas across the route chain requires TypeBox in V1. Use TypeBox for parent/child query, or define query only on leaf routes."
+    );
+  });
+});
+
+describe("parseRouteQuery", () => {
+  test("coerces anyOf array and object query schemas", async () => {
+    const schema = t.Object({
+      filter: t.Union([t.Object({ category: t.String() }), t.Null()]),
+      tags: t.Union([t.Array(t.String()), t.Null()]),
+    });
+
+    const result = await parseRouteQuery(
+      new URL('http://localhost/products?tags=react&tags=furin&filter={"category":"framework"}'),
+      schema
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      query: {
+        filter: { category: "framework" },
+        tags: ["react", "furin"],
+      },
+    });
   });
 });
 

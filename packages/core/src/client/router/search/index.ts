@@ -1,19 +1,19 @@
+import type { RouteManifest as LinkRouteManifest, RouteSearch, RouteTo } from "@teyik0/furin/link";
 import { useCallback } from "react";
+import type { SearchParamsInput } from "../../../shared/search-params.ts";
 import { useRouter } from "../context.ts";
 import { buildHref } from "../link-utils.ts";
-import type { RouteSearch, RouteTo } from "../types.ts";
 
-// biome-ignore lint/suspicious/noEmptyInterface: intentionally augmentable via furin-env.d.ts
-export interface RouteManifest {}
+export interface RouteManifest extends LinkRouteManifest {}
 
-export type SearchRouteTo = keyof RouteManifest extends never
+export type SearchRouteTo = keyof LinkRouteManifest extends never
   ? RouteTo
-  : (string & {}) | keyof RouteManifest;
+  : (string & {}) | keyof LinkRouteManifest;
 
-type SearchRouteSearch<To extends SearchRouteTo> = keyof RouteManifest extends never
+type SearchRouteSearch<To extends SearchRouteTo> = keyof LinkRouteManifest extends never
   ? RouteSearch<To & RouteTo>
-  : To extends keyof RouteManifest
-    ? RouteManifest[To] extends { search?: infer S }
+  : To extends keyof LinkRouteManifest
+    ? LinkRouteManifest[To] extends { search?: infer S }
       ? S
       : undefined
     : undefined;
@@ -50,7 +50,7 @@ export function useSetSearch<To extends SearchRouteTo>(
     (next: SetSearchInput<To>, opts?: SetSearchOptions) => {
       const prev = router.search as ResolvedRouteSearch<To>;
       const patch = typeof next === "function" ? next(prev) : next;
-      const merged = { ...prev, ...patch } as Record<string, unknown>;
+      const merged = { ...prev, ...patch } as SearchParamsInput;
       const href = buildHref(pathnameFromLogicalHref(router.currentHref), merged, undefined);
       return router.navigate(href, { replace: opts?.replace ?? false });
     },

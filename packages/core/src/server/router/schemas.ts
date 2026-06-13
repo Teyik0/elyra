@@ -105,7 +105,8 @@ function collectQueryArrayKeys(schema: unknown): QueryKeyMap | undefined {
 
   const keys: QueryKeyMap = {};
   for (const [key, value] of Object.entries(schema.properties)) {
-    if (isObjectSchema(value) && value.type === "array") {
+    const effectiveSchema = findEffectiveAnyOfMember(value, "array") ?? value;
+    if (isObjectSchema(effectiveSchema) && effectiveSchema.type === "array") {
       keys[key] = 1;
     }
   }
@@ -120,12 +121,28 @@ function collectQueryObjectKeys(schema: unknown): QueryKeyMap | undefined {
 
   const keys: QueryKeyMap = {};
   for (const [key, value] of Object.entries(schema.properties)) {
-    if (isObjectSchema(value) && value.type === "object") {
+    const effectiveSchema = findEffectiveAnyOfMember(value, "object") ?? value;
+    if (isObjectSchema(effectiveSchema) && effectiveSchema.type === "object") {
       keys[key] = 1;
     }
   }
 
   return Object.keys(keys).length > 0 ? keys : undefined;
+}
+
+function findEffectiveAnyOfMember(
+  schema: unknown,
+  type: "array" | "object"
+): UnknownObject | undefined {
+  if (!(isObjectSchema(schema) && Array.isArray(schema.anyOf))) {
+    return;
+  }
+
+  for (const member of schema.anyOf) {
+    if (isObjectSchema(member) && member.type === type) {
+      return member;
+    }
+  }
 }
 
 function parseJsonQueryObjects(
@@ -212,6 +229,14 @@ export function queryDefaultRedirectHook({ request, query, status, set }: Contex
 // Standard structural keys on a TObject — everything else is a user-supplied option
 // (e.g. additionalProperties, $id, description, title) and must be preserved.
 const TOBJECT_STRUCTURAL_KEYS = new Set(["type", "properties", "required"]);
+const TYPEBOX_KIND = Symbol.for("TypeBox.Kind");
+
+function isTypeBoxObjectSchema(schema: unknown): schema is UnknownObject {
+  return (
+    isObjectSchema(schema) &&
+    (schema as UnknownObject & { [key: symbol]: unknown })[TYPEBOX_KIND] === "Object"
+  );
+}
 
 /**
  * Merges TObject schemas from all routeChain entries for a given key.
@@ -235,7 +260,7 @@ export function mergeRouteSchemas(
     return schemas[0] as AnySchema;
   }
 
-  if (schemas.some((s) => !s.properties || typeof s.properties !== "object")) {
+  if (schemas.some((s) => !isTypeBoxObjectSchema(s))) {
     throw new Error(
       `[furin] Merging ${key} schemas across the route chain requires TypeBox in V1. Use TypeBox for parent/child ${key}, or define ${key} only on leaf routes.`
     );

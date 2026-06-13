@@ -2,6 +2,7 @@ import { log } from "evlog";
 import type React from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { parseDeferredNdjson } from "../../shared/deferred-ndjson.ts";
+import type { SearchParamsInput } from "../../shared/search-params.ts";
 import { buildPageElement, buildRouterTree } from "./boundary-tree.tsx";
 import {
   generateHistoryKey,
@@ -700,7 +701,7 @@ export function RouterProvider({
     {
       basePath,
       currentHref,
-      search: (state.data.query as Record<string, unknown> | undefined) ?? {},
+      search: (state.data.query as SearchParamsInput | undefined) ?? {},
       navigate,
       prefetch,
       refresh,
