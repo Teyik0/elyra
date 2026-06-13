@@ -2,8 +2,10 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "paths": {
+      "@teyik0/furin/link": ["./src/client/link.tsx"],
       "@teyik0/furin/search": ["./src/client/router/search/index.ts"],
       "furin": ["./src/furin.ts"],
+      "furin/link": ["./src/client/link.tsx"],
       "furin/search": ["./src/client/router/search/index.ts"],
       "furin/*": ["./src/*"]
     }

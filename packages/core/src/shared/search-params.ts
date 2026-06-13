@@ -1,5 +1,14 @@
+export type SearchParamValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | SearchParamValue[]
+  | { [key: string]: SearchParamValue };
+
 export interface SearchParamsInput {
-  [key: string]: unknown;
+  [key: string]: SearchParamValue;
 }
 
 export function appendSearchParamValue(params: URLSearchParams, key: string, value: unknown): void {

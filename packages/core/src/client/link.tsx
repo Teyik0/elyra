@@ -1,5 +1,6 @@
 import type React from "react";
 import { createElement, useCallback, useEffect, useRef } from "react";
+import type { SearchParamsInput } from "../shared/search-params.ts";
 import {
   buildHref,
   CLIENT_FALLBACK_ROUTER,
@@ -39,14 +40,10 @@ function computeLinkView<To extends RouteTo>(
   }: Pick<LinkProps<To>, "to" | "search" | "hash" | "children" | "activeProps" | "inactiveProps">,
   router: RouterContextValue
 ): LinkView {
-  const logicalHref = buildHref(
-    to as string,
-    search as Record<string, unknown> | null | undefined,
-    hash
-  );
+  const logicalHref = buildHref(to as string, search as SearchParamsInput | null | undefined, hash);
   const logicalHrefWithoutHash = buildHref(
     to as string,
-    search as Record<string, unknown> | null | undefined,
+    search as SearchParamsInput | null | undefined,
     undefined
   );
   const isAbsolute =

@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { createElement, useEffect } from "react";
+import { act, createElement, useEffect } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { RouterContext, type RouterContextValue } from "../../src/client/link.tsx";
@@ -84,7 +84,7 @@ describe("useSearch", () => {
 });
 
 describe("useSetSearch", () => {
-  test("updates search by navigating from the current logical pathname", () => {
+  test("updates search by navigating from the current logical pathname", async () => {
     const navigate = mock<RouterContextValue["navigate"]>(() => Promise.resolve());
 
     function Page(): React.ReactElement {
@@ -104,11 +104,17 @@ describe("useSetSearch", () => {
       })
     );
 
-    expect(navigate).toHaveBeenCalledWith("/products?page=2", { replace: false });
-    rendered.cleanup();
+    try {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(navigate).toHaveBeenCalledWith("/products?page=2", { replace: false });
+    } finally {
+      rendered.cleanup();
+    }
   });
 
-  test("merges functional updates with the current search", () => {
+  test("merges functional updates with the current search", async () => {
     const navigate = mock<RouterContextValue["navigate"]>(() => Promise.resolve());
 
     function Page(): React.ReactElement {
@@ -128,11 +134,17 @@ describe("useSetSearch", () => {
       })
     );
 
-    expect(navigate).toHaveBeenCalledWith("/products?page=2&tag=react", { replace: false });
-    rendered.cleanup();
+    try {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(navigate).toHaveBeenCalledWith("/products?page=2&tag=react", { replace: false });
+    } finally {
+      rendered.cleanup();
+    }
   });
 
-  test("passes replace option to router navigation", () => {
+  test("passes replace option to router navigation", async () => {
     const navigate = mock<RouterContextValue["navigate"]>(() => Promise.resolve());
 
     function Page(): React.ReactElement {
@@ -152,7 +164,13 @@ describe("useSetSearch", () => {
       })
     );
 
-    expect(navigate).toHaveBeenCalledWith("/products?page=2", { replace: true });
-    rendered.cleanup();
+    try {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(navigate).toHaveBeenCalledWith("/products?page=2", { replace: true });
+    } finally {
+      rendered.cleanup();
+    }
   });
 });

@@ -10,6 +10,7 @@ import {
   type RouterContextValue,
 } from "../../client/router/index.ts";
 import { computeErrorDigest } from "../../shared/digest.ts";
+import type { SearchParamsInput } from "../../shared/search-params.ts";
 import { runInSyntheticRenderScope, useLogger } from "../context-logger.ts";
 // FurinNotFoundError is used indirectly via buildNotFoundElement in element.tsx
 import type { ResolvedRoute, RootLayout } from "../router/index.ts";
@@ -280,7 +281,7 @@ export async function prepareRender(
   const ssrContext: RouterContextValue = {
     basePath: basePath ?? "",
     currentHref: currentHrefFromContext(ctx),
-    search: (ctx.query as Record<string, unknown> | undefined) ?? {},
+    search: (ctx.query as SearchParamsInput | undefined) ?? {},
     navigate: (_href, _opts) => Promise.resolve(),
     prefetch: (_href, _opts) => {
       /* noop */
