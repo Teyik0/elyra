@@ -17,6 +17,10 @@ export function patternToTypeString(pattern: string): string {
  * @internal Exported for unit testing only.
  */
 export function schemaToTypeString(schema: unknown): string {
+  return schemaToTypeStringWithDefaults(schema, true);
+}
+
+function schemaToTypeStringWithDefaults(schema: unknown, defaultsAreRequired: boolean): string {
   if (!schema || typeof schema !== "object") {
     return "unknown";
   }
@@ -24,7 +28,7 @@ export function schemaToTypeString(schema: unknown): string {
   if (s.anyOf && Array.isArray(s.anyOf)) {
     const parts: string[] = [];
     for (const item of s.anyOf as unknown[]) {
-      const t = schemaToTypeString(item);
+      const t = schemaToTypeStringWithDefaults(item, defaultsAreRequired);
       if (t !== "null") parts.push(t);
     }
     return parts.join(" | ") || "unknown";
@@ -40,7 +44,7 @@ export function schemaToTypeString(schema: unknown): string {
     case "null":
       return "null";
     case "array": {
-      const inner = schemaToTypeString(s.items);
+      const inner = schemaToTypeStringWithDefaults(s.items, defaultsAreRequired);
       return inner.includes("|") || inner.includes("&") ? `(${inner})[]` : `${inner}[]`;
     }
     case "object": {
@@ -50,8 +54,9 @@ export function schemaToTypeString(schema: unknown): string {
       const required = new Set<string>(Array.isArray(s.required) ? (s.required as string[]) : []);
       const props = Object.entries(s.properties as Record<string, unknown>)
         .map(([k, v]) => {
-          const isPresent = required.has(k) || hasNonNullSchemaDefault(v);
-          return `${k}${isPresent ? "" : "?"}: ${schemaToTypeString(v)}`;
+          const isPresent =
+            required.has(k) || (defaultsAreRequired && hasNonNullSchemaDefault(v));
+          return `${k}${isPresent ? "" : "?"}: ${schemaToTypeStringWithDefaults(v, defaultsAreRequired)}`;
         })
         .join("; ");
       return `{ ${props} }`;
@@ -59,6 +64,11 @@ export function schemaToTypeString(schema: unknown): string {
     default:
       return "unknown";
   }
+}
+
+/** @internal Exported for unit testing only. */
+export function schemaToInputTypeString(schema: unknown): string {
+  return schemaToTypeStringWithDefaults(schema, false);
 }
 
 function hasNonNullSchemaDefault(schema: unknown): boolean {
@@ -101,9 +111,10 @@ export function writeRouteTypes(routes: ResolvedRoute[], projectRoot: string): v
     const isDynamic = typeKey.startsWith("`");
     const querySchema = mergeRouteSchemas(r.routeChain ?? [], "query");
     const searchType = querySchema ? schemaToTypeString(querySchema) : "never";
+    const searchInputType = querySchema ? schemaToInputTypeString(querySchema) : "never";
     return isDynamic
-      ? `    [key: ${typeKey}]: { search?: ${searchType} }`
-      : `    ${typeKey}: { search?: ${searchType} }`;
+      ? `    [key: ${typeKey}]: { search?: ${searchType}; searchInput?: ${searchInputType} }`
+      : `    ${typeKey}: { search?: ${searchType}; searchInput?: ${searchInputType} }`;
   });
   const routeManifestEntries = entries.join(";\n");
 

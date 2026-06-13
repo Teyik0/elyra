@@ -14,11 +14,12 @@ export const TRAILING_SLASHES_RE = /\/+$/;
 export function buildHref(
   to: string,
   search: SearchParamsInput | null | undefined,
-  hash: string | undefined
+  hash: string | undefined,
+  searchDefaults?: SearchParamsInput
 ): string {
   let url = to;
   if (search && Object.keys(search).length > 0) {
-    const params = buildSearchParams(search);
+    const params = buildSearchParams(search, searchDefaults);
     const qs = params.toString();
     if (qs) {
       url += `?${qs}`;

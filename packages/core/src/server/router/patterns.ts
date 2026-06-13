@@ -25,6 +25,11 @@ export function resolveMode(page: RuntimePage, routeChain: RuntimeRoute[]): "ssr
   }
 
   const hasLoader = routeChain.some((r) => r.loader) || !!page.loader;
+  const hasQuery = routeChain.some((r) => r.query);
+
+  if (hasQuery) {
+    return "ssr";
+  }
 
   if (!hasLoader) {
     return "ssg";

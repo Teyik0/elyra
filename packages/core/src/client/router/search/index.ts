@@ -1,8 +1,8 @@
 import type { RouteManifest as LinkRouteManifest, RouteSearch, RouteTo } from "@teyik0/furin/link";
-import { useCallback } from "react";
-import type { SearchParamsInput } from "../../../shared/search-params.ts";
-import { useRouter } from "../context.ts";
+import { useCallback, useContext, useRef, useSyncExternalStore } from "react";
+import { findSearchDefaults, type SearchParamsInput } from "../../../shared/search-params.ts";
 import { buildHref } from "../link-utils.ts";
+import { FALLBACK_SEARCH_STORE, SearchStoreContext } from "../search-store.ts";
 
 export interface RouteManifest extends LinkRouteManifest {}
 
@@ -25,35 +25,64 @@ export type ResolvedRouteSearch<To extends SearchRouteTo> =
     ? EmptyRouteSearch
     : NonNullable<SearchRouteSearch<To>>;
 
-export function useSearch<To extends SearchRouteTo>(_from: To): ResolvedRouteSearch<To> {
-  return useRouter().search as ResolvedRouteSearch<To>;
-}
-
-export interface SetSearchOptions {
-  replace?: boolean;
-}
-
 export type SetSearchInput<To extends SearchRouteTo> =
   | Partial<ResolvedRouteSearch<To>>
   | ((prev: ResolvedRouteSearch<To>) => Partial<ResolvedRouteSearch<To>>);
+
+export type SetSearch<To extends SearchRouteTo> = (next: SetSearchInput<To>) => Promise<void>;
 
 function pathnameFromLogicalHref(logicalHref: string): string {
   return new URL(logicalHref, "http://furin.local").pathname;
 }
 
-export function useSetSearch<To extends SearchRouteTo>(
-  _from: To
-): (next: SetSearchInput<To>, opts?: SetSearchOptions) => Promise<void> {
-  const router = useRouter();
+function useSearchSelection<To extends SearchRouteTo, TSelected>(
+  selector: (search: ResolvedRouteSearch<To>) => TSelected
+): TSelected {
+  const store = useContext(SearchStoreContext) ?? FALLBACK_SEARCH_STORE;
+  const selectorRef = useRef(selector);
+  selectorRef.current = selector;
 
-  return useCallback(
-    (next: SetSearchInput<To>, opts?: SetSearchOptions) => {
-      const prev = router.search as ResolvedRouteSearch<To>;
-      const patch = typeof next === "function" ? next(prev) : next;
-      const merged = { ...prev, ...patch } as SearchParamsInput;
-      const href = buildHref(pathnameFromLogicalHref(router.currentHref), merged, undefined);
-      return router.navigate(href, { replace: opts?.replace ?? false });
-    },
-    [router]
+  const getSnapshot = useCallback(
+    () => selectorRef.current(store.getSnapshot().search as ResolvedRouteSearch<To>),
+    [store]
   );
+  const getServerSnapshot = useCallback(
+    () => selectorRef.current(store.getServerSnapshot().search as ResolvedRouteSearch<To>),
+    [store]
+  );
+
+  return useSyncExternalStore(store.subscribe, getSnapshot, getServerSnapshot);
+}
+
+export function useSearch<To extends SearchRouteTo>(
+  _from: To
+): [ResolvedRouteSearch<To>, SetSearch<To>];
+export function useSearch<To extends SearchRouteTo, TSelected>(
+  _from: To,
+  selector: (search: ResolvedRouteSearch<To>) => TSelected
+): [TSelected, SetSearch<To>];
+export function useSearch<To extends SearchRouteTo, TSelected>(
+  _from: To,
+  selector?: (search: ResolvedRouteSearch<To>) => TSelected
+): [ResolvedRouteSearch<To> | TSelected, SetSearch<To>] {
+  const store = useContext(SearchStoreContext) ?? FALLBACK_SEARCH_STORE;
+  const selected = useSearchSelection<To, ResolvedRouteSearch<To> | TSelected>((search) =>
+    selector ? selector(search) : search
+  );
+
+  const setSearch = useCallback<SetSearch<To>>(
+    (next) => {
+      const snapshot = store.getSnapshot();
+      const search = snapshot.search as ResolvedRouteSearch<To>;
+      const patch = typeof next === "function" ? next(search) : next;
+      const merged = { ...search, ...patch } as SearchParamsInput;
+      const pathname = pathnameFromLogicalHref(snapshot.currentHref);
+      const searchDefaults = findSearchDefaults(pathname, snapshot.searchRoutes);
+      const href = buildHref(pathname, merged, undefined, searchDefaults);
+      return snapshot.navigate(href, undefined);
+    },
+    [store]
+  );
+
+  return [selected, setSearch];
 }

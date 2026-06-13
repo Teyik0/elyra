@@ -2,7 +2,7 @@ import type React from "react";
 import type { RuntimeRoute } from "../../client.ts";
 import type { ErrorComponent } from "../../shared/error.ts";
 import type { NotFoundComponent } from "../../shared/not-found.ts";
-import type { SearchParamsInput } from "../../shared/search-params.ts";
+import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
 
 /**
  * Augment this interface via declaration merging in furin-env.d.ts
@@ -38,9 +38,11 @@ export type RouteTo = keyof RouteManifest extends never
 export type RouteSearch<To extends RouteTo> = keyof RouteManifest extends never
   ? SearchParamsInput
   : To extends keyof RouteManifest
-    ? RouteManifest[To] extends { search?: infer S }
-      ? S
-      : undefined
+    ? RouteManifest[To] extends { searchInput?: infer I }
+      ? I
+      : RouteManifest[To] extends { search?: infer S }
+        ? S
+        : undefined
     : undefined;
 
 export type PreloadStrategy = false | "intent" | "viewport" | "render";
@@ -118,6 +120,8 @@ export interface RouterContextValue {
   refresh: (opts?: { resetScroll?: boolean }) => Promise<void>;
   /** Current server-resolved query params for the rendered route. */
   search: SearchParamsInput;
+  /** Route-level search defaults used to build clean hrefs without default params. */
+  searchRoutes: SearchRouteMetadata[];
 }
 
 /**
@@ -140,6 +144,7 @@ export interface ClientRoute {
   pageRoute?: RuntimeRoute;
   pattern: string;
   regex: RegExp;
+  searchDefaults?: SearchParamsInput;
   /**
    * Per-segment boundary chain, ordered shallow→deep. Each `depth` maps 1:1
    * to the route-chain index used on the server side, so `buildPageElement`

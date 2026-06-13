@@ -19,6 +19,7 @@ function makeRouterContext(overrides: Partial<RouterContextValue> | undefined): 
     basePath: "",
     currentHref: "/",
     search: {},
+    searchRoutes: [],
     navigate: () => Promise.resolve(),
     prefetch: () => {
       /* noop */
@@ -149,6 +150,7 @@ describe("Link SSR path", () => {
               basePath: "/furin",
               currentHref: "/docs",
               search: {},
+              searchRoutes: [],
               navigate: () => Promise.resolve(),
               prefetch: () => {
                 /* noop */
@@ -238,6 +240,7 @@ describe("Link SSR path", () => {
               basePath: "",
               currentHref: "/",
               search: {},
+              searchRoutes: [],
               navigate: () => Promise.resolve(),
               prefetch: () => {
                 /* noop */
@@ -283,6 +286,7 @@ describe("Link SSR path", () => {
               basePath: "",
               currentHref: "/other",
               search: {},
+              searchRoutes: [],
               navigate: () => Promise.resolve(),
               prefetch: () => {
                 /* noop */
@@ -328,6 +332,7 @@ describe("Link SSR path", () => {
               basePath: "/furin",
               currentHref: "/",
               search: {},
+              searchRoutes: [],
               navigate: () => Promise.resolve(),
               prefetch: () => {
                 /* noop */

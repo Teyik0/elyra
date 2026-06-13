@@ -1,10 +1,10 @@
-import type { Context } from "elysia";
 import { t } from "elysia";
 import { parseQueryFromURL, parseQueryStandardSchema } from "elysia/parse-query";
 import { getSchemaValidator } from "elysia/schema";
 import type { AnySchema } from "elysia/types";
 import type { RuntimeRoute } from "../../client.ts";
-import { appendSearchParamValue } from "../../shared/search-params.ts";
+import { collectSearchDefaults, type SearchRouteMetadata } from "../../shared/search-params.ts";
+import { buildRouteRegex } from "./patterns.ts";
 
 interface UnknownObject {
   [key: string]: unknown;
@@ -12,53 +12,6 @@ interface UnknownObject {
 
 interface QueryKeyMap {
   [key: string]: 1;
-}
-
-// ── Query-default redirect ──────────────────────────────────────────────────
-// Validator-agnostic: after Elysia applies defaults (TypeBox, Zod, Valibot…),
-// compare the raw URL query keys with the resolved ctx.query keys. If ctx.query
-// contains keys absent from the URL, defaults were applied → 302 redirect to
-// the canonical URL so the address bar always reflects the actual app state.
-
-/**
- * Detects whether a validator filled in default query values that the original
- * URL did not carry, and returns the canonical `pathname + search` to redirect
- * to — or `undefined` when the URL already reflects the resolved query.
- *
- * Pure helper extracted from `queryDefaultRedirectHook` so the `/_furin/data`
- * NDJSON endpoint can detect the same condition without going through
- * Elysia's `status()` shim (which only emits HTTP 302s, unparseable by the
- * SPA client).
- *
- * @internal Exported for unit testing.
- */
-export function detectQueryDefaultRedirect(
-  request: Request,
-  resolvedQuery: UnknownObject
-): string | undefined {
-  const queryKeys = Object.keys(resolvedQuery);
-  if (queryKeys.length === 0) {
-    return;
-  }
-
-  const rawParams = new URL(request.url).searchParams;
-  let needsRedirect = false;
-  for (const key of queryKeys) {
-    if (!rawParams.has(key) && resolvedQuery[key] != null) {
-      needsRedirect = true;
-      break;
-    }
-  }
-  if (!needsRedirect) {
-    return;
-  }
-
-  const url = new URL(request.url);
-  for (const [k, v] of Object.entries(resolvedQuery)) {
-    url.searchParams.delete(k);
-    appendSearchParamValue(url.searchParams, k, v);
-  }
-  return url.pathname + url.search;
 }
 
 /**
@@ -216,16 +169,6 @@ export async function parseRouteQuery(
   };
 }
 
-/** @internal Exported for unit testing. */
-export function queryDefaultRedirectHook({ request, query, status, set }: Context) {
-  const location = detectQueryDefaultRedirect(request, query as UnknownObject);
-  if (!location) {
-    return;
-  }
-  set.headers.location = location;
-  return status("Found");
-}
-
 // Standard structural keys on a TObject — everything else is a user-supplied option
 // (e.g. additionalProperties, $id, description, title) and must be preserved.
 const TOBJECT_STRUCTURAL_KEYS = new Set(["type", "properties", "required"]);
@@ -279,6 +222,24 @@ export function mergeRouteSchemas(
   );
 
   return t.Object(mergedProperties, mergedOptions) as AnySchema;
+}
+
+export function createSearchRouteMetadata(
+  routes: Array<{ pattern: string; routeChain: RuntimeRoute[] }>
+): SearchRouteMetadata[] {
+  const metadata: SearchRouteMetadata[] = [];
+  for (const route of routes) {
+    const searchDefaults = collectSearchDefaults(mergeRouteSchemas(route.routeChain, "query"));
+    if (!searchDefaults) {
+      continue;
+    }
+    metadata.push({
+      pattern: route.pattern,
+      regex: buildRouteRegex(route.pattern).regex,
+      searchDefaults,
+    });
+  }
+  return metadata;
 }
 
 /**

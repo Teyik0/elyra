@@ -10,6 +10,7 @@ function makeRouterContext(overrides: Partial<RouterContextValue> | undefined): 
     basePath: "",
     currentHref: "/",
     search: {},
+    searchRoutes: [],
     navigate: () => Promise.resolve(),
     prefetch: () => {
       /* noop */

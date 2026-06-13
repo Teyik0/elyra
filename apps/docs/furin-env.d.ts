@@ -4,25 +4,25 @@ import "@teyik0/furin/link";
 
 declare module "@teyik0/furin/link" {
   interface RouteManifest {
-    "/": { search?: never };
-    "/docs": { search?: never };
-    "/docs/api-routes": { search?: never };
-    "/docs/caching": { search?: never };
-    "/docs/cli": { search?: never };
-    "/docs/comparison": { search?: never };
-    "/docs/configuration": { search?: never };
-    "/docs/data-loading": { search?: never };
-    "/docs/defer": { search?: never };
-    "/docs/deployment": { search?: never };
-    "/docs/dev-hmr": { search?: never };
-    "/docs/error-handling": { search?: never };
-    "/docs/getting-started": { search?: never };
-    "/docs/head-seo": { search?: never };
-    "/docs/layouts": { search?: never };
-    "/docs/link-navigation": { search?: never };
-    "/docs/logging": { search?: never };
-    "/docs/plugins": { search?: never };
-    "/docs/rendering": { search?: never };
-    "/docs/routing": { search?: never };
+    "/": { search?: never; searchInput?: never };
+    "/docs": { search?: never; searchInput?: never };
+    "/docs/api-routes": { search?: never; searchInput?: never };
+    "/docs/caching": { search?: never; searchInput?: never };
+    "/docs/cli": { search?: never; searchInput?: never };
+    "/docs/comparison": { search?: never; searchInput?: never };
+    "/docs/configuration": { search?: never; searchInput?: never };
+    "/docs/data-loading": { search?: never; searchInput?: never };
+    "/docs/defer": { search?: never; searchInput?: never };
+    "/docs/deployment": { search?: never; searchInput?: never };
+    "/docs/dev-hmr": { search?: never; searchInput?: never };
+    "/docs/error-handling": { search?: never; searchInput?: never };
+    "/docs/getting-started": { search?: never; searchInput?: never };
+    "/docs/head-seo": { search?: never; searchInput?: never };
+    "/docs/layouts": { search?: never; searchInput?: never };
+    "/docs/link-navigation": { search?: never; searchInput?: never };
+    "/docs/logging": { search?: never; searchInput?: never };
+    "/docs/plugins": { search?: never; searchInput?: never };
+    "/docs/rendering": { search?: never; searchInput?: never };
+    "/docs/routing": { search?: never; searchInput?: never };
   }
 }
