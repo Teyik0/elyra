@@ -210,7 +210,7 @@ describe("schema merge — parent + child both declare query schemas", () => {
       throw new Error(`Route ${ROUTE_PATTERN} not found — did the fixture files get created?`);
     }
 
-    const app = new Elysia().use(createRoutePlugin(route, result.root));
+    const app = new Elysia().use(createRoutePlugin({ route, root: result.root, buildId: null }));
 
     const res = await app.handle(new Request(`http://localhost${ROUTE_PATTERN}`));
 
@@ -226,7 +226,7 @@ describe("schema merge — parent + child both declare query schemas", () => {
       throw new Error(`Route ${ROUTE_PATTERN} not found`);
     }
 
-    const app = new Elysia().use(createRoutePlugin(route, result.root));
+    const app = new Elysia().use(createRoutePlugin({ route, root: result.root, buildId: null }));
 
     const res = await app.handle(
       new Request(

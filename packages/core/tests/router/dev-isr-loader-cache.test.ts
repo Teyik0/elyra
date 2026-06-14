@@ -68,7 +68,9 @@ describe("dev ISR loader cache", () => {
 
     __setDevMode(true);
     try {
-      const app = new Elysia().use(createRoutePlugin(isrRoute, result.root));
+      const app = new Elysia().use(
+        createRoutePlugin({ route: isrRoute, root: result.root, buildId: null })
+      );
 
       // Request #1 — cold cache miss; loader runs, snapshot captured.
       const res1 = await app.handle(new Request("http://localhost/isr-page"));
@@ -116,7 +118,9 @@ describe("dev ISR loader cache", () => {
 
     __setDevMode(true);
     try {
-      const app = new Elysia().use(createRoutePlugin(isrRoute, result.root));
+      const app = new Elysia().use(
+        createRoutePlugin({ route: isrRoute, root: result.root, buildId: null })
+      );
 
       // Request #1 — populates the cache.
       const res1 = await app.handle(new Request("http://localhost/isr-page"));
@@ -166,7 +170,9 @@ describe("dev ISR loader cache", () => {
 
     __setDevMode(true);
     try {
-      const app = new Elysia().use(createRoutePlugin(isrRoute, result.root));
+      const app = new Elysia().use(
+        createRoutePlugin({ route: isrRoute, root: result.root, buildId: null })
+      );
 
       // Warm the cache.
       const res1 = await app.handle(new Request("http://localhost/isr-page"));
@@ -211,7 +217,7 @@ describe("dev ISR loader cache", () => {
     __setDevMode(true);
     try {
       const app = new Elysia()
-        .use(createRoutePlugin(isrRoute, result.root))
+        .use(createRoutePlugin({ route: isrRoute, root: result.root, buildId: null }))
         .use(createDevInspectorPlugin());
 
       // Warm the ISR cache for /isr-page.
@@ -277,7 +283,9 @@ describe("dev SSG loader cache", () => {
 
     __setDevMode(true);
     try {
-      const app = new Elysia().use(createRoutePlugin(ssgRoute, result.root));
+      const app = new Elysia().use(
+        createRoutePlugin({ route: ssgRoute, root: result.root, buildId: null })
+      );
 
       // Request #1 — cold cache miss; loader runs, snapshot captured.
       const res1 = await app.handle(new Request("http://localhost/ssg-loader-page"));
@@ -327,7 +335,9 @@ describe("dev SSG loader cache", () => {
 
     __setDevMode(true);
     try {
-      const app = new Elysia().use(createRoutePlugin(ssgRoute, result.root));
+      const app = new Elysia().use(
+        createRoutePlugin({ route: ssgRoute, root: result.root, buildId: null })
+      );
 
       // Request #1 — populates the cache.
       const res1 = await app.handle(new Request("http://localhost/ssg-loader-page"));

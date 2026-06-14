@@ -1,5 +1,4 @@
 import { type AnyElysia, type Context, Elysia, t } from "elysia";
-import type { AnySchema } from "elysia/types";
 import { toCrossJSON, toCrossJSONAsync } from "seroval";
 import { computeErrorDigest } from "../../shared/digest.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
@@ -66,59 +65,49 @@ async function handleSSGRequest(
   return entry.html;
 }
 
-export function createRoutePlugin(
-  route: ResolvedRoute,
-  root: RootLayout,
-  buildId?: string,
-  searchRoutes?: SearchRouteMetadata[]
-): AnyElysia {
+interface RoutePlugin {
+  buildId: string | null;
+  root: RootLayout;
+  route: ResolvedRoute;
+  searchRoutes?: SearchRouteMetadata[];
+}
+export function createRoutePlugin({ route, root, buildId, searchRoutes }: RoutePlugin): AnyElysia {
   const resolvedBuildId = buildId ?? "";
   const { pattern, routeChain } = route;
 
-  const allParams = mergeRouteSchemas(routeChain, "params");
-  const allQuery = mergeRouteSchemas(routeChain, "query");
+  return new Elysia()
+    .guard({
+      params: mergeRouteSchemas(routeChain, "params"),
+      query: mergeRouteSchemas(routeChain, "query"),
+    })
+    .get(pattern, (ctx) => {
+      // Dev mode: re-imports page + layouts on every request via the
+      // ?furin-server cache-buster, then dispatches into one of:
+      //   - renderDevISRWithLoaderCache  (mode === "isr")
+      //   - renderDevSSGWithLoaderCache  (mode === "ssg")
+      //   - renderSSR                    (otherwise)
+      //
+      // Only the LOADER OUTPUT is cached in dev — HTML is always re-assembled
+      // fresh so the response always embeds the latest Bun client chunk URL.
+      // This avoids the "infinite reload loop" footgun where a cached ISR/SSG
+      // HTML response held an OLD chunk URL after Bun rebundled.  The dev
+      // cache is invalidated source-aware via `isDevLoaderCacheValid`
+      // (mtime-checked dependency walk on every read).
+      if (IS_DEV) {
+        return handleDevRequest(route, ctx, root, searchRoutes);
+      }
 
-  // Guard and handler MUST live in the same Elysia scope so that validation
-  // (including default-filling) applies to the route handler's ctx.query.
-  const plugin = new Elysia();
+      if (route.mode === "ssg") {
+        return handleSSGRequest(route, ctx, root, resolvedBuildId, searchRoutes);
+      }
 
-  if (allParams || allQuery) {
-    plugin.guard({
-      params: allParams as AnySchema,
-      query: allQuery as AnySchema,
+      if (route.mode === "isr") {
+        ctx.set.headers["cache-tag"] = resolvePath(pattern, ctx.params ?? {});
+        return handleISR(route, ctx, root, resolvedBuildId, searchRoutes);
+      }
+
+      return renderSSR(route, ctx, root, undefined, searchRoutes);
     });
-  }
-
-  plugin.get(pattern, (ctx) => {
-    // Dev mode: re-imports page + layouts on every request via the
-    // ?furin-server cache-buster, then dispatches into one of:
-    //   - renderDevISRWithLoaderCache  (mode === "isr")
-    //   - renderDevSSGWithLoaderCache  (mode === "ssg")
-    //   - renderSSR                    (otherwise)
-    //
-    // Only the LOADER OUTPUT is cached in dev — HTML is always re-assembled
-    // fresh so the response always embeds the latest Bun client chunk URL.
-    // This avoids the "infinite reload loop" footgun where a cached ISR/SSG
-    // HTML response held an OLD chunk URL after Bun rebundled.  The dev
-    // cache is invalidated source-aware via `isDevLoaderCacheValid`
-    // (mtime-checked dependency walk on every read).
-    if (IS_DEV) {
-      return handleDevRequest(route, ctx, root, searchRoutes);
-    }
-
-    if (route.mode === "ssg") {
-      return handleSSGRequest(route, ctx, root, resolvedBuildId, searchRoutes);
-    }
-
-    if (route.mode === "isr") {
-      ctx.set.headers["cache-tag"] = resolvePath(route.pattern, ctx.params ?? {});
-      return handleISR(route, ctx, root, resolvedBuildId, searchRoutes);
-    }
-
-    return renderSSR(route, ctx, root, undefined, searchRoutes);
-  });
-
-  return plugin;
 }
 
 /**
@@ -138,20 +127,18 @@ export function createRoutePlugin(
  *   - `__furinRedirect`    — logical path after a server-side redirect
  */
 export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
-  const plugin = new Elysia();
   const matchRoute = buildRouteMatcher(routes);
 
-  plugin.get(
+  return new Elysia().get(
     "/_furin/data",
-    async (ctx) => {
-      const rawPath = ctx.query.path;
-      if (!rawPath || typeof rawPath !== "string") {
-        return new Response("Missing required query param: path", { status: 400 });
+    async ({ request, headers, cookie, status, query: { path } }) => {
+      if (!path || typeof path !== "string") {
+        return status("Bad Request", "Missing required query param: path");
       }
 
-      const parsed = parseDataEndpointPath(rawPath);
+      const parsed = parseDataEndpointPath(path);
       if (!parsed) {
-        return new Response("Invalid path", { status: 400 });
+        return status("Bad Request", "Invalid path");
       }
       const { url, pathname } = parsed;
 
@@ -161,14 +148,14 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       // before the route-match check so 404s also surface the attempted path
       // — otherwise monitoring just sees "GET /_furin/data 404" with no clue.
       const wideEventLog = useLogger();
-      wideEventLog.set({ path: rawPath });
+      wideEventLog.set({ path });
 
       // Precompiled at plugin creation: route regexes are built once, sorted
       // most-specific first, then the hot path only executes regex matches.
       const matched = matchRoute(pathname);
 
       if (!matched) {
-        return new Response("Route not found", { status: 404 });
+        return status("Not Found", "Route not found");
       }
 
       // Now that we know the matched pattern, add it as a stable aggregation
@@ -180,15 +167,17 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       // Build the synthetic URL from the parsed `pathname + search` only —
       // never from `rawPath` directly — so an attacker cannot smuggle a
       // foreign origin into `syntheticRequest.url`.
-      const syntheticRequest = new Request(new URL(pathname + url.search, ctx.request.url));
+      const syntheticRequest = new Request(new URL(pathname + url.search, request.url), {
+        headers: request.headers,
+      });
       const syntheticSet = { headers: {} as Record<string, string>, status: 200 as number };
       const syntheticCtx: SyntheticDataContext = {
         request: syntheticRequest,
         params: matched.params,
         query: Object.fromEntries(url.searchParams),
         set: syntheticSet,
-        headers: ctx.headers,
-        cookie: ctx.cookie,
+        headers,
+        cookie,
         path: pathname,
         // Loader-emitted redirects flow through `runLoaders` → `result.type
         // === "redirect"` and are converted to NDJSON below. The Response we
@@ -237,7 +226,7 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
         // Encode the redirect target as a special field for the client to follow
         const redirectUrl = new URL(
           result.response.headers.get("location") ?? "/",
-          ctx.request.url
+          syntheticRequest.url
         );
         const serialized = await toCrossJSONAsync({
           __furinRedirect: redirectUrl.pathname + redirectUrl.search,
@@ -312,8 +301,6 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       query: t.Object({ path: t.Optional(t.String()) }),
     }
   );
-
-  return plugin;
 }
 
 /**

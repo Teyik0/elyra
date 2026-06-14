@@ -47,7 +47,7 @@ async function getRoute(pattern: string) {
 describe("ISR Cache-Control headers", () => {
   test("contains must-revalidate directive", async () => {
     const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/isr-page"));
 
@@ -58,7 +58,7 @@ describe("ISR Cache-Control headers", () => {
 
   test("contains max-age=0 directive", async () => {
     const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/isr-page"));
 
@@ -68,7 +68,7 @@ describe("ISR Cache-Control headers", () => {
 
   test("contains public directive", async () => {
     const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/isr-page"));
 
@@ -78,7 +78,7 @@ describe("ISR Cache-Control headers", () => {
 
   test("contains s-maxage directive", async () => {
     const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/isr-page"));
 
@@ -88,7 +88,7 @@ describe("ISR Cache-Control headers", () => {
 
   test("contains stale-while-revalidate directive", async () => {
     const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/isr-page"));
 
@@ -102,7 +102,7 @@ describe("ISR Cache-Control headers", () => {
 describe("ISR Cache-Tag header", () => {
   test("cache-tag header is present in ISR response", async () => {
     const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/isr-page"));
 
@@ -111,7 +111,7 @@ describe("ISR Cache-Tag header", () => {
 
   test("cache-tag value matches the resolved path", async () => {
     const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/isr-page"));
 
@@ -124,7 +124,7 @@ describe("ISR Cache-Tag header", () => {
 describe("ISR ETag header", () => {
   test("etag header is present when buildId is set", async () => {
     const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root, "testbuild"));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: "testbuild" }));
 
     const res = await app.handle(new Request("http://localhost/isr-page"));
 
@@ -133,7 +133,7 @@ describe("ISR ETag header", () => {
 
   test("etag header matches format testbuild:TIMESTAMP", async () => {
     const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root, "testbuild"));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: "testbuild" }));
 
     const res = await app.handle(new Request("http://localhost/isr-page"));
 
@@ -144,7 +144,7 @@ describe("ISR ETag header", () => {
 
   test("etag header is absent when buildId is empty", async () => {
     const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root, ""));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: "" }));
 
     const res = await app.handle(new Request("http://localhost/isr-page"));
 
@@ -157,7 +157,7 @@ describe("ISR ETag header", () => {
 describe("ISR 304 conditional request", () => {
   test("returns 304 when If-None-Match matches the etag", async () => {
     const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root, "testbuild"));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: "testbuild" }));
 
     // First request: get the ETag
     const res1 = await app.handle(new Request("http://localhost/isr-page"));
@@ -177,7 +177,7 @@ describe("ISR 304 conditional request", () => {
 
   test("returns 200 when If-None-Match does not match", async () => {
     const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root, "testbuild"));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: "testbuild" }));
 
     const res = await app.handle(
       new Request("http://localhost/isr-page", {
@@ -194,7 +194,7 @@ describe("ISR 304 conditional request", () => {
 describe("SSG cache headers", () => {
   test("cache-tag header is present in SSG response", async () => {
     const { route, root } = await getRoute("/ssg-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/ssg-page"));
 
@@ -203,7 +203,7 @@ describe("SSG cache headers", () => {
 
   test("cache-tag value matches the resolved path for SSG", async () => {
     const { route, root } = await getRoute("/ssg-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/ssg-page"));
 
@@ -212,7 +212,7 @@ describe("SSG cache headers", () => {
 
   test("Cache-Control contains s-maxage=31536000", async () => {
     const { route, root } = await getRoute("/ssg-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/ssg-page"));
 
@@ -222,7 +222,7 @@ describe("SSG cache headers", () => {
 
   test("Cache-Control contains must-revalidate", async () => {
     const { route, root } = await getRoute("/ssg-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/ssg-page"));
 
@@ -232,7 +232,7 @@ describe("SSG cache headers", () => {
 
   test("Cache-Control contains public directive", async () => {
     const { route, root } = await getRoute("/ssg-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/ssg-page"));
 
@@ -242,7 +242,7 @@ describe("SSG cache headers", () => {
 
   test("Cache-Control contains max-age=0", async () => {
     const { route, root } = await getRoute("/ssg-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/ssg-page"));
 
@@ -256,7 +256,7 @@ describe("SSG cache headers", () => {
 describe("SSR cache headers", () => {
   test("Cache-Control is no-store, no-cache, must-revalidate", async () => {
     const { route, root } = await getRoute("/ssr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/ssr-page"));
 
@@ -265,7 +265,7 @@ describe("SSR cache headers", () => {
 
   test("SSR response has no cache-tag header", async () => {
     const { route, root } = await getRoute("/ssr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/ssr-page"));
 
@@ -274,7 +274,7 @@ describe("SSR cache headers", () => {
 
   test("SSR response has no etag header", async () => {
     const { route, root } = await getRoute("/ssr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+    const app = new Elysia().use(createRoutePlugin({ route, root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/ssr-page"));
 
