@@ -13,20 +13,30 @@ export async function buildSSGCacheSnapshot(
   const snapshot: SSGCacheSnapshot = {};
   const searchRoutes = createSearchRouteMetadata(routes);
 
-  for (const route of routes) {
-    if (route.mode !== "ssg" || !route.page.staticParams) {
+  const ssgRoutes = routes.filter(
+    (route): route is ResolvedRoute & { page: { staticParams: NonNullable<ResolvedRoute["page"]["staticParams"]> } } =>
+      route.mode === "ssg" && !!route.page.staticParams
+  );
+  const paramSetsResults = await Promise.all(ssgRoutes.map((route) => route.page.staticParams()));
+  const prerenderTasks: Promise<void>[] = [];
+  for (let i = 0; i < ssgRoutes.length; i++) {
+    const route = ssgRoutes[i];
+    const paramSets = paramSetsResults[i];
+    if (!route || !paramSets) {
       continue;
     }
-
-    const paramSets = await route.page.staticParams();
     for (const params of paramSets) {
-      const entry = await prerenderSSG(route, params, root, origin, undefined, searchRoutes);
-      if (entry instanceof Response) {
-        continue;
-      }
-      snapshot[resolvePath(route.pattern, params)] = entry;
+      prerenderTasks.push(
+        prerenderSSG(route, params, root, origin, undefined, searchRoutes).then((entry) => {
+          if (entry instanceof Response) {
+            return;
+          }
+          snapshot[resolvePath(route.pattern, params)] = entry;
+        })
+      );
     }
   }
+  await Promise.all(prerenderTasks);
 
   return snapshot;
 }

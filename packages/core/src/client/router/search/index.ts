@@ -1,5 +1,5 @@
 import type { RouteManifest as LinkRouteManifest, RouteSearch, RouteTo } from "@teyik0/furin/link";
-import { useCallback, useContext, useRef, useSyncExternalStore } from "react";
+import { use, useCallback, useRef, useSyncExternalStore } from "react";
 import {
   findSearchDefaultsForRouteTarget,
   type SearchParamsInput,
@@ -49,7 +49,7 @@ function pathnameFromLogicalHref(logicalHref: string): string {
 function useSearchSelection<To extends SearchRouteTo, TSelected>(
   selector: (search: ResolvedRouteSearch<To>) => TSelected
 ): TSelected {
-  const store = useContext(SearchStoreContext) ?? FALLBACK_SEARCH_STORE;
+  const store = use(SearchStoreContext) ?? FALLBACK_SEARCH_STORE;
   const selectorRef = useRef(selector);
   selectorRef.current = selector;
 
@@ -76,7 +76,7 @@ export function useSearch<To extends SearchRouteTo, TSelected>(
   _from: To,
   selector?: (search: ResolvedRouteSearch<To>) => TSelected
 ): [ResolvedRouteSearch<To> | TSelected, SetSearch<To>] {
-  const store = useContext(SearchStoreContext) ?? FALLBACK_SEARCH_STORE;
+  const store = use(SearchStoreContext) ?? FALLBACK_SEARCH_STORE;
   const selected = useSearchSelection<To, ResolvedRouteSearch<To> | TSelected>((search) =>
     selector ? selector(search) : search
   );

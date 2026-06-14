@@ -105,7 +105,7 @@ function tagToStringLiteral(tag: string): string {
  */
 /** @internal Exported for unit testing only. */
 export function writeRouteTypes(routes: ResolvedRoute[], projectRoot: string): void {
-  const sortedRoutes = [...routes].sort((a, b) => a.pattern.localeCompare(b.pattern));
+  const sortedRoutes = routes.toSorted((a, b) => a.pattern.localeCompare(b.pattern));
   const entries = sortedRoutes.map((r) => {
     const typeKey = patternToTypeString(r.pattern);
     const isDynamic = typeKey.startsWith("`");
@@ -118,7 +118,7 @@ export function writeRouteTypes(routes: ResolvedRoute[], projectRoot: string): v
   });
   const routeManifestEntries = entries.join(";\n");
 
-  const sortedTags = [...new Set(routes.flatMap((route) => route.tags ?? []))].sort();
+  const sortedTags = [...new Set(routes.flatMap((route) => route.tags ?? []))].toSorted();
   const tagBlock =
     sortedTags.length > 0
       ? `\n\ndeclare module "@teyik0/furin" {\n  interface FurinCacheTags {\n${sortedTags

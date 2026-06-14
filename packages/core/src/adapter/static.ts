@@ -184,12 +184,10 @@ async function buildTaskQueue(
   );
 
   for (const result of staticParamsResults) {
+    const pattern = result.route.pattern;
     if ("error" in result) {
-      console.error(
-        `[furin] static: staticParams() failed for "${result.route.pattern}":`,
-        result.error
-      );
-      skippedRoutes.push(result.route.pattern);
+      console.error(`[furin] static: staticParams() failed for "${pattern}":`, result.error);
+      skippedRoutes.push(pattern);
       continue;
     }
     if (result.paramSets === null) {
@@ -200,9 +198,9 @@ async function buildTaskQueue(
     // would throw out of `for...of` and abort the entire build.
     if (!Array.isArray(result.paramSets)) {
       console.error(
-        `[furin] static: staticParams() for "${result.route.pattern}" returned a non-array value; skipping route.`
+        `[furin] static: staticParams() for "${pattern}" returned a non-array value; skipping route.`
       );
-      skippedRoutes.push(result.route.pattern);
+      skippedRoutes.push(pattern);
       continue;
     }
     for (const params of result.paramSets) {
