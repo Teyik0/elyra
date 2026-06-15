@@ -33,7 +33,9 @@
     "lefthook": "^2.1.9",
     "react-doctor": "^0.5.5",
     "typescript": "^6.0.3",
-    "ultracite": "7.8.3"
+    "ultracite": "7.8.3",
+    "valibot": "^1.4.1",
+    "zod": "^4.4.3"
   },
   "catalog": {
     "elysia": "^1.4.28",

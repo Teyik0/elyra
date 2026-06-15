@@ -152,9 +152,9 @@ export interface RuntimeRoute {
   layout?: React.FC<Record<string, unknown> & { children: React.ReactNode }>;
   loader?(ctx: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
   mode?: "ssr" | "ssg" | "isr";
-  params?: unknown;
+  params?: AnySchema;
   parent?: RuntimeRoute;
-  query?: unknown;
+  query?: AnySchema;
   revalidate?: number;
   tags?: string[];
 }

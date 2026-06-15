@@ -1,4 +1,5 @@
 import { type AnyElysia, type Context, Elysia, t } from "elysia";
+import { getSchemaValidator } from "elysia/schema";
 import { toCrossJSON, toCrossJSONAsync } from "seroval";
 import { computeErrorDigest } from "../../shared/digest.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
@@ -16,12 +17,7 @@ import { extractTitle } from "../render/shell.ts";
 import { IS_DEV } from "../runtime-env.ts";
 import { handleDevRequest } from "./hmr.ts";
 import { buildRouteMatcher } from "./patterns.ts";
-import {
-  applySchemaDefaults,
-  mergeRouteSchemas,
-  parseDataEndpointPath,
-  parseRouteQuery,
-} from "./schemas.ts";
+import { parseDataEndpointPath, parseRouteQuery } from "./schemas.ts";
 import type { ResolvedRoute, RootLayout } from "./types.ts";
 
 type SyntheticDataContext = Omit<Context, "params" | "query"> & {
@@ -74,40 +70,45 @@ interface RoutePlugin {
 export function createRoutePlugin({ route, root, buildId, searchRoutes }: RoutePlugin): AnyElysia {
   const resolvedBuildId = buildId ?? "";
   const { pattern, routeChain } = route;
+  const plugin = new Elysia();
 
-  return new Elysia()
-    .guard({
-      params: mergeRouteSchemas(routeChain, "params"),
-      query: mergeRouteSchemas(routeChain, "query"),
-    })
-    .get(pattern, (ctx) => {
-      // Dev mode: re-imports page + layouts on every request via the
-      // ?furin-server cache-buster, then dispatches into one of:
-      //   - renderDevISRWithLoaderCache  (mode === "isr")
-      //   - renderDevSSGWithLoaderCache  (mode === "ssg")
-      //   - renderSSR                    (otherwise)
-      //
-      // Only the LOADER OUTPUT is cached in dev — HTML is always re-assembled
-      // fresh so the response always embeds the latest Bun client chunk URL.
-      // This avoids the "infinite reload loop" footgun where a cached ISR/SSG
-      // HTML response held an OLD chunk URL after Bun rebundled.  The dev
-      // cache is invalidated source-aware via `isDevLoaderCacheValid`
-      // (mtime-checked dependency walk on every read).
-      if (IS_DEV) {
-        return handleDevRequest(route, ctx, root, searchRoutes);
-      }
+  for (const routeNode of routeChain) {
+    if (routeNode.params || routeNode.query) {
+      plugin.guard({
+        params: routeNode.params,
+        query: routeNode.query,
+      });
+    }
+  }
 
-      if (route.mode === "ssg") {
-        return handleSSGRequest(route, ctx, root, resolvedBuildId, searchRoutes);
-      }
+  return plugin.get(pattern, (ctx) => {
+    // Dev mode: re-imports page + layouts on every request via the
+    // ?furin-server cache-buster, then dispatches into one of:
+    //   - renderDevISRWithLoaderCache  (mode === "isr")
+    //   - renderDevSSGWithLoaderCache  (mode === "ssg")
+    //   - renderSSR                    (otherwise)
+    //
+    // Only the LOADER OUTPUT is cached in dev — HTML is always re-assembled
+    // fresh so the response always embeds the latest Bun client chunk URL.
+    // This avoids the "infinite reload loop" footgun where a cached ISR/SSG
+    // HTML response held an OLD chunk URL after Bun rebundled.  The dev
+    // cache is invalidated source-aware via `isDevLoaderCacheValid`
+    // (mtime-checked dependency walk on every read).
+    if (IS_DEV) {
+      return handleDevRequest(route, ctx, root, searchRoutes);
+    }
 
-      if (route.mode === "isr") {
-        ctx.set.headers["cache-tag"] = resolvePath(pattern, ctx.params ?? {});
-        return handleISR(route, ctx, root, resolvedBuildId, searchRoutes);
-      }
+    if (route.mode === "ssg") {
+      return handleSSGRequest(route, ctx, root, resolvedBuildId, searchRoutes);
+    }
 
-      return renderSSR(route, ctx, root, undefined, searchRoutes);
-    });
+    if (route.mode === "isr") {
+      ctx.set.headers["cache-tag"] = resolvePath(pattern, ctx.params ?? {});
+      return handleISR(route, ctx, root, resolvedBuildId, searchRoutes);
+    }
+
+    return renderSSR(route, ctx, root, undefined, searchRoutes);
+  });
 }
 
 /**
@@ -126,6 +127,137 @@ export function createRoutePlugin({ route, root, buildId, searchRoutes }: RouteP
  *   - `__furinNotFound`    — not-found payload
  *   - `__furinRedirect`    — logical path after a server-side redirect
  */
+function buildSyntheticContext(
+  params: Record<string, string | undefined>,
+  request: Request,
+  headers: Record<string, string | undefined>,
+  cookie: unknown,
+  url: URL,
+  pathname: string
+): SyntheticDataContext {
+  const syntheticRequest = new Request(new URL(pathname + url.search, request.url), {
+    headers: request.headers,
+  });
+  const syntheticSet = { headers: {} as Record<string, string>, status: 200 as number };
+
+  return {
+    request: syntheticRequest,
+    params: params as Record<string, string>,
+    query: Object.fromEntries(url.searchParams),
+    set: syntheticSet,
+    headers,
+    cookie,
+    path: pathname,
+    redirect: (location: string, status?: number) =>
+      new Response(null, { status: status ?? 302, headers: { location } }),
+    status: (code: number) => new Response(null, { status: code }),
+  } as unknown as SyntheticDataContext;
+}
+
+function validateRouteChain(
+  routeChain: ResolvedRoute["routeChain"],
+  syntheticCtx: SyntheticDataContext,
+  url: URL
+): Response | undefined {
+  for (const routeNode of routeChain) {
+    if (routeNode.params) {
+      const validator = getSchemaValidator(routeNode.params, { dynamic: true });
+      if (validator) {
+        const result = validator.safeParse(syntheticCtx.params);
+        if (!result.success) {
+          return Response.json(
+            {
+              errors: result.errors ?? result.error,
+              message: "Invalid params",
+              type: "validation",
+            },
+            { status: 422 }
+          );
+        }
+      }
+    }
+    if (routeNode.query) {
+      const parsedQuery = parseRouteQuery(url, routeNode.query);
+      if (!parsedQuery.ok) {
+        return Response.json(
+          { errors: parsedQuery.errors, message: "Invalid query", type: "validation" },
+          { status: 422 }
+        );
+      }
+      Object.assign(syntheticCtx.query, parsedQuery.query);
+    }
+  }
+}
+
+async function buildDataResponse(
+  result: Awaited<ReturnType<typeof runLoaders>>,
+  syntheticCtx: SyntheticDataContext,
+  pathname: string,
+  matchedRoute: ResolvedRoute
+): Promise<Response> {
+  if (result.type === "data") {
+    autoInvalidateRegistry.registerLoaderTags(pathname, matchedRoute.tags);
+  }
+
+  if (result.type === "redirect") {
+    const redirectUrl = new URL(
+      result.response.headers.get("location") ?? "/",
+      syntheticCtx.request.url
+    );
+    const serialized = await toCrossJSONAsync({
+      __furinRedirect: redirectUrl.pathname + redirectUrl.search,
+    });
+    return new Response(`${JSON.stringify(serialized)}\n`, {
+      headers: { "content-type": "application/x-ndjson" },
+    });
+  }
+
+  if (result.type === "not-found") {
+    const serialized = await toCrossJSONAsync({
+      __furinStatus: 404,
+      __furinNotFound: { message: result.error.message, data: result.error.data },
+    });
+    return new Response(`${JSON.stringify(serialized)}\n`, {
+      status: 200,
+      headers: { "content-type": "application/x-ndjson" },
+    });
+  }
+
+  if (result.type === "error") {
+    const digest = computeErrorDigest(result.error);
+    const serialized = await toCrossJSONAsync({
+      __furinError: {
+        digest,
+        message: result.message,
+        status: result.status,
+      },
+    });
+    return new Response(`${JSON.stringify(serialized)}\n`, {
+      status: result.status,
+      headers: { "content-type": "application/x-ndjson" },
+    });
+  }
+
+  const syncDataWithTitle = withResolvedTitle(matchedRoute, result.syncData);
+
+  if (result.deferredPromises) {
+    return new Response(createDeferredNdjsonStream(syncDataWithTitle, result.deferredPromises), {
+      headers: {
+        ...result.headers,
+        "content-type": "application/x-ndjson",
+      },
+    });
+  }
+
+  const serialized = await toCrossJSONAsync(syncDataWithTitle);
+  return new Response(`${JSON.stringify(serialized)}\n`, {
+    headers: {
+      ...result.headers,
+      "content-type": "application/x-ndjson",
+    },
+  });
+}
+
 export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
   const matchRoute = buildRouteMatcher(routes);
 
@@ -142,160 +274,29 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       }
       const { url, pathname } = parsed;
 
-      // Rewrite the request-scoped wide event so logs / drains report the
-      // *logical* path the user navigated to (e.g. "/board/123/card/456")
-      // instead of the technical "/_furin/data" transport URL. We set this
-      // before the route-match check so 404s also surface the attempted path
-      // — otherwise monitoring just sees "GET /_furin/data 404" with no clue.
       const wideEventLog = useLogger();
       wideEventLog.set({ path });
-
-      // Precompiled at plugin creation: route regexes are built once, sorted
-      // most-specific first, then the hot path only executes regex matches.
       const matched = matchRoute(pathname);
-
       if (!matched) {
         return status("Not Found", "Route not found");
       }
-
-      // Now that we know the matched pattern, add it as a stable aggregation
-      // key for drains (e.g. "p99 latency by route").
       wideEventLog.set({ routePattern: matched.route.pattern });
 
-      // Build a synthetic Elysia-compatible context for the matched route.
-      // Loaders receive request, params, query, set, headers, and cookie.
-      // Build the synthetic URL from the parsed `pathname + search` only —
-      // never from `rawPath` directly — so an attacker cannot smuggle a
-      // foreign origin into `syntheticRequest.url`.
-      const syntheticRequest = new Request(new URL(pathname + url.search, request.url), {
-        headers: request.headers,
-      });
-      const syntheticSet = { headers: {} as Record<string, string>, status: 200 as number };
-      const syntheticCtx: SyntheticDataContext = {
-        request: syntheticRequest,
-        params: matched.params,
-        query: Object.fromEntries(url.searchParams),
-        set: syntheticSet,
+      const syntheticCtx = buildSyntheticContext(
+        matched.params,
+        request,
         headers,
         cookie,
-        path: pathname,
-        // Loader-emitted redirects flow through `runLoaders` → `result.type
-        // === "redirect"` and are converted to NDJSON below. The Response we
-        // return here only has to be detectable by that pipeline.
-        redirect: (location: string, status?: number) =>
-          new Response(null, { status: status ?? 302, headers: { location } }),
-        // Synthetic `status` helper: numeric codes only. Callers that reach
-        // this endpoint never dispatch a string-keyed status; rejecting them
-        // is safer than coercing via `Number(code)` and silently producing
-        // `NaN`.
-        status: (code: number) => new Response(null, { status: code }),
-      } as unknown as SyntheticDataContext;
-
-      // Normalize params and query through the same merged schemas used by
-      // createRoutePlugin so loaders see identical typed/defaulted inputs.
-      const mergedParams = mergeRouteSchemas(matched.route.routeChain, "params");
-      const mergedQuery = mergeRouteSchemas(matched.route.routeChain, "query");
-      const parsedQuery = await parseRouteQuery(url, mergedQuery);
-      if (!parsedQuery.ok) {
-        return Response.json(
-          { errors: parsedQuery.errors, message: "Invalid query", type: "validation" },
-          { status: 422 }
-        );
+        url,
+        pathname
+      );
+      const validationError = validateRouteChain(matched.route.routeChain, syntheticCtx, url);
+      if (validationError) {
+        return validationError;
       }
-      syntheticCtx.params = applySchemaDefaults(
-        mergedParams as Record<string, unknown> | undefined,
-        syntheticCtx.params as Record<string, unknown>
-      ) as Record<string, string>;
-      syntheticCtx.query = parsedQuery.query as SearchParamsInput;
 
       const result = await runLoaders(matched.route, syntheticCtx as unknown as Context);
-
-      // Keep the auto-invalidate registry in sync with whatever path was just
-      // served, so subsequent `revalidateTag(...)` calls (e.g. from a mutation
-      // afterHandle) can still find this URL by tag. Without this, a SPA-only
-      // navigation path (which never goes through the full-HTML render that
-      // also registers tags) would silently fall off the registry — the first
-      // mutation invalidates and unregisters via the cache `onDelete` hook,
-      // the next SPA fetch re-loads but does not re-register, and from then
-      // on `revalidateTag` finds no path to invalidate.
-      if (result.type === "data") {
-        autoInvalidateRegistry.registerLoaderTags(pathname, matched.route.tags);
-      }
-
-      if (result.type === "redirect") {
-        // Encode the redirect target as a special field for the client to follow
-        const redirectUrl = new URL(
-          result.response.headers.get("location") ?? "/",
-          syntheticRequest.url
-        );
-        const serialized = await toCrossJSONAsync({
-          __furinRedirect: redirectUrl.pathname + redirectUrl.search,
-        });
-        return new Response(`${JSON.stringify(serialized)}\n`, {
-          headers: { "content-type": "application/x-ndjson" },
-        });
-      }
-
-      if (result.type === "not-found") {
-        const serialized = await toCrossJSONAsync({
-          __furinStatus: 404,
-          __furinNotFound: { message: result.error.message, data: result.error.data },
-        });
-        return new Response(`${JSON.stringify(serialized)}\n`, {
-          status: 200,
-          headers: { "content-type": "application/x-ndjson" },
-        });
-      }
-
-      if (result.type === "error") {
-        // Compute the digest server-side ONCE so:
-        //   1. The HTTP response body carries it (client error UI displays the
-        //      same id the server logs).
-        //   2. The server-log line below uses the SAME digest a user would see
-        //      on screen, enabling support correlation.
-        // Recomputing client-side from a synthetic message + stack would yield
-        // a different hash — see boundaries.tsx for the digest precedence.
-        const digest = computeErrorDigest(result.error);
-        const serialized = await toCrossJSONAsync({
-          __furinError: {
-            digest,
-            message: result.message,
-            status: result.status,
-          },
-        });
-        return new Response(`${JSON.stringify(serialized)}\n`, {
-          status: result.status,
-          headers: { "content-type": "application/x-ndjson" },
-        });
-      }
-
-      // Resolve the page title server-side: head() never runs in the browser,
-      // so SPA navigation depends on the endpoint shipping it as __furinTitle.
-      const syncDataWithTitle = withResolvedTitle(matched.route, result.syncData);
-
-      if (result.deferredPromises) {
-        return new Response(
-          createDeferredNdjsonStream(syncDataWithTitle, result.deferredPromises),
-          {
-            // Loader headers first so custom headers survive; the NDJSON
-            // content-type is framework-owned and must win — a loader cannot be
-            // allowed to mislabel the data-endpoint payload.
-            headers: {
-              ...result.headers,
-              "content-type": "application/x-ndjson",
-            },
-          }
-        );
-      }
-
-      // No deferred fields: emit the single-line payload used by the legacy path.
-      const serialized = await toCrossJSONAsync(syncDataWithTitle);
-      return new Response(`${JSON.stringify(serialized)}\n`, {
-        headers: {
-          ...result.headers,
-          "content-type": "application/x-ndjson",
-        },
-      });
+      return buildDataResponse(result, syntheticCtx, pathname, matched.route);
     },
     {
       query: t.Object({ path: t.Optional(t.String()) }),

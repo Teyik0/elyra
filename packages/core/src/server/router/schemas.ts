@@ -1,4 +1,3 @@
-import { t } from "elysia";
 import { parseQueryFromURL, parseQueryStandardSchema } from "elysia/parse-query";
 import { getSchemaValidator } from "elysia/schema";
 import type { AnySchema } from "elysia/types";
@@ -134,12 +133,9 @@ export type ParseRouteQueryResult =
  * `/_furin/data` request path. This keeps SPA navigations aligned with the
  * Elysia guard used by the full SSR route.
  *
- * @internal Exported for unit testing.
+ * @internal Also exported for unit testing.
  */
-export async function parseRouteQuery(
-  url: URL,
-  schema: AnySchema | undefined
-): Promise<ParseRouteQueryResult> {
+export function parseRouteQuery(url: URL, schema: AnySchema | undefined): ParseRouteQueryResult {
   if (!schema) {
     return { ok: true, query: parseQueryFromURL(url.search, 1) as SearchParamsInput };
   }
@@ -147,7 +143,7 @@ export async function parseRouteQuery(
   if (isStandardSchema(schema)) {
     const rawQuery = parseQueryStandardSchema(url.search, 1) as UnknownObject;
     const validator = getSchemaValidator(schema, { dynamic: true });
-    const checked = await validator?.Check(rawQuery);
+    const checked = validator?.Check(rawQuery);
     if (checked && typeof checked === "object" && "issues" in checked) {
       return { errors: checked.issues, ok: false };
     }
@@ -173,67 +169,18 @@ export async function parseRouteQuery(
   };
 }
 
-// Standard structural keys on a TObject — everything else is a user-supplied option
-// (e.g. additionalProperties, $id, description, title) and must be preserved.
-const TOBJECT_STRUCTURAL_KEYS = new Set(["type", "properties", "required"]);
-const TYPEBOX_KIND = Symbol.for("TypeBox.Kind");
-
-function isTypeBoxObjectSchema(schema: unknown): schema is UnknownObject {
-  return (
-    isObjectSchema(schema) &&
-    (schema as UnknownObject & { [key: symbol]: unknown })[TYPEBOX_KIND] === "Object"
-  );
-}
-
-/**
- * Merges TObject schemas from all routeChain entries for a given key.
- * Properties are spread left-to-right (leaf wins on key conflict).
- * Object-level options (additionalProperties, $id, description, …) are also
- * merged with the same leaf-wins semantics so they are not silently dropped.
- * Returns undefined when no entry in the chain defines the key.
- *
- * @internal Exported for unit testing.
- */
-export function mergeRouteSchemas(
-  routeChain: RuntimeRoute[],
-  key: "params" | "query"
-): AnySchema | undefined {
-  const schemas = routeChain.flatMap((r) => (r[key] ? [r[key]] : [])) as Record<string, unknown>[];
-
-  if (schemas.length === 0) {
-    return;
-  }
-  if (schemas.length === 1) {
-    return schemas[0] as AnySchema;
-  }
-
-  if (schemas.some((s) => !isTypeBoxObjectSchema(s))) {
-    throw new Error(
-      `[furin] Merging ${key} schemas across the route chain requires TypeBox in V1. Use TypeBox for parent/child ${key}, or define ${key} only on leaf routes.`
-    );
-  }
-
-  const mergedProperties = Object.assign(
-    {},
-    ...schemas.map((s) => (s.properties as Record<string, unknown>) ?? {})
-  );
-
-  const mergedOptions = Object.assign(
-    {},
-    ...schemas.map((s) =>
-      Object.fromEntries(Object.entries(s).filter(([k]) => !TOBJECT_STRUCTURAL_KEYS.has(k)))
-    )
-  );
-
-  return t.Object(mergedProperties, mergedOptions) as AnySchema;
-}
-
 export function createSearchRouteMetadata(
   routes: Array<{ pattern: string; routeChain: RuntimeRoute[] }>
 ): SearchRouteMetadata[] {
   const metadata: SearchRouteMetadata[] = [];
   for (const route of routes) {
-    const searchDefaults = collectSearchDefaults(mergeRouteSchemas(route.routeChain, "query"));
+    let searchDefaults: SearchParamsInput | undefined;
+    for (const routeNode of route.routeChain) {
+      const defaults = collectSearchDefaults(routeNode.query);
+      if (defaults) {
+        searchDefaults = { ...searchDefaults, ...defaults };
+      }
+    }
     if (!searchDefaults) {
       continue;
     }

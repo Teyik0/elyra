@@ -22,7 +22,6 @@ export { createDataEndpoint, createRoutePlugin } from "./plugin.ts";
 export {
   applySchemaDefaults,
   createSearchRouteMetadata,
-  mergeRouteSchemas,
   parseDataEndpointPath,
 } from "./schemas.ts";
 export type { ResolvedRoute, RootLayout, SegmentBoundary } from "./types.ts";

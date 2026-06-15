@@ -3,6 +3,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { t } from "elysia";
+import { object, string } from "valibot";
+import { z } from "zod";
 import { patternToTypeString, schemaToTypeString, writeRouteTypes } from "../src/build";
 import type { ResolvedRoute } from "../src/server/router/index.ts";
 
@@ -233,7 +235,7 @@ describe("writeRouteTypes", () => {
           },
         ],
       },
-    ] as ResolvedRoute[];
+    ] as unknown as ResolvedRoute[];
 
     writeRouteTypes(routes, tmpDir);
 
@@ -241,6 +243,46 @@ describe("writeRouteTypes", () => {
     expect(content).toContain(
       '"/parent/child": { search?: { parentFilter?: string; childFilter?: string }; searchInput?: { parentFilter?: string; childFilter?: string } }'
     );
+  });
+
+  test("route-chain Zod query schemas are merged via StandardJSONSchemaV1", () => {
+    const routes = [
+      {
+        pattern: "/products",
+        routeChain: [
+          {
+            __type: "FURIN_ROUTE" as const,
+            query: z.object({ page: z.string() }),
+          },
+        ],
+      },
+    ] as unknown as ResolvedRoute[];
+
+    writeRouteTypes(routes, tmpDir);
+
+    const content = readFileSync(join(tmpDir, "furin-env.d.ts"), "utf8");
+    expect(content).toContain(
+      '"/products": { search?: { page: string }; searchInput?: { page: string } }'
+    );
+  });
+
+  test("route-chain Valibot query schemas fallback to unknown", () => {
+    const routes = [
+      {
+        pattern: "/products",
+        routeChain: [
+          {
+            __type: "FURIN_ROUTE" as const,
+            query: object({ page: string() }),
+          },
+        ],
+      },
+    ] as unknown as ResolvedRoute[];
+
+    writeRouteTypes(routes, tmpDir);
+
+    const content = readFileSync(join(tmpDir, "furin-env.d.ts"), "utf8");
+    expect(content).toContain('"/products": { search?: unknown; searchInput?: unknown }');
   });
 
   test("dynamic route — uses index signature syntax", () => {
