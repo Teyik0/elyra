@@ -21,11 +21,13 @@ import { Elysia, t } from "elysia";
 import type { RuntimeRoute } from "furin";
 import {
   collectRouteTags,
+  createDataEndpoint,
   createRoutePlugin,
-  mergeRouteSchemas,
   scanPages,
 } from "furin/server/router";
 import { __setDevMode, IS_DEV } from "furin/server/runtime-env";
+import { array, object, optional, string } from "valibot";
+import { z } from "zod";
 import { parseRouteQuery } from "../../src/server/router/schemas.ts";
 
 const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
@@ -37,95 +39,6 @@ beforeAll(() => {
   __setDevMode(false);
 });
 afterAll(() => __setDevMode(originalDevMode));
-
-// ── mergeRouteSchemas unit tests ─────────────────────────────────────────────
-
-describe("mergeRouteSchemas", () => {
-  test("returns undefined when no entry in chain has the key", () => {
-    const chain: RuntimeRoute[] = [{ __type: "FURIN_ROUTE" }, { __type: "FURIN_ROUTE" }];
-    expect(mergeRouteSchemas(chain, "query")).toBeUndefined();
-    expect(mergeRouteSchemas(chain, "params")).toBeUndefined();
-  });
-
-  test("returns the schema directly when only one entry has it", () => {
-    const schema = t.Object({ city: t.Optional(t.String()) });
-    const chain: RuntimeRoute[] = [
-      { __type: "FURIN_ROUTE" },
-      { __type: "FURIN_ROUTE", query: schema },
-    ];
-    expect(mergeRouteSchemas(chain, "query")).toBe(schema);
-  });
-
-  test("merges properties from multiple entries — both keys present in result", () => {
-    const parent = t.Object({ parentField: t.Optional(t.String()) });
-    const child = t.Object({ childField: t.Optional(t.String()) });
-    const chain: RuntimeRoute[] = [
-      { __type: "FURIN_ROUTE" },
-      { __type: "FURIN_ROUTE", query: parent },
-      { __type: "FURIN_ROUTE", query: child },
-    ];
-
-    const merged = mergeRouteSchemas(chain, "query") as ReturnType<typeof t.Object>;
-
-    expect(merged).toBeDefined();
-    expect(merged.properties).toHaveProperty("parentField");
-    expect(merged.properties).toHaveProperty("childField");
-  });
-
-  test("leaf schema wins on key conflict", () => {
-    const parentVal = t.String({ default: "parent" });
-    const childVal = t.String({ default: "child" });
-    const parent = t.Object({ shared: t.Optional(parentVal) });
-    const child = t.Object({ shared: t.Optional(childVal) });
-    const chain: RuntimeRoute[] = [
-      { __type: "FURIN_ROUTE", query: parent },
-      { __type: "FURIN_ROUTE", query: child },
-    ];
-
-    const merged = mergeRouteSchemas(chain, "query") as ReturnType<typeof t.Object>;
-
-    // child is last → its Optional(childVal) wins
-    const sharedSchema = merged.properties.shared as { [key: string]: unknown };
-    expect(JSON.stringify(sharedSchema)).toContain('"child"');
-  });
-
-  test("returns a single non-TypeBox schema unchanged", () => {
-    const schema = { "~standard": {} };
-    const chain = [{ __type: "FURIN_ROUTE" as const, query: schema }];
-
-    expect(mergeRouteSchemas(chain as RuntimeRoute[], "query")).toBe(schema);
-  });
-
-  test("throws a clear error when multi-route query merge is not TypeBox", () => {
-    const parent = t.Object({ parentField: t.Optional(t.String()) });
-    const child = { "~standard": {} };
-    const chain = [
-      { __type: "FURIN_ROUTE" as const, query: parent },
-      { __type: "FURIN_ROUTE" as const, query: child },
-    ];
-
-    expect(() => mergeRouteSchemas(chain as RuntimeRoute[], "query")).toThrow(
-      "[furin] Merging query schemas across the route chain requires TypeBox in V1. Use TypeBox for parent/child query, or define query only on leaf routes."
-    );
-  });
-
-  test("throws when multi-route schemas include a plain JSON Schema object", () => {
-    const parent = t.Object({ parentField: t.Optional(t.String()) });
-    const child = {
-      type: "object",
-      properties: { childField: { type: "string" } },
-      required: ["childField"],
-    };
-    const chain = [
-      { __type: "FURIN_ROUTE" as const, query: parent },
-      { __type: "FURIN_ROUTE" as const, query: child },
-    ];
-
-    expect(() => mergeRouteSchemas(chain as RuntimeRoute[], "query")).toThrow(
-      "[furin] Merging query schemas across the route chain requires TypeBox in V1. Use TypeBox for parent/child query, or define query only on leaf routes."
-    );
-  });
-});
 
 describe("parseRouteQuery", () => {
   test("matches Elysia query parsing when no query schema exists", async () => {
@@ -161,6 +74,197 @@ describe("parseRouteQuery", () => {
         tags: ["react", "furin"],
       },
     });
+  });
+
+  test("validates Zod schema with defaults", async () => {
+    const schema = z.object({ page: z.string().default("1") });
+
+    const result = await parseRouteQuery(new URL("http://localhost/products"), schema as any);
+
+    expect(result).toEqual({
+      ok: true,
+      query: { page: "1" },
+    });
+  });
+
+  test("validates Zod schema with arrays", async () => {
+    const schema = z.object({ tags: z.array(z.string()) });
+
+    const result = await parseRouteQuery(
+      new URL("http://localhost/products?tags=a&tags=b"),
+      schema as any
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      query: { tags: ["a", "b"] },
+    });
+  });
+
+  test("validates Valibot schema with defaults", async () => {
+    const schema = object({ page: optional(string(), "1") });
+
+    const result = await parseRouteQuery(new URL("http://localhost/products"), schema as any);
+
+    expect(result).toEqual({
+      ok: true,
+      query: { page: "1" },
+    });
+  });
+
+  test("validates Valibot schema with arrays", async () => {
+    const schema = object({ tags: array(string()) });
+
+    const result = await parseRouteQuery(
+      new URL("http://localhost/products?tags=a&tags=b"),
+      schema as any
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      query: { tags: ["a", "b"] },
+    });
+  });
+});
+
+describe("createDataEndpoint — standard schemas", () => {
+  test("validates Zod query schemas per routeNode and returns 200", async () => {
+    const routes = [
+      {
+        pattern: "/products",
+        mode: "ssr" as const,
+        path: "pages/products/index.tsx",
+        routeChain: [
+          {
+            __type: "FURIN_ROUTE" as const,
+            query: z.object({ search: z.string() }),
+          } as RuntimeRoute,
+        ],
+        page: {
+          __type: "FURIN_PAGE" as const,
+          _route: { __type: "FURIN_ROUTE" as const },
+          component: () => null,
+        },
+        segmentBoundaries: [],
+      },
+    ];
+
+    const app = new Elysia().use(createDataEndpoint(routes as any));
+
+    const resOk = await app.handle(
+      new Request("http://localhost/_furin/data?path=/products?search=hello")
+    );
+    expect(resOk.status).toBe(200);
+
+    const resErr = await app.handle(new Request("http://localhost/_furin/data?path=/products"));
+    expect(resErr.status).toBe(422);
+  });
+
+  test("validates chained Zod query schemas across route chain", async () => {
+    const routes = [
+      {
+        pattern: "/products",
+        mode: "ssr" as const,
+        path: "pages/products/index.tsx",
+        routeChain: [
+          {
+            __type: "FURIN_ROUTE" as const,
+            query: z.object({ parent: z.string() }),
+          } as RuntimeRoute,
+          {
+            __type: "FURIN_ROUTE" as const,
+            query: z.object({ child: z.string() }),
+          } as RuntimeRoute,
+        ],
+        page: {
+          __type: "FURIN_PAGE" as const,
+          _route: { __type: "FURIN_ROUTE" as const },
+          component: () => null,
+        },
+        segmentBoundaries: [],
+      },
+    ];
+
+    const app = new Elysia().use(createDataEndpoint(routes as any));
+
+    const resOk = await app.handle(
+      new Request(
+        `http://localhost/_furin/data?path=${encodeURIComponent("/products?parent=a&child=b")}`
+      )
+    );
+    expect(resOk.status).toBe(200);
+
+    const resErr = await app.handle(
+      new Request(`http://localhost/_furin/data?path=${encodeURIComponent("/products?parent=a")}`)
+    );
+    expect(resErr.status).toBe(422);
+  });
+
+  test("validates Valibot query schemas per routeNode and returns 200", async () => {
+    const routes = [
+      {
+        pattern: "/products",
+        mode: "ssr" as const,
+        path: "pages/products/index.tsx",
+        routeChain: [
+          {
+            __type: "FURIN_ROUTE" as const,
+            query: object({ search: string() }),
+          } as RuntimeRoute,
+        ],
+        page: {
+          __type: "FURIN_PAGE" as const,
+          _route: { __type: "FURIN_ROUTE" as const },
+          component: () => null,
+        },
+        segmentBoundaries: [],
+      },
+    ];
+
+    const app = new Elysia().use(createDataEndpoint(routes as any));
+
+    const resOk = await app.handle(
+      new Request(
+        `http://localhost/_furin/data?path=${encodeURIComponent("/products?search=hello")}`
+      )
+    );
+    expect(resOk.status).toBe(200);
+
+    const resErr = await app.handle(
+      new Request(`http://localhost/_furin/data?path=${encodeURIComponent("/products")}`)
+    );
+    expect(resErr.status).toBe(422);
+  });
+
+  test("validates route params against matched params, not query string", async () => {
+    const routes = [
+      {
+        pattern: "/products/:id",
+        mode: "ssr" as const,
+        path: "pages/products/[id].tsx",
+        routeChain: [
+          {
+            __type: "FURIN_ROUTE" as const,
+            params: t.Object({ id: t.String() }),
+          } as RuntimeRoute,
+        ],
+        page: {
+          __type: "FURIN_PAGE" as const,
+          _route: { __type: "FURIN_ROUTE" as const },
+          component: () => null,
+        },
+        segmentBoundaries: [],
+      },
+    ];
+
+    const app = new Elysia().use(createDataEndpoint(routes as any));
+
+    const resOk = await app.handle(
+      new Request(
+        `http://localhost/_furin/data?path=${encodeURIComponent("/products/123?search=hello")}`
+      )
+    );
+    expect(resOk.status).toBe(200);
   });
 });
 
@@ -210,7 +314,7 @@ describe("schema merge — parent + child both declare query schemas", () => {
       throw new Error(`Route ${ROUTE_PATTERN} not found — did the fixture files get created?`);
     }
 
-    const app = new Elysia().use(createRoutePlugin(route, result.root));
+    const app = new Elysia().use(createRoutePlugin({ route, root: result.root, buildId: null }));
 
     const res = await app.handle(new Request(`http://localhost${ROUTE_PATTERN}`));
 
@@ -226,7 +330,7 @@ describe("schema merge — parent + child both declare query schemas", () => {
       throw new Error(`Route ${ROUTE_PATTERN} not found`);
     }
 
-    const app = new Elysia().use(createRoutePlugin(route, result.root));
+    const app = new Elysia().use(createRoutePlugin({ route, root: result.root, buildId: null }));
 
     const res = await app.handle(
       new Request(
@@ -235,5 +339,163 @@ describe("schema merge — parent + child both declare query schemas", () => {
     );
 
     expect(res.status).toBe(200);
+  });
+});
+
+// ── Tracer bullet: Standard Schema support ─────────────────────────────────────
+
+describe("standard schema — Zod", () => {
+  test("createRoutePlugin accepts a single Zod schema and validates query params", async () => {
+    const route = {
+      pattern: "/products",
+      mode: "ssr" as const,
+      path: "pages/products/index.tsx",
+      routeChain: [
+        {
+          __type: "FURIN_ROUTE" as const,
+          query: z.object({ search: z.string() }),
+        } as RuntimeRoute,
+      ],
+      page: {
+        __type: "FURIN_PAGE" as const,
+        _route: { __type: "FURIN_ROUTE" as const },
+        component: () => null,
+      },
+      segmentBoundaries: [],
+    };
+
+    const app = new Elysia().use(
+      createRoutePlugin({
+        route: route as any,
+        root: { route: { __type: "FURIN_ROUTE" } as any } as any,
+        buildId: null,
+      })
+    );
+
+    // Valid query
+    const resOk = await app.handle(new Request("http://localhost/products?search=hello"));
+    expect(resOk.status).toBe(200);
+
+    // Invalid query (missing required param)
+    const resErr = await app.handle(new Request("http://localhost/products"));
+    expect(resErr.status).toBe(422);
+  });
+
+  test("createRoutePlugin chains Zod schemas across route chain — both query keys present", async () => {
+    const route = {
+      pattern: "/products",
+      mode: "ssr" as const,
+      path: "pages/products/index.tsx",
+      routeChain: [
+        {
+          __type: "FURIN_ROUTE" as const,
+          query: z.object({ parent: z.string() }),
+        } as RuntimeRoute,
+        {
+          __type: "FURIN_ROUTE" as const,
+          query: z.object({ child: z.string() }),
+        } as RuntimeRoute,
+      ],
+      page: {
+        __type: "FURIN_PAGE" as const,
+        _route: { __type: "FURIN_ROUTE" as const },
+        component: () => null,
+      },
+      segmentBoundaries: [],
+    };
+
+    const app = new Elysia().use(
+      createRoutePlugin({
+        route: route as any,
+        root: { route: { __type: "FURIN_ROUTE" } as any } as any,
+        buildId: null,
+      })
+    );
+
+    // Valid query — both keys present
+    const resOk = await app.handle(new Request("http://localhost/products?parent=a&child=b"));
+    expect(resOk.status).toBe(200);
+
+    // Invalid query — missing child
+    const resErr = await app.handle(new Request("http://localhost/products?parent=a"));
+    expect(resErr.status).toBe(422);
+  });
+});
+
+describe("standard schema — Valibot", () => {
+  test("createRoutePlugin accepts a single Valibot schema and validates query params", async () => {
+    const route = {
+      pattern: "/products",
+      mode: "ssr" as const,
+      path: "pages/products/index.tsx",
+      routeChain: [
+        {
+          __type: "FURIN_ROUTE" as const,
+          query: object({ search: string() }),
+        } as RuntimeRoute,
+      ],
+      page: {
+        __type: "FURIN_PAGE" as const,
+        _route: { __type: "FURIN_ROUTE" as const },
+        component: () => null,
+      },
+      segmentBoundaries: [],
+    };
+
+    const app = new Elysia().use(
+      createRoutePlugin({
+        route: route as any,
+        root: { route: { __type: "FURIN_ROUTE" } as any } as any,
+        buildId: null,
+      })
+    );
+
+    // Valid query
+    const resOk = await app.handle(new Request("http://localhost/products?search=hello"));
+    expect(resOk.status).toBe(200);
+
+    // Invalid query (missing required param)
+    const resErr = await app.handle(new Request("http://localhost/products"));
+    expect(resErr.status).toBe(422);
+  });
+
+  test("createRoutePlugin chains Valibot schemas across route chain — both query keys present", async () => {
+    const route = {
+      pattern: "/products",
+      mode: "ssr" as const,
+      path: "pages/products/index.tsx",
+      routeChain: [
+        {
+          __type: "FURIN_ROUTE" as const,
+          query: object({ parent: string() }),
+        } as RuntimeRoute,
+        {
+          __type: "FURIN_ROUTE" as const,
+          query: object({ child: string() }),
+        } as RuntimeRoute,
+      ],
+      page: {
+        __type: "FURIN_PAGE" as const,
+        _route: { __type: "FURIN_ROUTE" as const },
+        component: () => null,
+      },
+      segmentBoundaries: [],
+    };
+
+    const app = new Elysia().use(
+      createRoutePlugin({
+        route: route as any,
+        root: { route: { __type: "FURIN_ROUTE" } as any } as any,
+        buildId: null,
+      })
+    );
+
+    // Valid query — both keys present
+    const resOk = await app.handle(new Request("http://localhost/products?parent=a&child=b"));
+    expect(resOk.status).toBe(200);
+
+    // Invalid query — missing child
+    const resErr = await app.handle(new Request("http://localhost/products?parent=a"));
+    expect(resErr.status).toBe(422);
   });
 });

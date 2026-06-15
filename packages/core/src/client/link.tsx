@@ -18,6 +18,14 @@ import {
 // biome-ignore lint/performance/noBarrelFile: re-exporting router symbols preserves backward compatibility for @teyik0/furin/link consumers
 export * from "./router/index.ts";
 
+function isInternal(url: string): boolean {
+  try {
+    return new URL(url, window.location.origin).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 // ── Link ───────────────────────────────────────────────────────────────────────
 
 interface LinkView {
@@ -153,14 +161,6 @@ function LinkInteractive<To extends RouteTo>({
     },
     []
   );
-
-  const isInternal = (url: string): boolean => {
-    try {
-      return new URL(url, window.location.origin).origin === window.location.origin;
-    } catch {
-      return false;
-    }
-  };
 
   const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e);

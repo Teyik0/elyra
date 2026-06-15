@@ -323,7 +323,7 @@ export async function furin({
       .use(createDataEndpoint(routes))
       .use((app) => {
         for (const route of routes) {
-          app.use(createRoutePlugin(route, root, undefined, searchRoutes));
+          app.use(createRoutePlugin({ route, root, buildId: null, searchRoutes }));
         }
         return app;
       });
@@ -336,8 +336,7 @@ export async function furin({
   }
   const { root, routes } = loadProdRoutes(ctx);
   const searchRoutes = createSearchRouteMetadata(routes);
-  const prodBuildId = ctx.buildId ?? "";
-  setBuildId(prodBuildId);
+  setBuildId(ctx.buildId as string);
   hydrateSSGCacheFromCompileContext(ctx);
 
   const embedded = ctx?.embedded;
@@ -415,7 +414,7 @@ export async function furin({
     .use(createDataEndpoint(routes))
     .use((app) => {
       for (const route of routes) {
-        app.use(createRoutePlugin(route, root, prodBuildId, searchRoutes));
+        app.use(createRoutePlugin({ route, root, buildId: ctx.buildId as string, searchRoutes }));
       }
       return app;
     });

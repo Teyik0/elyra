@@ -76,7 +76,7 @@ describe("generateHydrateEntry", () => {
           },
         },
       ],
-    } as ResolvedRoute;
+    } as unknown as ResolvedRoute;
 
     const code = generateHydrateEntry([route], ROOT, "", false);
 

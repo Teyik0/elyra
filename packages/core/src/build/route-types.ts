@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { mergeRouteSchemas, type ResolvedRoute } from "../server/router/index.ts";
+import { getSchemaProperties } from "elysia/schema";
+import type { RuntimeRoute } from "../client.ts";
+import { type ResolvedRoute } from "../server/router/index.ts";
 
 /** @internal Exported for unit testing only. */
 export function patternToTypeString(pattern: string): string {
@@ -95,6 +97,70 @@ function tagToStringLiteral(tag: string): string {
   return `'${json.slice(1, -1).replaceAll("'", "\\'")}'`;
 }
 
+interface StandardJSONSchemaResult {
+  properties: Record<string, unknown>;
+  required: string[];
+}
+
+function getStandardJSONSchemaProperties(schema: unknown): StandardJSONSchemaResult | undefined {
+  try {
+    const standard = (schema as Record<string, unknown>)["~standard"] as
+      | Record<string, unknown>
+      | undefined;
+    if (!standard || typeof standard !== "object" || !("jsonSchema" in standard)) {
+      return undefined;
+    }
+    const jsonSchema = (standard["jsonSchema"] as Record<string, unknown>)["input"] as (
+      opts: unknown,
+    ) => unknown;
+    const result = jsonSchema({ target: "draft-2020-12" }) as Record<string, unknown>;
+    if (result.type === "object" && result.properties && typeof result.properties === "object") {
+      return {
+        properties: result.properties as Record<string, unknown>,
+        required: Array.isArray(result.required) ? (result.required as string[]) : [],
+      };
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** @internal Exported for unit testing only. */
+export function mergeRouteSchemas(
+  routeChain: RuntimeRoute[],
+  key: "query" | "params"
+): unknown {
+  const allProperties: Record<string, unknown> = {};
+  const allRequired = new Set<string>();
+  let hasAny = false;
+
+  for (const routeNode of routeChain) {
+    const schema = routeNode[key];
+    if (!schema) continue;
+    hasAny = true;
+
+    const typeboxProps = getSchemaProperties(schema as any);
+    if (typeboxProps) {
+      Object.assign(allProperties, typeboxProps);
+    } else {
+      const standardProps = getStandardJSONSchemaProperties(schema);
+      if (standardProps) {
+        Object.assign(allProperties, standardProps.properties);
+        for (const r of standardProps.required) {
+          allRequired.add(r);
+        }
+      } else {
+        return { type: "unknown" };
+      }
+    }
+  }
+
+  if (!hasAny) return undefined;
+  if (Object.keys(allProperties).length === 0) return undefined;
+  return { type: "object", properties: allProperties, required: [...allRequired] };
+}
+
 /**
  * Generates furin-env.d.ts at the project root — augments RouteManifest
  * in furin/link so that <Link to="..."> has type-safe autocompletion and
@@ -105,7 +171,7 @@ function tagToStringLiteral(tag: string): string {
  */
 /** @internal Exported for unit testing only. */
 export function writeRouteTypes(routes: ResolvedRoute[], projectRoot: string): void {
-  const sortedRoutes = [...routes].sort((a, b) => a.pattern.localeCompare(b.pattern));
+  const sortedRoutes = routes.toSorted((a, b) => a.pattern.localeCompare(b.pattern));
   const entries = sortedRoutes.map((r) => {
     const typeKey = patternToTypeString(r.pattern);
     const isDynamic = typeKey.startsWith("`");
@@ -118,7 +184,7 @@ export function writeRouteTypes(routes: ResolvedRoute[], projectRoot: string): v
   });
   const routeManifestEntries = entries.join(";\n");
 
-  const sortedTags = [...new Set(routes.flatMap((route) => route.tags ?? []))].sort();
+  const sortedTags = [...new Set(routes.flatMap((route) => route.tags ?? []))].toSorted();
   const tagBlock =
     sortedTags.length > 0
       ? `\n\ndeclare module "@teyik0/furin" {\n  interface FurinCacheTags {\n${sortedTags

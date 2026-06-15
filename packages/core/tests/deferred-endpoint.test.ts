@@ -15,7 +15,7 @@ mock.module("evlog", () => ({
   useLogger: () => ({ set() {}, info() {}, warn() {}, error() {} }),
 }));
 
-import { Elysia } from "elysia";
+import { type Context, Elysia } from "elysia";
 import { defer } from "../src/client";
 import { createDataEndpoint, scanPages } from "../src/server/router/index.ts";
 import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
@@ -537,5 +537,88 @@ describe("GET /_furin/data", () => {
     expect(furinError?.message).toBe("Something went wrong");
     expect(furinError?.message).not.toContain("kaboom");
     expect(furinError?.digest).toMatch(DIGEST_RE);
+  });
+
+  test("synthetic request preserves original request headers for loaders", async () => {
+    const { routes } = await scanPages(FIXTURES_DIR);
+    const route = routes.find((r) => r.pattern === "/with-loader");
+    if (!route) {
+      throw new Error("No /with-loader route in fixtures");
+    }
+    // Shallow-copy `.page` so the loader does not leak to other tests.
+    route.page = {
+      ...route.page,
+      loader: (ctx: Context) => {
+        // User code follows the web pattern: request.headers.get("x-auth")
+        return { auth: ctx.request.headers.get("x-auth") };
+      },
+    };
+
+    const app = new Elysia().use(createDataEndpoint(routes));
+    const res = await app.handle(
+      new Request("http://localhost/_furin/data?path=%2Fwith-loader", {
+        headers: { "x-auth": "bearer-token" },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const { syncData } = await parseDeferredNdjson(
+      res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      undefined
+    );
+    expect(syncData.auth).toBe("bearer-token");
+  });
+
+  test("relative redirect in data endpoint resolves to logical route", async () => {
+    const { routes } = await scanPages(FIXTURES_DIR);
+    const route = routes.find((r) => r.pattern === "/with-loader");
+    if (!route) {
+      throw new Error("No /with-loader route in fixtures");
+    }
+    // Shallow-copy `.page` so the loader does not leak to other tests.
+    route.page = {
+      ...route.page,
+      loader: (ctx: Context) => {
+        // Redirect relatif "new" depuis la route logique
+        // Les redirects doivent etre "throw" (pas return) pour etre captures
+        throw ctx.redirect("new", 302);
+      },
+    };
+
+    const app = new Elysia().use(createDataEndpoint(routes));
+    const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fwith-loader"));
+
+    expect(res.status).toBe(200);
+    const { syncData } = await parseDeferredNdjson(
+      res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      undefined
+    );
+    // Le NDJSON contient __furinRedirect
+    // Si request.url est utilise, on obtient /_furin/data/new (bug)
+    // Si syntheticRequest.url est utilise, on obtient /new (correct)
+    expect(syncData.__furinRedirect).toBe("/new");
+  });
+
+  test("loader request is a real Request instance", async () => {
+    const { routes } = await scanPages(FIXTURES_DIR);
+    const route = routes.find((r) => r.pattern === "/with-loader");
+    if (!route) {
+      throw new Error("No /with-loader route in fixtures");
+    }
+    let capturedRequest: Request | null = null;
+    // Shallow-copy `.page` so the loader does not leak to other tests.
+    route.page = {
+      ...route.page,
+      loader: (ctx: Context) => {
+        capturedRequest = ctx.request as Request;
+        return {};
+      },
+    };
+
+    const app = new Elysia().use(createDataEndpoint(routes));
+    const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fwith-loader"));
+
+    expect(res.status).toBe(200);
+    expect(capturedRequest).toBeInstanceOf(Request);
   });
 });

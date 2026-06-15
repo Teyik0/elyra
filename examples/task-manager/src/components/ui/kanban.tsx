@@ -12,6 +12,32 @@ import { FiArrowUpRight, FiPlus, FiTrash } from "react-icons/fi";
 import { apiClient } from "@/lib/api";
 import { cn } from "../../lib/utils";
 
+function getNearestIndicator(e: DragEvent, indicators: HTMLElement[]) {
+  const lastIndicator = indicators.at(-1);
+  if (!lastIndicator) {
+    return {
+      offset: Number.NEGATIVE_INFINITY,
+      element: null,
+    };
+  }
+
+  const DISTANCE_OFFSET = 50;
+  return indicators.reduce(
+    (closest, child) => {
+      const box = child.getBoundingClientRect();
+      const offset = e.clientY - (box.top + DISTANCE_OFFSET);
+      if (offset < 0 && offset > closest.offset) {
+        return { offset, element: child };
+      }
+      return closest;
+    },
+    {
+      offset: Number.NEGATIVE_INFINITY,
+      element: lastIndicator,
+    }
+  );
+}
+
 export type ColumnType = "backlog" | "todo" | "doing" | "done";
 
 export interface KanbanCard {
@@ -286,32 +312,6 @@ const Column = ({
       return;
     }
     el.element.style.opacity = "1";
-  };
-
-  const getNearestIndicator = (e: DragEvent, indicators: HTMLElement[]) => {
-    const lastIndicator = indicators.at(-1);
-    if (!lastIndicator) {
-      return {
-        offset: Number.NEGATIVE_INFINITY,
-        element: null,
-      };
-    }
-
-    const DISTANCE_OFFSET = 50;
-    return indicators.reduce(
-      (closest, child) => {
-        const box = child.getBoundingClientRect();
-        const offset = e.clientY - (box.top + DISTANCE_OFFSET);
-        if (offset < 0 && offset > closest.offset) {
-          return { offset, element: child };
-        }
-        return closest;
-      },
-      {
-        offset: Number.NEGATIVE_INFINITY,
-        element: lastIndicator,
-      }
-    );
   };
 
   const getIndicators = () =>

@@ -111,7 +111,7 @@ describe("resolveMode", () => {
           properties: { page: { type: "number", default: 1 } },
         },
       },
-    ] as RuntimeRoute[];
+    ] as unknown as RuntimeRoute[];
 
     expect(resolveMode(page, chain)).toBe("ssr");
   });

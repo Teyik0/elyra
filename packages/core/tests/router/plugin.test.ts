@@ -18,7 +18,7 @@ describe("createRoutePlugin", () => {
   test("creates Elysia instance for SSG route", async () => {
     const { route, root } = await getRoute("/ssg-page");
 
-    const plugin = createRoutePlugin(route, root);
+    const plugin = createRoutePlugin({ route, root, buildId: null });
 
     expect(plugin).toBeDefined();
     expect(typeof plugin.use).toBe("function");
@@ -28,7 +28,7 @@ describe("createRoutePlugin", () => {
   test("creates Elysia instance for SSR route", async () => {
     const { route, root } = await getRoute("/ssr-page");
 
-    const plugin = createRoutePlugin(route, root);
+    const plugin = createRoutePlugin({ route, root, buildId: null });
 
     expect(plugin).toBeDefined();
     expect(typeof plugin.use).toBe("function");
@@ -37,7 +37,7 @@ describe("createRoutePlugin", () => {
   test("creates Elysia instance for ISR route", async () => {
     const { route, root } = await getRoute("/isr-page");
 
-    const plugin = createRoutePlugin(route, root);
+    const plugin = createRoutePlugin({ route, root, buildId: null });
 
     expect(plugin).toBeDefined();
     expect(typeof plugin.use).toBe("function");
@@ -46,7 +46,7 @@ describe("createRoutePlugin", () => {
   test("creates Elysia instance for route with loader", async () => {
     const { route, root } = await getRoute("/with-loader");
 
-    const plugin = createRoutePlugin(route, root);
+    const plugin = createRoutePlugin({ route, root, buildId: null });
 
     expect(plugin).toBeDefined();
   });
@@ -54,7 +54,7 @@ describe("createRoutePlugin", () => {
   test("creates Elysia instance for nested route", async () => {
     const { route, root } = await getRoute("/nested/deep");
 
-    const plugin = createRoutePlugin(route, root);
+    const plugin = createRoutePlugin({ route, root, buildId: null });
 
     expect(plugin).toBeDefined();
   });
@@ -62,7 +62,7 @@ describe("createRoutePlugin", () => {
   test("works with root layout", async () => {
     const { route, root } = await getRoute("/ssg-page");
 
-    const plugin = createRoutePlugin(route, root);
+    const plugin = createRoutePlugin({ route, root, buildId: null });
 
     expect(plugin).toBeDefined();
   });
@@ -73,7 +73,7 @@ describe("createRoutePlugin", () => {
     try {
       const { route, root } = await getRoute("/ssg-page");
 
-      const plugin = createRoutePlugin(route, root);
+      const plugin = createRoutePlugin({ route, root, buildId: null });
 
       expect(plugin).toBeDefined();
       expect(typeof plugin.use).toBe("function");

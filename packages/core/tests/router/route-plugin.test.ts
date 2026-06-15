@@ -28,7 +28,9 @@ describe("createRoutePlugin", () => {
       throw new Error("No SSG route in fixtures");
     }
 
-    const app = new Elysia().use(createRoutePlugin(ssgRoute, result.root));
+    const app = new Elysia().use(
+      createRoutePlugin({ route: ssgRoute, root: result.root, buildId: null })
+    );
 
     const res = await app.handle(new Request(`http://localhost${ssgRoute.pattern}`));
 
@@ -45,7 +47,9 @@ describe("createRoutePlugin", () => {
       throw new Error("No SSR route in fixtures — add an SSR fixture to ensure this test runs");
     }
 
-    const app = new Elysia().use(createRoutePlugin(ssrRoute, result.root));
+    const app = new Elysia().use(
+      createRoutePlugin({ route: ssrRoute, root: result.root, buildId: null })
+    );
 
     const res = await app.handle(new Request(`http://localhost${ssrRoute.pattern}`));
 
@@ -60,7 +64,9 @@ describe("createRoutePlugin", () => {
       return; // skip if no ISR routes in fixtures
     }
 
-    const app = new Elysia().use(createRoutePlugin(isrRoute, result.root));
+    const app = new Elysia().use(
+      createRoutePlugin({ route: isrRoute, root: result.root, buildId: null })
+    );
 
     const res = await app.handle(new Request(`http://localhost${isrRoute.pattern}`));
 
@@ -75,7 +81,9 @@ describe("createRoutePlugin", () => {
       return;
     }
 
-    const app = new Elysia().use(createRoutePlugin(paramRoute, result.root));
+    const app = new Elysia().use(
+      createRoutePlugin({ route: paramRoute, root: result.root, buildId: null })
+    );
 
     // The plugin should set up correctly (no throw)
     expect(app).toBeInstanceOf(Elysia);
@@ -90,7 +98,7 @@ describe("query defaults", () => {
       throw new Error("No query-default route in fixtures");
     }
 
-    const app = new Elysia().use(createRoutePlugin(route, result.root));
+    const app = new Elysia().use(createRoutePlugin({ route, root: result.root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/query-default"));
 
@@ -106,7 +114,7 @@ describe("query defaults", () => {
       throw new Error("No query-default route in fixtures");
     }
 
-    const app = new Elysia().use(createRoutePlugin(route, result.root));
+    const app = new Elysia().use(createRoutePlugin({ route, root: result.root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/query-default?city=Paris"));
 
@@ -120,7 +128,7 @@ describe("query defaults", () => {
       throw new Error("No query-default route in fixtures");
     }
 
-    const app = new Elysia().use(createRoutePlugin(route, result.root));
+    const app = new Elysia().use(createRoutePlugin({ route, root: result.root, buildId: null }));
 
     const res = await app.handle(new Request("http://localhost/query-default?city=Tokyo"));
 
@@ -134,7 +142,9 @@ describe("query defaults", () => {
       return;
     }
 
-    const app = new Elysia().use(createRoutePlugin(ssgRoute, result.root));
+    const app = new Elysia().use(
+      createRoutePlugin({ route: ssgRoute, root: result.root, buildId: null })
+    );
 
     const res = await app.handle(new Request(`http://localhost${ssgRoute.pattern}`));
 

@@ -63,6 +63,7 @@ export default defineConfig({
 
 - Always chain Elysia instances, using reduces for example.
 - Elysia order instances matter.
+- Prefer Elysia pattern return status(<type>, <message>) instead of return new Response
 
 ### When features is done
 

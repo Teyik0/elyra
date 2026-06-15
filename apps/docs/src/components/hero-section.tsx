@@ -29,7 +29,7 @@ export function HeroCodeWindow({ codeHtmlMap }: { codeHtmlMap: Record<TabName, s
         </div>
       </div>
       {/* Code content */}
-      {/* react-doctor-disable-next-line react/no-danger */}
+      {/* react-doctor-disable-next-line react/no-danger, react-doctor/dangerous-html-sink */}
       <div
         className="[&>pre]:overflow-auto [&>pre]:bg-[#0d1117]! [&>pre]:p-6 [&>pre]:text-sm [&>pre]:leading-relaxed"
         // biome-ignore lint/security/noDangerouslySetInnerHtml: trusted Shiki syntax-highlighted output; never contains user input

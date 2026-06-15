@@ -38,6 +38,14 @@ import type {
 
 const EMPTY_SEARCH: SearchParamsInput = {};
 
+function useLazyRef<T>(factory: () => T): React.RefObject<T> {
+  const ref = useRef<T | null>(null);
+  if (ref.current === null) {
+    ref.current = factory();
+  }
+  return ref as React.RefObject<T>;
+}
+
 export function setPrefetchCacheEntry(
   cache: Map<string, CacheEntry>,
   href: string,
@@ -86,7 +94,7 @@ export function RouterProvider({
     }
     return normalizeHref(toLogical(window.location.pathname, basePath)) + window.location.search;
   });
-  const prefetchCache = useRef(new Map<string, CacheEntry>());
+  const prefetchCache = useLazyRef(() => new Map<string, CacheEntry>());
   /** Monotonic counter to discard stale navigations (race condition guard). */
   const navVersion = useRef(0);
   /**
@@ -116,7 +124,7 @@ export function RouterProvider({
    * fetch URL: runtime `/_furin/data` for SSR/ISR/dev, per-route
    * `__furin_data.ndjson` for static exports.
    */
-  const staticModeRef = useRef<boolean>(detectStaticMode());
+  const staticModeRef = useLazyRef(() => detectStaticMode());
   const resolvedSearch = (state.data.query as SearchParamsInput | undefined) ?? EMPTY_SEARCH;
   const searchStoreRef = useRef<SearchStore | null>(null);
 
