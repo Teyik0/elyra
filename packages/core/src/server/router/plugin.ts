@@ -5,7 +5,7 @@ import { computeErrorDigest } from "../../shared/digest.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { useLogger } from "../context-logger.ts";
-import { resolvePath } from "../render/assemble.ts";
+import { injectSyncRuntimeScript, resolvePath } from "../render/assemble.ts";
 import {
   handleISR,
   prerenderSSG,
@@ -63,7 +63,7 @@ async function handleSSGRequest(
     ctx.set.headers.etag = etag;
   }
   ctx.set.headers["cache-tag"] = resolvedPath;
-  return entry.html;
+  return injectSyncRuntimeScript(entry.html);
 }
 
 export function createRoutePlugin(

@@ -43,7 +43,14 @@ export function applyRevalidateHeader(
   if (!headerValue) {
     return;
   }
-  for (const entry of headerValue.split(",")) {
+  applyRevalidateEntries(headerValue.split(","), invalidate);
+}
+
+export function applyRevalidateEntries(
+  entries: Iterable<string>,
+  invalidate: (path: string, type: "page" | "layout" | undefined) => void
+): void {
+  for (const entry of entries) {
     const trimmed = entry.trim();
     if (!trimmed) {
       continue;

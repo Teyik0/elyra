@@ -176,8 +176,33 @@ Dev-only plugins are configured in `bunfig.toml`, not `furin.config.ts`:
 
 ```toml
 [serve.static]
-plugins = ["bun-plugin-tailwind", "furin/strip-plugin"]
+plugins = ["bun-plugin-tailwind", "@teyik0/furin/strip-plugin"]
 env = "FURIN_PUBLIC_*"
 ```
 
 See the [Plugins](/docs/plugins) page for more details.
+
+---
+
+## Runtime `furin()` options
+
+The Elysia plugin also accepts runtime options in `src/server.ts`. These options affect how Furin is mounted in the application server, so they live next to your API plugin order rather than in `furin.config.ts`.
+
+```ts
+import { furin } from "@teyik0/furin";
+import { Elysia } from "elysia";
+import { api } from "./api";
+
+new Elysia()
+  .use(await furin({ pagesDir: "./src/pages", sync: true }))
+  .use(api)
+  .listen(3000);
+```
+
+### `sync`
+
+**Type:** `boolean`
+
+Enable Furin's built-in sync engine. Furin mounts the internal SSE stream at `/_furin/sync`, injects the client runtime automatically, and lets API routes opt into mutation sync with `furinSync()`.
+
+Synced mutations stay regular API routes. There are no server actions, generated mutation names, collections, or React wrapper providers required.

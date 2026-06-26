@@ -1,3 +1,4 @@
+import { useSync } from "@teyik0/furin/client";
 import { useRef, useState } from "react";
 import { apiClient } from "@/lib/api";
 
@@ -5,10 +6,9 @@ export function CreateBoardForm() {
   const [name, setName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  // Synchronous in-flight guard: setIsSubmitting is async, so back-to-back
-  // submits (e.g. rapid Enter presses) can both pass the state check before
-  // React commits the update and fire duplicate POSTs.
+
   const inFlightRef = useRef(false);
+  const createBoard = useSync(apiClient.api.boards.post);
 
   const handleCreate = async () => {
     if (inFlightRef.current) {
@@ -22,7 +22,7 @@ export function CreateBoardForm() {
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
-      const { error } = await apiClient.api.boards.post({ name: trimmed });
+      const { error } = await createBoard({ name: trimmed });
       if (error) {
         throw new Error("Could not create the board. Please try again.");
       }
@@ -67,11 +67,11 @@ export function CreateBoardForm() {
           <span>{isSubmitting ? "Creating…" : "Create Board"}</span>
         </button>
       </form>
-      {errorMessage ? (
+      {errorMessage && (
         <p className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2.5 text-red-300 text-sm">
           {errorMessage}
         </p>
-      ) : null}
+      )}
     </div>
   );
 }

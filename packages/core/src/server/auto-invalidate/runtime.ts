@@ -96,10 +96,10 @@ export function isSuccessfulMutationResponse(
   return true;
 }
 
-export function appendPendingInvalidationHeader(set: Context["set"]): void {
+export function appendPendingInvalidationHeader(set: Context["set"]): string[] {
   const pending = consumePendingInvalidations();
   if (pending.length === 0) {
-    return;
+    return [];
   }
 
   const headerName = "x-furin-revalidate";
@@ -108,6 +108,7 @@ export function appendPendingInvalidationHeader(set: Context["set"]): void {
     typeof existing === "string" && existing.length > 0
       ? `${existing},${pending.join(",")}`
       : pending.join(",");
+  return pending;
 }
 
 export function revalidateTag(tags: string | readonly string[]): boolean {

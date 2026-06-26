@@ -5,9 +5,7 @@ import { api } from "./api";
 const port = Number(process.env.PORT ?? 3002);
 
 const app = new Elysia()
-  // Furin must be mounted before API routes so its global revalidation hook
-  // can forward X-Furin-Revalidate headers for API-triggered mutations.
-  .use(await furin({ pagesDir: "./src/pages" }))
+  .use(await furin({ pagesDir: "./src/pages", sync: true }))
   .use(api)
   .listen(port);
 

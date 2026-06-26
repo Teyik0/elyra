@@ -7,7 +7,13 @@ import { deleteISRCache, getISRCache, setISRCache } from "../cache/isr.ts";
 import type { ISRCacheEntry } from "../cache/isr-ssg.ts";
 import { createLogger, useLogger } from "../context-logger.ts";
 import type { ResolvedRoute, RootLayout } from "../router/index.ts";
-import { assembleHTML, type LoaderContext, resolvePath, streamToString } from "./assemble.ts";
+import {
+  assembleHTML,
+  injectSyncRuntimeScript,
+  type LoaderContext,
+  resolvePath,
+  streamToString,
+} from "./assemble.ts";
 import {
   type PreparedRender,
   prepareRender,
@@ -69,7 +75,7 @@ function serveISRCacheHit(
   useLogger().set({
     furin: { render: "isr", route: route.pattern, cache: isFresh ? "hit" : "stale" },
   });
-  return cached.html;
+  return injectSyncRuntimeScript(cached.html);
 }
 
 /**
