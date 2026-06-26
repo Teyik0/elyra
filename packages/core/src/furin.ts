@@ -26,6 +26,12 @@ import {
   loadProdRoutes,
 } from "./server/router/index.ts";
 import { IS_DEV } from "./server/runtime-env.ts";
+import {
+  createSyncStreamPlugin,
+  type FurinSyncOption,
+  resolveSyncStreamPath,
+  setSyncStreamPath,
+} from "./server/sync/index.ts";
 
 // biome-ignore lint/suspicious/noEmptyInterface: intentionally augmentable via furin-env.d.ts
 export interface FurinCacheTags {}
@@ -192,6 +198,7 @@ export async function furin({
   pagesDir,
   logger,
   clientLogging,
+  sync,
 }: {
   pagesDir?: string;
   logger?: EvlogElysiaOptions;
@@ -202,7 +209,15 @@ export async function furin({
    * and unaffected.
    */
   clientLogging?: boolean;
+  /**
+   * Enables Furin's built-in sync event stream. The opinionated default mounts
+   * Server-Sent Events at `/_furin/sync`; pass an object only for constrained
+   * reverse-proxy deployments that need a custom internal path.
+   */
+  sync?: FurinSyncOption;
 }) {
+  const syncStreamPath = resolveSyncStreamPath(sync);
+  setSyncStreamPath(syncStreamPath);
   const { exclude: userExclude, ...evlogOptions } = logger ?? {};
   initLogger({ env: { service: "furin" } });
 
@@ -215,6 +230,7 @@ export async function furin({
           "/public/**",
           "/favicon.ico",
           "/_bun_hmr_entry/**",
+          "/_furin/sync",
           // Note: /_furin/data is logged with the *logical* path rewritten by
           // createDataEndpoint via useLogger().set({ path }), so SPA navigations
           // appear as "GET /board/123 200" — same shape as a normal SSR nav.
@@ -320,6 +336,7 @@ export async function furin({
           : () => new Response(null, { status: 404 })
       )
       .use(createDevInspectorPlugin())
+      .use(syncStreamPath ? createSyncStreamPlugin(syncStreamPath) : new Elysia())
       .use(createDataEndpoint(routes))
       .use((app) => {
         for (const route of routes) {
@@ -412,6 +429,7 @@ export async function furin({
         return app;
       })()
     )
+    .use(syncStreamPath ? createSyncStreamPlugin(syncStreamPath) : new Elysia())
     .use(createDataEndpoint(routes))
     .use((app) => {
       for (const route of routes) {
@@ -433,6 +451,7 @@ export { furinInvalidate, revalidateTag } from "./server/auto-invalidate/index.t
 export { revalidatePath, setCachePurger } from "./server/cache/invalidation.ts";
 export { buildElement, buildErrorElement, renderRootNotFound } from "./server/render/index.ts";
 export type { ResolvedRoute, SegmentBoundary } from "./server/router/index.ts";
+export { furinSync, type SyncInput } from "./server/sync/index.ts";
 export { Await, useAsyncError, useAsyncValue } from "./shared/await.tsx";
 export type { ErrorComponent, ErrorProps } from "./shared/error.ts";
 export type {

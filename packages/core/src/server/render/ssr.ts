@@ -24,6 +24,7 @@ import {
   assembleHTML,
   buildDeferredResolution,
   buildDeferredScript,
+  buildSyncRuntimeScript,
   resolvePath,
   splitTemplate,
   streamToString,
@@ -522,6 +523,7 @@ export async function renderSSR(
   const dataScript = `<script id="__FURIN_DATA__" type="application/json">${safeJson(
     dataPayload
   )}</script>`;
+  const runtimeScripts = `${buildSyncRuntimeScript()}${dataScript}`;
 
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const writer = writable.getWriter();
@@ -542,7 +544,7 @@ export async function renderSSR(
     const [earlyBodyPost, finalBodyPost] = hasDeferred
       ? splitBeforeBodyClose(bodyPost)
       : ["", bodyPost];
-    await writer.write(enc.encode(dataScript + earlyBodyPost));
+    await writer.write(enc.encode(runtimeScripts + earlyBodyPost));
 
     if (hasDeferred) {
       await Promise.all(

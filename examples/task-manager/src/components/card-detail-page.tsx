@@ -1,3 +1,4 @@
+import { useSync } from "@teyik0/furin/client";
 import { Link, useRouter } from "@teyik0/furin/link";
 import { ArrowLeft, ChevronRight, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
@@ -19,6 +20,8 @@ export function CardDetailPage({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+  const updateCard = useSync(apiClient.api.cards({ id: card.id }).patch);
+  const deleteCard = useSync(apiClient.api.cards({ id: card.id }).delete);
 
   const handleSave = async () => {
     if (!formRef.current) {
@@ -26,7 +29,7 @@ export function CardDetailPage({
     }
     const data = new FormData(formRef.current);
     try {
-      const { error } = await apiClient.api.cards({ id: card.id }).patch({
+      const { error } = await updateCard({
         title: data.get("title") as string,
         description: data.get("description") as string,
       });
@@ -46,7 +49,7 @@ export function CardDetailPage({
 
   const handleDelete = async () => {
     try {
-      const { error } = await apiClient.api.cards({ id: card.id }).delete();
+      const { error } = await deleteCard();
       if (error) {
         throw new Error("Could not delete the card. Please try again.");
       }

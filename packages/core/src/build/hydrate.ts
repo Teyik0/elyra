@@ -116,7 +116,7 @@ export function generateHydrateEntry(
     : "const log = { error() {}, info() {} };";
 
   // RouterProvider receives basePath so navigate() / Link push physical paths.
-  const routerProviderDefaults = `\n      autoRefresh: true,\n      basePath: ${basePathLiteral},\n      defaultPreload: "intent",\n      defaultPreloadDelay: 50,\n      defaultPreloadStaleTime: 30000,\n      prefetchCacheSize: 50,`;
+  const routerProviderDefaults = `\n      autoRefresh: true,\n      basePath: ${basePathLiteral},\n      defaultPreload: "intent",\n      defaultPreloadDelay: 50,\n      defaultPreloadStaleTime: 30000,\n      prefetchCacheSize: 50,\n      syncStream,`;
 
   return `import { hydrateRoot, createRoot } from "react-dom/client";
 import { createElement } from "react";
@@ -143,6 +143,9 @@ const _match = routes.find((r) => r.regex.test(pathname));
 //     former does not — so the two cases fork on _match below.
 const dataEl = document.getElementById("__FURIN_DATA__");
 const loaderData = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
+const syncEl = document.getElementById("__FURIN_SYNC__");
+const syncConfig = syncEl ? JSON.parse(syncEl.textContent || "{}") : {};
+const syncStream = typeof syncConfig.stream === "string" ? syncConfig.stream : undefined;
 
 // ── Deferred data hydration ─────────────────────────────────────────────────
 // window.__FURIN_DEFERRED__ is injected by the server when a loader returns

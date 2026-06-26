@@ -1,10 +1,10 @@
-import { furinInvalidate } from "@teyik0/furin";
+import { furinSync } from "@teyik0/furin";
 import { Elysia, t } from "elysia";
 import { columnType } from "../shared";
 import { createCard, deleteCard, getCard, updateCard } from "./service";
 
 export const cardPlugin = new Elysia()
-  .use(furinInvalidate())
+  .use(furinSync())
   .get("/cards/:id", ({ params, status }) => {
     const card = getCard(params.id);
     if (!card) {
@@ -20,7 +20,7 @@ export const cardPlugin = new Elysia()
         title: t.String({ minLength: 1 }),
         column: columnType,
       }),
-      invalidate: { tags: ["cards"] },
+      sync: { invalidate: { tags: ["cards"] } },
     }
   )
   .post(
@@ -41,7 +41,7 @@ export const cardPlugin = new Elysia()
         title: t.Optional(t.String()),
         description: t.Optional(t.String()),
       }),
-      invalidate: { tags: ["cards"] },
+      sync: { invalidate: { tags: ["cards"] } },
     }
   )
   .patch(
@@ -64,7 +64,7 @@ export const cardPlugin = new Elysia()
         column: t.Optional(columnType),
         position: t.Optional(t.Number()),
       }),
-      invalidate: { tags: ["cards"] },
+      sync: { invalidate: { tags: ["cards"] } },
     }
   )
   .delete(
@@ -81,6 +81,6 @@ export const cardPlugin = new Elysia()
       return { ok: true };
     },
     {
-      invalidate: { tags: ["cards"] },
+      sync: { invalidate: { tags: ["cards"] } },
     }
   );

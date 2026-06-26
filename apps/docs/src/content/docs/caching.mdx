@@ -135,22 +135,26 @@ export default route.page({
 
 ```ts
 // src/api/posts.ts
-import { furinInvalidate } from "@teyik0/furin";
+import { furinSync } from "@teyik0/furin";
 import { Elysia, t } from "elysia";
 
 export const postsApi = new Elysia()
-  .use(furinInvalidate())
+  .use(furinSync())
   .post(
     "/posts",
     async ({ body }) => db.posts.create(body),
     {
       body: t.Object({ title: t.String() }),
-      invalidate: { tags: ["posts"] },
+      sync: { invalidate: { tags: ["posts"] } },
     }
   );
 ```
 
-The `invalidate` route option is provided by the `furinInvalidate()` macro. Install the macro on the same Elysia plugin that declares the routes using `invalidate`.
+The `sync` route option is provided by the `furinSync()` macro. Install the macro on the same Elysia plugin that declares the routes using `sync`.
+
+`furinSync()` also requires an `Idempotency-Key` header for every synced mutation and broadcasts successful invalidations to browsers connected to `/_furin/sync`. This makes idempotency and multi-tab refresh part of the default mutation contract instead of per-route boilerplate.
+
+If you only need response-header invalidation without live broadcast, the lower-level `furinInvalidate()` macro still provides the `invalidate` route option.
 
 When `furin-env.d.ts` is generated, Furin also augments `FurinCacheTags`, so mutation routes get autocomplete and type-checking for known tags:
 
@@ -174,7 +178,7 @@ Tags are registered against concrete cached paths when ISR/SSG entries are writt
 
 ---
 
-## `X-Furin-Revalidate` header
+## Live sync and `X-Furin-Revalidate`
 
 When `revalidatePath()` is called in a handler, Furin automatically appends a response header to tell the client which prefetch cache entries are stale:
 
@@ -183,6 +187,8 @@ X-Furin-Revalidate: /blog/my-post,/blog:layout
 ```
 
 The client-side router (`RouterProvider`) intercepts **all** `window.fetch` calls. When it sees this header it busts the corresponding prefetch cache entries, ensuring the next SPA navigation fetches fresh HTML from the server instead of using a stale prefetch.
+
+When `furin({ sync: true })` is enabled, Furin also mounts `/_furin/sync` and injects the stream configuration into the page HTML. The client runtime opens an SSE connection automatically and listens for `furin.invalidate` events. When another tab, device, or client performs a synced mutation, the current page's prefetched HTML is invalidated and the active route is refreshed when it depends on the changed path or tag.
 
 ---
 

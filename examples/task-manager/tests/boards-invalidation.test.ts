@@ -34,7 +34,10 @@ describe("boards API cache invalidation", () => {
     const response = await boardPlugin.handle(
       new Request("http://furin/boards", {
         body: JSON.stringify({ name: "New board" }),
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "Idempotency-Key": "create-board-test",
+        },
         method: "POST",
       })
     );
@@ -51,7 +54,10 @@ describe("boards API cache invalidation", () => {
     const { boardPlugin } = await import("../src/api/modules/boards");
 
     const response = await boardPlugin.handle(
-      new Request("http://furin/boards/board-deleted", { method: "DELETE" })
+      new Request("http://furin/boards/board-deleted", {
+        headers: { "Idempotency-Key": "delete-board-test" },
+        method: "DELETE",
+      })
     );
 
     expect(response.status).toBe(200);

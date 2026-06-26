@@ -1,3 +1,4 @@
+import { useSync } from "@teyik0/furin/client";
 import { Link } from "@teyik0/furin/link";
 import { domAnimation, LazyMotion, m } from "framer-motion";
 import {
@@ -5,6 +6,7 @@ import {
   type DragEvent,
   type SetStateAction,
   type SyntheticEvent,
+  useEffect,
   useState,
 } from "react";
 import { FaFire } from "react-icons/fa";
@@ -102,20 +104,21 @@ function restoreDeletedCard(
 }
 
 export const Kanban = ({ initialCards, boardId, onMutation }: KanbanProps) => {
-  // Local mutable state for optimistic drag-and-drop: `initialCards` is the
-  // SSR/loader seed, not a value to stay in sync with.
-  // react-doctor-disable-next-line react-doctor/no-derived-useState
   const [cards, setCards] = useState<KanbanCard[]>(initialCards);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
+  useEffect(() => {
+    setCards(initialCards);
+  }, [initialCards]);
+
   return (
     <LazyMotion features={domAnimation}>
-      {errorMessage ? (
+      {errorMessage && (
         <div className="mx-6 mt-6 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-red-300 text-sm">
           {errorMessage}
         </div>
-      ) : null}
+      )}
 
       <div className="flex h-full w-full gap-4 overflow-x-auto p-6">
         <Column
@@ -205,6 +208,52 @@ const Column = ({
   onMutation,
 }: ColumnProps) => {
   const [active, setActive] = useState(false);
+  const moveCardMutation = useSync(
+    (input: { before: string; cardId: string; column: ColumnType; position: number }, options) =>
+      apiClient.api.cards({ id: input.cardId }).patch(
+        {
+          column: input.column,
+          position: input.position,
+        },
+        options
+      ),
+    {
+      optimistic: ({ input }) => {
+        let previousColumn: ColumnType | undefined;
+        let previousIndex = -1;
+        setCards((currentCards) => {
+          const result = moveCard(currentCards, input.cardId, input.column, input.before);
+          if (!result) {
+            return currentCards;
+          }
+          previousColumn = result.previousColumn;
+          previousIndex = result.previousIndex;
+          return result.nextCards;
+        });
+        return () => {
+          if (previousColumn === undefined || previousIndex === -1) {
+            return;
+          }
+          const columnToRestore = previousColumn;
+          setCards((currentCards) =>
+            rollbackMovedCard(
+              currentCards,
+              input.cardId,
+              input.column,
+              columnToRestore,
+              previousIndex
+            )
+          );
+        };
+      },
+      onError: () => {
+        setErrorMessage("Could not move the card. The board has been restored.");
+      },
+      onSuccess: () => {
+        onMutation?.();
+      },
+    }
+  );
 
   const handleDragStart = (e: DragEvent, card: KanbanCard) => {
     e.dataTransfer.setData("cardId", card.id);
@@ -238,31 +287,12 @@ const Column = ({
       return;
     }
 
-    const { previousColumn, previousIndex } = moveResult;
-
     // New position = 0-based index within the destination column after the move
     const destColumnCards = moveResult.nextCards.filter((c) => c.column === column);
     const newPosition = destColumnCards.findIndex((c) => c.id === cardId);
 
-    setCards((prevCards) => moveCard(prevCards, cardId, column, before)?.nextCards ?? prevCards);
     setErrorMessage(null);
-
-    // Always PATCH — cross-column moves update column+position, same-column
-    // reorders update position only so the order is preserved across refreshes.
-    const { error } = await apiClient.api.cards({ id: cardId }).patch({
-      column,
-      position: newPosition,
-    });
-
-    if (error) {
-      setCards((currentCards) =>
-        rollbackMovedCard(currentCards, cardId, column, previousColumn, previousIndex)
-      );
-      setErrorMessage("Could not move the card. The board has been restored.");
-      return;
-    }
-
-    onMutation?.();
+    await moveCardMutation({ before, cardId, column, position: newPosition });
   };
 
   const handleDragOver = (e: DragEvent) => {
@@ -438,6 +468,33 @@ const BurnBarrel = ({
   onMutation,
 }: BurnBarrelProps) => {
   const [active, setActive] = useState(false);
+  const deleteCard = useSync(
+    (cardId: string, options) => apiClient.api.cards({ id: cardId }).delete(undefined, options),
+    {
+      optimistic: ({ input: cardId }) => {
+        let deletedCard: KanbanCard | undefined;
+        let deletedIndex = -1;
+        setCards((currentCards) => {
+          deletedIndex = currentCards.findIndex((card) => card.id === cardId);
+          deletedCard = currentCards[deletedIndex];
+          return currentCards.filter((card) => card.id !== cardId);
+        });
+        return () => {
+          if (!deletedCard || deletedIndex === -1) {
+            return;
+          }
+          const cardToRestore = deletedCard;
+          setCards((currentCards) => restoreDeletedCard(currentCards, cardToRestore, deletedIndex));
+        };
+      },
+      onError: () => {
+        setErrorMessage("Could not delete the card. It has been restored.");
+      },
+      onSuccess: () => {
+        onMutation?.();
+      },
+    }
+  );
 
   const handleDragOver = (e: DragEvent) => {
     e.preventDefault();
@@ -457,41 +514,8 @@ const BurnBarrel = ({
       return;
     }
 
-    // Capture the card snapshot and its index from inside the functional
-    // update so we always read the freshest state — not a potentially stale
-    // closure value captured at render time.  This prevents the rollback from
-    // restoring an outdated card or inserting it at an index that no longer
-    // matches the current list after concurrent operations.
-    let deletedCard: KanbanCard | undefined;
-    let deletedIndex = -1;
-
-    setCards((prevCards) => {
-      const idx = prevCards.findIndex((c) => c.id === cardId);
-      if (idx !== -1) {
-        deletedCard = prevCards[idx];
-        deletedIndex = idx;
-      }
-      return prevCards.filter((c) => c.id !== cardId);
-    });
-
-    if (!deletedCard || deletedIndex === -1) {
-      return;
-    }
-
-    // Freeze into new bindings so TypeScript knows they are non-undefined
-    // inside the async continuation below.
-    const capturedCard = deletedCard;
-    const capturedIndex = deletedIndex;
-
     setErrorMessage(null);
-    const { error } = await apiClient.api.cards({ id: cardId }).delete();
-    if (error) {
-      setCards((currentCards) => restoreDeletedCard(currentCards, capturedCard, capturedIndex));
-      setErrorMessage("Could not delete the card. It has been restored.");
-      return;
-    }
-
-    onMutation?.();
+    await deleteCard(cardId);
   };
 
   return (
@@ -533,6 +557,37 @@ const AddCard = ({ column, setCards, boardId, onMutation }: AddCardProps) => {
   const [text, setText] = useState("");
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const createCard = useSync(
+    (input: { column: ColumnType; title: string }, options) =>
+      apiClient.api.boards({ boardId }).cards.post(input, options),
+    {
+      optimistic: ({ idempotencyKey, input }) => {
+        const optimisticId = `optimistic-${idempotencyKey}`;
+        setCards((currentCards) => [
+          ...currentCards,
+          { column: input.column, id: optimisticId, title: input.title },
+        ]);
+        return () => {
+          setCards((currentCards) => currentCards.filter((card) => card.id !== optimisticId));
+        };
+      },
+      onSuccess: ({ idempotencyKey, result }) => {
+        const newCard = result.data;
+        if (!newCard || newCard instanceof Response) {
+          return;
+        }
+        const optimisticId = `optimistic-${idempotencyKey}`;
+        setCards((currentCards) =>
+          currentCards.map((card) =>
+            card.id === optimisticId
+              ? { column: newCard.column, id: newCard.id, title: newCard.title }
+              : card
+          )
+        );
+        onMutation?.();
+      },
+    }
+  );
 
   const handleSubmit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -541,11 +596,8 @@ const AddCard = ({ column, setCards, boardId, onMutation }: AddCardProps) => {
     }
 
     setAddError(null);
-    const { data: newCard, error } = await apiClient.api.boards({ boardId }).cards.post({
-      title: text.trim(),
-      column,
-    });
-    if (!newCard || error) {
+    const { data: newCard, error } = await createCard({ title: text.trim(), column });
+    if (!newCard || newCard instanceof Response || error) {
       const message =
         error && typeof error === "object" && "message" in error
           ? String((error as { message: unknown }).message)
@@ -553,9 +605,6 @@ const AddCard = ({ column, setCards, boardId, onMutation }: AddCardProps) => {
       setAddError(message);
       return; // keep the form open so the user can retry
     }
-
-    setCards((pv) => [...pv, { id: newCard.id, title: newCard.title, column }]);
-    onMutation?.();
 
     setText("");
     setAdding(false);

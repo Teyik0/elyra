@@ -26,7 +26,7 @@ export const api = new Elysia({ prefix: "/api" })
   )
 ```
 
-## Mount It Before Furin
+## Mount It After Furin
 
 ```ts
 // src/server.ts
@@ -35,25 +35,25 @@ import { furin } from "@teyik0/furin"
 import { api } from "./api/index.ts"
 
 const app = new Elysia()
+  .use(await furin({ pagesDir: "./src/pages", sync: true }))
   .use(api)
-  .use(await furin({ pagesDir: "./src/pages" }))
   .listen(3000)
 
 export type App = typeof app
 ```
 
-Elysia instance order matters. Mount API plugins in the order you want them applied.
+Elysia instance order matters. Mount Furin first so it can install the page runtime and the opinionated sync stream, then mount your regular API plugins.
 
-## Auto-Invalidate Cached Pages
+## Sync Mutations
 
-Use `furinInvalidate()` in the same Elysia plugin that declares mutation routes. It adds the `invalidate` route option and runs it only after successful responses.
+Use `furinSync()` in the same Elysia plugin that declares mutation routes. It adds the `sync` route option, invalidates cached pages after successful responses, and broadcasts the invalidation to connected browsers over Furin's built-in SSE stream.
 
 ```ts
-import { furinInvalidate } from "@teyik0/furin"
+import { furinSync } from "@teyik0/furin"
 import { Elysia, t } from "elysia"
 
 export const api = new Elysia({ prefix: "/api" })
-  .use(furinInvalidate())
+  .use(furinSync())
   .post(
     "/posts",
     async ({ body }) => {
@@ -61,10 +61,12 @@ export const api = new Elysia({ prefix: "/api" })
     },
     {
       body: t.Object({ title: t.String() }),
-      invalidate: { tags: ["posts"] },
+      sync: { invalidate: { tags: ["posts"] } },
     }
   )
 ```
+
+There are no mutation names, collections, or client wrappers to configure. The API route is the stable contract, Eden Treaty keeps the client typed, and Furin derives the sync broadcast from the route option.
 
 Tags come from page and route metadata:
 
@@ -82,8 +84,51 @@ Path-based invalidation is also available when a mutation targets a known URL:
 
 ```ts
 {
-  invalidate: { path: "/blog", type: "layout" }
+  sync: { invalidate: { path: "/blog", type: "layout" } }
 }
+```
+
+Every synced mutation must send an `Idempotency-Key` header. Furin enforces this at runtime so retries, double-clicks, and mobile clients all use the same contract:
+
+```tsx
+await api.api.posts.post(
+  { title },
+  {
+    headers: {
+      "Idempotency-Key": crypto.randomUUID(),
+    },
+  }
+)
+```
+
+The sync stream endpoint is internal and opinionated: `/_furin/sync`. Enabling `sync: true` in `furin()` injects the client runtime automatically, so you do not need a React provider or application wrapper.
+
+For client-side mutations with a body, `useSync()` is the optional ergonomic layer. It keeps the Eden Treaty route as the source of truth, adds the mandatory `Idempotency-Key`, and gives you one place to attach optimistic updates:
+
+```tsx
+import { useSync } from "@teyik0/furin/client"
+
+const updateCard = useSync(api.api.cards({ cardId }).patch, {
+  optimistic: ({ input }) => patchCardLocally(cardId, input),
+})
+
+await updateCard({ title: "Renamed" })
+```
+
+## Auto-Invalidate Only
+
+If you only want response-header invalidation without live SSE broadcast or idempotency enforcement, use the lower-level `furinInvalidate()` macro:
+
+```ts
+import { furinInvalidate } from "@teyik0/furin"
+import { Elysia, t } from "elysia"
+
+export const api = new Elysia({ prefix: "/api" })
+  .use(furinInvalidate())
+  .post("/posts", ({ body }) => db.posts.create(body), {
+    body: t.Object({ title: t.String() }),
+    invalidate: { tags: ["posts"] },
+  })
 ```
 
 ## Typed Client Access

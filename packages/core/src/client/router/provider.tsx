@@ -12,6 +12,7 @@ import {
   saveScrollPosition,
 } from "./history.ts";
 import {
+  applyRevalidateEntries,
   applyRevalidateHeader,
   normalizeHref,
   shouldAutoRefreshPath,
@@ -69,6 +70,7 @@ export function RouterProvider({
   defaultPreloadDelay,
   defaultPreloadStaleTime,
   prefetchCacheSize,
+  syncStream,
 }: RouterProviderProps): React.ReactElement {
   // Initial state. When `initialMatch` is `null`, `initialNotFound` MUST be set —
   // the provider boots into the inline not-found UI.
@@ -702,6 +704,47 @@ export function RouterProvider({
       window.fetch = originalFetch;
     };
   }, [invalidatePrefetch, refresh, autoRefresh, basePath]);
+
+  // Listen for cross-client invalidations published by furin({ sync: true }).
+  useEffect(() => {
+    if (!syncStream || typeof window === "undefined" || typeof EventSource === "undefined") {
+      return;
+    }
+
+    const streamUrl = syncStream.startsWith("/")
+      ? `${basePath}${syncStream}`
+      : `${basePath}/${syncStream}`;
+    const source = new EventSource(streamUrl);
+    const onInvalidate = (event: MessageEvent) => {
+      let payload: { invalidations?: string[] };
+      try {
+        payload = JSON.parse(event.data) as { invalidations?: string[] };
+      } catch {
+        log.warn({ action: "sync_invalid_event", event: "furin.invalidate" });
+        return;
+      }
+
+      const invalidations: Array<{ path: string; type: "page" | "layout" }> = [];
+      applyRevalidateEntries(payload.invalidations ?? [], (path, type = "page") => {
+        invalidatePrefetch(path, type);
+        invalidations.push({ path, type });
+      });
+
+      if (autoRefresh && invalidations.length > 0) {
+        const currentLogicalPath =
+          normalizeHref(toLogical(window.location.pathname, basePath)) + window.location.search;
+        if (shouldAutoRefreshPath(currentLogicalPath, invalidations)) {
+          refresh(undefined);
+        }
+      }
+    };
+
+    source.addEventListener("furin.invalidate", onInvalidate);
+    return () => {
+      source.removeEventListener("furin.invalidate", onInvalidate);
+      source.close();
+    };
+  }, [syncStream, basePath, invalidatePrefetch, refresh, autoRefresh]);
 
   let pageElement: React.ReactNode;
   if (state.notFound || !state.match) {

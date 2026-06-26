@@ -1,5 +1,5 @@
 import { Await } from "@teyik0/furin/client";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { BoardStats } from "@/api/modules/boards/service";
 import { Kanban, type KanbanCard } from "@/components/ui/kanban";
 import { apiClient } from "@/lib/api";
@@ -155,9 +155,19 @@ export function BoardPageContent({
   initialStats: Promise<BoardStats | undefined>;
   renderedAt: string;
 }) {
-  const [stats, setStats] = useState<BoardStats | null>(null);
+  const [statsState, setStatsState] = useState<{
+    source: Promise<BoardStats | undefined>;
+    value: BoardStats;
+  } | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refetchTokenRef = useRef(0);
+  const stats = statsState?.source === initialStats ? statsState.value : null;
+  const handleStatsResolve = useCallback(
+    (value: BoardStats) => {
+      setStatsState({ source: initialStats, value });
+    },
+    [initialStats]
+  );
 
   const onMutation = async () => {
     refetchTokenRef.current += 1;
@@ -171,7 +181,7 @@ export function BoardPageContent({
         return;
       }
       if (fresh) {
-        setStats(fresh);
+        setStatsState({ source: initialStats, value: fresh });
       }
     } finally {
       if (myToken === refetchTokenRef.current) {
@@ -201,7 +211,7 @@ export function BoardPageContent({
       <StatsBarSection
         initialStats={initialStats}
         isRefreshing={isRefreshing}
-        onResolve={setStats}
+        onResolve={handleStatsResolve}
         stats={stats}
       />
 

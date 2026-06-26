@@ -1,4 +1,5 @@
 import type { toCrossJSON } from "seroval";
+import { getSyncStreamPath } from "../sync/config.ts";
 import type { buildHeadInjection } from "./shell";
 import { safeJson } from "./shell";
 
@@ -121,13 +122,39 @@ export function assembleHTML(
   const dataScript = data
     ? `<script id="__FURIN_DATA__" type="application/json">${safeJson(data)}</script>`
     : "";
+  const syncScript = buildSyncRuntimeScript();
+  const runtimeScripts = `${syncScript}${dataScript}`;
 
   let injectedBodyPost = bodyPost;
-  if (dataScript) {
+  if (runtimeScripts) {
     injectedBodyPost = bodyPost.includes("</body>")
-      ? bodyPost.replace("</body>", `${dataScript}</body>`)
-      : bodyPost + dataScript;
+      ? bodyPost.replace("</body>", `${runtimeScripts}</body>`)
+      : bodyPost + runtimeScripts;
   }
 
   return headPre + headData + bodyPre + reactHtml + injectedBodyPost;
+}
+
+export function buildSyncRuntimeScript(): string {
+  const syncStreamPath = getSyncStreamPath();
+  if (!syncStreamPath) {
+    return "";
+  }
+
+  return `<script id="__FURIN_SYNC__" type="application/json">${safeJson({ stream: syncStreamPath })}</script>`;
+}
+
+export function injectSyncRuntimeScript(html: string): string {
+  if (html.includes('id="__FURIN_SYNC__"')) {
+    return html;
+  }
+
+  const syncScript = buildSyncRuntimeScript();
+  if (!syncScript) {
+    return html;
+  }
+
+  return html.includes("</body>")
+    ? html.replace("</body>", `${syncScript}</body>`)
+    : html + syncScript;
 }

@@ -24,20 +24,20 @@
     "knip": "knip"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.0",
-    "@commitlint/cli": "^21.0.2",
-    "@commitlint/config-conventional": "^21.0.2",
-    "@happy-dom/global-registrator": "^20.10.3",
+    "@biomejs/biome": "2.5.1",
+    "@commitlint/cli": "^21.1.0",
+    "@commitlint/config-conventional": "^21.1.0",
+    "@happy-dom/global-registrator": "^20.10.6",
     "@types/bun": "^1.3.14",
-    "knip": "^6.16.1",
+    "knip": "^6.21.0",
     "lefthook": "^2.1.9",
-    "react-doctor": "^0.5.4",
+    "react-doctor": "^0.5.8",
     "typescript": "^6.0.3",
     "ultracite": "7.8.3"
   },
   "catalog": {
-    "elysia": "^1.4.28",
-    "evlog": "^2.19.1",
+    "elysia": "^1.4.29",
+    "evlog": "^2.19.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "react": "^19.2.7",

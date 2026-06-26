@@ -6,12 +6,26 @@
   2. Doesn't have an index signature (so unknown prop access errors)
   3. Is transparent in intersections(`{} & T = T`)
 */
+/*
+  biome-ignore-all lint/performance/noBarrelFile: client.ts is the canonical DX
+  entry for furin/client consumers, not a generic internal barrel.
+*/
 
 import type { Cookie, StatusMap } from "elysia";
 import type { AnySchema, HTTPHeaders, UnwrapSchema } from "elysia/types";
 import type { RequestLogger } from "evlog";
 
-// biome-ignore lint/performance/noBarrelFile: client.ts is the canonical DX entry for furin/client consumers — not a barrel
+export {
+  type SyncMutation,
+  type SyncMutationContext,
+  type SyncMutationErrorContext,
+  type SyncMutationHeaders,
+  type SyncMutationOptions,
+  type SyncMutationRunner,
+  type SyncMutationSuccessContext,
+  type UseSyncOptions,
+  useSync,
+} from "./client/sync.ts";
 export { Await, useAsyncError, useAsyncValue } from "./shared/await.tsx";
 
 declare const UNSET: unique symbol;

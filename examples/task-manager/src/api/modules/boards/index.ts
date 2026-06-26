@@ -1,4 +1,4 @@
-import { furinInvalidate } from "@teyik0/furin";
+import { furinSync } from "@teyik0/furin";
 import { Elysia, t } from "elysia";
 import { createBoard, deleteBoard, getBoardData, getBoardStats, getBoards } from "./service";
 
@@ -14,11 +14,11 @@ const BOARD_MUTATION_INVALIDATIONS = [
 ];
 
 export const boardPlugin = new Elysia()
-  .use(furinInvalidate())
+  .use(furinSync())
   .get("/boards", () => getBoards())
   .post("/boards", ({ body }) => createBoard(body.name), {
     body: t.Object({ name: t.String({ minLength: 1 }) }),
-    invalidate: BOARD_MUTATION_INVALIDATIONS,
+    sync: { invalidate: BOARD_MUTATION_INVALIDATIONS },
   })
   .delete(
     "/boards/:boardId",
@@ -30,7 +30,7 @@ export const boardPlugin = new Elysia()
       return { ok: true };
     },
     {
-      invalidate: BOARD_MUTATION_INVALIDATIONS,
+      sync: { invalidate: BOARD_MUTATION_INVALIDATIONS },
     }
   )
   .get("/boards/:boardId", ({ params, status }) => {
