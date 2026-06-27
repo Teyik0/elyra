@@ -154,4 +154,47 @@ describe("useSync", () => {
       cleanup();
     }
   });
+
+  test("treats a falsy Eden-style error payload as an error", async () => {
+    const events: string[] = [];
+    const { cleanup, run } = renderHook<CardPatch, { error: false }>(
+      async () => ({ error: false }),
+      {
+        optimistic: () => () => events.push("rollback"),
+        onError: ({ error }) => {
+          events.push(String(error));
+        },
+      }
+    );
+
+    try {
+      await run({ title: "Renamed" });
+      expect(events).toEqual(["rollback", "false"]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("does not treat an onSuccess exception as a mutation failure", async () => {
+    const events: string[] = [];
+    const { cleanup, run } = renderHook<CardPatch, MutationResult>(
+      async () => ({ data: { ok: true }, error: null }),
+      {
+        optimistic: () => () => events.push("rollback"),
+        onError: () => {
+          events.push("error");
+        },
+        onSuccess: () => {
+          throw new Error("callback failed");
+        },
+      }
+    );
+
+    try {
+      await expect(run({ title: "Renamed" })).rejects.toThrow("callback failed");
+      expect(events).toEqual([]);
+    } finally {
+      cleanup();
+    }
+  });
 });

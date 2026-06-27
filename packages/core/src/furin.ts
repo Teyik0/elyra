@@ -30,7 +30,7 @@ import {
   createSyncStreamPlugin,
   type FurinSyncOption,
   resolveSyncStreamPath,
-  setSyncStreamPath,
+  runWithSyncStreamPath,
 } from "./server/sync/index.ts";
 
 // biome-ignore lint/suspicious/noEmptyInterface: intentionally augmentable via furin-env.d.ts
@@ -165,9 +165,12 @@ async function setupProdTemplate(
  * `.use()`-d by a parent Elysia instance. HigherOrderFunctions survive the
  * plugin merge and wrap the entire composed `map` handler.
  */
-function wrapWithRequestScope(app: AnyElysia): Elysia {
+function wrapWithRequestScope(app: AnyElysia, syncStreamPath: string | undefined): Elysia {
   return app.wrap(
-    (handler, _request) => (ctx: unknown) => _runWithRequestInvalidationScope(() => handler(ctx))
+    (handler, _request) => (ctx: unknown) =>
+      runWithSyncStreamPath(syncStreamPath, () =>
+        _runWithRequestInvalidationScope(() => handler(ctx))
+      )
   );
 }
 
@@ -217,7 +220,6 @@ export async function furin({
   sync?: FurinSyncOption;
 }) {
   const syncStreamPath = resolveSyncStreamPath(sync);
-  setSyncStreamPath(syncStreamPath);
   const { exclude: userExclude, ...evlogOptions } = logger ?? {};
   initLogger({ env: { service: "furin" } });
 
@@ -230,7 +232,7 @@ export async function furin({
           "/public/**",
           "/favicon.ico",
           "/_bun_hmr_entry/**",
-          "/_furin/sync",
+          ...(syncStreamPath ? [syncStreamPath] : []),
           // Note: /_furin/data is logged with the *logical* path rewritten by
           // createDataEndpoint via useLogger().set({ path }), so SPA navigations
           // appear as "GET /board/123 200" — same shape as a normal SSR nav.
@@ -344,7 +346,7 @@ export async function furin({
         }
         return app;
       });
-    return wrapWithRequestScope(devApp);
+    return wrapWithRequestScope(devApp, syncStreamPath);
   }
 
   // ── Production ──────────────────────────────────────────────────────────
@@ -437,7 +439,7 @@ export async function furin({
       }
       return app;
     });
-  return wrapWithRequestScope(prodApp);
+  return wrapWithRequestScope(prodApp, syncStreamPath);
 }
 
 // biome-ignore lint/performance/noBarrelFile: furin.ts is the public package entry

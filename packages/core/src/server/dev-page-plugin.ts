@@ -58,8 +58,8 @@ import { invalidateDevLoaderCacheBySource } from "./cache/dev-loader.ts";
 // Matches ?furin-server with an optional &t=<ms> cache-buster.
 const FURIN_SERVER_FILTER = /\?furin-server(?:&t=\d+)?$/;
 const ANY_FILTER = /.*/;
-const WORKSPACE_SOURCE_FILTER =
-  /^(?!.*(?:\/node_modules\/|\/\.bun\/))(?!.*\.(?:test|spec)\.[jt]sx?$).*\.[jt]sx?$/;
+export const WORKSPACE_SOURCE_FILTER =
+  /^(?!.*(?:[\\/]node_modules[\\/]|[\\/]\.bun[\\/]))(?!.*\.(?:test|spec)\.[jt]sx?$).*\.[jt]sx?$/;
 const T_PARAM_RE = /&t=(\d+)/;
 const STRIP_FURIN_SERVER_RE = /\?furin-server.*$/;
 const STRIP_T_PARAM_RE = /\?t=\d+$/;
@@ -93,10 +93,15 @@ const SINGLETON_PKGS = [
 const SINGLETON_PATHS = new Map<string, string>();
 for (const pkg of SINGLETON_PKGS) {
   try {
-    SINGLETON_PATHS.set(pkg, fileURLToPath(import.meta.resolve(pkg)));
+    SINGLETON_PATHS.set(pkg, toImportSpecifier(fileURLToPath(import.meta.resolve(pkg))));
   } catch {
     // Package not installed — skip (e.g. react-dom/client in a server-only env)
   }
+}
+
+/** Converts a native absolute path to Bun's cross-platform import format. */
+export function toImportSpecifier(filePath: string): string {
+  return filePath.replaceAll("\\", "/");
 }
 
 function escapeRegExp(s: string): string {
@@ -121,7 +126,7 @@ export function rewriteSingletonImports(source: string): string {
   for (const [pkg, absPath] of SINGLETON_PATHS) {
     // react-doctor-disable-next-line react-doctor/js-hoist-regexp
     const re = new RegExp(`((?:from|import(?:\\s+type)?)\\s+)["']${escapeRegExp(pkg)}["']`, "g");
-    result = result.replace(re, (_, g1: string) => `${g1}"${absPath}"`);
+    result = result.replace(re, (_, g1: string) => `${g1}${JSON.stringify(absPath)}`);
   }
   return result;
 }
@@ -175,7 +180,7 @@ export function injectJsxHelperImports(transpiled: string): string {
       const specifiers = [...devRuntime.entries()]
         .map(([varName, exportName]) => `${exportName} as ${varName}`)
         .join(", ");
-      lines.push(`import { ${specifiers} } from "${absPath}";`);
+      lines.push(`import { ${specifiers} } from ${JSON.stringify(absPath)};`);
     }
   }
 
@@ -185,7 +190,7 @@ export function injectJsxHelperImports(transpiled: string): string {
       const specifiers = [...prodRuntime.entries()]
         .map(([varName, exportName]) => `${exportName} as ${varName}`)
         .join(", ");
-      lines.push(`import { ${specifiers} } from "${absPath}";`);
+      lines.push(`import { ${specifiers} } from ${JSON.stringify(absPath)};`);
     }
   }
 
@@ -216,9 +221,9 @@ export function rewriteRelativeImports(source: string, dir: string): string {
     if (linePrefix.startsWith("//") || linePrefix.startsWith("*")) {
       return match;
     }
-    const absPath = resolve(dir, relPath);
+    const absPath = toImportSpecifier(resolve(dir, relPath));
     const keyword = match.startsWith("import") ? "import" : "from";
-    return `${keyword} "${absPath}"`;
+    return `${keyword} ${JSON.stringify(absPath)}`;
   });
 }
 
@@ -269,7 +274,7 @@ export function rewriteBareImports(source: string, transpiled: string, dir: stri
 
     let resolved: string;
     try {
-      resolved = Bun.resolveSync(spec, dir);
+      resolved = toImportSpecifier(Bun.resolveSync(spec, dir));
     } catch {
       // Not resolvable from the file's directory — leave as a bare specifier
       // so Bun falls back to CWD-relative resolution (adequate for most cases).
@@ -283,7 +288,7 @@ export function rewriteBareImports(source: string, transpiled: string, dir: stri
     // literals in non-import positions are left untouched.
     // react-doctor-disable-next-line react-doctor/js-hoist-regexp
     const re = new RegExp(`((?:from|import(?:\\s+type)?)\\s+)["']${escapeRegExp(spec)}["']`, "g");
-    result = result.replace(re, (_, g1: string) => `${g1}"${resolved}"`);
+    result = result.replace(re, (_, g1: string) => `${g1}${JSON.stringify(resolved)}`);
   }
   return result;
 }

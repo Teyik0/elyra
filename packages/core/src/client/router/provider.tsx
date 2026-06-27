@@ -682,9 +682,10 @@ export function RouterProvider({
     const wrapped = async (...args: Parameters<typeof fetch>): Promise<Response> => {
       const response = await originalFetch.apply(window, args);
       const invalidated: Array<{ path: string; type: "page" | "layout" }> = [];
-      applyRevalidateHeader(response.headers, (path, type = "page") => {
-        invalidatePrefetch(path, type);
-        invalidated.push({ path, type });
+      applyRevalidateHeader(response.headers, (path, type) => {
+        const resolvedType = type ?? "page";
+        invalidatePrefetch(path, resolvedType);
+        invalidated.push({ path, type: resolvedType });
       });
       if (autoRefresh && invalidated.length > 0) {
         const currentLogicalPath =
@@ -725,9 +726,10 @@ export function RouterProvider({
       }
 
       const invalidations: Array<{ path: string; type: "page" | "layout" }> = [];
-      applyRevalidateEntries(payload.invalidations ?? [], (path, type = "page") => {
-        invalidatePrefetch(path, type);
-        invalidations.push({ path, type });
+      applyRevalidateEntries(payload.invalidations ?? [], (path, type) => {
+        const resolvedType = type ?? "page";
+        invalidatePrefetch(path, resolvedType);
+        invalidations.push({ path, type: resolvedType });
       });
 
       if (autoRefresh && invalidations.length > 0) {

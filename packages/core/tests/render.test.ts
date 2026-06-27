@@ -37,7 +37,7 @@ import {
 import type { ResolvedRoute } from "../src/server/router/index.ts";
 import { scanPages } from "../src/server/router/index.ts";
 import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
-import { setSyncStreamPath } from "../src/server/sync/config.ts";
+import { runWithSyncStreamPath } from "../src/server/sync/config.ts";
 import { Await } from "../src/shared/await.tsx";
 import { notFound } from "../src/shared/not-found.ts";
 
@@ -636,7 +636,6 @@ describe("render.tsx", () => {
   describe("renderSSR", () => {
     afterEach(() => {
       __resetTemplateState();
-      setSyncStreamPath(undefined);
     });
 
     test("returns Response with HTML", async () => {
@@ -652,12 +651,13 @@ describe("render.tsx", () => {
     });
 
     test("injects the sync stream config into streamed SSR HTML", async () => {
-      setSyncStreamPath("/_furin/sync");
       const ssrRoute = await getRoute("/ssr-page");
       const root = await getRoot();
 
       const ctx = createMockLoaderContext({ path: "/ssr-page" });
-      const response = await renderSSR(ssrRoute, ctx, root, undefined);
+      const response = await runWithSyncStreamPath("/_furin/sync", () =>
+        renderSSR(ssrRoute, ctx, root, undefined)
+      );
       const html = await response.text();
 
       expect(html).toContain('id="__FURIN_SYNC__"');

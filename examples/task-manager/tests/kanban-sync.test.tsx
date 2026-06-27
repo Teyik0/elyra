@@ -49,7 +49,6 @@ mock.module("../src/lib/api", () => ({
       }),
     },
   },
-  syncMutationHeaders: () => ({ "Idempotency-Key": "test-key" }),
 }));
 
 const { Kanban } = await import("../src/components/ui/kanban");

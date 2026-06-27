@@ -1,6 +1,8 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 const SYNC_STREAM_DEFAULT_PATH = "/_furin/sync";
 
-let _syncStreamPath: string | undefined;
+const requestSyncStreamPath = new AsyncLocalStorage<string | undefined>();
 
 export type FurinSyncOption =
   | boolean
@@ -18,10 +20,10 @@ export function resolveSyncStreamPath(sync: FurinSyncOption | undefined): string
   return sync.streamPath ?? SYNC_STREAM_DEFAULT_PATH;
 }
 
-export function setSyncStreamPath(path: string | undefined): void {
-  _syncStreamPath = path;
+export function getSyncStreamPath(): string | undefined {
+  return requestSyncStreamPath.getStore();
 }
 
-export function getSyncStreamPath(): string | undefined {
-  return _syncStreamPath;
+export function runWithSyncStreamPath<T>(path: string | undefined, fn: () => T): T {
+  return requestSyncStreamPath.run(path, fn);
 }

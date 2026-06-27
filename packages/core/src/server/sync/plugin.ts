@@ -32,28 +32,46 @@ function isMutationMethod(method: string): boolean {
   return method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
 }
 
-function hasIdempotencyKey(ctx: IdempotencyContext): boolean {
+function getIdempotencyKey(ctx: IdempotencyContext): string | undefined {
   const fromCtxHeaders = ctx.headers["idempotency-key"];
   if (typeof fromCtxHeaders === "string" && fromCtxHeaders.length > 0) {
-    return true;
+    return fromCtxHeaders;
   }
   const fromRequest = ctx.request.headers.get("Idempotency-Key");
-  return Boolean(fromRequest);
+  return fromRequest || undefined;
 }
 
 export function furinSync() {
+  const idempotencyKeys = new Set<string>();
   return new Elysia({ name: "furin-sync" }).macro({
     sync(input: SyncInput) {
       const invalidate = invalidationInputFromSync(input);
       return {
         beforeHandle(ctx) {
-          if (!isMutationMethod(ctx.request.method) || hasIdempotencyKey(ctx)) {
+          if (!isMutationMethod(ctx.request.method)) {
             return;
           }
-          return new Response("Missing Idempotency-Key header", {
-            status: 428,
-            headers: { "content-type": "text/plain; charset=utf-8" },
-          });
+          const key = getIdempotencyKey(ctx);
+          if (!key) {
+            return new Response("Missing Idempotency-Key header", {
+              status: 428,
+              headers: { "content-type": "text/plain; charset=utf-8" },
+            });
+          }
+          const requestKey = `${ctx.request.method}:${new URL(ctx.request.url).pathname}:${key}`;
+          if (idempotencyKeys.has(requestKey)) {
+            return new Response("Duplicate Idempotency-Key header", {
+              status: 409,
+              headers: { "content-type": "text/plain; charset=utf-8" },
+            });
+          }
+          idempotencyKeys.add(requestKey);
+          if (idempotencyKeys.size > 1000) {
+            const oldest = idempotencyKeys.values().next().value;
+            if (typeof oldest === "string") {
+              idempotencyKeys.delete(oldest);
+            }
+          }
         },
         afterHandle(ctx: AnyHandlerContext) {
           if (!isSuccessfulMutationResponse(ctx)) {
