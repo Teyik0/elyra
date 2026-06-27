@@ -34,11 +34,20 @@ export function createInvalidationRefresh(
   options: InvalidationRefreshOptions
 ): InvalidationRefresh {
   let running: Promise<void> | undefined;
+  let requested = false;
+
+  const refreshUntilCurrent = async (): Promise<void> => {
+    do {
+      requested = false;
+      await options.refresh();
+    } while (requested);
+  };
+
   return {
     run() {
+      requested = true;
       if (!running) {
-        running = options
-          .refresh()
+        running = refreshUntilCurrent()
           .catch((error: unknown) => {
             if (!isAbortError(error)) {
               options.onError(error);
@@ -64,6 +73,11 @@ export function createSyncCatchUp(options: SyncCatchUpOptions): SyncCatchUp {
       let page: SyncChangePagePayload;
       do {
         page = await options.fetchPage(currentCursor ?? "0");
+        if (page.reset) {
+          options.onInvalidations(["/:layout"]);
+          currentCursor = page.cursor;
+          break;
+        }
         for (const change of page.changes) {
           options.onInvalidations(change.invalidations);
         }

@@ -43,14 +43,14 @@ describe("createSyncCatchUp", () => {
     expect(sync.cursor()).toBe("4");
   });
 
-  test("recovers from cursor zero when initialization did not complete", async () => {
+  test("fully invalidates when catch-up reports a reset", async () => {
     const requestedAfter: Array<string | undefined> = [];
     const invalidations: string[] = [];
     const sync = createSyncCatchUp({
       fetchPage: (after) => {
         requestedAfter.push(after);
         return Promise.resolve({
-          changes: [{ cursor: "8", invalidations: ["/:layout"] }],
+          changes: [{ cursor: "8", invalidations: ["/stale-increment"] }],
           cursor: "8",
           hasMore: false,
           reset: true,
@@ -90,5 +90,29 @@ describe("createInvalidationRefresh", () => {
     await expect(second).resolves.toBeUndefined();
     expect(calls).toBe(1);
     expect(errors).toEqual([]);
+  });
+
+  test("runs a follow-up refresh when invalidated during a refresh", async () => {
+    let calls = 0;
+    let finishFirst: (() => void) | undefined;
+    const refresh = createInvalidationRefresh({
+      onError: () => undefined,
+      refresh: () => {
+        calls += 1;
+        if (calls === 1) {
+          return new Promise<void>((resolve) => {
+            finishFirst = resolve;
+          });
+        }
+        return Promise.resolve();
+      },
+    });
+
+    const first = refresh.run();
+    const second = refresh.run();
+    finishFirst?.();
+    await Promise.all([first, second]);
+
+    expect(calls).toBe(2);
   });
 });

@@ -81,7 +81,8 @@ export function publishSyncInvalidation(invalidations: readonly string[]): void 
 export function createSyncStreamPlugin(path?: string) {
   const streamPath = path ?? defaultStreamPath;
   return new Elysia({ name: `furin-sync-stream-${streamPath}` })
-    .get(`${streamPath}/changes`, ({ request }) => {
+    .get(`${streamPath}/changes`, ({ request, set }) => {
+      set.headers["cache-control"] = "no-store";
       const query = parseChangeQuery(request);
       if ("error" in query) {
         return query.error;

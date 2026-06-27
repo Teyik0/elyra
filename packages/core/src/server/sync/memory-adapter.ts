@@ -47,7 +47,8 @@ export class MemorySyncAdapter implements SyncAdapter {
 
   beginMutation(input: BeginMutationInput): BeginMutationResult {
     this.evictMutations();
-    const existingId = this.mutationKeys.get(input.key);
+    const mutationKey = `${input.principal}:${input.key}`;
+    const existingId = this.mutationKeys.get(mutationKey);
     const existing = existingId ? this.mutations.get(existingId) : undefined;
     if (existing) {
       if (existing.fingerprint !== input.fingerprint) {
@@ -58,9 +59,12 @@ export class MemorySyncAdapter implements SyncAdapter {
       }
       return { kind: "replay", response: existing.response };
     }
+    if (this.mutations.size >= MAX_MUTATIONS) {
+      return { kind: "unavailable" };
+    }
 
     const mutationId = crypto.randomUUID();
-    this.mutationKeys.set(input.key, mutationId);
+    this.mutationKeys.set(mutationKey, mutationId);
     this.mutations.set(mutationId, {
       createdAt: Date.now(),
       fingerprint: input.fingerprint,
@@ -155,7 +159,7 @@ export class MemorySyncAdapter implements SyncAdapter {
   private evictMutations(): void {
     const expiredBefore = Date.now() - MUTATION_TTL_MS;
     for (const [mutationId, mutation] of this.mutations) {
-      if (mutation.state === "succeeded" && mutation.createdAt < expiredBefore) {
+      if (mutation.createdAt < expiredBefore) {
         this.deleteMutation(mutationId);
       }
     }
