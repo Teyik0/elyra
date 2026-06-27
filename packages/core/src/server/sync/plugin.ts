@@ -43,6 +43,7 @@ function getIdempotencyKey(ctx: IdempotencyContext): string | undefined {
 
 export function furinSync() {
   const idempotencyKeys = new Set<string>();
+  const requestKeys = new WeakMap<Request, string>();
   return new Elysia({ name: "furin-sync" }).macro({
     sync(input: SyncInput) {
       const invalidate = invalidationInputFromSync(input);
@@ -66,6 +67,7 @@ export function furinSync() {
             });
           }
           idempotencyKeys.add(requestKey);
+          requestKeys.set(ctx.request, requestKey);
           if (idempotencyKeys.size > 1000) {
             const oldest = idempotencyKeys.values().next().value;
             if (typeof oldest === "string") {
@@ -75,8 +77,14 @@ export function furinSync() {
         },
         afterHandle(ctx: AnyHandlerContext) {
           if (!isSuccessfulMutationResponse(ctx)) {
+            const requestKey = requestKeys.get(ctx.request);
+            if (requestKey) {
+              idempotencyKeys.delete(requestKey);
+              requestKeys.delete(ctx.request);
+            }
             return;
           }
+          requestKeys.delete(ctx.request);
 
           runInvalidationRules(invalidate);
           const pending = appendPendingInvalidationHeader(ctx.set);
@@ -86,6 +94,13 @@ export function furinSync() {
 
           ctx.set.headers["x-furin-sync"] = "1";
           publishSyncInvalidation(pending);
+        },
+        error({ request }) {
+          const requestKey = requestKeys.get(request);
+          if (requestKey) {
+            idempotencyKeys.delete(requestKey);
+            requestKeys.delete(request);
+          }
         },
       };
     },

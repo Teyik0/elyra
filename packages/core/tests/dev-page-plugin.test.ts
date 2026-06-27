@@ -20,12 +20,11 @@ describe("WORKSPACE_SOURCE_FILTER", () => {
 
 describe("toImportSpecifier", () => {
   test("normalizes a native absolute path for cross-platform imports", () => {
-    const nativePath =
-      process.platform === "win32" ? "C:\\project\\src\\page.tsx" : "/project/src/page.tsx";
-    const specifier = toImportSpecifier(nativePath);
+    const specifier = toImportSpecifier("C:\\project\\src\\page.tsx");
 
-    expect(specifier).toBe(process.platform === "win32" ? "C:/project/src/page.tsx" : nativePath);
+    expect(specifier).toBe("C:/project/src/page.tsx");
     expect(specifier).not.toContain("\\");
+    expect(toImportSpecifier("/project/src/page.tsx")).toBe("/project/src/page.tsx");
   });
 });
 

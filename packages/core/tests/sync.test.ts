@@ -4,7 +4,11 @@ import { furinSync } from "../src/furin.ts";
 import { __resetCacheState, _runWithRequestInvalidationScope } from "../src/server/cache/index.ts";
 import { injectSyncRuntimeScript } from "../src/server/render/assemble.ts";
 import { runWithSyncStreamPath } from "../src/server/sync/config.ts";
-import { __resetSyncState, createSyncStreamPlugin } from "../src/server/sync/stream.ts";
+import {
+  __resetSyncState,
+  createSyncStreamPlugin,
+  publishSyncInvalidation,
+} from "../src/server/sync/stream.ts";
 
 async function readNextChunk(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<string> {
   const timeout = new Promise<never>((_resolve, reject) => {
@@ -110,6 +114,59 @@ describe("furinSync macro", () => {
     expect(calls).toBe(1);
   });
 
+  test("allows an idempotency key to be retried after a failed mutation", async () => {
+    let calls = 0;
+    const app = new Elysia().use(furinSync()).post(
+      "/cards",
+      ({ status }) => {
+        calls += 1;
+        return calls === 1 ? status("Service Unavailable", "retry") : { ok: true };
+      },
+      { sync: { path: "/board", type: "page" } }
+    );
+    const request = () =>
+      _runWithRequestInvalidationScope(() =>
+        app.handle(
+          new Request("http://localhost/cards", {
+            headers: { "Idempotency-Key": "retry-1" },
+            method: "POST",
+          })
+        )
+      );
+
+    expect((await request()).status).toBe(503);
+    expect((await request()).status).toBe(200);
+    expect(calls).toBe(2);
+  });
+
+  test("allows an idempotency key to be retried after a thrown mutation", async () => {
+    let calls = 0;
+    const app = new Elysia().use(furinSync()).post(
+      "/cards",
+      () => {
+        calls += 1;
+        if (calls === 1) {
+          throw new Error("temporary failure");
+        }
+        return { ok: true };
+      },
+      { sync: { path: "/board", type: "page" } }
+    );
+    const request = () =>
+      _runWithRequestInvalidationScope(() =>
+        app.handle(
+          new Request("http://localhost/cards", {
+            headers: { "Idempotency-Key": "retry-throw-1" },
+            method: "POST",
+          })
+        )
+      );
+
+    expect((await request()).status).toBe(500);
+    expect((await request()).status).toBe(200);
+    expect(calls).toBe(2);
+  });
+
   test("replays missed invalidations after reconnect", async () => {
     const app = new Elysia()
       .use(createSyncStreamPlugin())
@@ -134,6 +191,54 @@ describe("furinSync macro", () => {
       throw new Error("Expected stream response body");
     }
     expect(await readNextChunk(reader)).toContain("id: 1");
+    await reader.cancel();
+  });
+
+  test("isolates invalidations by stream path", async () => {
+    const app = new Elysia()
+      .use(createSyncStreamPlugin("/sync/one"))
+      .use(createSyncStreamPlugin("/sync/two"));
+
+    runWithSyncStreamPath("/sync/one", () => publishSyncInvalidation(["/one"]));
+    runWithSyncStreamPath("/sync/two", () => publishSyncInvalidation(["/two"]));
+
+    const firstResponse = await app.handle(
+      new Request("http://localhost/sync/one", { headers: { "Last-Event-ID": "0" } })
+    );
+    const secondResponse = await app.handle(
+      new Request("http://localhost/sync/two", { headers: { "Last-Event-ID": "0" } })
+    );
+    const firstReader = firstResponse.body?.getReader();
+    const secondReader = secondResponse.body?.getReader();
+    if (!(firstReader && secondReader)) {
+      throw new Error("Expected stream response body");
+    }
+    const firstEvent = await readNextChunk(firstReader);
+    const secondEvent = await readNextChunk(secondReader);
+    expect(firstEvent).toContain('"invalidations":["/one"]');
+    expect(firstEvent).not.toContain("/two");
+    expect(secondEvent).toContain('"invalidations":["/two"]');
+    expect(secondEvent).not.toContain("/one");
+    await firstReader.cancel();
+    await secondReader.cancel();
+  });
+
+  test("sends a full invalidation when replay history has a gap", async () => {
+    runWithSyncStreamPath("/_furin/sync", () => {
+      for (let index = 0; index < 101; index += 1) {
+        publishSyncInvalidation([`/page-${index}`]);
+      }
+    });
+    const app = new Elysia().use(createSyncStreamPlugin());
+    const response = await app.handle(
+      new Request("http://localhost/_furin/sync", { headers: { "Last-Event-ID": "0" } })
+    );
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error("Expected stream response body");
+    }
+
+    expect(await readNextChunk(reader)).toContain('"invalidations":["/:layout"]');
     await reader.cancel();
   });
 
