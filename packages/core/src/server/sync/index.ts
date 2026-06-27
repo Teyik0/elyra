@@ -5,10 +5,11 @@ export {
   resolveSyncStreamPath,
   runWithSyncStreamPath,
 } from "./config.ts";
-export { furinSync, type SyncInput } from "./plugin.ts";
+export { furinSync, type SyncInput, type SyncRouteOption } from "./plugin.ts";
 export {
   __resetSyncState,
   createSyncStreamPlugin,
   publishSyncInvalidation,
-  type SyncInvalidationEvent,
+  type SyncChange,
+  type SyncChangePage,
 } from "./stream.ts";

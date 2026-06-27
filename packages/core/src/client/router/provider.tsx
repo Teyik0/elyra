@@ -29,6 +29,11 @@ import {
   detectStaticMode,
   parsePageResponse,
 } from "./spa-response.ts";
+import {
+  createInvalidationRefresh,
+  createSyncCatchUp,
+  type SyncChangePagePayload,
+} from "./sync-catch-up.ts";
 import type {
   CacheEntry,
   ClientSegmentBoundary,
@@ -499,6 +504,16 @@ export function RouterProvider({
     },
     [navigate, invalidatePrefetch, basePath]
   );
+  const invalidationRefresh = useMemo(
+    () =>
+      createInvalidationRefresh({
+        onError: (error) => {
+          log.warn({ action: "sync_refresh_failed", error: String(error) });
+        },
+        refresh: () => refresh(undefined),
+      }),
+    [refresh]
+  );
 
   // Expose refresh() to the HMR handler in _hydrate.tsx so that after a hot
   // reload of a loader-bearing route the client re-fetches fresh data instead
@@ -692,7 +707,7 @@ export function RouterProvider({
           normalizeHref(toLogical(window.location.pathname, basePath)) + window.location.search;
         if (shouldAutoRefreshPath(currentLogicalPath, invalidated)) {
           // fire-and-forget: don't block the original fetch caller
-          refresh(undefined);
+          invalidationRefresh.run();
         }
       }
       return response;
@@ -704,9 +719,9 @@ export function RouterProvider({
     return () => {
       window.fetch = originalFetch;
     };
-  }, [invalidatePrefetch, refresh, autoRefresh, basePath]);
+  }, [invalidatePrefetch, invalidationRefresh, autoRefresh, basePath]);
 
-  // Listen for cross-client invalidations published by furin({ sync: true }).
+  // Listen for sync cursor notifications and recover changes over HTTP.
   useEffect(() => {
     if (!syncStream || typeof window === "undefined" || typeof EventSource === "undefined") {
       return;
@@ -715,18 +730,11 @@ export function RouterProvider({
     const streamUrl = syncStream.startsWith("/")
       ? `${basePath}${syncStream}`
       : `${basePath}/${syncStream}`;
-    const source = new EventSource(streamUrl);
-    const onInvalidate = (event: MessageEvent) => {
-      let payload: { invalidations?: string[] };
-      try {
-        payload = JSON.parse(event.data) as { invalidations?: string[] };
-      } catch {
-        log.warn({ action: "sync_invalid_event", event: "furin.invalidate" });
-        return;
-      }
-
+    let source: EventSource | undefined;
+    let disposed = false;
+    const applyInvalidations = (entries: readonly string[]) => {
       const invalidations: Array<{ path: string; type: "page" | "layout" }> = [];
-      applyRevalidateEntries(payload.invalidations ?? [], (path, type) => {
+      applyRevalidateEntries(entries, (path, type) => {
         const resolvedType = type ?? "page";
         invalidatePrefetch(path, resolvedType);
         invalidations.push({ path, type: resolvedType });
@@ -736,17 +744,67 @@ export function RouterProvider({
         const currentLogicalPath =
           normalizeHref(toLogical(window.location.pathname, basePath)) + window.location.search;
         if (shouldAutoRefreshPath(currentLogicalPath, invalidations)) {
-          refresh(undefined);
+          invalidationRefresh.run();
         }
       }
     };
-
-    source.addEventListener("furin.invalidate", onInvalidate);
-    return () => {
-      source.removeEventListener("furin.invalidate", onInvalidate);
-      source.close();
+    const catchUp = createSyncCatchUp({
+      fetchPage: async (after) => {
+        const url = new URL(`${streamUrl}/changes`, window.location.origin);
+        if (after !== undefined) {
+          url.searchParams.set("after", after);
+        }
+        const response = await window.fetch(url);
+        if (!response.ok) {
+          throw new Error(`Sync catch-up failed with status ${response.status}`);
+        }
+        return (await response.json()) as SyncChangePagePayload;
+      },
+      onInvalidations: applyInvalidations,
+    });
+    const recover = () => {
+      catchUp.catchUp().catch((error: unknown) => {
+        log.warn({ action: "sync_catch_up_failed", error: String(error) });
+      });
     };
-  }, [syncStream, basePath, invalidatePrefetch, refresh, autoRefresh]);
+    const onSync = (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data) as { cursor?: unknown };
+        if (typeof payload.cursor !== "string") {
+          throw new Error("Missing sync cursor");
+        }
+      } catch {
+        log.warn({ action: "sync_invalid_event", event: "furin.sync" });
+        return;
+      }
+      recover();
+    };
+    const connect = () => {
+      if (disposed || source) {
+        return;
+      }
+      source = new EventSource(streamUrl);
+      source.addEventListener("furin.sync", onSync);
+    };
+
+    catchUp
+      .initialize()
+      .then(() => {
+        connect();
+        // Close the initialization/SSE race using the durable change log.
+        recover();
+      })
+      .catch((error: unknown) => {
+        log.warn({ action: "sync_initialize_failed", error: String(error) });
+        // Keep notifications alive; the next event recovers from cursor zero.
+        connect();
+      });
+    return () => {
+      disposed = true;
+      source?.removeEventListener("furin.sync", onSync);
+      source?.close();
+    };
+  }, [syncStream, basePath, invalidatePrefetch, invalidationRefresh, autoRefresh]);
 
   let pageElement: React.ReactNode;
   if (state.notFound || !state.match) {

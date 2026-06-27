@@ -46,7 +46,7 @@ Elysia instance order matters. Mount Furin first so it can install the page runt
 
 ## Sync Mutations
 
-Use `furinSync()` in the same Elysia plugin that declares mutation routes. It adds the `sync` route option, invalidates cached pages after successful responses, and broadcasts the invalidation to connected browsers over Furin's built-in SSE stream.
+Use `furinSync()` in the same Elysia plugin that declares mutation routes. Every non-GET/HEAD/OPTIONS route is synchronized by default: Furin requires an idempotency key, stores successful responses for replay, and publishes any resulting cache invalidations.
 
 ```ts
 import { furinSync } from "@teyik0/furin"
@@ -66,7 +66,7 @@ export const api = new Elysia({ prefix: "/api" })
   )
 ```
 
-There are no mutation names, collections, or client wrappers to configure. The API route is the stable contract, Eden Treaty keeps the client typed, and Furin derives the sync broadcast from the route option.
+There are no mutation names, collections, or client wrappers to configure. The API route is the stable contract, Eden Treaty keeps the client typed, and the optional `sync` object only declares cache invalidations.
 
 Tags come from page and route metadata:
 
@@ -101,7 +101,15 @@ await api.api.posts.post(
 )
 ```
 
-The sync stream endpoint is internal and opinionated: `/_furin/sync`. Enabling `sync: true` in `furin()` injects the client runtime automatically, so you do not need a React provider or application wrapper.
+Repeating the same request with the same key returns the original response without executing the handler again. Reusing a key with a different payload returns `409`. Disable synchronization for payments, uploads, streams, or other non-replayable effects:
+
+```ts
+.post("/payments", createPayment, { sync: false })
+```
+
+The sync stream endpoint is internal and opinionated: `/_furin/sync`. SSE only announces the latest cursor; the client recovers ordered invalidations through `/_furin/sync/changes`. Enabling `sync: true` in `furin()` injects this runtime automatically, so you do not need a React provider or application wrapper.
+
+The built-in implementation is process-local and intentionally non-durable. Responses and change history are lost when the process restarts, and replicas do not share state. Offline persistence and a distributed adapter are not included yet.
 
 For client-side mutations with a body, `useSync()` is the optional ergonomic layer. It keeps the Eden Treaty route as the source of truth, adds the mandatory `Idempotency-Key`, and gives you one place to attach optimistic updates:
 

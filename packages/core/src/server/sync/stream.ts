@@ -1,20 +1,29 @@
 import { Elysia } from "elysia";
+import type { SyncChange } from "./adapter.ts";
 import { getSyncStreamPath } from "./config.ts";
+import { memorySyncAdapter } from "./memory-adapter.ts";
 
-export interface SyncInvalidationEvent {
-  invalidations: readonly string[];
-}
+export type { ChangePage as SyncChangePage, SyncChange } from "./adapter.ts";
 
-const encoder = new TextEncoder();
+const DEFAULT_CHANGE_LIMIT = 100;
+const MAX_CHANGE_LIMIT = 500;
+const CURSOR_PATTERN = /^\d+$/;
 const defaultStreamPath = "/_furin/sync";
+const encoder = new TextEncoder();
+
 interface StreamState {
   clients: Set<ReadableStreamDefaultController<Uint8Array>>;
   heartbeats: Set<ReturnType<typeof setInterval>>;
-  history: Array<{ chunk: Uint8Array; id: number }>;
-  nextEventId: number;
+  unsubscribe: (() => void) | undefined;
 }
 
 const streams = new Map<string, StreamState>();
+
+function encodeSseChange(change: SyncChange): Uint8Array {
+  return encoder.encode(
+    `id: ${change.cursor}\nevent: furin.sync\nretry: 3000\ndata: ${JSON.stringify({ cursor: change.cursor })}\n\n`
+  );
+}
 
 function getStreamState(path: string): StreamState {
   const existing = streams.get(path);
@@ -24,111 +33,108 @@ function getStreamState(path: string): StreamState {
   const state: StreamState = {
     clients: new Set(),
     heartbeats: new Set(),
-    history: [],
-    nextEventId: 1,
+    unsubscribe: undefined,
   };
+  state.unsubscribe = memorySyncAdapter.subscribe(path, (change) => {
+    const chunk = encodeSseChange(change);
+    for (const client of [...state.clients]) {
+      try {
+        client.enqueue(chunk);
+      } catch {
+        state.clients.delete(client);
+      }
+    }
+  });
   streams.set(path, state);
   return state;
 }
 
-function encodeSseEvent(id: number, event: string, data: unknown): Uint8Array {
-  return encoder.encode(
-    `id: ${id}\nevent: ${event}\nretry: 3000\ndata: ${JSON.stringify(data)}\n\n`
-  );
+function parseChangeQuery(
+  request: Request
+): { after: string | undefined; limit: number } | { error: Response } {
+  const url = new URL(request.url);
+  const after = url.searchParams.get("after") ?? undefined;
+  if (after !== undefined && !CURSOR_PATTERN.test(after)) {
+    return { error: Response.json({ code: "FURIN_INVALID_SYNC_CURSOR" }, { status: 400 }) };
+  }
+  const limitValue = url.searchParams.get("limit");
+  if (limitValue !== null && !CURSOR_PATTERN.test(limitValue)) {
+    return { error: Response.json({ code: "FURIN_INVALID_SYNC_LIMIT" }, { status: 400 }) };
+  }
+  const limit = limitValue === null ? DEFAULT_CHANGE_LIMIT : Number.parseInt(limitValue, 10);
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_CHANGE_LIMIT) {
+    return { error: Response.json({ code: "FURIN_INVALID_SYNC_LIMIT" }, { status: 400 }) };
+  }
+  return { after, limit };
 }
 
 export function publishSyncInvalidation(invalidations: readonly string[]): void {
   if (invalidations.length === 0) {
     return;
   }
-
-  const state = getStreamState(getSyncStreamPath() ?? defaultStreamPath);
-  const id = state.nextEventId++;
-  const chunk = encodeSseEvent(id, "furin.invalidate", {
+  memorySyncAdapter.appendChanges({
     invalidations,
-  } satisfies SyncInvalidationEvent);
-  state.history.push({ chunk, id });
-  if (state.history.length > 100) {
-    state.history.shift();
-  }
-  for (const client of [...state.clients]) {
-    try {
-      client.enqueue(chunk);
-    } catch {
-      state.clients.delete(client);
-    }
-  }
+    path: getSyncStreamPath() ?? defaultStreamPath,
+  });
 }
 
 export function createSyncStreamPlugin(path?: string) {
   const streamPath = path ?? defaultStreamPath;
-  return new Elysia({ name: `furin-sync-stream-${streamPath}` }).get(streamPath, ({ request }) => {
-    const state = getStreamState(streamPath);
-    let controllerRef: ReadableStreamDefaultController<Uint8Array> | undefined;
-    let heartbeat: ReturnType<typeof setInterval> | undefined;
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controllerRef = controller;
-        state.clients.add(controller);
-        const lastEventId = Number.parseInt(request.headers.get("Last-Event-ID") ?? "", 10);
-        const oldestEventId = state.history[0]?.id;
-        const hasReplayGap =
-          !Number.isNaN(lastEventId) &&
-          oldestEventId !== undefined &&
-          lastEventId < oldestEventId - 1;
-        const replay = Number.isNaN(lastEventId)
-          ? []
-          : state.history.filter((entry) => entry.id > lastEventId);
-        if (hasReplayGap) {
-          controller.enqueue(
-            encodeSseEvent(state.nextEventId - 1, "furin.invalidate", {
-              invalidations: ["/:layout"],
-            } satisfies SyncInvalidationEvent)
-          );
-        } else if (replay.length > 0) {
-          for (const entry of replay) {
-            controller.enqueue(entry.chunk);
-          }
-        } else {
+  return new Elysia({ name: `furin-sync-stream-${streamPath}` })
+    .get(`${streamPath}/changes`, ({ request }) => {
+      const query = parseChangeQuery(request);
+      if ("error" in query) {
+        return query.error;
+      }
+      return memorySyncAdapter.readChanges({ ...query, path: streamPath });
+    })
+    .get(streamPath, () => {
+      const state = getStreamState(streamPath);
+      let controllerRef: ReadableStreamDefaultController<Uint8Array> | undefined;
+      let heartbeat: ReturnType<typeof setInterval> | undefined;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controllerRef = controller;
+          state.clients.add(controller);
           controller.enqueue(encoder.encode(": connected\nretry: 3000\n\n"));
-        }
-        heartbeat = setInterval(() => {
-          try {
-            controller.enqueue(encoder.encode(": heartbeat\n\n"));
-          } catch {
-            state.clients.delete(controller);
-            if (heartbeat) {
-              clearInterval(heartbeat);
-              state.heartbeats.delete(heartbeat);
+          heartbeat = setInterval(() => {
+            try {
+              controller.enqueue(encoder.encode(": heartbeat\n\n"));
+            } catch {
+              state.clients.delete(controller);
+              if (heartbeat) {
+                clearInterval(heartbeat);
+                state.heartbeats.delete(heartbeat);
+              }
             }
+          }, 15_000);
+          state.heartbeats.add(heartbeat);
+        },
+        cancel() {
+          if (controllerRef) {
+            state.clients.delete(controllerRef);
           }
-        }, 15_000);
-        state.heartbeats.add(heartbeat);
-      },
-      cancel() {
-        if (controllerRef) {
-          state.clients.delete(controllerRef);
-        }
-        if (heartbeat) {
-          clearInterval(heartbeat);
-          state.heartbeats.delete(heartbeat);
-        }
-      },
-    });
+          if (heartbeat) {
+            clearInterval(heartbeat);
+            state.heartbeats.delete(heartbeat);
+          }
+        },
+      });
 
-    return new Response(stream, {
-      headers: {
-        "cache-control": "no-cache, no-transform",
-        connection: "keep-alive",
-        "content-type": "text/event-stream; charset=utf-8",
-      },
+      return new Response(stream, {
+        headers: {
+          "cache-control": "no-cache, no-transform",
+          connection: "keep-alive",
+          "content-type": "text/event-stream; charset=utf-8",
+        },
+      });
     });
-  });
 }
 
-/** @internal — resets process-local stream subscribers between tests. */
+/** @internal — resets process-local sync state between tests. */
 export function __resetSyncState(): void {
   for (const state of streams.values()) {
+    state.unsubscribe?.();
     for (const heartbeat of state.heartbeats) {
       clearInterval(heartbeat);
     }
@@ -141,4 +147,5 @@ export function __resetSyncState(): void {
     }
   }
   streams.clear();
+  memorySyncAdapter.reset();
 }

@@ -31,3 +31,7 @@ bun create furin@latest my-app --template full
 ## Documentation
 
 Full API reference, rendering modes, routing, and deployment guides at **[teyik0.github.io/furin](https://teyik0.github.io/furin/)**.
+
+## Replayable mutations
+
+Install `furinSync()` on an Elysia API plugin to make mutations idempotent and replayable by default. Send an `Idempotency-Key` on every non-GET/HEAD/OPTIONS request; use `sync: false` for payments, uploads, streams, and other non-replayable effects. The built-in adapter is process-local memory and does not survive restarts or span replicas.
