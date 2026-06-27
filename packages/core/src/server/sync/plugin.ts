@@ -1,27 +1,46 @@
-import { type AfterHandler, Elysia } from "elysia";
+import { Elysia } from "elysia";
 import {
   appendPendingInvalidationHeader,
   isSuccessfulMutationResponse,
   runInvalidationRules,
 } from "../auto-invalidate/runtime.ts";
 import type { InvalidationInput } from "../auto-invalidate/types.ts";
-import { publishSyncInvalidation } from "./stream.ts";
+import { getSyncStreamPath } from "./config.ts";
+import { createMutationFingerprint } from "./fingerprint.ts";
+import { memorySyncAdapter } from "./memory-adapter.ts";
+import { replayResponse, storeResponse } from "./response.ts";
 
-export type SyncInput =
+export type SyncRouteOption =
+  | false
   | InvalidationInput
   | {
       invalidate: InvalidationInput;
     };
 
-type AnyHandlerContext = Parameters<AfterHandler>[0];
-interface IdempotencyContext {
+/** @deprecated Use SyncRouteOption. */
+export type SyncInput = Exclude<SyncRouteOption, false>;
+
+interface RouteSyncMetadata {
+  disabled: boolean;
+  invalidate?: InvalidationInput;
+}
+
+interface ActiveMutation {
+  mutationId: string;
+}
+
+interface MutationContext {
+  body?: unknown;
   headers: {
     "idempotency-key"?: string | undefined;
   };
   request: Request;
 }
 
-function invalidationInputFromSync(input: SyncInput): InvalidationInput {
+const routeMetadata = new WeakMap<Request, RouteSyncMetadata>();
+const activeMutations = new WeakMap<Request, ActiveMutation>();
+
+function invalidationInputFromSync(input: Exclude<SyncRouteOption, false>): InvalidationInput {
   if (input && typeof input === "object" && "invalidate" in input) {
     return input.invalidate;
   }
@@ -32,7 +51,7 @@ function isMutationMethod(method: string): boolean {
   return method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
 }
 
-function getIdempotencyKey(ctx: IdempotencyContext): string | undefined {
+function getIdempotencyKey(ctx: MutationContext): string | undefined {
   const fromCtxHeaders = ctx.headers["idempotency-key"];
   if (typeof fromCtxHeaders === "string" && fromCtxHeaders.length > 0) {
     return fromCtxHeaders;
@@ -41,68 +60,118 @@ function getIdempotencyKey(ctx: IdempotencyContext): string | undefined {
   return fromRequest || undefined;
 }
 
-export function furinSync() {
-  const idempotencyKeys = new Set<string>();
-  const requestKeys = new WeakMap<Request, string>();
-  return new Elysia({ name: "furin-sync" }).macro({
-    sync(input: SyncInput) {
-      const invalidate = invalidationInputFromSync(input);
-      return {
-        beforeHandle(ctx) {
-          if (!isMutationMethod(ctx.request.method)) {
-            return;
-          }
-          const key = getIdempotencyKey(ctx);
-          if (!key) {
-            return new Response("Missing Idempotency-Key header", {
-              status: 428,
-              headers: { "content-type": "text/plain; charset=utf-8" },
-            });
-          }
-          const requestKey = `${ctx.request.method}:${new URL(ctx.request.url).pathname}:${key}`;
-          if (idempotencyKeys.has(requestKey)) {
-            return new Response("Duplicate Idempotency-Key header", {
-              status: 409,
-              headers: { "content-type": "text/plain; charset=utf-8" },
-            });
-          }
-          idempotencyKeys.add(requestKey);
-          requestKeys.set(ctx.request, requestKey);
-          if (idempotencyKeys.size > 1000) {
-            const oldest = idempotencyKeys.values().next().value;
-            if (typeof oldest === "string") {
-              idempotencyKeys.delete(oldest);
-            }
-          }
-        },
-        afterHandle(ctx: AnyHandlerContext) {
-          if (!isSuccessfulMutationResponse(ctx)) {
-            const requestKey = requestKeys.get(ctx.request);
-            if (requestKey) {
-              idempotencyKeys.delete(requestKey);
-              requestKeys.delete(ctx.request);
-            }
-            return;
-          }
-          requestKeys.delete(ctx.request);
+function supportsReplayBody(request: Request): boolean {
+  const contentType = request.headers.get("content-type")?.toLowerCase();
+  return (
+    contentType === undefined ||
+    contentType.startsWith("application/json") ||
+    contentType.startsWith("application/x-www-form-urlencoded") ||
+    contentType.startsWith("text/")
+  );
+}
 
-          runInvalidationRules(invalidate);
-          const pending = appendPendingInvalidationHeader(ctx.set);
-          if (pending.length === 0) {
-            return;
-          }
-
-          ctx.set.headers["x-furin-sync"] = "1";
-          publishSyncInvalidation(pending);
-        },
-        error({ request }) {
-          const requestKey = requestKeys.get(request);
-          if (requestKey) {
-            idempotencyKeys.delete(requestKey);
-            requestKeys.delete(request);
-          }
-        },
-      };
+function conflictResponse(reason: "in-progress" | "payload-mismatch"): Response {
+  const inProgress = reason === "in-progress";
+  return Response.json(
+    {
+      code: inProgress ? "FURIN_MUTATION_IN_PROGRESS" : "FURIN_IDEMPOTENCY_MISMATCH",
+      message: inProgress
+        ? "A mutation with this Idempotency-Key is still running."
+        : "The Idempotency-Key was already used with a different request.",
     },
-  });
+    {
+      status: 409,
+      headers: inProgress ? { "retry-after": "1" } : undefined,
+    }
+  );
+}
+
+async function beginMutation(ctx: MutationContext): Promise<Response | undefined> {
+  if (!isMutationMethod(ctx.request.method) || routeMetadata.get(ctx.request)?.disabled) {
+    return;
+  }
+  const idempotencyKey = getIdempotencyKey(ctx);
+  if (!idempotencyKey) {
+    return new Response("Missing Idempotency-Key header", {
+      status: 428,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    });
+  }
+  if (!supportsReplayBody(ctx.request)) {
+    return Response.json(
+      {
+        code: "FURIN_UNSUPPORTED_SYNC_BODY",
+        message: "This request body cannot be replayed. Set sync: false on the route.",
+      },
+      { status: 415 }
+    );
+  }
+
+  const url = new URL(ctx.request.url);
+  const key = `${ctx.request.method}:${url.pathname}:${idempotencyKey}`;
+  const fingerprint = await createMutationFingerprint({ body: ctx.body, request: ctx.request });
+  const result = await memorySyncAdapter.beginMutation({ fingerprint, key });
+  if (result.kind === "replay") {
+    return replayResponse(result.response);
+  }
+  if (result.kind === "conflict") {
+    return conflictResponse(result.reason);
+  }
+  activeMutations.set(ctx.request, { mutationId: result.mutationId });
+}
+
+async function abortMutation(request: Request): Promise<void> {
+  const active = activeMutations.get(request);
+  if (!active) {
+    return;
+  }
+  activeMutations.delete(request);
+  await memorySyncAdapter.abortMutation(active);
+}
+
+export function furinSync() {
+  return new Elysia({ name: "furin-sync" })
+    .macro({
+      sync(input: SyncRouteOption) {
+        return {
+          transform({ request }) {
+            routeMetadata.set(
+              request,
+              input === false
+                ? { disabled: true }
+                : { disabled: false, invalidate: invalidationInputFromSync(input) }
+            );
+          },
+        };
+      },
+    })
+    .onBeforeHandle({ as: "global" }, beginMutation)
+    .onAfterHandle({ as: "global" }, async (ctx) => {
+      const active = activeMutations.get(ctx.request);
+      if (!active) {
+        return;
+      }
+      if (!isSuccessfulMutationResponse(ctx)) {
+        await abortMutation(ctx.request);
+        return;
+      }
+
+      const response = await storeResponse(ctx.responseValue, ctx.set);
+      const invalidate = routeMetadata.get(ctx.request)?.invalidate;
+      if (invalidate) {
+        runInvalidationRules(invalidate);
+      }
+      const pending = appendPendingInvalidationHeader(ctx.set);
+      await memorySyncAdapter.commitMutation({ ...active, response });
+      activeMutations.delete(ctx.request);
+
+      if (pending.length > 0) {
+        ctx.set.headers["x-furin-sync"] = "1";
+        await memorySyncAdapter.appendChanges({
+          invalidations: pending,
+          path: getSyncStreamPath() ?? "/_furin/sync",
+        });
+      }
+    })
+    .onError({ as: "global" }, ({ request }) => abortMutation(request));
 }

@@ -203,6 +203,8 @@ new Elysia()
 
 **Type:** `boolean`
 
-Enable Furin's built-in sync engine. Furin mounts the internal SSE stream at `/_furin/sync`, injects the client runtime automatically, and lets API routes opt into mutation sync with `furinSync()`.
+Enable Furin's built-in sync transport. Furin mounts SSE at `/_furin/sync`, exposes cursor catch-up at `/_furin/sync/changes`, and injects the client runtime automatically. API mutations using `furinSync()` are synchronized by default and may opt out with `sync: false`.
 
 Synced mutations stay regular API routes. There are no server actions, generated mutation names, collections, or React wrapper providers required.
+
+The current adapter is process-local memory: idempotency responses and changes are lost on restart and are not shared across replicas.

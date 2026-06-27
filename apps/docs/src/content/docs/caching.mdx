@@ -150,9 +150,9 @@ export const postsApi = new Elysia()
   );
 ```
 
-The `sync` route option is provided by the `furinSync()` macro. Install the macro on the same Elysia plugin that declares the routes using `sync`.
+The `sync` route option is provided by the `furinSync()` macro. Install the macro on the same Elysia plugin that declares the routes. Mutations are synchronized by default; use `sync: false` only for non-replayable effects.
 
-`furinSync()` also requires an `Idempotency-Key` header for every synced mutation and broadcasts successful invalidations to browsers connected to `/_furin/sync`. This makes idempotency and multi-tab refresh part of the default mutation contract instead of per-route boilerplate.
+`furinSync()` requires an `Idempotency-Key` header for every synced mutation, replays successful responses for duplicate requests, and appends successful invalidations to its change log. This makes idempotency and multi-tab refresh part of the default mutation contract instead of per-route boilerplate.
 
 If you only need response-header invalidation without live broadcast, the lower-level `furinInvalidate()` macro still provides the `invalidate` route option.
 
@@ -188,7 +188,9 @@ X-Furin-Revalidate: /blog/my-post,/blog:layout
 
 The client-side router (`RouterProvider`) intercepts **all** `window.fetch` calls. When it sees this header it busts the corresponding prefetch cache entries, ensuring the next SPA navigation fetches fresh HTML from the server instead of using a stale prefetch.
 
-When `furin({ sync: true })` is enabled, Furin also mounts `/_furin/sync` and injects the stream configuration into the page HTML. The client runtime opens an SSE connection automatically and listens for `furin.invalidate` events. When another tab, device, or client performs a synced mutation, the current page's prefetched HTML is invalidated and the active route is refreshed when it depends on the changed path or tag.
+When `furin({ sync: true })` is enabled, Furin mounts `/_furin/sync` and injects the stream configuration into the page HTML. SSE emits lightweight `furin.sync` cursor notifications. The client reads missed changes from `/_furin/sync/changes`, invalidates prefetched HTML in order, and refreshes the active route when it depends on the changed path or tag.
+
+The current journal and idempotency responses live in process memory. They support reconnects within one process but do not survive restarts or synchronize multiple replicas.
 
 ---
 

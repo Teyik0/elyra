@@ -453,7 +453,7 @@ export { furinInvalidate, revalidateTag } from "./server/auto-invalidate/index.t
 export { revalidatePath, setCachePurger } from "./server/cache/invalidation.ts";
 export { buildElement, buildErrorElement, renderRootNotFound } from "./server/render/index.ts";
 export type { ResolvedRoute, SegmentBoundary } from "./server/router/index.ts";
-export { furinSync, type SyncInput } from "./server/sync/index.ts";
+export { furinSync, type SyncInput, type SyncRouteOption } from "./server/sync/index.ts";
 export { Await, useAsyncError, useAsyncValue } from "./shared/await.tsx";
 export type { ErrorComponent, ErrorProps } from "./shared/error.ts";
 export type {

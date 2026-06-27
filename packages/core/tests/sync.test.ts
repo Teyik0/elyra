@@ -30,6 +30,110 @@ afterEach(() => {
 });
 
 describe("furinSync macro", () => {
+  test("syncs mutations by default and allows explicit opt-out", async () => {
+    let syncedCalls = 0;
+    let optedOutCalls = 0;
+    const app = new Elysia()
+      .use(furinSync())
+      .patch("/synced", () => {
+        syncedCalls += 1;
+        return { ok: true };
+      })
+      .post(
+        "/opted-out",
+        () => {
+          optedOutCalls += 1;
+          return { ok: true };
+        },
+        { sync: false }
+      )
+      .get("/read", () => ({ ok: true }));
+
+    expect(
+      (await app.handle(new Request("http://localhost/synced", { method: "PATCH" }))).status
+    ).toBe(428);
+    expect(
+      (await app.handle(new Request("http://localhost/opted-out", { method: "POST" }))).status
+    ).toBe(200);
+    expect((await app.handle(new Request("http://localhost/read"))).status).toBe(200);
+    expect(syncedCalls).toBe(0);
+    expect(optedOutCalls).toBe(1);
+  });
+
+  test("rejects unsupported replay bodies unless the route opts out", async () => {
+    const app = new Elysia()
+      .use(furinSync())
+      .post("/upload", () => ({ ok: true }))
+      .post("/raw-upload", () => ({ ok: true }), { sync: false });
+    const request = (path: string) =>
+      app.handle(
+        new Request(`http://localhost${path}`, {
+          body: new Uint8Array([1, 2, 3]),
+          headers: {
+            "content-type": "application/octet-stream",
+            "Idempotency-Key": "upload-1",
+          },
+          method: "POST",
+        })
+      );
+
+    const synced = await request("/upload");
+    expect(synced.status).toBe(415);
+    expect(await synced.json()).toMatchObject({ code: "FURIN_UNSUPPORTED_SYNC_BODY" });
+    expect((await request("/raw-upload")).status).toBe(200);
+  });
+
+  test("replays a successful mutation response without executing the handler twice", async () => {
+    let calls = 0;
+    const app = new Elysia().use(furinSync()).post("/cards", ({ set }) => {
+      calls += 1;
+      set.status = 201;
+      set.headers["x-result"] = "created";
+      return { id: "card-1" };
+    });
+    const request = () =>
+      app.handle(
+        new Request("http://localhost/cards", {
+          body: JSON.stringify({ title: "First" }),
+          headers: {
+            "content-type": "application/json",
+            "Idempotency-Key": "create-card-1",
+          },
+          method: "POST",
+        })
+      );
+
+    const first = await request();
+    const second = await request();
+
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    expect(second.headers.get("x-result")).toBe("created");
+    expect(await second.json()).toEqual({ id: "card-1" });
+    expect(calls).toBe(1);
+  });
+
+  test("replays Elysia status responses with their original body", async () => {
+    let calls = 0;
+    const app = new Elysia().use(furinSync()).post("/cards", ({ status }) => {
+      calls += 1;
+      return status("Created", { id: "card-1" });
+    });
+    const request = () =>
+      app.handle(
+        new Request("http://localhost/cards", {
+          headers: { "Idempotency-Key": "status-response-1" },
+          method: "POST",
+        })
+      );
+
+    expect((await request()).status).toBe(201);
+    const replay = await request();
+    expect(replay.status).toBe(201);
+    expect(await replay.json()).toEqual({ id: "card-1" });
+    expect(calls).toBe(1);
+  });
+
   test("sync mutation requires an idempotency key", async () => {
     let called = false;
     const app = new Elysia().use(furinSync()).patch(
@@ -83,13 +187,13 @@ describe("furinSync macro", () => {
     expect(mutationResponse.headers.get("x-furin-revalidate")).toBe("/board:layout");
 
     const event = await readNextChunk(reader);
-    expect(event).toContain("event: furin.invalidate");
+    expect(event).toContain("event: furin.sync");
     expect(event).toContain("id: 1");
     expect(event).toContain("retry:");
-    expect(event).toContain('"invalidations":["/board:layout"]');
+    expect(event).toContain('"cursor":"1"');
   });
 
-  test("rejects a repeated idempotency key without running the mutation twice", async () => {
+  test("replays a repeated idempotency key without running the mutation twice", async () => {
     let calls = 0;
     const app = new Elysia().use(furinSync()).post(
       "/cards",
@@ -110,8 +214,60 @@ describe("furinSync macro", () => {
       );
 
     expect((await request()).status).toBe(200);
-    expect((await request()).status).toBe(409);
+    expect((await request()).status).toBe(200);
     expect(calls).toBe(1);
+  });
+
+  test("rejects reusing an idempotency key with a different payload", async () => {
+    let calls = 0;
+    const app = new Elysia().use(furinSync()).patch("/cards/1", () => {
+      calls += 1;
+      return { ok: true };
+    });
+    const request = (title: string) =>
+      app.handle(
+        new Request("http://localhost/cards/1", {
+          body: JSON.stringify({ title }),
+          headers: {
+            "content-type": "application/json",
+            "Idempotency-Key": "rename-1",
+          },
+          method: "PATCH",
+        })
+      );
+
+    expect((await request("First")).status).toBe(200);
+    const mismatch = await request("Second");
+    expect(mismatch.status).toBe(409);
+    expect(await mismatch.json()).toMatchObject({ code: "FURIN_IDEMPOTENCY_MISMATCH" });
+    expect(calls).toBe(1);
+  });
+
+  test("rejects a concurrent mutation with the same idempotency key", async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const app = new Elysia().use(furinSync()).post("/cards", async () => {
+      await gate;
+      return { ok: true };
+    });
+    const request = () =>
+      app.handle(
+        new Request("http://localhost/cards", {
+          headers: { "Idempotency-Key": "concurrent-1" },
+          method: "POST",
+        })
+      );
+
+    const first = request();
+    await Bun.sleep(0);
+    const conflict = await request();
+    expect(conflict.status).toBe(409);
+    expect(conflict.headers.get("retry-after")).toBe("1");
+    expect(await conflict.json()).toMatchObject({ code: "FURIN_MUTATION_IN_PROGRESS" });
+    release?.();
+    expect((await first).status).toBe(200);
   });
 
   test("allows an idempotency key to be retried after a failed mutation", async () => {
@@ -167,7 +323,7 @@ describe("furinSync macro", () => {
     expect(calls).toBe(2);
   });
 
-  test("replays missed invalidations after reconnect", async () => {
+  test("reads missed invalidations from the HTTP change log", async () => {
     const app = new Elysia()
       .use(createSyncStreamPlugin())
       .use(furinSync())
@@ -183,15 +339,39 @@ describe("furinSync macro", () => {
         })
       )
     );
-    const response = await app.handle(
-      new Request("http://localhost/_furin/sync", { headers: { "Last-Event-ID": "0" } })
+    const response = await app.handle(new Request("http://localhost/_furin/sync/changes?after=0"));
+    expect(await response.json()).toEqual({
+      changes: [{ cursor: "1", invalidations: ["/board"] }],
+      cursor: "1",
+      hasMore: false,
+      reset: false,
+    });
+  });
+
+  test("initializes at the current cursor without replaying history", async () => {
+    publishSyncInvalidation(["/first"]);
+    const app = new Elysia().use(createSyncStreamPlugin());
+
+    const response = await app.handle(new Request("http://localhost/_furin/sync/changes"));
+
+    expect(await response.json()).toEqual({
+      changes: [],
+      cursor: "1",
+      hasMore: false,
+      reset: false,
+    });
+  });
+
+  test("rejects invalid change cursors and limits", async () => {
+    const app = new Elysia().use(createSyncStreamPlugin());
+
+    const cursor = await app.handle(
+      new Request("http://localhost/_furin/sync/changes?after=invalid")
     );
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error("Expected stream response body");
-    }
-    expect(await readNextChunk(reader)).toContain("id: 1");
-    await reader.cancel();
+    const limit = await app.handle(new Request("http://localhost/_furin/sync/changes?limit=501"));
+
+    expect(cursor.status).toBe(400);
+    expect(limit.status).toBe(400);
   });
 
   test("isolates invalidations by stream path", async () => {
@@ -203,43 +383,31 @@ describe("furinSync macro", () => {
     runWithSyncStreamPath("/sync/two", () => publishSyncInvalidation(["/two"]));
 
     const firstResponse = await app.handle(
-      new Request("http://localhost/sync/one", { headers: { "Last-Event-ID": "0" } })
+      new Request("http://localhost/sync/one/changes?after=0")
     );
     const secondResponse = await app.handle(
-      new Request("http://localhost/sync/two", { headers: { "Last-Event-ID": "0" } })
+      new Request("http://localhost/sync/two/changes?after=0")
     );
-    const firstReader = firstResponse.body?.getReader();
-    const secondReader = secondResponse.body?.getReader();
-    if (!(firstReader && secondReader)) {
-      throw new Error("Expected stream response body");
-    }
-    const firstEvent = await readNextChunk(firstReader);
-    const secondEvent = await readNextChunk(secondReader);
-    expect(firstEvent).toContain('"invalidations":["/one"]');
-    expect(firstEvent).not.toContain("/two");
-    expect(secondEvent).toContain('"invalidations":["/two"]');
-    expect(secondEvent).not.toContain("/one");
-    await firstReader.cancel();
-    await secondReader.cancel();
+    expect(await firstResponse.json()).toMatchObject({
+      changes: [{ invalidations: ["/one"] }],
+    });
+    expect(await secondResponse.json()).toMatchObject({
+      changes: [{ invalidations: ["/two"] }],
+    });
   });
 
   test("sends a full invalidation when replay history has a gap", async () => {
     runWithSyncStreamPath("/_furin/sync", () => {
-      for (let index = 0; index < 101; index += 1) {
+      for (let index = 0; index < 1001; index += 1) {
         publishSyncInvalidation([`/page-${index}`]);
       }
     });
     const app = new Elysia().use(createSyncStreamPlugin());
-    const response = await app.handle(
-      new Request("http://localhost/_furin/sync", { headers: { "Last-Event-ID": "0" } })
-    );
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error("Expected stream response body");
-    }
-
-    expect(await readNextChunk(reader)).toContain('"invalidations":["/:layout"]');
-    await reader.cancel();
+    const response = await app.handle(new Request("http://localhost/_furin/sync/changes?after=0"));
+    expect(await response.json()).toMatchObject({
+      changes: [{ invalidations: ["/:layout"] }],
+      reset: true,
+    });
   });
 
   test("failed sync mutation does not publish invalidations", async () => {
