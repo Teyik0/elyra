@@ -1,4 +1,4 @@
-import { type Context, StatusMap } from "elysia";
+import { type Context, ElysiaCustomStatusResponse, StatusMap } from "elysia";
 import type { StoredResponse } from "./adapter.ts";
 
 const HOP_BY_HOP_HEADERS = new Set(["connection", "keep-alive", "transfer-encoding", "upgrade"]);
@@ -11,21 +11,19 @@ function statusCode(status: Context["set"]["status"]): number {
 }
 
 function unwrapStatusResponse(value: unknown): { status: number; value: unknown } | undefined {
-  if (!(value && typeof value === "object" && "code" in value && "response" in value)) {
+  if (!(value instanceof ElysiaCustomStatusResponse)) {
     return;
   }
-  const code = (value as { code: unknown }).code;
-  if (typeof code !== "number") {
-    return;
-  }
-  return { status: code, value: (value as { response: unknown }).response };
+  return { status: value.code, value: value.response };
 }
 
 function responseHeaders(headers: Context["set"]["headers"]): Headers {
   const result = new Headers();
   for (const [name, value] of Object.entries(headers)) {
     if (value !== undefined && !HOP_BY_HOP_HEADERS.has(name.toLowerCase())) {
-      result.set(name, String(value));
+      for (const entry of Array.isArray(value) ? value : [value]) {
+        result.append(name, String(entry));
+      }
     }
   }
   return result;

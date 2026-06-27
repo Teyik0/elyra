@@ -3,6 +3,13 @@ interface FingerprintInput {
   request: Request;
 }
 
+function compareCodePoints(left: string, right: string): number {
+  if (left === right) {
+    return 0;
+  }
+  return left < right ? -1 : 1;
+}
+
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(canonicalize);
@@ -10,7 +17,7 @@ function canonicalize(value: unknown): unknown {
   if (value && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
     return Object.fromEntries(
       Object.entries(value)
-        .sort(([left], [right]) => left.localeCompare(right))
+        .sort(([left], [right]) => compareCodePoints(left, right))
         .map(([key, entry]) => [key, canonicalize(entry)])
     );
   }
@@ -21,7 +28,9 @@ export async function createMutationFingerprint(input: FingerprintInput): Promis
   const url = new URL(input.request.url);
   const query = [...url.searchParams.entries()].sort(
     ([leftKey, leftValue], [rightKey, rightValue]) =>
-      leftKey === rightKey ? leftValue.localeCompare(rightValue) : leftKey.localeCompare(rightKey)
+      leftKey === rightKey
+        ? compareCodePoints(leftValue, rightValue)
+        : compareCodePoints(leftKey, rightKey)
   );
   const source = JSON.stringify({
     body: canonicalize(input.body) ?? null,

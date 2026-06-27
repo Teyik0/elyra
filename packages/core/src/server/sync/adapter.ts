@@ -7,12 +7,14 @@ export interface StoredResponse {
 export interface BeginMutationInput {
   fingerprint: string;
   key: string;
+  principal: string;
 }
 
 export type BeginMutationResult =
   | { kind: "execute"; mutationId: string }
   | { kind: "replay"; response: StoredResponse }
-  | { kind: "conflict"; reason: "in-progress" | "payload-mismatch" };
+  | { kind: "conflict"; reason: "in-progress" | "payload-mismatch" }
+  | { kind: "unavailable" };
 
 export interface CommitMutationInput {
   mutationId: string;

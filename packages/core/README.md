@@ -34,4 +34,4 @@ Full API reference, rendering modes, routing, and deployment guides at **[teyik0
 
 ## Replayable mutations
 
-Install `furinSync()` on an Elysia API plugin to make mutations idempotent and replayable by default. Send an `Idempotency-Key` on every non-GET/HEAD/OPTIONS request; use `sync: false` for payments, uploads, streams, and other non-replayable effects. The built-in adapter is process-local memory and does not survive restarts or span replicas.
+Install `furinSync()` on an Elysia API plugin to make mutations idempotent and replayable by default. Send an `Idempotency-Key` on every mutation handled by `furinSync()`; routes using `sync: false` or `furinInvalidate()` without `furinSync()` do not require one. Use `sync: false` for payments, uploads, streams, and other non-replayable effects. The built-in adapter is process-local memory and does not survive restarts or span across replicas.

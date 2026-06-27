@@ -60,11 +60,22 @@ function getIdempotencyKey(ctx: MutationContext): string | undefined {
   return fromRequest || undefined;
 }
 
+async function getPrincipalScope(request: Request): Promise<string> {
+  const credentials = JSON.stringify([
+    request.headers.get("authorization") ?? "",
+    request.headers.get("cookie") ?? "",
+  ]);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(credentials));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function supportsReplayBody(request: Request): boolean {
   const contentType = request.headers.get("content-type")?.toLowerCase();
+  const mediaType = contentType?.split(";", 1)[0]?.trim();
   return (
     contentType === undefined ||
-    contentType.startsWith("application/json") ||
+    mediaType === "application/json" ||
+    (mediaType?.startsWith("application/") === true && mediaType.endsWith("+json")) ||
     contentType.startsWith("application/x-www-form-urlencoded") ||
     contentType.startsWith("text/")
   );
@@ -108,14 +119,24 @@ async function beginMutation(ctx: MutationContext): Promise<Response | undefined
   }
 
   const url = new URL(ctx.request.url);
+  const principal = await getPrincipalScope(ctx.request);
   const key = `${ctx.request.method}:${url.pathname}:${idempotencyKey}`;
   const fingerprint = await createMutationFingerprint({ body: ctx.body, request: ctx.request });
-  const result = await memorySyncAdapter.beginMutation({ fingerprint, key });
+  const result = await memorySyncAdapter.beginMutation({ fingerprint, key, principal });
   if (result.kind === "replay") {
     return replayResponse(result.response);
   }
   if (result.kind === "conflict") {
     return conflictResponse(result.reason);
+  }
+  if (result.kind === "unavailable") {
+    return Response.json(
+      {
+        code: "FURIN_SYNC_CAPACITY_EXCEEDED",
+        message: "The mutation replay store is temporarily full.",
+      },
+      { headers: { "retry-after": "1" }, status: 503 }
+    );
   }
   activeMutations.set(ctx.request, { mutationId: result.mutationId });
 }
@@ -156,17 +177,19 @@ export function furinSync() {
         return;
       }
 
-      const response = await storeResponse(ctx.responseValue, ctx.set);
       const invalidate = routeMetadata.get(ctx.request)?.invalidate;
       if (invalidate) {
         runInvalidationRules(invalidate);
       }
       const pending = appendPendingInvalidationHeader(ctx.set);
+      if (pending.length > 0) {
+        ctx.set.headers["x-furin-sync"] = "1";
+      }
+      const response = await storeResponse(ctx.responseValue, ctx.set);
       await memorySyncAdapter.commitMutation({ ...active, response });
       activeMutations.delete(ctx.request);
 
       if (pending.length > 0) {
-        ctx.set.headers["x-furin-sync"] = "1";
         await memorySyncAdapter.appendChanges({
           invalidations: pending,
           path: getSyncStreamPath() ?? "/_furin/sync",

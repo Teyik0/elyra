@@ -740,6 +740,9 @@ export function RouterProvider({
     let source: EventSource | undefined;
     let disposed = false;
     const applyInvalidations = (entries: readonly string[]) => {
+      if (disposed) {
+        return;
+      }
       const invalidations: Array<{ path: string; type: "page" | "layout" }> = [];
       applyRevalidateEntries(entries, (path, type) => {
         const resolvedType = type ?? "page";
@@ -770,8 +773,13 @@ export function RouterProvider({
       onInvalidations: applyInvalidations,
     });
     const recover = () => {
+      if (disposed) {
+        return;
+      }
       catchUp.catchUp().catch((error: unknown) => {
-        log.warn({ action: "sync_catch_up_failed", error: String(error) });
+        if (!disposed) {
+          log.warn({ action: "sync_catch_up_failed", error: String(error) });
+        }
       });
     };
     const onSync = (event: MessageEvent) => {
@@ -797,11 +805,17 @@ export function RouterProvider({
     catchUp
       .initialize()
       .then(() => {
+        if (disposed) {
+          return;
+        }
         connect();
         // Close the initialization/SSE race using the durable change log.
         recover();
       })
       .catch((error: unknown) => {
+        if (disposed) {
+          return;
+        }
         log.warn({ action: "sync_initialize_failed", error: String(error) });
         // Keep notifications alive; the next event recovers from cursor zero.
         connect();

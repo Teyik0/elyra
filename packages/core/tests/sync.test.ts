@@ -83,6 +83,22 @@ describe("furinSync macro", () => {
     expect((await request("/raw-upload")).status).toBe(200);
   });
 
+  test("accepts JSON structured-suffix request bodies", async () => {
+    const app = new Elysia().use(furinSync()).patch("/cards/1", () => ({ ok: true }));
+    const response = await app.handle(
+      new Request("http://localhost/cards/1", {
+        body: JSON.stringify({ title: "Updated" }),
+        headers: {
+          "content-type": "application/merge-patch+json",
+          "Idempotency-Key": "merge-patch-1",
+        },
+        method: "PATCH",
+      })
+    );
+
+    expect(response.status).toBe(200);
+  });
+
   test("replays a successful mutation response without executing the handler twice", async () => {
     let calls = 0;
     const app = new Elysia().use(furinSync()).post("/cards", ({ set }) => {
@@ -132,6 +148,44 @@ describe("furinSync macro", () => {
     expect(replay.status).toBe(201);
     expect(await replay.json()).toEqual({ id: "card-1" });
     expect(calls).toBe(1);
+  });
+
+  test("preserves handler objects that contain code and response fields", async () => {
+    const app = new Elysia()
+      .use(furinSync())
+      .post("/cards", () => ({ code: 201, response: { id: "card-1" } }));
+    const request = () =>
+      app.handle(
+        new Request("http://localhost/cards", {
+          headers: { "Idempotency-Key": "object-response-1" },
+          method: "POST",
+        })
+      );
+
+    await request();
+    const replay = await request();
+
+    expect(replay.status).toBe(200);
+    expect(await replay.json()).toEqual({ code: 201, response: { id: "card-1" } });
+  });
+
+  test("replays repeated response headers separately", async () => {
+    const app = new Elysia().use(furinSync()).post("/session", ({ set }) => {
+      set.headers["set-cookie"] = ["first=1; Path=/", "second=2; Path=/"];
+      return { ok: true };
+    });
+    const request = () =>
+      app.handle(
+        new Request("http://localhost/session", {
+          headers: { "Idempotency-Key": "cookies-1" },
+          method: "POST",
+        })
+      );
+
+    await request();
+    const replay = await request();
+
+    expect(replay.headers.getSetCookie()).toEqual(["first=1; Path=/", "second=2; Path=/"]);
   });
 
   test("sync mutation requires an idempotency key", async () => {
@@ -214,7 +268,10 @@ describe("furinSync macro", () => {
       );
 
     expect((await request()).status).toBe(200);
-    expect((await request()).status).toBe(200);
+    const replay = await request();
+    expect(replay.status).toBe(200);
+    expect(replay.headers.get("x-furin-revalidate")).toBe("/board");
+    expect(replay.headers.get("x-furin-sync")).toBe("1");
     expect(calls).toBe(1);
   });
 
@@ -243,12 +300,46 @@ describe("furinSync macro", () => {
     expect(calls).toBe(1);
   });
 
+  test("scopes idempotency replays to the authenticated principal", async () => {
+    let calls = 0;
+    const app = new Elysia().use(furinSync()).post("/cards", ({ request }) => {
+      calls += 1;
+      return { principal: request.headers.get("authorization") };
+    });
+    const request = (authorization: string) =>
+      app.handle(
+        new Request("http://localhost/cards", {
+          headers: {
+            authorization,
+            "Idempotency-Key": "shared-key",
+          },
+          method: "POST",
+        })
+      );
+
+    expect(await (await request("Bearer user-a")).json()).toEqual({
+      principal: "Bearer user-a",
+    });
+    expect(await (await request("Bearer user-b")).json()).toEqual({
+      principal: "Bearer user-b",
+    });
+    expect(await (await request("Bearer user-a")).json()).toEqual({
+      principal: "Bearer user-a",
+    });
+    expect(calls).toBe(2);
+  });
+
   test("rejects a concurrent mutation with the same idempotency key", async () => {
     let release: (() => void) | undefined;
+    let markEntered: (() => void) | undefined;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
     const app = new Elysia().use(furinSync()).post("/cards", async () => {
+      markEntered?.();
       await gate;
       return { ok: true };
     });
@@ -261,7 +352,7 @@ describe("furinSync macro", () => {
       );
 
     const first = request();
-    await Bun.sleep(0);
+    await entered;
     const conflict = await request();
     expect(conflict.status).toBe(409);
     expect(conflict.headers.get("retry-after")).toBe("1");
@@ -354,6 +445,7 @@ describe("furinSync macro", () => {
 
     const response = await app.handle(new Request("http://localhost/_furin/sync/changes"));
 
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(await response.json()).toEqual({
       changes: [],
       cursor: "1",
