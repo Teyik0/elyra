@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { scanPages } from "../../src/server/router/index.ts";
 
 const ERROR_NESTED_DIR = join(import.meta.dirname, "..", "fixtures", "pages-error-nested");
+const ERROR_NESTED_POSIX_DIR = ERROR_NESTED_DIR.replaceAll("\\", "/");
 const NOT_FOUND_NESTED_DIR = join(import.meta.dirname, "..", "fixtures", "pages-not-found-nested");
 const BARE_DIR = join(import.meta.dirname, "..", "fixtures", "pages");
 
@@ -41,12 +42,12 @@ describe("segmentBoundaries — chain population", () => {
     expect(blog.segmentBoundaries).toHaveLength(2);
 
     const [root, blogSegment] = blog.segmentBoundaries;
-    expect(root?.path).toBe(ERROR_NESTED_DIR);
+    expect(root?.path).toBe(ERROR_NESTED_POSIX_DIR);
     expect(root?.depth).toBe(0);
     expect(root?.error).toBeDefined();
     expect(root?.notFound).toBeUndefined();
 
-    expect(blogSegment?.path).toBe(join(ERROR_NESTED_DIR, "blog"));
+    expect(blogSegment?.path).toBe(`${ERROR_NESTED_POSIX_DIR}/blog`);
     expect(blogSegment?.depth).toBe(1);
     expect(blogSegment?.error).toBeDefined();
     expect(blogSegment?.notFound).toBeUndefined();
@@ -96,7 +97,7 @@ describe("segmentBoundaries — chain population", () => {
       throw new Error("expected / fixture route");
     }
     expect(home.segmentBoundaries).toHaveLength(1);
-    expect(home.segmentBoundaries[0]?.path).toBe(ERROR_NESTED_DIR);
+    expect(home.segmentBoundaries[0]?.path).toBe(ERROR_NESTED_POSIX_DIR);
 
     // /blog/subpage lives under blog/subpage, where subpage has no conventions.
     // The chain should include root and blog, but NOT subpage.
@@ -105,10 +106,10 @@ describe("segmentBoundaries — chain population", () => {
       throw new Error("expected /blog/subpage fixture route");
     }
     expect(subpage.segmentBoundaries).toHaveLength(2);
-    expect(subpage.segmentBoundaries[0]?.path).toBe(ERROR_NESTED_DIR);
-    expect(subpage.segmentBoundaries[1]?.path).toBe(join(ERROR_NESTED_DIR, "blog"));
+    expect(subpage.segmentBoundaries[0]?.path).toBe(ERROR_NESTED_POSIX_DIR);
+    expect(subpage.segmentBoundaries[1]?.path).toBe(`${ERROR_NESTED_POSIX_DIR}/blog`);
     expect(
-      subpage.segmentBoundaries.some((b) => b.path === join(ERROR_NESTED_DIR, "blog", "subpage"))
+      subpage.segmentBoundaries.some((b) => b.path === `${ERROR_NESTED_POSIX_DIR}/blog/subpage`)
     ).toBe(false);
   });
 });

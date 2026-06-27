@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const FIXTURES_ROOT = resolve(import.meta.dir, "../fixtures");
 const TMP_ROOT = resolve(import.meta.dir, "../../.tmp-tests");
@@ -18,7 +18,8 @@ function ensureTmpRoot(): void {
 function assertWithinAppPath(appPath: string, relativePath: string): string {
   const resolved = resolve(appPath, relativePath);
   const normalizedApp = resolve(appPath);
-  if (resolved !== normalizedApp && !resolved.startsWith(`${normalizedApp}/`)) {
+  const pathFromApp = relative(normalizedApp, resolved);
+  if (pathFromApp === ".." || pathFromApp.startsWith(`..${sep}`) || isAbsolute(pathFromApp)) {
     throw new Error(`Path traversal detected: "${relativePath}" escapes app root`);
   }
   return resolved;
