@@ -1,5 +1,6 @@
 /// <reference lib="dom" />
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { log } from "evlog";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { toCrossJSON } from "seroval";
@@ -107,6 +108,8 @@ describe("RouterProvider click interception", () => {
   let originalPushState: typeof window.history.pushState | undefined;
   let pushStateCalls: Array<{ url: string }> = [];
   let currentCleanup: (() => void) | undefined;
+  let abortFirstPageBRequest = false;
+  let pageBRequests = 0;
 
   beforeEach(() => {
     originalFetch = globalThis.fetch;
@@ -116,13 +119,29 @@ describe("RouterProvider click interception", () => {
         : undefined;
     pushStateCalls = [];
     currentCleanup = undefined;
+    abortFirstPageBRequest = false;
+    pageBRequests = 0;
 
-    globalThis.fetch = mock((input: RequestInfo | URL) => {
+    globalThis.fetch = mock((input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(input.toString(), window.location.origin);
       const logicalPath =
         url.pathname === "/_furin/data" ? (url.searchParams.get("path") ?? "") : url.pathname;
 
       if (logicalPath === "/page-b") {
+        pageBRequests += 1;
+        if (abortFirstPageBRequest && pageBRequests === 1) {
+          return new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => {
+                const error = new Error("signal is aborted without reason");
+                error.name = "AbortError";
+                reject(error);
+              },
+              { once: true }
+            );
+          });
+        }
         return Promise.resolve(makeNdjsonResponse({ message: "page-b" }));
       }
       return Promise.resolve(new Response(null, { status: 404 }));
@@ -176,5 +195,26 @@ describe("RouterProvider click interception", () => {
 
     expect(pushStateCalls.length).toBe(1);
     expect(pushStateCalls[0]?.url).toBe("/page-b");
+  });
+
+  test("superseding a Link navigation does not leak an AbortError", async () => {
+    const errorLog = spyOn(log, "error");
+    abortFirstPageBRequest = true;
+    const routes = [makeRoute("/page-a", "/page-b"), makeRoute("/page-b", "/page-a")];
+    const { container, cleanup } = await renderRouterWithLink(routes, "/page-a");
+    currentCleanup = cleanup;
+    const anchor = container.querySelector("a") as HTMLAnchorElement;
+
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    while (pageBRequests === 0) {
+      await Promise.resolve();
+    }
+    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    await Bun.sleep(20);
+    expect(pageBRequests).toBe(2);
+    expect(window.location.pathname).toBe("/page-b");
+    expect(errorLog).not.toHaveBeenCalled();
+    errorLog.mockRestore();
   });
 });
