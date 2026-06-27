@@ -30,12 +30,6 @@ export interface InvalidationRefresh {
   run(): Promise<void>;
 }
 
-function isAbortError(error: unknown): boolean {
-  return (
-    error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
-  );
-}
-
 export function createInvalidationRefresh(
   options: InvalidationRefreshOptions
 ): InvalidationRefresh {
@@ -95,3 +89,5 @@ export function createSyncCatchUp(options: SyncCatchUpOptions): SyncCatchUp {
     cursor: () => currentCursor,
   };
 }
+
+import { isAbortError } from "./abort.ts";

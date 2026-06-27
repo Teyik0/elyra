@@ -3,6 +3,7 @@ import type React from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { parseDeferredNdjson } from "../../shared/deferred-ndjson.ts";
 import type { SearchParamsInput } from "../../shared/search-params.ts";
+import { isAbortError } from "./abort.ts";
 import { buildPageElement, buildRouterTree } from "./boundary-tree.tsx";
 import {
   generateHistoryKey,
@@ -295,7 +296,13 @@ export function RouterProvider({
 
         return { match: loadedMatch, data, title, finalHref };
       } catch (err: unknown) {
-        log.error({ action: "navigate_failed", href: basePath + logicalHref, error: String(err) });
+        if (!isAbortError(err)) {
+          log.error({
+            action: "navigate_failed",
+            href: basePath + logicalHref,
+            error: String(err),
+          });
+        }
         return null;
       }
     },
