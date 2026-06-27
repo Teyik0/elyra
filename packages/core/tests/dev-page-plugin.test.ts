@@ -1,44 +1,74 @@
 import { describe, expect, test } from "bun:test";
-import { rewriteRelativeImports, rewriteSingletonImports } from "../src/server/dev-page-plugin.ts";
+import { resolve } from "node:path";
+import {
+  rewriteRelativeImports,
+  rewriteSingletonImports,
+  toImportSpecifier,
+  WORKSPACE_SOURCE_FILTER,
+} from "../src/server/dev-page-plugin.ts";
 
-const ABSOLUTE_PATH_RE = /from "\/[^"]+"/;
+describe("WORKSPACE_SOURCE_FILTER", () => {
+  test.each([
+    "/project/node_modules/react/jsx-runtime.js",
+    "C:\\project\\node_modules\\react\\jsx-runtime.js",
+    "/project/node_modules/.bun/react/index.js",
+    "C:\\project\\node_modules\\.bun\\react\\index.js",
+  ])("excludes dependency files on every platform: %s", (filePath) => {
+    expect(WORKSPACE_SOURCE_FILTER.test(filePath)).toBe(false);
+  });
+});
+
+describe("toImportSpecifier", () => {
+  test("normalizes a native absolute path for cross-platform imports", () => {
+    const nativePath =
+      process.platform === "win32" ? "C:\\project\\src\\page.tsx" : "/project/src/page.tsx";
+    const specifier = toImportSpecifier(nativePath);
+
+    expect(specifier).toBe(process.platform === "win32" ? "C:/project/src/page.tsx" : nativePath);
+    expect(specifier).not.toContain("\\");
+  });
+});
 
 describe("rewriteRelativeImports", () => {
   const dir = "/app/src/pages";
 
   test("rewrites named import from relative path", () => {
     const input = 'import { route } from "./root";';
-    expect(rewriteRelativeImports(input, dir)).toBe('import { route } from "/app/src/pages/root";');
+    expect(rewriteRelativeImports(input, dir)).toBe(
+      `import { route } from "${toImportSpecifier(resolve(dir, "root"))}";`
+    );
   });
 
   test("rewrites default import from relative path", () => {
     const input = 'import Root from "./root";';
     const result = rewriteRelativeImports(input, dir);
-    expect(result).toBe('import Root from "/app/src/pages/root";');
+    expect(result).toBe(`import Root from "${toImportSpecifier(resolve(dir, "root"))}";`);
   });
 
   test("rewrites parent-directory import (../)", () => {
     const input = 'import { route as rootRoute } from "../root";';
     const result = rewriteRelativeImports(input, "/app/src/pages/docs");
-    expect(result).toContain('from "/app/src/pages/root"');
+    expect(result).toContain(
+      `from "${toImportSpecifier(resolve("/app/src/pages/docs", "../root"))}"`
+    );
   });
 
   test("rewrites side-effect import", () => {
     const input = 'import "./styles.css";';
     const result = rewriteRelativeImports(input, dir);
-    expect(result).toBe('import "/app/src/pages/styles.css";');
+    expect(result).toBe(`import "${toImportSpecifier(resolve(dir, "styles.css"))}";`);
   });
 
   test("rewrites re-export (export { x } from)", () => {
     const input = 'export { something } from "./utils";';
     const result = rewriteRelativeImports(input, dir);
-    expect(result).toContain('from "/app/src/pages/utils"');
+    expect(result).toContain(`from "${toImportSpecifier(resolve(dir, "utils"))}"`);
   });
 
   test("rewrites namespace re-export (export * from)", () => {
     const input = 'export * from "./helpers";';
     const result = rewriteRelativeImports(input, dir);
-    expect(result).toContain('from "/app/src/pages/helpers"');
+    expect(result).toContain(`from "${toImportSpecifier(resolve(dir, "helpers"))}"`);
   });
 
   test("does NOT rewrite bare module specifiers", () => {
@@ -61,8 +91,8 @@ describe("rewriteRelativeImports", () => {
 
     const result = rewriteRelativeImports(input, dir);
 
-    expect(result).toContain('from "/app/src/pages/root"');
-    expect(result).toContain('import "/app/src/pages/globals.css"');
+    expect(result).toContain(`from "${toImportSpecifier(resolve(dir, "root"))}"`);
+    expect(result).toContain(`import "${toImportSpecifier(resolve(dir, "globals.css"))}"`);
     // Non-relative imports unchanged
     expect(result).toContain('from "@teyik0/furin/link"');
     expect(result).toContain('from "react"');
@@ -71,13 +101,15 @@ describe("rewriteRelativeImports", () => {
   test("handles single-quoted imports", () => {
     const input = "import { foo } from './bar';";
     const result = rewriteRelativeImports(input, dir);
-    expect(result).toContain('from "/app/src/pages/bar"');
+    expect(result).toContain(`from "${toImportSpecifier(resolve(dir, "bar"))}"`);
   });
 
   test("preserves deeply nested relative paths", () => {
     const input = 'import { x } from "../../components/button";';
     const result = rewriteRelativeImports(input, "/app/src/pages/docs");
-    expect(result).toContain('from "/app/src/components/button"');
+    expect(result).toContain(
+      `from "${toImportSpecifier(resolve("/app/src/pages/docs", "../../components/button"))}"`
+    );
   });
 });
 
@@ -164,10 +196,10 @@ describe("rewriteSingletonImports", () => {
     expect(output).toContain('"clsx"');
   });
 
-  test("output contains an absolute path starting with '/'", () => {
+  test("output contains a normalized absolute path", () => {
     const input = 'import { useState } from "react";';
     const output = rewriteSingletonImports(input);
-    // The rewritten specifier must be an absolute path
-    expect(output).toMatch(ABSOLUTE_PATH_RE);
+    expect(output).not.toContain("\\");
+    expect(output).not.toContain('from "react"');
   });
 });

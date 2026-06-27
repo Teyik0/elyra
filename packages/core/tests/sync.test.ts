@@ -3,7 +3,7 @@ import { Elysia } from "elysia";
 import { furinSync } from "../src/furin.ts";
 import { __resetCacheState, _runWithRequestInvalidationScope } from "../src/server/cache/index.ts";
 import { injectSyncRuntimeScript } from "../src/server/render/assemble.ts";
-import { setSyncStreamPath } from "../src/server/sync/config.ts";
+import { runWithSyncStreamPath } from "../src/server/sync/config.ts";
 import { __resetSyncState, createSyncStreamPlugin } from "../src/server/sync/stream.ts";
 
 async function readNextChunk(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<string> {
@@ -23,7 +23,6 @@ async function readNextChunk(reader: ReadableStreamDefaultReader<Uint8Array>): P
 afterEach(() => {
   __resetCacheState();
   __resetSyncState();
-  setSyncStreamPath(undefined);
 });
 
 describe("furinSync macro", () => {
@@ -81,7 +80,61 @@ describe("furinSync macro", () => {
 
     const event = await readNextChunk(reader);
     expect(event).toContain("event: furin.invalidate");
+    expect(event).toContain("id: 1");
+    expect(event).toContain("retry:");
     expect(event).toContain('"invalidations":["/board:layout"]');
+  });
+
+  test("rejects a repeated idempotency key without running the mutation twice", async () => {
+    let calls = 0;
+    const app = new Elysia().use(furinSync()).post(
+      "/cards",
+      () => {
+        calls += 1;
+        return { ok: true };
+      },
+      { sync: { path: "/board", type: "page" } }
+    );
+    const request = () =>
+      _runWithRequestInvalidationScope(() =>
+        app.handle(
+          new Request("http://localhost/cards", {
+            headers: { "Idempotency-Key": "create-1" },
+            method: "POST",
+          })
+        )
+      );
+
+    expect((await request()).status).toBe(200);
+    expect((await request()).status).toBe(409);
+    expect(calls).toBe(1);
+  });
+
+  test("replays missed invalidations after reconnect", async () => {
+    const app = new Elysia()
+      .use(createSyncStreamPlugin())
+      .use(furinSync())
+      .patch("/cards/:cardId", () => ({ ok: true }), {
+        sync: { path: "/board", type: "page" },
+      });
+
+    await _runWithRequestInvalidationScope(() =>
+      app.handle(
+        new Request("http://localhost/cards/1", {
+          headers: { "Idempotency-Key": "mutation-replay" },
+          method: "PATCH",
+        })
+      )
+    );
+    const response = await app.handle(
+      new Request("http://localhost/_furin/sync", { headers: { "Last-Event-ID": "0" } })
+    );
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error("Expected stream response body");
+    }
+    expect(await readNextChunk(reader)).toContain("id: 1");
+    await reader.cancel();
   });
 
   test("failed sync mutation does not publish invalidations", async () => {
@@ -107,10 +160,10 @@ describe("furinSync macro", () => {
   });
 
   test("injects sync runtime config into cached HTML idempotently", () => {
-    setSyncStreamPath("/_furin/sync");
-
-    const html = injectSyncRuntimeScript("<html><body><main></main></body></html>");
-    const secondPass = injectSyncRuntimeScript(html);
+    const html = runWithSyncStreamPath("/_furin/sync", () =>
+      injectSyncRuntimeScript("<html><body><main></main></body></html>")
+    );
+    const secondPass = runWithSyncStreamPath("/_furin/sync", () => injectSyncRuntimeScript(html));
 
     expect(html).toContain('id="__FURIN_SYNC__"');
     expect(html).toContain('"stream":"/_furin/sync"');

@@ -70,25 +70,26 @@ export function useSync<TInput, TResult>(
       const idempotencyKey = createIdempotencyKey();
       const rollback = optimistic?.({ idempotencyKey, input });
 
+      let result: TResult;
       try {
-        const result = await mutation(input, {
+        result = await mutation(input, {
           headers: { "Idempotency-Key": idempotencyKey },
         });
-        const resolvedError = getResolvedError(result);
-
-        if (resolvedError) {
-          rollback?.();
-          await onError?.({ error: resolvedError, idempotencyKey, input, result });
-          return result;
-        }
-
-        await onSuccess?.({ idempotencyKey, input, result });
-        return result;
       } catch (error) {
         rollback?.();
         await onError?.({ error, idempotencyKey, input });
         throw error;
       }
+
+      const resolvedError = getResolvedError(result);
+      if (resolvedError !== undefined) {
+        rollback?.();
+        await onError?.({ error: resolvedError, idempotencyKey, input, result });
+        return result;
+      }
+
+      await onSuccess?.({ idempotencyKey, input, result });
+      return result;
     },
     [mutation, optimistic, onError, onSuccess]
   );
