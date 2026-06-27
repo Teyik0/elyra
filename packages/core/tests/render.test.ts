@@ -17,7 +17,9 @@ import type { HTTPHeaders } from "elysia/types";
 import { createElement, Suspense } from "react";
 import { defer, type RuntimeRoute } from "../src/client";
 import { Link } from "../src/client/link.tsx";
+import { autoInvalidateRegistry, revalidateTag } from "../src/server/auto-invalidate/index.ts";
 import { __resetCacheState, isrCache, ssgCache } from "../src/server/cache/index.ts";
+import { consumePendingInvalidations } from "../src/server/cache/invalidation.ts";
 import {
   buildElement,
   handleISR,
@@ -636,6 +638,8 @@ describe("render.tsx", () => {
   describe("renderSSR", () => {
     afterEach(() => {
       __resetTemplateState();
+      autoInvalidateRegistry.reset();
+      consumePendingInvalidations();
     });
 
     test("returns Response with HTML", async () => {
@@ -677,6 +681,17 @@ describe("render.tsx", () => {
 
       expect(data.params).toEqual({ id: "123" });
       expect(data.path).toBe("/dynamic/123");
+    });
+
+    test("registers an SSR path for tag invalidation on its first mutation", async () => {
+      const dynamicRoute = { ...(await getRoute("/dynamic/:id")), tags: ["cards"] };
+      const root = await getRoot();
+      const ctx = createMockLoaderContext({ params: { id: "123" }, path: "/dynamic/123" });
+
+      await renderSSR(dynamicRoute, ctx, root, undefined);
+      revalidateTag("cards");
+
+      expect(consumePendingInvalidations()).toEqual(["/dynamic/123"]);
     });
 
     test("Link active-state matches client hydration path (no SSR_FALLBACK mismatch)", async () => {

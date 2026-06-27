@@ -82,6 +82,22 @@ describe("parseDeferredNdjson — error paths", () => {
 });
 
 describe("parseDeferredNdjson — AbortSignal", () => {
+  test("abandoned deferred promises do not leak an unhandled AbortError", async () => {
+    const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["abandoned"] }));
+    const { stream } = makeControlledStream(initial);
+    const unhandled: unknown[] = [];
+    const onUnhandled = (error: unknown) => unhandled.push(error);
+    process.on("unhandledRejection", onUnhandled);
+
+    const abort = new AbortController();
+    await parseDeferredNdjson(stream, abort.signal);
+    abort.abort();
+    await Bun.sleep(20);
+
+    process.off("unhandledRejection", onUnhandled);
+    expect(unhandled).toEqual([]);
+  });
+
   test("signal that aborts while waiting → pending promises reject with AbortError", async () => {
     const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["a", "b"] }));
     const { stream } = makeControlledStream(initial);
