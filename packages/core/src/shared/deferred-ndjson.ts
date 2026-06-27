@@ -149,6 +149,13 @@ export async function parseDeferredNdjson(
     }
   }
 
+  // A superseded navigation may discard deferred values before React observes
+  // them. Mark each rejection as handled without changing the original
+  // promise, so consumers that do await it still receive the same error.
+  for (const promise of Object.values(deferredPromises)) {
+    promise.catch(() => undefined);
+  }
+
   if (deferredKeys.length === 0) {
     cleanupAbortHandler();
     try {

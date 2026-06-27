@@ -16,6 +16,7 @@ import {
 } from "../../client/router/search-store.ts";
 import { computeErrorDigest } from "../../shared/digest.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
+import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { runInSyntheticRenderScope, useLogger } from "../context-logger.ts";
 // FurinNotFoundError is used indirectly via buildNotFoundElement in element.tsx
 import type { ResolvedRoute, RootLayout } from "../router/index.ts";
@@ -465,6 +466,11 @@ export async function renderSSR(
   if (prepared instanceof Response) {
     return prepared;
   }
+
+  autoInvalidateRegistry.registerLoaderTags(
+    resolvePath(route.pattern, ctx.params ?? {}),
+    route.tags
+  );
 
   useLogger().set({
     furin: {
