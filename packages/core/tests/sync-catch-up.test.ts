@@ -68,7 +68,7 @@ describe("createSyncCatchUp", () => {
 });
 
 describe("createInvalidationRefresh", () => {
-  test("coalesces refreshes and treats navigation aborts as expected", async () => {
+  test("runs a coalesced follow-up refresh after a navigation abort", async () => {
     let calls = 0;
     let rejectRefresh: ((error: unknown) => void) | undefined;
     const errors: unknown[] = [];
@@ -76,9 +76,12 @@ describe("createInvalidationRefresh", () => {
       onError: (error) => errors.push(error),
       refresh: () => {
         calls += 1;
-        return new Promise<void>((_resolve, reject) => {
-          rejectRefresh = reject;
-        });
+        if (calls === 1) {
+          return new Promise<void>((_resolve, reject) => {
+            rejectRefresh = reject;
+          });
+        }
+        return Promise.resolve();
       },
     });
 
@@ -88,7 +91,7 @@ describe("createInvalidationRefresh", () => {
 
     await expect(first).resolves.toBeUndefined();
     await expect(second).resolves.toBeUndefined();
-    expect(calls).toBe(1);
+    expect(calls).toBe(2);
     expect(errors).toEqual([]);
   });
 

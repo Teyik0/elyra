@@ -61,10 +61,10 @@ function getIdempotencyKey(ctx: MutationContext): string | undefined {
 }
 
 async function getPrincipalScope(request: Request): Promise<string> {
-  const credentials = JSON.stringify([
-    request.headers.get("authorization") ?? "",
-    request.headers.get("cookie") ?? "",
-  ]);
+  const authorization = request.headers.get("authorization");
+  const credentials = authorization
+    ? JSON.stringify(["authorization", authorization])
+    : JSON.stringify(["cookie", request.headers.get("cookie") ?? ""]);
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(credentials));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }

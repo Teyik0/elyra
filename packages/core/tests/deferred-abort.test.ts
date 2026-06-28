@@ -89,13 +89,15 @@ describe("parseDeferredNdjson — AbortSignal", () => {
     const onUnhandled = (error: unknown) => unhandled.push(error);
     process.on("unhandledRejection", onUnhandled);
 
-    const abort = new AbortController();
-    await parseDeferredNdjson(stream, abort.signal);
-    abort.abort();
-    await Bun.sleep(20);
-
-    process.off("unhandledRejection", onUnhandled);
-    expect(unhandled).toEqual([]);
+    try {
+      const abort = new AbortController();
+      await parseDeferredNdjson(stream, abort.signal);
+      abort.abort();
+      await Bun.sleep(20);
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 
   test("signal that aborts while waiting → pending promises reject with AbortError", async () => {
