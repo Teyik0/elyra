@@ -51,6 +51,11 @@
       "bun": "./src/client.ts",
       "import": "./dist/client.js"
     },
+    "./rsc": {
+      "types": "./dist/rsc.d.ts",
+      "bun": "./src/rsc.tsx",
+      "import": "./dist/rsc.js"
+    },
     "./build": {
       "types": "./dist/build/index.d.ts",
       "bun": "./src/build/index.ts",
