@@ -6,6 +6,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.0-alpha.4] — 2026-06-28
+
+### Added
+- **Replayable, idempotent sync mutations** — every mutation handled by `furinSync()` now requires an `Idempotency-Key`, stores its successful response, and replays that response when the same request is retried. Reusing a key with a different payload or while the original request is still running returns `409`; routes with non-replayable effects can opt out with `sync: false`.
+- **Cursor-based sync catch-up** — the SSE stream now announces cursors while `/_furin/sync/changes` returns ordered invalidations missed during disconnects. The client catches up after reconnecting and falls back to a full layout refresh when retained history is no longer sufficient.
+- **Sync adapter foundation** — the sync engine now has a strict adapter contract for mutation replay, ordered change history, and subscriptions. The built-in in-memory adapter retains up to 1,000 changes and 10,000 mutations for 24 hours; its state remains process-local and is lost on restart.
+- **Replayable sync documentation** — API, configuration, caching, and package documentation now describe idempotency keys, automatic mutation synchronization, opt-out cases, catch-up behavior, and the limitations of the in-memory adapter.
+
+### Changed
+- **Mutations are synchronized by default under `furinSync()`** — non-`GET`/`HEAD`/`OPTIONS` routes no longer need an explicit sync declaration. The optional `sync` route object is only needed to declare cache invalidations, and `SyncRouteOption` is now exported for typed integrations.
+
+### Fixed
+- **Superseded navigation aborts** — aborts from an older navigation no longer surface as errors after a newer navigation has taken over.
+- **Deferred refresh cancellation** — deferred NDJSON and SSR streams now stop cleanly when a sync refresh is superseded, without leaking abort errors or stale results.
+- **Coalesced refresh invalidations** — invalidations received while a refresh is already in flight are preserved and applied by the follow-up refresh instead of being dropped.
+
+## [0.2.0-alpha.3] — 2026-06-27
+
+### Added
+- **Live mutation sync engine** — `furin({ sync: true })` mounts an internal Server-Sent Events stream at `/_furin/sync` and injects the client runtime automatically. A custom stream path remains available for constrained reverse-proxy deployments.
+- **`furinSync()` Elysia plugin** — API mutations can declare path or tag invalidations through a typed `sync` route option. Successful mutations broadcast those invalidations to connected browsers while keeping regular Elysia routes and Eden Treaty as the public API contract.
+- **`useSync()`** — new client hook exported from `@teyik0/furin/client` adds an `Idempotency-Key` to typed mutation calls and provides focused `optimistic`, `onSuccess`, and `onError` callbacks with rollback support.
+- **Automatic live refreshes** — the router listens for sync invalidations, clears affected prefetch entries, and refreshes the current page when its path or layout data becomes stale.
+
+### Fixed
+- **Per-instance sync stream isolation** — Furin instances and custom stream paths no longer share subscribers or broadcast invalidations across application boundaries.
+- **Failed mutation retries** — failed mutations no longer consume their idempotency key, allowing a corrected retry to execute normally.
+- **Windows path handling** — build and dev-server path normalization now works with Windows drive-letter and separator conventions; related temporary-app and segment-boundary tests are portable across platforms.
+
 ## [0.2.0-alpha.2] — 2026-06-13
 
 ### Added
@@ -225,7 +254,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - `writeRouteTypes()` generating `furin-env.d.ts` for per-route type inference
 - Bun-native HMR with React Fast Refresh — single process, no Vite
 
-[Unreleased]: https://github.com/teyik0/furin/compare/v0.2.0-alpha.2...HEAD
+[Unreleased]: https://github.com/teyik0/furin/compare/c228ea2...HEAD
+[0.2.0-alpha.4]: https://github.com/teyik0/furin/compare/v0.2.0-alpha.3...c228ea2
+[0.2.0-alpha.3]: https://github.com/teyik0/furin/compare/v0.2.0-alpha.2...v0.2.0-alpha.3
 [0.2.0-alpha.2]: https://github.com/teyik0/furin/compare/v0.2.0-alpha.1...v0.2.0-alpha.2
 [0.2.0-alpha.1]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.15...v0.2.0-alpha.1
 [0.1.0-alpha.15]: https://github.com/teyik0/furin/compare/v0.1.0-alpha.14...v0.1.0-alpha.15
