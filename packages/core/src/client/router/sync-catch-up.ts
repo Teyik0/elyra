@@ -39,7 +39,13 @@ export function createInvalidationRefresh(
   const refreshUntilCurrent = async (): Promise<void> => {
     do {
       requested = false;
-      await options.refresh();
+      try {
+        await options.refresh();
+      } catch (error) {
+        if (!isAbortError(error)) {
+          throw error;
+        }
+      }
     } while (requested);
   };
 

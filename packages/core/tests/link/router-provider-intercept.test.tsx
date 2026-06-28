@@ -199,22 +199,37 @@ describe("RouterProvider click interception", () => {
 
   test("superseding a Link navigation does not leak an AbortError", async () => {
     const errorLog = spyOn(log, "error");
-    abortFirstPageBRequest = true;
-    const routes = [makeRoute("/page-a", "/page-b"), makeRoute("/page-b", "/page-a")];
-    const { container, cleanup } = await renderRouterWithLink(routes, "/page-a");
-    currentCleanup = cleanup;
-    const anchor = container.querySelector("a") as HTMLAnchorElement;
+    const waitFor = (condition: () => boolean) =>
+      new Promise<void>((resolve, reject) => {
+        const startedAt = Date.now();
+        const interval = setInterval(() => {
+          if (condition()) {
+            clearInterval(interval);
+            resolve();
+          } else if (Date.now() - startedAt > 2000) {
+            clearInterval(interval);
+            reject(new Error("Timed out waiting for navigation"));
+          }
+        }, 10);
+      });
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    while (pageBRequests === 0) {
-      await Promise.resolve();
+    try {
+      abortFirstPageBRequest = true;
+      const routes = [makeRoute("/page-a", "/page-b"), makeRoute("/page-b", "/page-a")];
+      const { container, cleanup } = await renderRouterWithLink(routes, "/page-a");
+      currentCleanup = cleanup;
+      const anchor = container.querySelector("a") as HTMLAnchorElement;
+
+      anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await waitFor(() => pageBRequests === 1);
+      anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await waitFor(() => pageBRequests === 2 && window.location.pathname === "/page-b");
+
+      expect(pageBRequests).toBe(2);
+      expect(window.location.pathname).toBe("/page-b");
+      expect(errorLog).not.toHaveBeenCalled();
+    } finally {
+      errorLog.mockRestore();
     }
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-
-    await Bun.sleep(20);
-    expect(pageBRequests).toBe(2);
-    expect(window.location.pathname).toBe("/page-b");
-    expect(errorLog).not.toHaveBeenCalled();
-    errorLog.mockRestore();
   });
 });

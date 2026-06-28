@@ -306,24 +306,25 @@ describe("furinSync macro", () => {
       calls += 1;
       return { principal: request.headers.get("authorization") };
     });
-    const request = (authorization: string) =>
+    const request = (authorization: string, cookie: string) =>
       app.handle(
         new Request("http://localhost/cards", {
           headers: {
             authorization,
+            cookie,
             "Idempotency-Key": "shared-key",
           },
           method: "POST",
         })
       );
 
-    expect(await (await request("Bearer user-a")).json()).toEqual({
+    expect(await (await request("Bearer user-a", "theme=light")).json()).toEqual({
       principal: "Bearer user-a",
     });
-    expect(await (await request("Bearer user-b")).json()).toEqual({
+    expect(await (await request("Bearer user-b", "theme=light")).json()).toEqual({
       principal: "Bearer user-b",
     });
-    expect(await (await request("Bearer user-a")).json()).toEqual({
+    expect(await (await request("Bearer user-a", "theme=dark")).json()).toEqual({
       principal: "Bearer user-a",
     });
     expect(calls).toBe(2);

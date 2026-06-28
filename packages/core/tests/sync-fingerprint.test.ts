@@ -11,11 +11,17 @@ describe("createMutationFingerprint", () => {
       throw new Error("locale-sensitive comparison used");
     });
 
-    await expect(
+    const [first, second] = await Promise.all([
       createMutationFingerprint({
         body: { z: 1, a: 2 },
         request: new Request("http://localhost/cards?z=1&a=2", { method: "POST" }),
-      })
-    ).resolves.toBeString();
+      }),
+      createMutationFingerprint({
+        body: { a: 2, z: 1 },
+        request: new Request("http://localhost/cards?a=2&z=1", { method: "POST" }),
+      }),
+    ]);
+
+    expect(first).toBe(second);
   });
 });
