@@ -6,10 +6,11 @@ import { createBoard, deleteBoard, getBoardData, getBoardStats, getBoards } from
 // Path + layout invalidations make the refresh robust regardless of which
 // pages happen to be registered in the auto-invalidate registry at mutation
 // time. The board list lives on `/` and is also surfaced as a sidebar under the
-// `/board` layout — both need to re-render after a mutation.
+// `/rsc` comparison and `/board` layout — all need to re-render after a mutation.
 const BOARD_MUTATION_INVALIDATIONS = [
   { tags: ["boards"] as const },
   { path: "/", type: "page" as const },
+  { path: "/rsc", type: "page" as const },
   { path: "/board", type: "layout" as const },
 ];
 

@@ -24,7 +24,7 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 | **SSR** | ✅ | ✅ | ✅ |
 | **Streaming** | ✅ | ✅ | ✅ |
 | **Deferred data streaming** | ❌ | ✅ (`defer` + `<Await>`) | ✅ (`defer()` + `<Await>`) |
-| **RSC** | ✅ | ⚠️ Experimental | ❌ |
+| **RSC** | ✅ | ⚠️ Experimental | ✅ Composite RSC |
 | **PPR** | ⚠️ Experimental | ❌ | ❌ |
 | **Binary compile** | ❌ | ❌ | ✅ |
 | **ISR in dev** | ❌ | ❌ | ⚠️ Partial (loader cache, no background revalidation, deferred Promises not cached) |
@@ -80,7 +80,7 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 | **SSG** | ✅ | ✅ | ✅ |
 | **ISR** | ✅ (`revalidate`, `revalidatePath`) | ❌ (caching via `staleTime` + TanStack Query only) | ✅ (`revalidate` on route, `revalidatePath()`) |
 | **Streaming SSR** | ✅ (React 18 `renderToReadableStream`) | ✅ | ✅ (React 18 `renderToReadableStream`) |
-| **RSC (React Server Components)** | ✅ | ⚠️ Experimental | ❌ |
+| **RSC (React Server Components)** | ✅ | ⚠️ Experimental | ✅ Composite RSC |
 | **PPR (Partial Prerendering)** | ⚠️ Experimental | ❌ | ❌ |
 | **Server Actions** | ✅ | ✅ (`createServerFn()`) | ❌ |
 | **Suspense boundaries** | ✅ | ✅ | ✅ |
@@ -89,7 +89,7 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 
 > 💡 **Furin advantage** — ISR is implemented with `stale-while-revalidate` semantics, ETags, and `Cache-Tag` headers out of the box. No platform-specific adapter required.
 >
-> ⚠️ **Furin limitation** — No RSC means every component in the tree is shipped to the client. For apps with heavy server-only logic (data transforms, heavy libraries), this increases bundle size compared to Next.js App Router.
+> ⚠️ **Furin limitation** — Furin's composite RSC model is explicit: server-owned markup is returned by a loader and client interactivity enters through typed slots. Unlike Next.js App Router, components are not server components by default and Furin does not provide Server Actions.
 >
 > 💡 **Furin note** — `defer()` is optimized for SSR. SSG and ISR routes support it, but deferred Promises resolve synchronously during the render pass (no streaming benefit).
 

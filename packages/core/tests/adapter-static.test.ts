@@ -87,6 +87,20 @@ describe.serial("buildStaticTarget", () => {
     ).rejects.toThrow(REQUEST_LOADER_STATIC_RE);
   });
 
+  test("rejects a root layout that depends on requestLoader", async () => {
+    const app = makeApp();
+    const { root, routes } = await scanPages(join(app.path, "src/pages"));
+    root.route.requestLoader = async () => ({ userId: "private" });
+
+    await expect(
+      withBuildStub(() =>
+        buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
+          target: "static",
+        })
+      )
+    ).rejects.toThrow(REQUEST_LOADER_STATIC_RE);
+  });
+
   // ── B1: Tracer bullet ────────────────────────────────────────────────────────
 
   test("B1: pre-renders SSG root route to dist/index.html", async () => {

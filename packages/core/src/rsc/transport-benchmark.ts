@@ -1,3 +1,5 @@
+import { buildRouteFrameTemplate } from "../server/render/assemble.ts";
+
 export interface TransportMetrics {
   browserScriptUnits: number;
   compressedBytes: number;
@@ -13,8 +15,7 @@ export interface TransportBenchmarkResult {
 }
 
 function encodeTemplate(payloads: readonly string[]): string {
-  const payload = payloads.join("\n").replaceAll("&", "&amp;").replaceAll("<", "&lt;");
-  return `<template id="__FURIN_ROUTE_FRAMES__">${payload}</template>`;
+  return buildRouteFrameTemplate(payloads.join("\n"));
 }
 
 function encodeScripts(payloads: readonly string[]): string {

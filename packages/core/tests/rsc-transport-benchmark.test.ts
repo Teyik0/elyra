@@ -3,10 +3,7 @@ import { benchmarkRscTransport } from "../src/rsc/transport-benchmark";
 
 describe("RSC initial transport benchmark", () => {
   test.each([1, 10, 100])("selects inert templates for %i composites", (composites) => {
-    const result = benchmarkRscTransport(
-      `0:["$","article",null,{"children":"Product"}]`,
-      composites
-    );
+    const result = benchmarkRscTransport(`["$","article",null,{"children":"Product"}]`, composites);
 
     expect(result.winner).toBe("template");
     expect(result.template.browserScriptUnits).toBe(0);

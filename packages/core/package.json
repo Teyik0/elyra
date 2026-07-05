@@ -118,12 +118,12 @@
   "dependencies": {
     "@babel/parser": "7.29.7",
     "@elysiajs/static": "^1.4.10",
-    "@yuku-toolchain/types": "0.5.42",
     "magic-string": "^0.30.21",
     "react-server-dom-webpack": "19.2.7",
     "seroval": "^1.5.4"
   },
   "devDependencies": {
+    "@yuku-toolchain/types": "0.5.42",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "expect-type": "^1.4.0"

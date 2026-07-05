@@ -40,6 +40,18 @@ export default route.page({
 
 The server fragment is encoded as Flight and contributes no application JavaScript. Client interactivity enters through `children`, component slots, or render props. Arbitrary client imports from the server fragment are intentionally unsupported in composite v1.
 
+The task-manager example includes equivalent ISR routes for comparison: `/` renders the board list as a conventional client component tree, while `/rsc` keeps the board markup on the server and hydrates only the create form and delete buttons. Build `examples/task-manager` in production mode to compare their route chunks; shared React and Furin runtime chunks are intentionally excluded from that comparison.
+
+With six boards in the example database, the production snapshot is:
+
+| Transfer | Conventional ISR | Composite RSC | Difference |
+| --- | ---: | ---: | ---: |
+| Route JavaScript (gzip) | 1,999 B | 675 B | -66.2% |
+| Initial HTML + route JavaScript (gzip) | 4,385 B | 3,526 B | -19.6% |
+| SPA data + route JavaScript (gzip) | 2,456 B | 2,304 B | -6.2% |
+
+Flight increases the HTML or navigation payload, so the JavaScript reduction is not a direct total-transfer reduction. The larger runtime benefit is that React does not hydrate the server-owned card markup. Treat these numbers as an example-specific snapshot, not a framework-wide benchmark.
+
 Use `import "furin/server-only"` or `import "furin/client-only"` as optional build-time assertions. These imports validate graph boundaries; they do not classify components.
 
 ### Personalized cached routes

@@ -30,6 +30,7 @@ describe("transformForClient — basic", () => {
 
     expect(result.code).not.toContain("requestLoader");
     expect(result.code).not.toContain("session");
+    expect(result.removedServerCode).toBe(true);
   });
 
   test("code without server props is returned with removedServerCode=false", () => {

@@ -15,7 +15,10 @@ export function assertCompatibleRscVersions(versions: RscVersions): void {
         `react-server-dom-webpack=${versions.reactServerDom}.`
     );
   }
-  const [major, minor, patch] = versions.react.split(".").map(Number);
+  const [majorSegment, minorSegment, patchSegment] = versions.react.split(".");
+  const major = Number.parseInt(majorSegment ?? "", 10);
+  const minor = Number.parseInt(minorSegment ?? "", 10);
+  const patch = Number.parseInt(patchSegment ?? "", 10);
   if (major === 19 && minor === 2 && (patch ?? 0) < 1) {
     throw new Error("[furin/rsc] React 19.2.0 is insecure; use the pinned patched React line.");
   }

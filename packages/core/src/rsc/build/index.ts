@@ -65,7 +65,7 @@ export async function buildRscGraph(
   }
   const codecResult = await Bun.build({
     entrypoints: [fileURLToPath(import.meta.resolve("../server-codec.ts"))],
-    outdir: graphDir,
+    outdir: outDir,
     target: "bun",
     format: "esm",
     conditions: ["react-server"],

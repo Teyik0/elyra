@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { buildRscGraph } from "../src/rsc/build";
 import { environmentGuardPlugin } from "../src/rsc/build/environment";
 import { assertCompatibleRscVersions } from "../src/rsc/version";
 
@@ -29,6 +30,17 @@ function buildProtectedImport(graph: "client" | "rsc", specifier: string) {
 }
 
 describe("RSC graph environment guards", () => {
+  test("emits the Flight codec next to the production server bundle", async () => {
+    const root = mkdtempSync(join(tmpdir(), "furin-rsc-build-"));
+    paths.push(root);
+    const rootEntry = join(root, "root.tsx");
+    writeFileSync(rootEntry, "export default function Root() { return null; }");
+
+    await buildRscGraph([], { path: rootEntry, route: {} as never }, root, "test-build", undefined);
+
+    expect(existsSync(join(root, "server-codec.js"))).toBe(true);
+  });
+
   test("rejects mismatched React and Flight codec versions", () => {
     expect(() =>
       assertCompatibleRscVersions({
@@ -37,6 +49,16 @@ describe("RSC graph environment guards", () => {
         reactServerDom: "19.2.6",
       })
     ).toThrow(VERSION_MISMATCH_RE);
+  });
+
+  test("rejects insecure React 19.2.0 prerelease patch variants", () => {
+    expect(() =>
+      assertCompatibleRscVersions({
+        react: "19.2.0-canary-1",
+        reactDom: "19.2.0-canary-1",
+        reactServerDom: "19.2.0-canary-1",
+      })
+    ).toThrow("insecure");
   });
 
   test("rejects server-only modules from the browser graph", async () => {

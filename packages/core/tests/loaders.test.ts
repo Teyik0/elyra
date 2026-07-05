@@ -21,7 +21,7 @@ mock.module("evlog/elysia", () => ({
 
 import type { Context } from "elysia";
 import type { HTTPHeaders } from "elysia/types";
-import { runLoaders } from "../src/server/render/loaders.ts";
+import { runLoaders, runRequestLoaderData } from "../src/server/render/loaders.ts";
 import type { ResolvedRoute } from "../src/server/router/index.ts";
 import { scanPages } from "../src/server/router/index.ts";
 import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
@@ -65,6 +65,21 @@ describe("runLoaders requestLoader", () => {
       expect(await result.deferredPromises?.requestData).toEqual({ user: "alice" });
     }
     expect(calls).toBe(1);
+  });
+
+  test("turns synchronous requestLoader throws into a rejected requestData promise", async () => {
+    const route = await getRoute("/with-loader");
+    route.page.requestLoader = () => {
+      throw new Error("boom");
+    };
+
+    const requestData = runRequestLoaderData(
+      route,
+      createMockLoaderContext({ path: "/with-loader" })
+    );
+
+    expect(requestData).toBeDefined();
+    await expect(requestData).rejects.toThrow("boom");
   });
 });
 

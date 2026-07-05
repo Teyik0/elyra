@@ -191,9 +191,9 @@ export function runRequestLoaderData(
     return;
   }
   const requestContext = createRequestLoaderContext(ctx);
-  const requestData = Promise.all(loaders.map((loader) => loader(requestContext))).then((results) =>
-    Object.assign({}, ...results)
-  );
+  const requestData = Promise.all(
+    loaders.map((loader) => Promise.resolve().then(() => loader(requestContext)))
+  ).then((results) => Object.assign({}, ...results));
   requestData.catch(() => {
     /* React observes the original rejection through requestData. */
   });

@@ -48,14 +48,11 @@ await Promise.all([
 ]);
 
 await Bun.build({
+  ...shared,
   entrypoints: [`${import.meta.dir}/src/rsc/server-codec.ts`],
   outdir: `${import.meta.dir}/dist/rsc`,
-  target: "bun",
-  format: "esm",
   conditions: ["react-server"],
   naming: "server-codec.js",
-  minify: false,
-  sourcemap: false,
 });
 
 // Copy ambient declaration so it is available for the ./env export.

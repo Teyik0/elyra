@@ -243,19 +243,23 @@ async function runWithConcurrency(
 
 // ── Main adapter ──────────────────────────────────────────────────────────────
 
-function assertNoRequestLoaders(routes: ResolvedRoute[]): void {
+function assertNoRequestLoaders(routes: ResolvedRoute[], root: RootLayout): void {
+  const offenders: string[] = [];
+  if (root.route.requestLoader !== undefined) {
+    offenders.push("  • <root layout>");
+  }
   const requestScopedRoutes = routes.filter(
     (route) =>
       route.page.requestLoader !== undefined ||
       route.routeChain.some((entry) => entry.requestLoader !== undefined)
   );
-  if (requestScopedRoutes.length === 0) {
+  offenders.push(...requestScopedRoutes.map((route) => `  • ${route.pattern}`));
+  if (offenders.length === 0) {
     return;
   }
-  const patterns = requestScopedRoutes.map((route) => `  • ${route.pattern}`).join("\n");
   throw new Error(
     "[furin] requestLoader requires a Bun server and is incompatible with a pure static export.\n" +
-      patterns
+      offenders.join("\n")
   );
 }
 
@@ -266,7 +270,7 @@ export async function buildStaticTarget(
   root: RootLayout,
   options: BuildAppOptions
 ): Promise<StaticTargetBuildManifest> {
-  assertNoRequestLoaders(routes);
+  assertNoRequestLoaders(routes, root);
 
   const staticConfig: StaticExportConfig = options.staticConfig ?? {};
 

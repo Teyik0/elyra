@@ -15,7 +15,12 @@ import {
   resolvePath,
   splitTemplate,
 } from "./assemble.ts";
-import { type LoaderResult, runPublicLoaders, runRequestLoaderData } from "./loaders.ts";
+import {
+  type LoaderResult,
+  runPublicLoaders,
+  runRequestLoaderData,
+  serializeDeferredRejection,
+} from "./loaders.ts";
 import { type PprCacheEntry, prerenderPpr, resumePpr } from "./ppr.ts";
 import { safeJson } from "./shell.ts";
 import { prepareRender, serializeLoaderDataNdjson } from "./ssr.ts";
@@ -113,7 +118,8 @@ export async function renderPprRoute(
   buildId: string,
   searchRoutes: SearchRouteMetadata[] | undefined
 ): Promise<Response> {
-  const cacheKey = `${route.mode}:${resolvePath(route.pattern, ctx.params ?? {})}`;
+  const requestUrl = new URL(ctx.request.url);
+  const cacheKey = `${route.mode}:${resolvePath(route.pattern, ctx.params ?? {})}${requestUrl.search}`;
   let cached = pprRoutes.get(cacheKey);
   if (cached === undefined) {
     cached = await buildPublicEntry(route, ctx, root, buildId, searchRoutes);
@@ -169,12 +175,20 @@ export async function renderPprRoute(
       ctx.request.signal
     );
     await writer.write(resumed);
-    const privateData = await requestData;
-    const runtime =
-      buildSyncRuntimeScript() +
-      dataMarkup(prepared.syncData) +
-      buildDeferredResolution("requestData", toCrossJSON(privateData), "resolve");
-    await writer.write(encoder.encode(runtime + bodyPost));
+    const runtime = buildSyncRuntimeScript() + dataMarkup(prepared.syncData);
+    await writer.write(encoder.encode(runtime));
+    try {
+      const privateData = await requestData;
+      await writer.write(
+        encoder.encode(buildDeferredResolution("requestData", toCrossJSON(privateData), "resolve"))
+      );
+    } catch (error) {
+      const normalized = await serializeDeferredRejection(error);
+      await writer.write(
+        encoder.encode(buildDeferredResolution("requestData", toCrossJSON(normalized), "reject"))
+      );
+    }
+    await writer.write(encoder.encode(bodyPost));
     await writer.close();
   })().catch((error) => writer.abort(error));
 

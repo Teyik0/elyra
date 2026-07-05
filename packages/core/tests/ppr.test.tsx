@@ -107,4 +107,113 @@ describe("partial prerendering", () => {
     expect(publicCalls).toBe(1);
     expect(privateCalls).toBe(2);
   });
+
+  test("keys PPR public shells by query string", async () => {
+    let publicCalls = 0;
+    const route = createRoute({
+      mode: "isr",
+      revalidate: 60,
+      loader: ({ query }) => {
+        publicCalls += 1;
+        return { view: String((query as { view?: unknown }).view ?? "") };
+      },
+      requestLoader: () => ({ user: "alice" }),
+    });
+    function User({ data }: { data: Promise<{ user: string }> }) {
+      return <strong>{use(data).user}</strong>;
+    }
+    const page = route.page({
+      component: ({ requestData, view }) => (
+        <main>
+          <h1>{view}</h1>
+          <Suspense fallback={<span>Loading</span>}>
+            <User data={requestData} />
+          </Suspense>
+        </main>
+      ),
+    });
+    const resolved = {
+      mode: "isr",
+      page: page as unknown as RuntimePage,
+      path: "/account.tsx",
+      pattern: "/account",
+      routeChain: [route as unknown as RuntimeRoute],
+      segmentBoundaries: [],
+    } satisfies ResolvedRoute;
+    const root = {
+      path: "/root.tsx",
+      route: {
+        __type: "FURIN_ROUTE",
+        layout: ({ children }) => (
+          <html lang="en">
+            <body>{children}</body>
+          </html>
+        ),
+      },
+    } satisfies RootLayout;
+    const app = new Elysia().use(createRoutePlugin(resolved, root, "build-1"));
+
+    const alpha = await app
+      .handle(new Request("http://localhost/account?view=alpha"))
+      .then((response) => response.text());
+    const beta = await app
+      .handle(new Request("http://localhost/account?view=beta"))
+      .then((response) => response.text());
+
+    expect(alpha).toContain("alpha");
+    expect(beta).toContain("beta");
+    expect(publicCalls).toBe(2);
+  });
+
+  test("streams a rejected requestData chunk instead of aborting the PPR response", async () => {
+    const route = createRoute({
+      mode: "isr",
+      revalidate: 60,
+      loader: () => ({ catalog: "Shoes" }),
+      requestLoader: () => {
+        throw new Error("private boom");
+      },
+    });
+    function User({ data }: { data: Promise<{ user: unknown }> }) {
+      return <strong>{String(use(data).user)}</strong>;
+    }
+    const page = route.page({
+      component: ({ catalog, requestData }) => (
+        <main>
+          <h1>{catalog}</h1>
+          <Suspense fallback={<span>Loading</span>}>
+            <User data={requestData} />
+          </Suspense>
+        </main>
+      ),
+    });
+    const resolved = {
+      mode: "isr",
+      page: page as unknown as RuntimePage,
+      path: "/account.tsx",
+      pattern: "/account",
+      routeChain: [route as unknown as RuntimeRoute],
+      segmentBoundaries: [],
+    } satisfies ResolvedRoute;
+    const root = {
+      path: "/root.tsx",
+      route: {
+        __type: "FURIN_ROUTE",
+        layout: ({ children }) => (
+          <html lang="en">
+            <body>{children}</body>
+          </html>
+        ),
+      },
+    } satisfies RootLayout;
+    const app = new Elysia().use(createRoutePlugin(resolved, root, "build-1"));
+
+    const html = await app
+      .handle(new Request("http://localhost/account"))
+      .then((response) => response.text());
+
+    expect(html).toContain("Shoes");
+    expect(html).toContain("__FURIN_DEFERRED__");
+    expect(html).toContain('reject("requestData"');
+  });
 });

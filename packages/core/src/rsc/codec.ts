@@ -2,7 +2,6 @@ import { existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { assertInstalledRscVersions } from "./version.ts";
 
 const MAX_FLIGHT_BYTES = 4 * 1024 * 1024;
 
@@ -18,7 +17,7 @@ function loadServerCodec(): Promise<ServerCodec> {
   }
 
   serverCodecPromise = (async () => {
-    const builtCodecPath = join(import.meta.dir, "rsc", "server-codec.js");
+    const builtCodecPath = join(import.meta.dir, "server-codec.js");
     if (existsSync(builtCodecPath)) {
       return import(pathToFileURL(builtCodecPath).href) as Promise<ServerCodec>;
     }
@@ -53,17 +52,43 @@ function loadServerCodec(): Promise<ServerCodec> {
   return serverCodecPromise;
 }
 
+async function readFlightBytes(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      total += value.byteLength;
+      if (total > MAX_FLIGHT_BYTES) {
+        await reader.cancel();
+        throw new Error(
+          `[furin/rsc] Flight payload exceeds the ${MAX_FLIGHT_BYTES}-byte safety limit.`
+        );
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
 export async function encodeFlight(
   model: unknown,
   signal: AbortSignal | undefined
 ): Promise<Uint8Array> {
-  await assertInstalledRscVersions();
   const codec = await loadServerCodec();
-  const bytes = new Uint8Array(await new Response(codec.renderFlight(model, signal)).arrayBuffer());
-  if (bytes.byteLength > MAX_FLIGHT_BYTES) {
-    throw new Error(
-      `[furin/rsc] Flight payload exceeds the ${MAX_FLIGHT_BYTES}-byte safety limit.`
-    );
-  }
-  return bytes;
+  return readFlightBytes(codec.renderFlight(model, signal));
 }

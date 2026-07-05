@@ -1,6 +1,6 @@
 import { benchmarkRscTransport } from "../src/rsc/transport-benchmark.ts";
 
-const flightFixture = `0:["$","article",null,{"children":["$","h1",null,{"children":"Product"}]}]`;
+const flightFixture = `["$","article",null,{"children":["$","h1",null,{"children":"Product"}]}]`;
 const results = [1, 10, 100].map((count) => benchmarkRscTransport(flightFixture, count));
 
 console.table(

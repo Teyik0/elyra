@@ -47,7 +47,7 @@ describe("boards API cache invalidation", () => {
     // response header — that is the contract observed by the SPA client.
     // Reading the header is the authoritative check; `consumePendingInvalidations`
     // is already drained by the macro at this point.
-    expect(response.headers.get("x-furin-revalidate")).toBe("/,/board:layout");
+    expect(response.headers.get("x-furin-revalidate")).toBe("/,/rsc,/board:layout");
   });
 
   test("deleting a board invalidates both the index page and board layout sidebars", async () => {
@@ -61,6 +61,6 @@ describe("boards API cache invalidation", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("x-furin-revalidate")).toBe("/,/board:layout");
+    expect(response.headers.get("x-furin-revalidate")).toBe("/,/rsc,/board:layout");
   });
 });
