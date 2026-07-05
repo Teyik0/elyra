@@ -1,18 +1,23 @@
 import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import type { AnySchema } from "elysia/types";
 import { toCrossJSON, toCrossJSONAsync } from "seroval";
+import { isRscSource } from "../../rsc/shared.tsx";
 import { computeErrorDigest } from "../../shared/digest.ts";
+import { serializeRouteFrame, serializeRouteFrames } from "../../shared/route-frame.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { useLogger } from "../context-logger.ts";
 import { injectSyncRuntimeScript, resolvePath } from "../render/assemble.ts";
 import {
   handleISR,
+  hasRequestLoader,
+  type LoaderResult,
   prerenderSSG,
   renderSSR,
   runLoaders,
   serializeDeferredRejection,
 } from "../render/index.ts";
+import { renderPprRoute } from "../render/ppr-route.ts";
 import { extractTitle } from "../render/shell.ts";
 import { IS_DEV } from "../runtime-env.ts";
 import { handleDevRequest } from "./hmr.ts";
@@ -29,6 +34,65 @@ type SyntheticDataContext = Omit<Context, "params" | "query"> & {
   params: Record<string, string>;
   query: SearchParamsInput;
 };
+
+async function createLoaderDataResponse(
+  result: LoaderResult,
+  route: ResolvedRoute,
+  requestUrl: string
+): Promise<Response> {
+  if (result.type === "redirect") {
+    const redirectUrl = new URL(result.response.headers.get("location") ?? "/", requestUrl);
+    const serialized = await toCrossJSONAsync({
+      __furinRedirect: redirectUrl.pathname + redirectUrl.search,
+    });
+    return new Response(`${JSON.stringify(serialized)}\n`, {
+      headers: { "content-type": "application/x-ndjson" },
+    });
+  }
+  if (result.type === "not-found") {
+    const serialized = await toCrossJSONAsync({
+      __furinStatus: 404,
+      __furinNotFound: { message: result.error.message, data: result.error.data },
+    });
+    return new Response(`${JSON.stringify(serialized)}\n`, {
+      status: 200,
+      headers: { "content-type": "application/x-ndjson" },
+    });
+  }
+  if (result.type === "error") {
+    const serialized = await toCrossJSONAsync({
+      __furinError: {
+        digest: computeErrorDigest(result.error),
+        message: result.message,
+        status: result.status,
+      },
+    });
+    return new Response(`${JSON.stringify(serialized)}\n`, {
+      status: result.status,
+      headers: { "content-type": "application/x-ndjson" },
+    });
+  }
+
+  const syncDataWithTitle = withResolvedTitle(route, result.syncData);
+  if (result.deferredPromises !== undefined) {
+    const hasRsc = Object.values(syncDataWithTitle).some((value) => isRscSource(value));
+    const body = hasRsc
+      ? createRscDeferredFrameStream(syncDataWithTitle, result.deferredPromises)
+      : createDeferredNdjsonStream(syncDataWithTitle, result.deferredPromises);
+    return new Response(body, {
+      headers: {
+        ...result.headers,
+        "content-type": hasRsc ? "application/x-furin-route" : "application/x-ndjson",
+      },
+    });
+  }
+  return new Response(serializeRouteFrames(syncDataWithTitle), {
+    headers: {
+      ...result.headers,
+      "content-type": "application/x-furin-route",
+    },
+  });
+}
 
 /** @internal Handles a production SSG route — sets ETags, Cache-Control, and Cache-Tag. */
 async function handleSSGRequest(
@@ -104,6 +168,10 @@ export function createRoutePlugin(
     // (mtime-checked dependency walk on every read).
     if (IS_DEV) {
       return handleDevRequest(route, ctx, root, searchRoutes);
+    }
+
+    if ((route.mode === "ssg" || route.mode === "isr") && hasRequestLoader(route)) {
+      return renderPprRoute(route, ctx, root, resolvedBuildId, searchRoutes);
     }
 
     if (route.mode === "ssg") {
@@ -233,80 +301,7 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
         autoInvalidateRegistry.registerLoaderTags(pathname, matched.route.tags);
       }
 
-      if (result.type === "redirect") {
-        // Encode the redirect target as a special field for the client to follow
-        const redirectUrl = new URL(
-          result.response.headers.get("location") ?? "/",
-          ctx.request.url
-        );
-        const serialized = await toCrossJSONAsync({
-          __furinRedirect: redirectUrl.pathname + redirectUrl.search,
-        });
-        return new Response(`${JSON.stringify(serialized)}\n`, {
-          headers: { "content-type": "application/x-ndjson" },
-        });
-      }
-
-      if (result.type === "not-found") {
-        const serialized = await toCrossJSONAsync({
-          __furinStatus: 404,
-          __furinNotFound: { message: result.error.message, data: result.error.data },
-        });
-        return new Response(`${JSON.stringify(serialized)}\n`, {
-          status: 200,
-          headers: { "content-type": "application/x-ndjson" },
-        });
-      }
-
-      if (result.type === "error") {
-        // Compute the digest server-side ONCE so:
-        //   1. The HTTP response body carries it (client error UI displays the
-        //      same id the server logs).
-        //   2. The server-log line below uses the SAME digest a user would see
-        //      on screen, enabling support correlation.
-        // Recomputing client-side from a synthetic message + stack would yield
-        // a different hash — see boundaries.tsx for the digest precedence.
-        const digest = computeErrorDigest(result.error);
-        const serialized = await toCrossJSONAsync({
-          __furinError: {
-            digest,
-            message: result.message,
-            status: result.status,
-          },
-        });
-        return new Response(`${JSON.stringify(serialized)}\n`, {
-          status: result.status,
-          headers: { "content-type": "application/x-ndjson" },
-        });
-      }
-
-      // Resolve the page title server-side: head() never runs in the browser,
-      // so SPA navigation depends on the endpoint shipping it as __furinTitle.
-      const syncDataWithTitle = withResolvedTitle(matched.route, result.syncData);
-
-      if (result.deferredPromises) {
-        return new Response(
-          createDeferredNdjsonStream(syncDataWithTitle, result.deferredPromises),
-          {
-            // Loader headers first so custom headers survive; the NDJSON
-            // content-type is framework-owned and must win — a loader cannot be
-            // allowed to mislabel the data-endpoint payload.
-            headers: {
-              ...result.headers,
-              "content-type": "application/x-ndjson",
-            },
-          }
-        );
-      }
-
-      // No deferred fields: emit the single-line payload used by the legacy path.
-      const serialized = await toCrossJSONAsync(syncDataWithTitle);
-      return new Response(`${JSON.stringify(serialized)}\n`, {
-        headers: {
-          ...result.headers,
-          "content-type": "application/x-ndjson",
-        },
-      });
+      return createLoaderDataResponse(result, matched.route, ctx.request.url);
     },
     {
       query: t.Object({ path: t.Optional(t.String()) }),
@@ -314,6 +309,44 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
   );
 
   return plugin;
+}
+
+function createRscDeferredFrameStream(
+  syncData: Record<string, unknown>,
+  deferredPromises: Record<string, Promise<unknown>>
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      controller.enqueue(encoder.encode(serializeRouteFrames(syncData)));
+      await Promise.all(
+        Object.entries(deferredPromises).map(async ([key, promise]) => {
+          try {
+            controller.enqueue(
+              encoder.encode(
+                serializeRouteFrame({
+                  type: "defer-resolve",
+                  key,
+                  value: toCrossJSON(await promise),
+                })
+              )
+            );
+          } catch (error) {
+            controller.enqueue(
+              encoder.encode(
+                serializeRouteFrame({
+                  type: "defer-reject",
+                  key,
+                  value: toCrossJSON(await serializeDeferredRejection(error)),
+                })
+              )
+            );
+          }
+        })
+      );
+      controller.close();
+    },
+  });
 }
 
 /**

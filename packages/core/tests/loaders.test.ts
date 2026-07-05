@@ -43,6 +43,31 @@ function createMockLoaderContext(overrides: Partial<Context>): Context {
   } as Context;
 }
 
+describe("runLoaders requestLoader", () => {
+  test("runs private data once with a read-only request context", async () => {
+    const route = await getRoute("/with-loader");
+    let calls = 0;
+    route.page.requestLoader = (ctx) => {
+      calls += 1;
+      expect("set" in ctx).toBe(false);
+      expect("redirect" in ctx).toBe(false);
+      return { user: ctx.cookies.get("session") };
+    };
+    const context = createMockLoaderContext({
+      path: "/with-loader",
+      cookie: { session: { value: "alice" } } as unknown as Context["cookie"],
+    });
+
+    const result = await runLoaders(route, context);
+
+    expect(result.type).toBe("data");
+    if (result.type === "data") {
+      expect(await result.deferredPromises?.requestData).toEqual({ user: "alice" });
+    }
+    expect(calls).toBe(1);
+  });
+});
+
 async function getRoute(pattern: string): Promise<ResolvedRoute> {
   const result = await scanPages(FIXTURES_DIR);
   const route = result.routes.find((r) => r.pattern === pattern);

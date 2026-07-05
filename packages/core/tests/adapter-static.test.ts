@@ -24,6 +24,7 @@ const BASEPATH_RE = /basePath must start with/;
 const UNSAFE_DIR_RE = /unsafe to delete/;
 const PRERENDER_FAIL_RE = /route\(s\) failed to pre-render/;
 const UNSAFE_PATH_RE = /unsafe output path/;
+const REQUEST_LOADER_STATIC_RE = /requestLoader.*static/i;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,24 @@ async function runStaticBuild(fixtureName = "cli-app", extra?: Partial<BuildAppO
 // ── All tests run serially to avoid singleton state races ─────────────────────
 
 describe.serial("buildStaticTarget", () => {
+  test("rejects routes that depend on requestLoader", async () => {
+    const app = makeApp();
+    const { root, routes } = await scanPages(join(app.path, "src/pages"));
+    const route = routes[0];
+    if (route === undefined) {
+      throw new Error("fixture has no route");
+    }
+    route.page.requestLoader = async () => ({ userId: "private" });
+
+    await expect(
+      withBuildStub(() =>
+        buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
+          target: "static",
+        })
+      )
+    ).rejects.toThrow(REQUEST_LOADER_STATIC_RE);
+  });
+
   // ── B1: Tracer bullet ────────────────────────────────────────────────────────
 
   test("B1: pre-renders SSG root route to dist/index.html", async () => {

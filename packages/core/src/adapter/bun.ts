@@ -9,6 +9,8 @@ import { buildTargetManifest, copyDirRecursive, ensureDir, toPosixPath } from ".
 import { buildSSGCacheSnapshot } from "../build/ssg-cache.ts";
 import type { BuildAppOptions, TargetBuildManifest } from "../build/types.ts";
 import type { BuildTarget } from "../config.ts";
+import { environmentGuardPlugin } from "../rsc/build/environment.ts";
+import { buildRscGraph } from "../rsc/build/index.ts";
 import { ssgRouteCache } from "../server/cache/ssg.ts";
 import { generateProdIndexHtml } from "../server/render/shell.ts";
 import { setProductionTemplateContent } from "../server/render/template.ts";
@@ -166,6 +168,7 @@ async function buildOneApp(
     serverEntry
   );
   const buildId = Bun.hash(buildFingerprint).toString(16).slice(0, 12);
+  await buildRscGraph(routes, root, targetDir, buildId, options.plugins);
 
   // Write index.html with the buildId meta tag injected so the client can
   // detect stale deploys via X-Furin-Build-ID header comparison.
@@ -240,6 +243,9 @@ export async function buildBunTarget(
       targetManifest.buildId = built.buildId;
     }
   }
+  targetManifest.rscManifestPath = toPosixPath(
+    join(targetManifest.targetDir, "rsc", "manifest.json")
+  );
 
   const targetPublicDir = publicDir ? join(targetDir, "public") : undefined;
   if (publicDir && targetPublicDir && options.compile !== "embed") {
@@ -262,7 +268,7 @@ export async function buildBunTarget(
       minify: true,
       sourcemap: "none",
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
-      plugins: options.plugins,
+      plugins: [...(options.plugins ?? []), environmentGuardPlugin("ssr")],
     });
 
     console.log(`[furin] Server binary: ${outfile}`);
@@ -294,7 +300,7 @@ export async function buildBunTarget(
       target: "bun",
       minify: true,
       sourcemap: "none",
-      plugins: options.plugins,
+      plugins: [...(options.plugins ?? []), environmentGuardPlugin("ssr")],
     });
     console.log(
       `[furin] Server bundle: ${toPosixPath(join(targetManifest.targetDir, "server.js"))}`

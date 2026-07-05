@@ -22,6 +22,16 @@ const IMPORT_STYLES_RE = /from\s+["']\.\/styles["']/;
 // ---------------------------------------------------------------------------
 
 describe("transformForClient — basic", () => {
+  test("removes requestLoader from the client graph", () => {
+    const result = transformForClient(
+      `export default createRoute({ requestLoader: async ({ cookies }) => ({ user: cookies.get("session") }), layout: () => null })`,
+      "route.tsx"
+    );
+
+    expect(result.code).not.toContain("requestLoader");
+    expect(result.code).not.toContain("session");
+  });
+
   test("code without server props is returned with removedServerCode=false", () => {
     const result = transformForClient("export const x = 1;", "test.tsx");
 

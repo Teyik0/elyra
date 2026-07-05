@@ -345,3 +345,4 @@ export function Link<To extends RouteTo>(props: LinkProps<To>): React.ReactEleme
 // `@teyik0/furin/link` (already a client-only bundle entry) without requiring
 // apps to add "seroval" as a direct dependency.
 export { fromCrossJSON } from "seroval";
+export { parseDeferredNdjson } from "../shared/deferred-ndjson.ts";

@@ -121,7 +121,7 @@ export function generateHydrateEntry(
   return `import { hydrateRoot, createRoot } from "react-dom/client";
 import { createElement } from "react";
 ${loggingImports}import { RouterProvider } from "@teyik0/furin/link";
-import { fromCrossJSON } from "@teyik0/furin/link";
+import { fromCrossJSON, parseDeferredNdjson } from "@teyik0/furin/link";
 import type { SerovalNode } from "seroval";
 import { route as root } from "${rootLayout.replace(/\\/g, "/")}";
 
@@ -142,7 +142,7 @@ const _match = routes.find((r) => r.regex.test(pathname));
 //     a matched loader threw notFound(). The latter still has a _match; the
 //     former does not — so the two cases fork on _match below.
 const dataEl = document.getElementById("__FURIN_DATA__");
-const loaderData = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
+let loaderData = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
 const syncEl = document.getElementById("__FURIN_SYNC__");
 const syncConfig = syncEl ? JSON.parse(syncEl.textContent || "{}") : {};
 const syncStream = typeof syncConfig.stream === "string" ? syncConfig.stream : undefined;
@@ -217,6 +217,12 @@ const rootEl = document.getElementById("root") as HTMLElement;
 // Wrapped in an async IIFE to avoid top-level await, which causes Bun's HTML
 // bundler to misidentify which chunk to reference as the entry in index.html.
 (async () => {
+  const frameTemplate = document.getElementById("__FURIN_ROUTE_FRAMES__") as HTMLTemplateElement | null;
+  if (frameTemplate) {
+    const payload = frameTemplate.content.textContent || "";
+    const parsed = await parseDeferredNdjson(new Blob([payload]).stream(), undefined);
+    loaderData = { ...parsed.syncData, ...parsed.deferredPromises };
+  }
   let app;
   if (_match) {
     const _mod = await _match.load();

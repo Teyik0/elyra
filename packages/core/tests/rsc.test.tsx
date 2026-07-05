@@ -1,9 +1,47 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { Elysia } from "elysia";
 import { CompositeComponent, createCompositeComponent, renderServerComponent } from "furin/rsc";
 import type { ComponentType, ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
+import { createRoute, type RuntimePage, type RuntimeRoute } from "../src/client";
+import { serializeLoaderDataNdjson } from "../src/server/render/ssr";
+import {
+  createDataEndpoint,
+  createRoutePlugin,
+  type ResolvedRoute,
+  type RootLayout,
+} from "../src/server/router";
+import { __setDevMode, IS_DEV } from "../src/server/runtime-env";
+import { parseDeferredNdjson } from "../src/shared/deferred-ndjson";
 
 describe("RSC public API", () => {
+  function createRscRoute() {
+    const route = createRoute({
+      loader: async () => ({ article: await renderServerComponent(<h1>Flight article</h1>) }),
+    });
+    const page = route.page({ component: ({ article }) => <main>{article}</main> });
+    const resolved = {
+      mode: "ssr",
+      page: page as unknown as RuntimePage,
+      path: "/rsc.tsx",
+      pattern: "/rsc",
+      routeChain: [route as unknown as RuntimeRoute],
+      segmentBoundaries: [],
+    } satisfies ResolvedRoute;
+    const root = {
+      path: "/root.tsx",
+      route: {
+        __type: "FURIN_ROUTE",
+        layout: ({ children }) => (
+          <html lang="en">
+            <body>{children}</body>
+          </html>
+        ),
+      },
+    } satisfies RootLayout;
+    return { resolved, root };
+  }
+
   test("renderServerComponent returns a React-renderable value", async () => {
     const article = await renderServerComponent(<h1>Composite RSC</h1>);
 
@@ -11,6 +49,45 @@ describe("RSC public API", () => {
     const html = await new Response(stream).text();
 
     expect(html).toBe("<main><h1>Composite RSC</h1></main>");
+  });
+
+  test("a server-renderable value round-trips through the loader transport", async () => {
+    const article = await renderServerComponent(<h1>Transported RSC</h1>);
+    const payload = await serializeLoaderDataNdjson({ article }, undefined);
+    const response = new Response(payload);
+
+    const { syncData } = await parseDeferredNdjson(
+      response.body as ReadableStream<Uint8Array>,
+      undefined
+    );
+    const stream = await renderToReadableStream(<main>{syncData.article as ReactNode}</main>);
+
+    expect(await new Response(stream).text()).toBe("<main><h1>Transported RSC</h1></main>");
+  });
+
+  test("initial SSR embeds Flight frames in the same document response", async () => {
+    const { resolved, root } = createRscRoute();
+    const app = new Elysia().use(createRoutePlugin(resolved, root));
+
+    const html = await app
+      .handle(new Request("http://localhost/rsc"))
+      .then((response) => response.text());
+
+    expect(html).toContain("Flight article");
+    expect(html).toContain('id="__FURIN_ROUTE_FRAMES__"');
+  });
+
+  test("SPA navigation decodes the same Flight source", async () => {
+    const { resolved } = createRscRoute();
+    const app = new Elysia().use(createDataEndpoint([resolved]));
+    const response = await app.handle(new Request("http://localhost/_furin/data?path=%2Frsc"));
+    const { syncData } = await parseDeferredNdjson(
+      response.body as ReadableStream<Uint8Array>,
+      undefined
+    );
+    const stream = await renderToReadableStream(syncData.article as ReactNode);
+
+    expect(await new Response(stream).text()).toBe("<h1>Flight article</h1>");
   });
 
   test("a composite invokes children and render-prop slots", async () => {
@@ -56,3 +133,7 @@ describe("RSC public API", () => {
     expect(html).toBe('<nav><button type="button">Save</button></nav>');
   });
 });
+
+const originalDevMode = IS_DEV;
+beforeAll(() => __setDevMode(false));
+afterAll(() => __setDevMode(originalDevMode));

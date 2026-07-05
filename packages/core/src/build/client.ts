@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { transformForClient } from "../plugin/transform-client";
+import { environmentGuardPlugin } from "../rsc/build/environment.ts";
 import type { ResolvedRoute } from "../server/router/index.ts";
 import { generateHydrateEntry } from "./hydrate";
 import { CLIENT_MODULE_PATH, LINK_MODULE_PATH, SEARCH_MODULE_PATH } from "./shared";
@@ -114,7 +115,11 @@ export async function buildClient(
     // Overridable via the `publicPath` option (e.g. "/furin/_client/" for basePath builds).
     publicPath,
     // User plugins run before the internal transform so they pre-process files first
-    plugins: plugins ? [...plugins, transformPlugin] : [transformPlugin],
+    plugins: [
+      ...(plugins ?? []),
+      environmentGuardPlugin("client"),
+      transformPlugin,
+    ],
     alias: {
       "@teyik0/furin/client": CLIENT_MODULE_PATH,
       "@teyik0/furin/link": LINK_MODULE_PATH,

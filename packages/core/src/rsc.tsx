@@ -1,36 +1,61 @@
-import { createElement, Fragment, type ReactElement, type ReactNode } from "react";
+// biome-ignore-all lint/performance/noBarrelFile: furin/rsc is the public RSC entrypoint
 
-declare const renderableServerComponent: unique symbol;
-const compositeComponent = Symbol("furin.composite-component");
+import { createElement, type ReactNode } from "react";
+import { encodeFlight } from "./rsc/codec.ts";
+import {
+  type CompositeComponentSource,
+  createRenderableSource,
+  decodeFlightBytes,
+  type RenderableServerComponent,
+} from "./rsc/shared.tsx";
+import { RSC_SOURCE, SLOT_MARKER } from "./rsc/symbols.ts";
 
-export type RenderableServerComponent<TNode extends ReactNode = ReactNode> = ReactElement & {
-  readonly [renderableServerComponent]: TNode;
-};
+export * from "./rsc/shared.tsx";
 
-export interface CompositeComponentSource<TProps extends object> {
-  readonly [compositeComponent]: (props: TProps) => ReactNode | Promise<ReactNode>;
-}
-
-export type CompositeComponentProps<TProps extends object> = Omit<TProps, "src"> & {
-  src: CompositeComponentSource<TProps>;
-};
-
-export function renderServerComponent<TNode extends ReactNode>(
+export async function renderServerComponent<TNode extends ReactNode>(
   node: TNode
 ): Promise<RenderableServerComponent<TNode>> {
-  const element = createElement(Fragment, null, node) as RenderableServerComponent<TNode>;
-  return Promise.resolve(element);
+  const bytes = await encodeFlight(node, undefined);
+  return createRenderableSource<TNode>({
+    bytes,
+    kind: "renderable",
+    tree: decodeFlightBytes(bytes),
+  });
 }
 
-export function createCompositeComponent<TProps extends object>(
+function createSlotProxy<TProps extends object>(): TProps {
+  const cache = new Map<string, (...args: unknown[]) => ReactNode>();
+  return new Proxy({} as TProps, {
+    get(_target, property) {
+      if (property === "then" || typeof property !== "string") {
+        return;
+      }
+      if (property === "children") {
+        return createElement(SLOT_MARKER, { name: property, args: [] });
+      }
+      let slot = cache.get(property);
+      if (slot === undefined) {
+        slot = (...args: unknown[]) => createElement(SLOT_MARKER, { name: property, args });
+        cache.set(property, slot);
+      }
+      return slot;
+    },
+  });
+}
+
+export async function createCompositeComponent<TProps extends object>(
   component: (props: TProps) => ReactNode | Promise<ReactNode>
 ): Promise<CompositeComponentSource<TProps>> {
-  return Promise.resolve({ [compositeComponent]: component });
-}
-
-export function CompositeComponent<TProps extends object>(
-  props: CompositeComponentProps<TProps>
-): ReactNode | Promise<ReactNode> {
-  const { src, ...slots } = props;
-  return src[compositeComponent](slots as TProps);
+  const proxy = createSlotProxy<TProps>();
+  function CompositeServerTree(): ReactNode | Promise<ReactNode> {
+    return component(proxy);
+  }
+  const bytes = await encodeFlight(createElement(CompositeServerTree), undefined);
+  return {
+    [RSC_SOURCE]: {
+      bytes,
+      kind: "composite",
+      tree: decodeFlightBytes(bytes),
+    },
+  };
 }

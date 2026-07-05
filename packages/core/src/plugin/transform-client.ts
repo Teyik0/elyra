@@ -1,19 +1,25 @@
+import type {
+  CallExpression,
+  ImportDeclaration,
+  ObjectExpression,
+  ObjectProperty,
+  Program,
+  SourceLang,
+} from "@yuku-toolchain/types";
 import MagicString from "magic-string";
-import {
-  type CallExpression,
-  type ImportDeclaration,
-  type ObjectExpression,
-  type ObjectProperty,
-  type Program,
-  parse,
-  type SourceLang,
-} from "yuku-parser";
 import { detectLangFromPath, unwrapTSExpression } from "../server/lang-detect.ts";
+import { parseSource } from "../shared/parser.ts";
 import { type AstNode, walkAST } from "../shared/utils/ast-walk.ts";
 
 // loader: data fetching (runs on server only)
 // query / params: Elysia TypeBox schemas — validated server-side, not used in browser
-const SERVER_ONLY_PROPERTIES = new Set(["loader", "query", "params", "staticParams"]);
+const SERVER_ONLY_PROPERTIES = new Set([
+  "loader",
+  "requestLoader",
+  "query",
+  "params",
+  "staticParams",
+]);
 
 interface TransformResult {
   code: string;
@@ -131,6 +137,7 @@ const TYPE_SCOPE_NODES = new Set([
   "TSTypeAliasDeclaration", // `type Foo = …` — entirely type-level
   "TSTypePredicate", // `x is Type` in return-type position
   "TSClassImplements", // `class C implements Iface` — the implements clause is type-only
+  "TSExpressionWithTypeArguments", // Babel ESTree shape for an implements clause
 ]);
 
 // Walk `node` and add every Identifier / JSXIdentifier found inside it to
@@ -295,7 +302,7 @@ function removeUnusedSpecifiers(
 // ---------------------------------------------------------------------------
 export function deadCodeElimination(s: MagicString, lang: SourceLang): MagicString {
   const code = s.toString();
-  const { program, diagnostics } = parse(code, { sourceType: "module", lang });
+  const { program, diagnostics } = parseSource(code, lang);
   const firstError = diagnostics.find((d) => d.severity === "error");
   if (firstError) {
     console.error("[furin] DCE: failed to parse transformed output:", firstError.message);
@@ -373,7 +380,7 @@ export function transformForClient(code: string, filename: string): TransformRes
 
   // Pass 1 — yuku-parser: parse TS/TSX/JS/JSX directly to ESTree AST with
   // span offsets calibrated against `code` itself (no transpile step).
-  const { program, diagnostics } = parse(code, { sourceType: "module", lang });
+  const { program, diagnostics } = parseSource(code, lang);
   const firstError = diagnostics.find((d) => d.severity === "error");
   if (firstError) {
     throw new Error(`Failed to parse ${filename}: ${firstError.message}`);

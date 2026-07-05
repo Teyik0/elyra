@@ -9,6 +9,7 @@ import {
   runWithInstanceScope,
   withInstance,
 } from "../instance.ts";
+import { clearPprRouteCache, invalidatePprRoute } from "../render/ppr-route.ts";
 import { clearDevLoaderCaches } from "./dev-loader";
 import { isrRouteCache } from "./isr";
 import { getCacheInvalidators } from "./registry";
@@ -94,6 +95,7 @@ export function revalidatePath(path: string, type: RevalidateType): boolean {
     deleted = result.deleted || deleted;
     purgedPaths.push(...result.purgedPaths);
   }
+  deleted = invalidatePprRoute(path, type) || deleted;
 
   callCachePurger(dedupePaths([...purgedPaths, path]));
   return deleted;
@@ -147,6 +149,7 @@ export function __resetCacheState(): void {
   // prefix collisions) but keep the default bucket — cache slots above are
   // cleared, while process-wide defaults like a beforeAll template survive.
   __clearInstanceRegistry();
+  clearPprRouteCache();
   _globalPendingInvalidations.clear();
   _cachePurger = null;
 }

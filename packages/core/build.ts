@@ -16,7 +16,14 @@ const shared = {
   root: `${import.meta.dir}/src`,
   target: "bun" as const,
   format: "esm" as const,
-  external: ["elysia", "react", "react-dom", "@elysiajs/static", "yuku-parser"],
+  external: [
+    "elysia",
+    "react",
+    "react-dom",
+    "react-server-dom-webpack",
+    "@babel/parser",
+    "@elysiajs/static",
+  ],
   minify: false,
   sourcemap: false,
 };
@@ -26,6 +33,9 @@ await Promise.all([
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/furin.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/client.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/rsc.tsx`] }),
+  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/rsc-client.ts`] }),
+  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/server-only.ts`] }),
+  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/client-only.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/build/index.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/config.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/server/router/index.ts`] }),
@@ -36,6 +46,17 @@ await Promise.all([
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/server/internal.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/server/runtime-env.ts`] }),
 ]);
+
+await Bun.build({
+  entrypoints: [`${import.meta.dir}/src/rsc/server-codec.ts`],
+  outdir: `${import.meta.dir}/dist/rsc`,
+  target: "bun",
+  format: "esm",
+  conditions: ["react-server"],
+  naming: "server-codec.js",
+  minify: false,
+  sourcemap: false,
+});
 
 // Copy ambient declaration so it is available for the ./env export.
 await $`cp src/env.d.ts dist/env.d.ts`;

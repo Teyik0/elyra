@@ -2,6 +2,64 @@
 
 Furin configures rendering mode at the route level with `createRoute()`. The page itself still comes from `route.page()`.
 
+## Composite React Server Components
+
+RSC is a value returned by a loader, not a fourth rendering mode. Import the explicit API from `furin/rsc`; no `use client` or `use server` directive is required.
+
+```tsx
+import { createCompositeComponent, CompositeComponent } from "furin/rsc"
+
+const route = createRoute({
+  loader: async () => ({
+    card: await createCompositeComponent<{
+      Action: React.ComponentType<{ productId: string }>
+      children?: React.ReactNode
+      renderMeta?: (value: { updatedAt: string }) => React.ReactNode
+    }>(({ Action, children, renderMeta }) => (
+      <article>
+        <Action productId="product-1" />
+        {renderMeta?.({ updatedAt: "today" })}
+        {children}
+      </article>
+    )),
+  }),
+})
+
+export default route.page({
+  component: ({ card }) => (
+    <CompositeComponent
+      src={card}
+      Action={({ productId }) => <button>Add {productId}</button>}
+      renderMeta={({ updatedAt }) => <small>{updatedAt}</small>}
+    >
+      <p>Client-owned composition</p>
+    </CompositeComponent>
+  ),
+})
+```
+
+The server fragment is encoded as Flight and contributes no application JavaScript. Client interactivity enters through `children`, component slots, or render props. Arbitrary client imports from the server fragment are intentionally unsupported in composite v1.
+
+Use `import "furin/server-only"` or `import "furin/client-only"` as optional build-time assertions. These imports validate graph boundaries; they do not classify components.
+
+### Personalized cached routes
+
+For an SSG or ISR route, keep shared data in `loader` and request-specific data in `requestLoader`:
+
+```tsx
+const route = createRoute({
+  mode: "isr",
+  loader: async () => ({ catalog: await getPublicCatalog() }),
+  requestLoader: ({ cookies }) => ({
+    user: getUser(cookies.get("session")),
+  }),
+})
+```
+
+The component receives `requestData` as a Promise. Read it below an explicit `<Suspense>` boundary. Furin caches only the public React 19.2 prerender shell and resumes the private section once per request. Pure static export rejects `requestLoader` because no request runtime exists.
+
+Mutations remain Elysia/Eden Treaty endpoints. Furin does not expose React Server Functions or accept incoming Flight payloads.
+
 ## SSR
 
 SSR is the default mode when you omit `mode`.

@@ -1,5 +1,6 @@
 import type { SerovalNode } from "seroval";
 import { fromCrossJSON } from "seroval";
+import { isRouteFrameLine, parseRouteFrameLines } from "./route-frame.ts";
 
 /**
  * Result returned by `parseDeferredNdjson`.
@@ -115,6 +116,17 @@ export async function parseDeferredNdjson(
       /* already released */
     }
     return { syncData: {}, deferredPromises: {} };
+  }
+
+  if (isRouteFrameLine(firstLine)) {
+    const result = await parseRouteFrameLines(firstLine, readLine);
+    cleanupAbortHandler();
+    try {
+      reader.releaseLock();
+    } catch {
+      /* already released */
+    }
+    return { syncData: result.syncData, deferredPromises: result.deferredPromises };
   }
 
   const node = JSON.parse(firstLine) as SerovalNode;

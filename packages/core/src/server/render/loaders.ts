@@ -1,5 +1,5 @@
 import type { Context } from "elysia";
-import { isDeferred, type RuntimeRoute } from "../../client.ts";
+import { isDeferred, type RequestLoaderContext, type RuntimeRoute } from "../../client.ts";
 import { type FurinNotFoundError, isNotFoundError } from "../../shared/not-found.ts";
 import { useLogger } from "../context-logger.ts";
 import type { ResolvedRoute } from "../router/index.ts";
@@ -158,6 +158,48 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   );
 }
 
+function createRequestLoaderContext(ctx: Context): RequestLoaderContext {
+  const headers = new Headers(ctx.request.headers);
+  return Object.freeze({
+    cookies: Object.freeze({
+      get(name: string): unknown {
+        return ctx.cookie[name]?.value;
+      },
+    }),
+    headers: Object.freeze({
+      entries: () => headers.entries(),
+      get: (name: string) => headers.get(name),
+      has: (name: string) => headers.has(name),
+    }),
+    log: useLogger(),
+    params: ctx.params,
+    path: ctx.path,
+    query: ctx.query,
+    request: ctx.request,
+  });
+}
+
+export function runRequestLoaderData(
+  route: ResolvedRoute,
+  ctx: Context
+): Promise<object> | undefined {
+  const loaders = [
+    ...route.routeChain.map((entry) => entry.requestLoader),
+    route.page.requestLoader,
+  ].filter((loader) => loader !== undefined);
+  if (loaders.length === 0) {
+    return;
+  }
+  const requestContext = createRequestLoaderContext(ctx);
+  const requestData = Promise.all(loaders.map((loader) => loader(requestContext))).then((results) =>
+    Object.assign({}, ...results)
+  );
+  requestData.catch(() => {
+    /* React observes the original rejection through requestData. */
+  });
+  return requestData;
+}
+
 /**
  * Merges per-loader results into the unified sync / deferred maps used by
  * `runLoaders`. `results` is ordered ancestor-most → page, so later loaders
@@ -223,8 +265,13 @@ export async function serializeDeferredRejection(err: unknown): Promise<unknown>
   return new Error(String(err));
 }
 
-export async function runLoaders(route: ResolvedRoute, ctx: Context): Promise<LoaderResult> {
+async function runLoadersInternal(
+  route: ResolvedRoute,
+  ctx: Context,
+  includeRequestData: boolean
+): Promise<LoaderResult> {
   try {
+    const requestData = includeRequestData ? runRequestLoaderData(route, ctx) : undefined;
     // Inject `log` so loaders can destructure it directly as `({ log })`.
     // useLogger() resolves the correct logger for every rendering context:
     // live request → evlog request-scoped logger, synthetic render → detached
@@ -282,6 +329,9 @@ export async function runLoaders(route: ResolvedRoute, ctx: Context): Promise<Lo
     // Non-deferred loaders keep everything in `allSync` — even Promise values,
     // since only an explicit `defer()` opts into streaming.
     const { allSync, allDeferred } = mergeLoaderResults(results);
+    if (requestData !== undefined) {
+      allDeferred.requestData = requestData;
+    }
 
     // Route context is always injected into syncData so components receive
     // params, query and path regardless of the serialisation path (SSR, SPA
@@ -325,4 +375,19 @@ export async function runLoaders(route: ResolvedRoute, ctx: Context): Promise<Lo
       headers,
     };
   }
+}
+
+export function runLoaders(route: ResolvedRoute, ctx: Context): Promise<LoaderResult> {
+  return runLoadersInternal(route, ctx, true);
+}
+
+export function runPublicLoaders(route: ResolvedRoute, ctx: Context): Promise<LoaderResult> {
+  return runLoadersInternal(route, ctx, false);
+}
+
+export function hasRequestLoader(route: ResolvedRoute): boolean {
+  return (
+    route.page.requestLoader !== undefined ||
+    route.routeChain.some((entry) => entry.requestLoader !== undefined)
+  );
 }

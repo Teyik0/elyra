@@ -48,6 +48,7 @@ type MergeSchema<TParent, TOwn> = [TParent] extends [Unset]
     : TParent & TOwn;
 
 type NormalizeUnset<T> = [T] extends [Unset] ? {} : T;
+type RequestDataProp<T extends object> = keyof T extends never ? {} : { requestData: Promise<T> };
 
 /**
  * Transforms each key of a parent-data record into an individual `Promise<T>`.
@@ -80,6 +81,26 @@ export interface RouteContext<TParams = {}, TQuery = {}> {
   };
 }
 
+export interface RequestCookies {
+  get(name: string): unknown;
+}
+
+export interface RequestHeaders {
+  entries(): IterableIterator<[string, string]>;
+  get(name: string): string | null;
+  has(name: string): boolean;
+}
+
+export interface RequestLoaderContext<TParams = {}, TQuery = {}> {
+  readonly cookies: RequestCookies;
+  readonly headers: RequestHeaders;
+  readonly log: RequestLogger;
+  readonly params: NormalizeUnset<TParams>;
+  readonly path: string;
+  readonly query: NormalizeUnset<TQuery>;
+  readonly request: Request;
+}
+
 export interface ComponentProps<TParams = {}, TQuery = {}> {
   params: NormalizeUnset<TParams>;
   path: string;
@@ -87,11 +108,17 @@ export interface ComponentProps<TParams = {}, TQuery = {}> {
 }
 
 type ResolveParent<T> =
-  T extends RouteRef<infer D, infer P, infer Q>
-    ? { data: D; params: P; query: Q }
-    : { data: {}; params: Unset; query: Unset };
+  T extends RouteRef<infer D, infer P, infer Q, infer R>
+    ? { data: D; params: P; query: Q; requestData: R }
+    : { data: {}; params: Unset; query: Unset; requestData: {} };
 
-interface Resolved<TParentRef, TLoaderData, TParamsSchema = Unset, TQuerySchema = Unset> {
+interface Resolved<
+  TParentRef,
+  TLoaderData,
+  TParamsSchema = Unset,
+  TQuerySchema = Unset,
+  TRequestLoaderData extends object = {},
+> {
   // `Omit<TLoaderData, "__isDeferred">` strips the runtime brand that `defer()`
   // attaches to its return value. A layout/route loader wrapped with `defer()`
   // would otherwise leak `__isDeferred: true` into descendant loader contexts
@@ -99,6 +126,7 @@ interface Resolved<TParentRef, TLoaderData, TParamsSchema = Unset, TQuerySchema 
   data: ToRecord<ResolveParent<TParentRef>["data"] & Omit<TLoaderData, "__isDeferred">>;
   params: MergeSchema<ResolveParent<TParentRef>["params"], ResolvedSchema<TParamsSchema>>;
   query: MergeSchema<ResolveParent<TParentRef>["query"], ResolvedSchema<TQuerySchema>>;
+  requestData: ToRecord<ResolveParent<TParentRef>["requestData"] & TRequestLoaderData>;
 }
 
 export type MetaDescriptor =
@@ -169,6 +197,7 @@ export interface RuntimeRoute {
   params?: unknown;
   parent?: RuntimeRoute;
   query?: unknown;
+  requestLoader?(ctx: RequestLoaderContext): Promise<object> | object;
   revalidate?: number;
   tags?: string[];
 }
@@ -179,6 +208,7 @@ export interface RuntimePage {
   component: React.FC<Record<string, unknown>>;
   head?(ctx: Record<string, unknown>): HeadOptions;
   loader?(ctx: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
+  requestLoader?(ctx: RequestLoaderContext): Promise<object> | object;
   staticParams?(): Promise<Record<string, string>[]> | Record<string, string>[];
   tags?: string[];
 }
@@ -187,9 +217,10 @@ export interface RouteRef<
   TData extends Record<string, unknown> = Record<string, unknown>,
   TParams = unknown,
   TQuery = unknown,
+  TRequestData extends object = {},
 > {
   readonly __brand: "FURIN_ROUTE_REF";
-  readonly __phantom: { data: TData; params: TParams; query: TQuery };
+  readonly __phantom: { data: TData; params: TParams; query: TQuery; requestData: TRequestData };
 }
 
 interface PageResult<
@@ -197,10 +228,13 @@ interface PageResult<
   TParams,
   TQuery,
   TPageLoaderData extends object,
+  TRequestData extends object,
 > {
   __type: "FURIN_PAGE";
   _route: Route<TData, TParams, TQuery>;
-  component: React.FC<TData & TPageLoaderData & ComponentProps<TParams, TQuery>>;
+  component: React.FC<
+    TData & TPageLoaderData & RequestDataProp<TRequestData> & ComponentProps<TParams, TQuery>
+  >;
   head?: (ctx: ComponentProps<TParams, TQuery> & TData & TPageLoaderData) => HeadOptions;
   loader?: (
     ctx: RouteContext<TParams, TQuery> & PromisifyData<TData>
@@ -208,9 +242,20 @@ interface PageResult<
   tags?: string[];
 }
 
-export interface Route<TParentData extends Record<string, unknown>, TParams, TQuery> {
+export interface Route<
+  TParentData extends Record<string, unknown>,
+  TParams,
+  TQuery,
+  TRequestData extends object = {},
+> {
   __type: "FURIN_ROUTE";
-  layout?: React.FC<TParentData & { children: React.ReactNode } & ComponentProps<TParams, TQuery>>;
+  layout?: React.FC<
+    TParentData &
+      RequestDataProp<TRequestData> & { children: React.ReactNode } & ComponentProps<
+        TParams,
+        TQuery
+      >
+  >;
   loader?(
     ctx: RouteContext<TParams, TQuery> & PromisifyData<TParentData>
   ): Promise<TParentData> | TParentData;
@@ -229,11 +274,18 @@ export interface Route<TParentData extends Record<string, unknown>, TParams, TQu
     revalidate?: number;
     staticParams?: () => Promise<NormalizeUnset<TParams>[]> | NormalizeUnset<TParams>[];
     tags?: string[];
-    component: React.FC<NoInfer<TParentData & TPageLoaderData & ComponentProps<TParams, TQuery>>>;
+    component: React.FC<
+      NoInfer<
+        TParentData &
+          TPageLoaderData &
+          RequestDataProp<TRequestData> &
+          ComponentProps<TParams, TQuery>
+      >
+    >;
     head?: (
       ctx: NoInfer<ComponentProps<TParams, TQuery> & TParentData & TPageLoaderData>
     ) => HeadOptions;
-  }): PageResult<TParentData, TParams, TQuery, TPageLoaderData>;
+  }): PageResult<TParentData, TParams, TQuery, TPageLoaderData, TRequestData>;
 
   // Overload 2 — no loader.
   page(config: {
@@ -241,16 +293,19 @@ export interface Route<TParentData extends Record<string, unknown>, TParams, TQu
     revalidate?: number;
     staticParams?: () => Promise<NormalizeUnset<TParams>[]> | NormalizeUnset<TParams>[];
     tags?: string[];
-    component: React.FC<TParentData & ComponentProps<TParams, TQuery>>;
+    component: React.FC<
+      TParentData & RequestDataProp<TRequestData> & ComponentProps<TParams, TQuery>
+    >;
     head?: (ctx: ComponentProps<TParams, TQuery> & TParentData) => HeadOptions;
-  }): PageResult<TParentData, TParams, TQuery, {}>;
+  }): PageResult<TParentData, TParams, TQuery, {}, TRequestData>;
 
   params?: unknown;
   parent?: RuntimeRoute;
   query?: unknown;
 
   /** Branded ref for type inference when used as a parent. */
-  ref: RouteRef<TParentData, TParams, TQuery>;
+  ref: RouteRef<TParentData, TParams, TQuery, TRequestData>;
+  requestLoader?(ctx: RequestLoaderContext<TParams, TQuery>): Promise<TRequestData> | TRequestData;
   revalidate?: number;
   tags?: string[];
 }
@@ -260,6 +315,7 @@ export function createRoute<
   TParamsSchema extends AnySchema | Unset = Unset,
   TQuerySchema extends AnySchema | Unset = Unset,
   TLoaderData extends object = {},
+  TRequestLoaderData extends object = {},
 >(config?: {
   parent?: { ref: TParentRef } & { __type: "FURIN_ROUTE" };
   mode?: "ssr" | "ssg" | "isr";
@@ -274,25 +330,47 @@ export function createRoute<
     > &
       PromisifyData<ResolveParent<TParentRef>["data"]>
   ) => Promise<TLoaderData> | TLoaderData;
+  requestLoader?: (
+    ctx: RequestLoaderContext<
+      Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema, TRequestLoaderData>["params"],
+      Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema, TRequestLoaderData>["query"]
+    >
+  ) => Promise<TRequestLoaderData> | TRequestLoaderData;
   layout?: React.FC<
-    Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema>["data"] & {
-      children: React.ReactNode;
-    } & ComponentProps<
-        Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema>["params"],
-        Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema>["query"]
+    Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema, TRequestLoaderData>["data"] &
+      RequestDataProp<
+        Resolved<
+          TParentRef,
+          TLoaderData,
+          TParamsSchema,
+          TQuerySchema,
+          TRequestLoaderData
+        >["requestData"]
+      > & {
+        children: React.ReactNode;
+      } & ComponentProps<
+        Resolved<
+          TParentRef,
+          TLoaderData,
+          TParamsSchema,
+          TQuerySchema,
+          TRequestLoaderData
+        >["params"],
+        Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema, TRequestLoaderData>["query"]
       >
   >;
 }): Route<
-  Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema>["data"],
-  Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema>["params"],
-  Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema>["query"]
+  Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema, TRequestLoaderData>["data"],
+  Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema, TRequestLoaderData>["params"],
+  Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema, TRequestLoaderData>["query"],
+  Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema, TRequestLoaderData>["requestData"]
 > {
-  type R = Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema>;
+  type R = Resolved<TParentRef, TLoaderData, TParamsSchema, TQuerySchema, TRequestLoaderData>;
 
   const route = {
     ...config,
     __type: "FURIN_ROUTE" as const,
-    ref: {} as RouteRef<R["data"], R["params"], R["query"]>,
+    ref: {} as RouteRef<R["data"], R["params"], R["query"], R["requestData"]>,
 
     // biome-ignore lint/suspicious/noExplicitAny: implementation signature for both overloads
     page(pageConfig: any) {
@@ -303,7 +381,7 @@ export function createRoute<
       };
     },
   };
-  return route as Route<R["data"], R["params"], R["query"]>;
+  return route as Route<R["data"], R["params"], R["query"], R["requestData"]>;
 }
 
 export type InferProps<T> = T extends {
@@ -311,8 +389,8 @@ export type InferProps<T> = T extends {
   component: React.FC<infer P>;
 }
   ? P
-  : T extends Route<infer D, infer P, infer Q>
-    ? D & { children: React.ReactNode } & ComponentProps<P, Q>
+  : T extends Route<infer D, infer P, infer Q, infer R>
+    ? D & RequestDataProp<R> & { children: React.ReactNode } & ComponentProps<P, Q>
     : never;
 
 // ── Deferred data ──────────────────────────────────────────────────────────────

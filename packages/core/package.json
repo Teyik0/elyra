@@ -53,6 +53,7 @@
     },
     "./rsc": {
       "types": "./dist/rsc.d.ts",
+      "browser": "./src/rsc-client.ts",
       "bun": "./src/rsc.tsx",
       "import": "./dist/rsc.js"
     },
@@ -94,9 +95,20 @@
       "types": "./dist/server/internal.d.ts",
       "bun": "./src/server/internal.ts",
       "import": "./dist/server/internal.js"
+    },
+    "./server-only": {
+      "types": "./dist/server-only.d.ts",
+      "bun": "./src/server-only.ts",
+      "import": "./dist/server-only.js"
+    },
+    "./client-only": {
+      "types": "./dist/client-only.d.ts",
+      "bun": "./src/client-only.ts",
+      "import": "./dist/client-only.js"
     }
   },
   "scripts": {
+    "benchmark:rsc": "bun scripts/benchmark-rsc-transport.ts",
     "fix": "ultracite fix",
     "test": "bun test --parallel --isolate --bail --preload ../../tests/setup.ts",
     "test:dev": "bun test --changed --parallel --isolate --bail --preload ../../tests/setup.ts",
@@ -104,10 +116,12 @@
     "build": "bun run build.ts"
   },
   "dependencies": {
+    "@babel/parser": "7.29.7",
     "@elysiajs/static": "^1.4.10",
+    "@yuku-toolchain/types": "0.5.42",
     "magic-string": "^0.30.21",
-    "seroval": "^1.5.4",
-    "yuku-parser": "^0.5.43"
+    "react-server-dom-webpack": "19.2.7",
+    "seroval": "^1.5.4"
   },
   "devDependencies": {
     "@types/react": "catalog:",

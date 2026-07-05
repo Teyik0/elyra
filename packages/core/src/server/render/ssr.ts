@@ -15,7 +15,9 @@ import {
   createSearchStore,
   searchSnapshotFromRouterContext,
 } from "../../client/router/search-store.ts";
+import { isRscSource } from "../../rsc/shared.tsx";
 import { computeErrorDigest } from "../../shared/digest.ts";
+import { serializeRouteFrames } from "../../shared/route-frame.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { runInSyntheticRenderScope, useLogger } from "../context-logger.ts";
@@ -27,6 +29,7 @@ import {
   assembleHTML,
   buildDeferredResolution,
   buildDeferredScript,
+  buildRouteFrameTemplate,
   buildSyncRuntimeScript,
   resolvePath,
   splitTemplate,
@@ -163,7 +166,8 @@ export function assertDeferredModeAllowed(
   route: ResolvedRoute,
   deferredPromises: Record<string, Promise<unknown>> | undefined
 ): void {
-  if (deferredPromises !== undefined && route.mode !== "ssr") {
+  const deferredKeys = Object.keys(deferredPromises ?? {}).filter((key) => key !== "requestData");
+  if (deferredKeys.length > 0 && route.mode !== "ssr") {
     throw new Error(
       `[furin] page "${route.pattern}" returned defer() but the route is rendered in "${route.mode}" mode. ` +
         "defer() streams data progressively and is only supported in SSR. " +
@@ -414,6 +418,9 @@ export async function serializeLoaderDataNdjson(
     ...syncData,
     ...(deferredPromises ?? {}),
   };
+  if (Object.values(payload).some((value) => isRscSource(value))) {
+    return serializeRouteFrames(payload);
+  }
   const serialized = await toCrossJSONAsync(payload);
   return `${JSON.stringify(serialized)}\n`;
 }
@@ -538,9 +545,9 @@ export async function renderSSR(
   const deferredKeys = hasDeferred ? Object.keys(deferredPromises) : [];
   const deferredSetupScript = hasDeferred ? buildDeferredScript(deferredKeys) : "";
 
-  const dataScript = `<script id="__FURIN_DATA__" type="application/json">${safeJson(
-    dataPayload
-  )}</script>`;
+  const dataScript = Object.values(dataPayload).some((value) => isRscSource(value))
+    ? buildRouteFrameTemplate(serializeRouteFrames(dataPayload))
+    : `<script id="__FURIN_DATA__" type="application/json">${safeJson(dataPayload)}</script>`;
   const runtimeScripts = `${buildSyncRuntimeScript()}${dataScript}`;
 
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();

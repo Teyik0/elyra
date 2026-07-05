@@ -22,6 +22,27 @@ import {
 } from "../src/shared/utils/index.ts";
 
 describe("RouteContext types (for loaders)", () => {
+  test("requestLoader exposes read-only request data and infers requestData", () => {
+    const route = createRoute({
+      requestLoader: (ctx) => {
+        expectTypeOf(ctx.request).toEqualTypeOf<Request>();
+        expectTypeOf(ctx.cookies.get("session")).toEqualTypeOf<unknown>();
+        // @ts-expect-error requestLoader cannot mutate the response
+        ctx.set;
+        // @ts-expect-error redirects belong in middleware before PPR
+        ctx.redirect;
+        return { userId: "user-1" };
+      },
+    });
+
+    route.page({
+      component: ({ requestData }) => {
+        expectTypeOf(requestData).toEqualTypeOf<Promise<{ userId: string }>>();
+        return null;
+      },
+    });
+  });
+
   test("exposes full Elysia context properties", () => {
     type Ctx = RouteContext<{ id: string }, { page: number }>;
 

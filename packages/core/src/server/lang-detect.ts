@@ -1,4 +1,4 @@
-import type { SourceLang } from "yuku-parser";
+import type { SourceLang } from "@yuku-toolchain/types";
 
 export function detectLangFromPath(filePath: string): SourceLang {
   if (filePath.endsWith(".d.ts")) {
