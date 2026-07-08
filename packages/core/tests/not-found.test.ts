@@ -17,7 +17,7 @@ describe("notFound()", () => {
 
   test("propagates message and data when passed options", () => {
     try {
-      notFound({ message: "Post gone", data: { slug: "missing" } });
+      notFound({ data: { slug: "missing" }, message: "Post gone" });
     } catch (err) {
       if (!isNotFoundError(err)) {
         throw new Error("expected a not-found error");

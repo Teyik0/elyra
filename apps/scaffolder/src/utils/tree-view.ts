@@ -5,7 +5,7 @@ interface TreeNode {
 }
 
 function createNode(name: string, isFile: boolean): TreeNode {
-  return { name, children: new Map(), isFile };
+  return { children: new Map(), isFile, name };
 }
 
 /**

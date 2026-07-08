@@ -4,9 +4,9 @@ import type { Context } from "elysia";
 
 // Render pipeline uses useLogger() under the hood; stub as in render.test.ts.
 mock.module("evlog/elysia", () => ({
+  evlog: () => (app: unknown) => app,
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
   useLogger: () => ({ set() {} }),
-  evlog: () => (app: unknown) => app,
 }));
 
 import type { HTTPHeaders } from "elysia/types";
@@ -22,14 +22,14 @@ const FURIN_DATA_SCRIPT_RE =
 
 function createMockLoaderContext(overrides: Partial<Context>) {
   return {
-    params: {},
-    query: {},
-    request: new Request("http://localhost/test"),
-    headers: {},
     cookie: {},
-    redirect: (url: string) => new Response(null, { status: 302, headers: { Location: url } }),
-    set: { headers: {} as HTTPHeaders },
+    headers: {},
+    params: {},
     path: "/test",
+    query: {},
+    redirect: (url: string) => new Response(null, { headers: { Location: url }, status: 302 }),
+    request: new Request("http://localhost/test"),
+    set: { headers: {} as HTTPHeaders },
     ...overrides,
   } as Context;
 }
@@ -103,7 +103,7 @@ describe("renderToHTML — not-found handling", () => {
       ...blogRoute,
       page: {
         ...blogRoute.page,
-        loader: () => notFound({ message: "missing", data: { reason: "deleted" } }),
+        loader: () => notFound({ data: { reason: "deleted" }, message: "missing" }),
       },
     } as ResolvedRoute;
 
@@ -123,8 +123,8 @@ describe("renderToHTML — not-found handling", () => {
     const payload = JSON.parse(match?.[1] ?? "{}");
     expect(payload.__furinStatus).toBe(404);
     expect(payload.__furinNotFound).toMatchObject({
-      message: "missing",
       data: { reason: "deleted" },
+      message: "missing",
     });
   });
 

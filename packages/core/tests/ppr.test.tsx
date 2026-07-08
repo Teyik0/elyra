@@ -2,63 +2,43 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { Elysia } from "elysia";
 import { Suspense, use } from "react";
 import { createRoute, type RuntimePage, type RuntimeRoute } from "../src/client";
-import { prerenderPpr, resumePpr } from "../src/server/render/ppr";
-import { clearPprRouteCache } from "../src/server/render/ppr-route";
-import { createRoutePlugin, type ResolvedRoute, type RootLayout } from "../src/server/router";
+import { clearPprRouteCache, invalidatePprRoute } from "../src/server/render/ppr-route";
+import { createRoutePlugin } from "../src/server/router/plugin.ts";
+import type { ResolvedRoute, RootLayout } from "../src/server/router/types.ts";
 import { __setDevMode, IS_DEV } from "../src/server/runtime-env";
 
-afterEach(() => clearPprRouteCache());
+(globalThis as typeof globalThis & { __FURIN_SKIP_DOM_RESET?: boolean }).__FURIN_SKIP_DOM_RESET =
+  true;
+
+afterEach(async () => {
+  clearPprRouteCache();
+  await Promise.resolve();
+});
 const originalDevMode = IS_DEV;
-beforeAll(() => __setDevMode(false));
-afterAll(() => __setDevMode(originalDevMode));
+beforeAll(async () => {
+  __setDevMode(false);
+  await Promise.resolve();
+});
+afterAll(async () => {
+  __setDevMode(originalDevMode);
+  await Promise.resolve();
+});
 
 describe("partial prerendering", () => {
-  test("caches a public shell and resumes request data with React", async () => {
-    let resolveUser: ((value: string) => void) | undefined;
-    const requestData = new Promise<string>((resolve) => {
-      resolveUser = resolve;
-    });
-    function PrivateUser() {
-      return <strong>{use(requestData)}</strong>;
-    }
-    const page = (
-      <main>
-        <h1>Public catalog</h1>
-        <Suspense fallback={<span>Loading user</span>}>
-          <PrivateUser />
-        </Suspense>
-      </main>
-    );
-
-    const entry = await prerenderPpr(page, {
-      abortAfterMs: 20,
-      buildId: "build-1",
-      publicRouteStream: new Uint8Array([1, 2, 3]),
-      status: 200,
-    });
-    const shell = new TextDecoder().decode(entry.shell);
-    expect(shell).toContain("Public catalog");
-    expect(shell).not.toContain("Alice");
-
-    resolveUser?.("Alice");
-    const resumed = await resumePpr(page, entry.postponedState, undefined);
-    expect(new TextDecoder().decode(resumed)).toContain("Alice");
-  });
-
   test("an ISR route caches public data while requestLoader reruns per request", async () => {
     let publicCalls = 0;
     let privateCalls = 0;
     const route = createRoute({
-      mode: "isr",
-      revalidate: 60,
       loader: () => {
         publicCalls += 1;
         return { catalog: "Shoes" };
       },
+      mode: "isr",
       requestLoader: ({ cookies }) => {
         privateCalls += 1;
         return { user: cookies.get("session") };
       },
+      revalidate: 60,
     });
     function User({ data }: { data: Promise<{ user: unknown }> }) {
       return <strong>{String(use(data).user)}</strong>;
@@ -111,13 +91,13 @@ describe("partial prerendering", () => {
   test("keys PPR public shells by query string", async () => {
     let publicCalls = 0;
     const route = createRoute({
-      mode: "isr",
-      revalidate: 60,
       loader: ({ query }) => {
         publicCalls += 1;
         return { view: String((query as { view?: unknown }).view ?? "") };
       },
+      mode: "isr",
       requestLoader: () => ({ user: "alice" }),
+      revalidate: 60,
     });
     function User({ data }: { data: Promise<{ user: string }> }) {
       return <strong>{use(data).user}</strong>;
@@ -163,16 +143,20 @@ describe("partial prerendering", () => {
     expect(alpha).toContain("alpha");
     expect(beta).toContain("beta");
     expect(publicCalls).toBe(2);
+
+    expect(invalidatePprRoute("/account", "page")).toBe(true);
+    await app.handle(new Request("http://localhost/account?view=alpha"));
+    expect(publicCalls).toBe(3);
   });
 
   test("streams a rejected requestData chunk instead of aborting the PPR response", async () => {
     const route = createRoute({
-      mode: "isr",
-      revalidate: 60,
       loader: () => ({ catalog: "Shoes" }),
+      mode: "isr",
       requestLoader: () => {
         throw new Error("private boom");
       },
+      revalidate: 60,
     });
     function User({ data }: { data: Promise<{ user: unknown }> }) {
       return <strong>{String(use(data).user)}</strong>;

@@ -104,7 +104,7 @@ describe("scanRootLayout", () => {
 
   afterAll(() => {
     if (existsSync(tempDir)) {
-      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(tempDir, { force: true, recursive: true });
     }
   });
 

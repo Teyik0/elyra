@@ -31,11 +31,11 @@ function createSlotProxy<TProps extends object>(): TProps {
         return;
       }
       if (property === "children") {
-        return createElement(SLOT_MARKER, { name: property, args: [] });
+        return createElement(SLOT_MARKER, { args: [], name: property });
       }
       let slot = cache.get(property);
       if (slot === undefined) {
-        slot = (...args: unknown[]) => createElement(SLOT_MARKER, { name: property, args });
+        slot = (...args: unknown[]) => createElement(SLOT_MARKER, { args, name: property });
         cache.set(property, slot);
       }
       return slot;

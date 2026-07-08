@@ -24,9 +24,9 @@ function createSlotProxy<TProps extends object>(): TProps {
         return;
       }
       if (property === "children") {
-        return createElement(SLOT_MARKER, { name: property, args: [] });
+        return createElement(SLOT_MARKER, { args: [], name: property });
       }
-      return (...args: unknown[]) => createElement(SLOT_MARKER, { name: property, args });
+      return (...args: unknown[]) => createElement(SLOT_MARKER, { args, name: property });
     },
   });
 }

@@ -33,8 +33,8 @@ export function createTmpApp(fixtureName: string): TmpApp {
   cpSync(source, path, { recursive: true });
 
   return {
+    cleanup: () => rmSync(path, { force: true, recursive: true }),
     path,
-    cleanup: () => rmSync(path, { recursive: true, force: true }),
   };
 }
 
@@ -47,5 +47,5 @@ export function writeAppFile(appPath: string, relativePath: string, contents: st
 
 export function removeAppPath(appPath: string, relativePath: string): void {
   const resolvedPath = assertWithinAppPath(appPath, relativePath);
-  rmSync(resolvedPath, { recursive: true, force: true });
+  rmSync(resolvedPath, { force: true, recursive: true });
 }

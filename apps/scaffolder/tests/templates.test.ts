@@ -25,11 +25,11 @@ const BINARY_EXTENSIONS = new Set([
 
 /** Minimal EJS vars sufficient to render any scaffolder template without errors. */
 const MOCK_EJS_VARS: EjsTemplateVars = {
+  features: ["tailwind", "shadcn"],
+  furinVersion: "0.0.0",
   projectName: "test-app",
   projectNameKebab: "test-app",
   projectNamePascal: "TestApp",
-  furinVersion: "0.0.0",
-  features: ["tailwind", "shadcn"],
   versions: new Proxy({} as Record<string, string>, {
     get: () => "0.0.0",
   }),

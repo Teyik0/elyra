@@ -79,7 +79,7 @@ describe("shell.tsx", () => {
 
     test("extracts title from mixed meta array", () => {
       const meta: MetaDescriptor[] = [
-        { name: "description", content: "test" },
+        { content: "test", name: "description" },
         { title: "First Title" },
         { title: "Second Title" },
       ];
@@ -88,7 +88,7 @@ describe("shell.tsx", () => {
 
     test("returns undefined when no title in array", () => {
       const meta: MetaDescriptor[] = [
-        { name: "description", content: "test" },
+        { content: "test", name: "description" },
         { charSet: "utf-8" },
       ];
       expect(extractTitle(meta)).toBeUndefined();
@@ -105,11 +105,11 @@ describe("shell.tsx", () => {
 
   describe("isMetaTag", () => {
     test("returns true for standard meta tag with name", () => {
-      expect(isMetaTag({ name: "description", content: "test" })).toBe(true);
+      expect(isMetaTag({ content: "test", name: "description" })).toBe(true);
     });
 
     test("returns true for standard meta tag with property", () => {
-      expect(isMetaTag({ property: "og:title", content: "test" })).toBe(true);
+      expect(isMetaTag({ content: "test", property: "og:title" })).toBe(true);
     });
 
     test("returns false for title entry", () => {
@@ -125,7 +125,7 @@ describe("shell.tsx", () => {
     });
 
     test("returns false for tagName entry", () => {
-      expect(isMetaTag({ tagName: "meta", name: "viewport", content: "width=device-width" })).toBe(
+      expect(isMetaTag({ content: "width=device-width", name: "viewport", tagName: "meta" })).toBe(
         false
       );
     });
@@ -137,13 +137,13 @@ describe("shell.tsx", () => {
     });
 
     test("renders multiple attributes", () => {
-      const result = renderAttrs({ name: "description", content: "test" });
+      const result = renderAttrs({ content: "test", name: "description" });
       expect(result).toContain('name="description"');
       expect(result).toContain('content="test"');
     });
 
     test("filters undefined values", () => {
-      expect(renderAttrs({ name: "test", content: undefined })).toBe('name="test"');
+      expect(renderAttrs({ content: undefined, name: "test" })).toBe('name="test"');
     });
 
     test("escapes attribute values", () => {
@@ -167,7 +167,7 @@ describe("shell.tsx", () => {
     });
 
     test("builds standard meta tags", () => {
-      const meta: MetaDescriptor[] = [{ name: "description", content: "Test description" }];
+      const meta: MetaDescriptor[] = [{ content: "Test description", name: "description" }];
       const result = buildMetaParts(meta);
       expect(result).toContain('<meta name="description" content="Test description" />');
     });
@@ -180,13 +180,13 @@ describe("shell.tsx", () => {
     });
 
     test("builds multiple parts", () => {
-      const meta: MetaDescriptor[] = [{ title: "Page" }, { name: "description", content: "desc" }];
+      const meta: MetaDescriptor[] = [{ title: "Page" }, { content: "desc", name: "description" }];
       const result = buildMetaParts(meta);
       expect(result).toHaveLength(2);
     });
 
     test("skips title if not present", () => {
-      const meta: MetaDescriptor[] = [{ name: "description", content: "desc" }];
+      const meta: MetaDescriptor[] = [{ content: "desc", name: "description" }];
       const result = buildMetaParts(meta);
       expect(result.some((p) => p.includes("<title>"))).toBe(false);
     });
@@ -200,7 +200,7 @@ describe("shell.tsx", () => {
 
   describe("buildLinkParts", () => {
     test("builds single link tag", () => {
-      const links = [{ rel: "stylesheet", href: "/style.css" }];
+      const links = [{ href: "/style.css", rel: "stylesheet" }];
       const result = buildLinkParts(links);
       expect(result).toHaveLength(1);
       expect(result[0]).toBe('<link rel="stylesheet" href="/style.css" />');
@@ -208,15 +208,15 @@ describe("shell.tsx", () => {
 
     test("builds multiple link tags", () => {
       const links = [
-        { rel: "stylesheet", href: "/style.css" },
-        { rel: "icon", href: "/favicon.ico" },
+        { href: "/style.css", rel: "stylesheet" },
+        { href: "/favicon.ico", rel: "icon" },
       ];
       const result = buildLinkParts(links);
       expect(result).toHaveLength(2);
     });
 
     test("escapes attribute values", () => {
-      const links = [{ rel: "stylesheet", href: "/path?foo=1&bar=2" }];
+      const links = [{ href: "/path?foo=1&bar=2", rel: "stylesheet" }];
       const result = buildLinkParts(links);
       expect(result[0]).toContain("foo=1&amp;bar=2");
     });
@@ -230,7 +230,7 @@ describe("shell.tsx", () => {
     });
 
     test("builds script tag with children", () => {
-      const scripts = [{ src: "/app.js", children: "console.log('hi');" }];
+      const scripts = [{ children: "console.log('hi');", src: "/app.js" }];
       const result = buildScriptParts(scripts);
       expect(result[0]).toBe("<script src=\"/app.js\">console.log('hi');</script>");
     });
@@ -242,7 +242,7 @@ describe("shell.tsx", () => {
     });
 
     test("handles async and defer", () => {
-      const scripts = [{ src: "/app.js", async: "true", defer: "true" }];
+      const scripts = [{ async: "true", defer: "true", src: "/app.js" }];
       const result = buildScriptParts(scripts);
       expect(result[0]).toContain('async="true"');
       expect(result[0]).toContain('defer="true"');
@@ -257,7 +257,7 @@ describe("shell.tsx", () => {
     });
 
     test("builds style tag with type", () => {
-      const styles = [{ type: "text/css", children: "body {}" }];
+      const styles = [{ children: "body {}", type: "text/css" }];
       const result = buildStyleParts(styles);
       expect(result[0]).toBe('<style type="text/css">body {}</style>');
     });
@@ -269,7 +269,7 @@ describe("shell.tsx", () => {
     });
 
     test("escapes type attribute", () => {
-      const styles = [{ type: 'text/css"', children: "body {}" }];
+      const styles = [{ children: "body {}", type: 'text/css"' }];
       const result = buildStyleParts(styles);
       expect(result[0]).toContain('type="text/css&quot;"');
     });
@@ -278,8 +278,8 @@ describe("shell.tsx", () => {
   describe("buildHeadInjection", () => {
     test("builds complete head with all parts", () => {
       const headData: HeadOptions = {
-        meta: [{ title: "Test" }, { name: "description", content: "Desc" }],
-        links: [{ rel: "stylesheet", href: "/style.css" }],
+        links: [{ href: "/style.css", rel: "stylesheet" }],
+        meta: [{ title: "Test" }, { content: "Desc", name: "description" }],
         scripts: [{ src: "/app.js" }],
         styles: [{ children: "body {}" }],
       };

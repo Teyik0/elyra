@@ -7,7 +7,7 @@ import {
   restoreRscSource,
 } from "../rsc/shared.tsx";
 
-const FRAME_VERSION = 2;
+const FRAME_VERSION = 3;
 const MAX_FRAME_BYTES = 1024 * 1024;
 const MAX_STREAM_BYTES = 8 * 1024 * 1024;
 const RSC_DESCRIPTOR = "__furinRsc";
@@ -18,7 +18,7 @@ interface RouteFrameEnvelope {
 }
 
 export type RouteFrame =
-  | { type: "data"; value: SerovalNode }
+  | { type: "data"; deferredKeys: readonly string[]; value: SerovalNode }
   | { type: "defer-resolve"; key: string; value: SerovalNode }
   | { type: "defer-reject"; key: string; value: SerovalNode }
   | { type: "rsc-start"; id: string; kind: RscSourceKind }
@@ -52,7 +52,7 @@ function extractRscSources(
       return value;
     }
     const id = `rsc-${sources.length}`;
-    sources.push({ id, kind: state.kind, bytes: state.bytes });
+    sources.push({ bytes: state.bytes, id, kind: state.kind });
     return { [RSC_DESCRIPTOR]: id } satisfies RscDescriptor;
   }
   if (value === null || typeof value !== "object") {
@@ -137,16 +137,49 @@ export function serializeRouteFrame(frame: RouteFrame): string {
   return encodeFrame(frame);
 }
 
-export function serializeRouteFrames(data: object): string {
+export function containsRscSource(value: unknown): boolean {
+  return containsRscSourceInner(value, new WeakSet());
+}
+
+function containsRscSourceInner(value: unknown, seen: WeakSet<object>): boolean {
+  if (isRscSource(value)) {
+    return true;
+  }
+  if (value === null || typeof value !== "object") {
+    return false;
+  }
+  if (seen.has(value)) {
+    return false;
+  }
+  seen.add(value);
+  if (Array.isArray(value)) {
+    return value.some((entry) => containsRscSourceInner(entry, seen));
+  }
+  return (
+    isPlainObject(value) &&
+    Object.values(value).some((entry) => containsRscSourceInner(entry, seen))
+  );
+}
+
+export function serializeRouteFrames(
+  data: object,
+  deferredKeys: readonly string[] | undefined
+): string {
   const sources: CollectedRscSource[] = [];
   const serializable = extractRscSources(data, sources, new WeakMap());
-  const lines = [encodeFrame({ type: "data", value: toCrossJSON(serializable) })];
+  const lines = [
+    encodeFrame({
+      deferredKeys: deferredKeys ?? [],
+      type: "data",
+      value: toCrossJSON(serializable),
+    }),
+  ];
   for (const source of sources) {
-    lines.push(encodeFrame({ type: "rsc-start", id: source.id, kind: source.kind }));
+    lines.push(encodeFrame({ id: source.id, kind: source.kind, type: "rsc-start" }));
     for (const value of bytesToFrameValues(source.bytes)) {
-      lines.push(encodeFrame({ type: "rsc-chunk", id: source.id, value }));
+      lines.push(encodeFrame({ id: source.id, type: "rsc-chunk", value }));
     }
-    lines.push(encodeFrame({ type: "rsc-end", id: source.id }));
+    lines.push(encodeFrame({ id: source.id, type: "rsc-end" }));
   }
   const payload = lines.join("");
   if (new TextEncoder().encode(payload).byteLength > MAX_STREAM_BYTES) {
@@ -188,40 +221,62 @@ function hydrateRscDescriptors(value: unknown, sources: Map<string, unknown>): u
   return value;
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one bounded state machine validates every versioned frame variant
+function collectRscDescriptorIds(value: unknown, ids: Set<string>): void {
+  if (value === null || typeof value !== "object") {
+    return;
+  }
+  if (isPlainObject(value) && typeof (value as { __furinRsc?: unknown }).__furinRsc === "string") {
+    ids.add((value as RscDescriptor).__furinRsc);
+    return;
+  }
+  for (const entry of Array.isArray(value) ? value : Object.values(value)) {
+    collectRscDescriptorIds(entry, ids);
+  }
+}
+
 export async function parseRouteFrameLines(
   firstLine: string,
   readLine: () => Promise<string | undefined>
 ): Promise<{
+  abort: (reason: unknown) => void;
+  completion: Promise<void>;
   deferredPromises: { [key: string]: Promise<unknown> };
   syncData: { [key: string]: unknown };
 }> {
-  const lines = [firstLine];
-  for (;;) {
-    const line = await readLine();
-    if (line === undefined) {
-      break;
-    }
-    lines.push(line);
-  }
-  const byteLength = new TextEncoder().encode(lines.join("\n")).byteLength;
-  if (byteLength > MAX_STREAM_BYTES) {
-    throw new Error(`[furin] route frame stream exceeds the ${MAX_STREAM_BYTES}-byte limit`);
-  }
-
-  let dataNode: SerovalNode | undefined;
+  let byteLength = 0;
+  let dataValue: unknown;
   const pending = new Map<string, { chunks: Uint8Array[]; kind: RscSourceKind }>();
   const sources = new Map<string, unknown>();
   const deferredPromises: { [key: string]: Promise<unknown> } = {};
-
-  for (const line of lines) {
+  const resolvers = new Map<
+    string,
+    { reject: (reason: unknown) => void; resolve: (value: unknown) => void }
+  >();
+  const rejectPending = (reason: unknown): void => {
+    for (const resolver of resolvers.values()) {
+      resolver.reject(reason);
+    }
+    resolvers.clear();
+  };
+  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one bounded state machine validates every versioned frame variant
+  const processLine = (line: string): void => {
+    byteLength += new TextEncoder().encode(line).byteLength + 1;
+    if (byteLength > MAX_STREAM_BYTES) {
+      throw new Error(`[furin] route frame stream exceeds the ${MAX_STREAM_BYTES}-byte limit`);
+    }
     const envelope = JSON.parse(line) as RouteFrameEnvelope;
     if (envelope.__furinRouteFrame !== FRAME_VERSION) {
       throw new Error("[furin] unsupported route frame version");
     }
     const frame = envelope.frame;
     if (frame.type === "data") {
-      dataNode = frame.value;
+      dataValue = fromCrossJSON(frame.value, {});
+      for (const key of frame.deferredKeys) {
+        deferredPromises[key] = new Promise((resolve, reject) => {
+          resolvers.set(key, { reject, resolve });
+        });
+        deferredPromises[key]?.catch(() => undefined);
+      }
     } else if (frame.type === "rsc-start") {
       pending.set(frame.id, { chunks: [], kind: frame.kind });
     } else if (frame.type === "rsc-chunk") {
@@ -247,23 +302,53 @@ export async function parseRouteFrameLines(
     } else if (frame.type === "rsc-error") {
       throw new Error(`[furin] RSC stream failed (${frame.digest})`);
     } else if (frame.type === "defer-resolve") {
-      deferredPromises[frame.key] = Promise.resolve(fromCrossJSON(frame.value, {}));
+      resolvers.get(frame.key)?.resolve(fromCrossJSON(frame.value, {}));
+      resolvers.delete(frame.key);
     } else if (frame.type === "defer-reject") {
-      const rejected = Promise.reject(fromCrossJSON(frame.value, {}));
-      rejected.catch(() => undefined);
-      deferredPromises[frame.key] = rejected;
+      resolvers.get(frame.key)?.reject(fromCrossJSON(frame.value, {}));
+      resolvers.delete(frame.key);
     }
-  }
+  };
 
-  if (dataNode === undefined) {
+  processLine(firstLine);
+  if (dataValue === undefined) {
     throw new Error("[furin] route frame stream has no data frame");
   }
-  if (pending.size > 0) {
-    throw new Error("[furin] route frame stream ended before an RSC source completed");
+  const expectedSources = new Set<string>();
+  collectRscDescriptorIds(dataValue, expectedSources);
+  while ([...expectedSources].some((id) => !sources.has(id))) {
+    const line = await readLine();
+    if (line === undefined) {
+      throw new Error("[furin] route frame stream ended before an RSC source completed");
+    }
+    processLine(line);
   }
-  const data = hydrateRscDescriptors(fromCrossJSON(dataNode, {}), sources);
+  const data = hydrateRscDescriptors(dataValue, sources);
   if (data === null || typeof data !== "object" || Array.isArray(data)) {
     throw new Error("[furin] route data frame must decode to an object");
   }
-  return { syncData: data as { [key: string]: unknown }, deferredPromises };
+
+  const completion = (async () => {
+    for (;;) {
+      const line = await readLine();
+      if (line === undefined) {
+        break;
+      }
+      processLine(line);
+    }
+    if (pending.size > 0) {
+      throw new Error("[furin] route frame stream ended before an RSC source completed");
+    }
+    for (const [key, resolver] of resolvers) {
+      resolver.reject(new Error(`[furin] deferred stream closed before "${key}" was resolved`));
+    }
+    resolvers.clear();
+  })().catch((error: unknown) => rejectPending(error));
+
+  return {
+    abort: rejectPending,
+    completion,
+    deferredPromises,
+    syncData: data as { [key: string]: unknown },
+  };
 }

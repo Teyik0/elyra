@@ -36,11 +36,11 @@ export function classifySpaResponse(
     return { kind: "bail" };
   }
   if (isFurinErrorPayload(data.__furinError)) {
-    return { kind: "error", error: data.__furinError };
+    return { error: data.__furinError, kind: "error" };
   }
   if (((status >= 200 && status < 300) || status === 404) && data.__furinStatus === 404) {
     const notFound = data.__furinNotFound as { data?: unknown; message?: string } | undefined;
-    return { kind: "not-found", error: notFound ?? {} };
+    return { error: notFound ?? {}, kind: "not-found" };
   }
   if (status >= 200 && status < 300) {
     return { kind: "ok" };
@@ -65,7 +65,6 @@ export function pickDeepestNotFound(
       return seg.notFound;
     }
   }
-  return;
 }
 
 const DefaultClientNotFoundFallback: NotFoundComponent = ({ error }) =>

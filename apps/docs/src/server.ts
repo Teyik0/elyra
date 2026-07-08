@@ -1,12 +1,13 @@
 import { furin } from "@teyik0/furin";
 import { Elysia } from "elysia";
-import _llmsTxt from "../public/llms.txt" with { type: "file" };
-import _llmsFullTxt from "../public/llms-full.txt" with { type: "file" };
 import mdxPlugin from "./lib/bun-mdx-plugin.ts";
 import { getDocByPath } from "./lib/docs";
 import { getSearchIndexEntries, searchDocs } from "./lib/docs-search";
 import { getDocSourceText } from "./lib/docs-server";
 import { stripMdxToMarkdown } from "./lib/strip-mdx";
+
+const llmsTxtFile = new URL("../public/llms.txt", import.meta.url);
+const llmsFullTxtFile = new URL("../public/llms-full.txt", import.meta.url);
 
 const globalDocsRuntime = globalThis as typeof globalThis & {
   __furinDocsMdxPluginRegistered?: boolean;
@@ -23,14 +24,14 @@ export async function createDocsServer() {
       .get(
         "/llms.txt",
         () =>
-          new Response(Bun.file(_llmsTxt), {
+          new Response(Bun.file(llmsTxtFile), {
             headers: { "Content-Type": "text/markdown; charset=utf-8" },
           })
       )
       .get(
         "/llms-full.txt",
         () =>
-          new Response(Bun.file(_llmsFullTxt), {
+          new Response(Bun.file(llmsFullTxtFile), {
             headers: { "Content-Type": "text/markdown; charset=utf-8" },
           })
       )

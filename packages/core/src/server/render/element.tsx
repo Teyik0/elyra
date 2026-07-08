@@ -54,7 +54,7 @@ export function buildNotFoundElement(
   error: FurinNotFoundError
 ): ReactNode {
   const NotFound = component ?? DefaultNotFoundFallback;
-  return <NotFound error={{ message: error.message, data: error.data }} />;
+  return <NotFound error={{ data: error.data, message: error.message }} />;
 }
 
 function errorMessageOf(err: unknown): string {
@@ -109,5 +109,5 @@ export function buildErrorElement(
   } else {
     message = GENERIC_ERROR_MESSAGE;
   }
-  return <ErrorView error={{ message, digest, status }} reset={SERVER_RESET_NOOP} />;
+  return <ErrorView error={{ digest, message, status }} reset={SERVER_RESET_NOOP} />;
 }

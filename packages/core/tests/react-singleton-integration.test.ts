@@ -151,10 +151,6 @@ describe("furin-dev-page React singleton", () => {
   test("SSR rendering of nested layouts after root reload keeps hook components on the shared React instance", () =>
     withTmpFiles(
       {
-        "root.tsx": `import { createRoute } from "@teyik0/furin/client";
-          export const route = createRoute({
-            layout: ({ children }) => <div data-root="yes">{children}</div>,
-          });`,
         "_route.tsx": (paths) => `import { createRoute } from "@teyik0/furin/client";
           import { Nav } from ${JSON.stringify(paths["nav.tsx"])};
           import { route as rootRoute } from ${JSON.stringify(paths["root.tsx"])};
@@ -175,6 +171,10 @@ describe("furin-dev-page React singleton", () => {
         "page.tsx": (paths) => `import { route } from ${JSON.stringify(paths["_route.tsx"])};
           export default route.page({
             component: () => <main>docs page</main>,
+          });`,
+        "root.tsx": `import { createRoute } from "@teyik0/furin/client";
+          export const route = createRoute({
+            layout: ({ children }) => <div data-root="yes">{children}</div>,
           });`,
       },
       async (paths) => {

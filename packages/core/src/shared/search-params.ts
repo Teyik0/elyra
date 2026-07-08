@@ -108,13 +108,13 @@ export function stripSearchDefaults(
 }
 
 export function appendSearchParamValue(params: URLSearchParams, key: string, value: unknown): void {
-  if (value == null) {
+  if (value === null) {
     return;
   }
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      if (item != null) {
+      if (item !== null) {
         params.append(key, typeof item === "object" ? JSON.stringify(item) : String(item));
       }
     }
@@ -142,7 +142,7 @@ export function collectSearchDefaults(schema: unknown): SearchParamsInput | unde
 
   const defaults: SearchParamsInput = {};
   for (const [key, value] of Object.entries(schema.properties)) {
-    if (isObject(value) && Object.hasOwn(value, "default") && value.default != null) {
+    if (isObject(value) && Object.hasOwn(value, "default") && value.default !== null) {
       defaults[key] = value.default as SearchParamValue;
     }
   }
@@ -177,6 +177,6 @@ export function findSearchDefaultsForRouteTarget(
     const pathname = new URL(to, "http://furin.local").pathname;
     return findSearchDefaults(pathname, routes);
   } catch {
-    return;
+    // Invalid route targets have no search defaults.
   }
 }

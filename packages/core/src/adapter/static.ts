@@ -165,18 +165,18 @@ async function buildTaskQueue(
     STATIC_CONCURRENCY,
     async (route) => {
       if (!DYNAMIC_SEGMENT_RE.test(route.pattern)) {
-        return { route, paramSets: [{}] };
+        return { paramSets: [{}], route };
       }
       if (!route.page.staticParams) {
         console.warn(
           `[furin] static: skipping dynamic route "${route.pattern}" — no staticParams() defined.`
         );
         skippedRoutes.push(route.pattern);
-        return { route, paramSets: null };
+        return { paramSets: null, route };
       }
       try {
         const paramSets = (await route.page.staticParams()) ?? [];
-        return { route, paramSets };
+        return { paramSets, route };
       } catch (err) {
         return { error: err, paramSets: null, route };
       }
@@ -343,12 +343,12 @@ export async function buildStaticTarget(
 
   // ── 3. Build client bundle ────────────────────────────────────────────────
   const { entryChunk, cssChunks } = await buildClient(ssgRoutes, {
-    outDir: targetDir,
-    rootLayout: root.path,
-    plugins: options.plugins,
-    publicPath,
     basePath,
     clientLogging: Boolean(options.clientLogging),
+    outDir: targetDir,
+    plugins: options.plugins,
+    publicPath,
+    rootLayout: root.path,
   });
 
   // ── 4. Generate HTML shell template ──────────────────────────────────────

@@ -6,15 +6,15 @@ export interface CacheInvalidationResult {
 }
 
 export interface Cache<Entry> {
-  clear(): void;
-  delete(key: string): boolean;
-  entries(): IterableIterator<[string, Entry]>;
-  get(key: string): Entry | undefined;
-  has(key: string): boolean;
-  invalidatePath(path: string, type: RevalidateType): CacheInvalidationResult;
-  keys(): IterableIterator<string>;
+  clear: () => void;
+  delete: (key: string) => boolean;
+  entries: () => IterableIterator<[string, Entry]>;
+  get: (key: string) => Entry | undefined;
+  has: (key: string) => boolean;
+  invalidatePath: (path: string, type: RevalidateType) => CacheInvalidationResult;
+  keys: () => IterableIterator<string>;
   readonly name: string;
-  set(key: string, entry: Entry): void;
+  set: (key: string, entry: Entry) => void;
   get size(): number;
   readonly store: Map<string, Entry>;
 }
@@ -64,10 +64,17 @@ export function createRouteCache<Entry>(options: RouteCacheOptions<Entry>): Cach
   };
 
   return {
-    name: options.name,
-    store,
-    get size() {
-      return store.size;
+    clear() {
+      for (const key of [...store.keys()]) {
+        deleteEntry(key);
+      }
+      store.clear();
+    },
+    delete(key) {
+      return deleteEntry(key);
+    },
+    entries() {
+      return store.entries();
     },
     get(key) {
       const entry = store.get(key);
@@ -77,32 +84,8 @@ export function createRouteCache<Entry>(options: RouteCacheOptions<Entry>): Cach
       }
       return entry;
     },
-    set(key, entry) {
-      const previous = store.get(key);
-      if (previous !== undefined) {
-        store.delete(key);
-      }
-      store.set(key, entry);
-      options.onSet?.(key, entry, previous);
-      evictOldest();
-    },
-    delete(key) {
-      return deleteEntry(key);
-    },
-    clear() {
-      for (const key of [...store.keys()]) {
-        deleteEntry(key);
-      }
-      store.clear();
-    },
     has(key) {
       return store.has(key);
-    },
-    entries() {
-      return store.entries();
-    },
-    keys() {
-      return store.keys();
     },
     invalidatePath(path, type) {
       let deleted = false;
@@ -120,5 +103,22 @@ export function createRouteCache<Entry>(options: RouteCacheOptions<Entry>): Cach
 
       return { deleted, purgedPaths: [...new Set(purgedPaths)] };
     },
+    keys() {
+      return store.keys();
+    },
+    name: options.name,
+    set(key, entry) {
+      const previous = store.get(key);
+      if (previous !== undefined) {
+        store.delete(key);
+      }
+      store.set(key, entry);
+      options.onSet?.(key, entry, previous);
+      evictOldest();
+    },
+    get size() {
+      return store.size;
+    },
+    store,
   };
 }

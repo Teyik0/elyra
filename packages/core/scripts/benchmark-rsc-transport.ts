@@ -6,13 +6,13 @@ const results = [1, 10, 100].map((count) => benchmarkRscTransport(flightFixture,
 console.table(
   results.map((result) => ({
     composites: result.composites,
-    winner: result.winner,
-    templateGzip: result.template.compressedBytes,
     scriptGzip: result.script.compressedBytes,
-    templateMemory: result.template.memoryBytes,
     scriptMemory: result.script.memoryBytes,
-    templateScriptUnits: result.template.browserScriptUnits,
     scriptScriptUnits: result.script.browserScriptUnits,
+    templateGzip: result.template.compressedBytes,
+    templateMemory: result.template.memoryBytes,
+    templateScriptUnits: result.template.browserScriptUnits,
+    winner: result.winner,
   }))
 );
 

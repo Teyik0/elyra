@@ -6,29 +6,29 @@ import { join } from "node:path";
 const setSpy = mock();
 
 mock.module("evlog/elysia", () => ({
-  useLogger: () => ({ set: setSpy }),
   evlog: () => (app: unknown) => app,
+  useLogger: () => ({ set: setSpy }),
 }));
 mock.module("evlog", () => ({
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
-  log: { error: () => {}, warn: () => {}, info: () => {}, debug: () => {} },
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-  initLogger: () => {},
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
-  useLogger: () => ({ set() {}, info() {}, warn() {}, error() {} }),
   createLogger: () => ({
-    // biome-ignore lint/suspicious/noEmptyBlockStatements: no-op stub
-    set: () => {},
+    emit: () => null,
     // biome-ignore lint/suspicious/noEmptyBlockStatements: no-op stub
     error: () => {},
+    fork: (_l: string, fn: () => unknown) => fn(),
+    getContext: () => ({}),
     // biome-ignore lint/suspicious/noEmptyBlockStatements: no-op stub
     info: () => {},
     // biome-ignore lint/suspicious/noEmptyBlockStatements: no-op stub
+    set: () => {},
+    // biome-ignore lint/suspicious/noEmptyBlockStatements: no-op stub
     warn: () => {},
-    emit: () => null,
-    getContext: () => ({}),
-    fork: (_l: string, fn: () => unknown) => fn(),
   }),
+  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
+  initLogger: () => {},
+  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
+  log: { debug: () => {}, error: () => {}, info: () => {}, warn: () => {} },
+  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
+  useLogger: () => ({ error() {}, info() {}, set() {}, warn() {} }),
 }));
 
 import { Elysia } from "elysia";

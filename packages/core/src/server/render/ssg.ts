@@ -82,8 +82,8 @@ export async function warmSSGCache(
   const warmupLogger = createLogger({});
   warmupLogger.set({
     furin: {
-      render: "ssg",
       action: "warmup",
+      render: "ssg",
       routes: targets.length,
     },
   });
@@ -99,7 +99,7 @@ export async function warmSSGCache(
     async (route) => {
       try {
         const paramSets = (await route.page.staticParams?.()) ?? [];
-        return { route, paramSets };
+        return { paramSets, route };
       } catch (err) {
         return { error: err, route };
       }
@@ -110,7 +110,7 @@ export async function warmSSGCache(
   for (const result of staticParamsResults) {
     if ("error" in result) {
       logSsgError(
-        { render: "ssg", action: "warmup_failed", route: result.route.pattern },
+        { action: "warmup_failed", render: "ssg", route: result.route.pattern },
         result.error
       );
       continue;
@@ -118,7 +118,7 @@ export async function warmSSGCache(
     const { route, paramSets } = result;
     if (!Array.isArray(paramSets)) {
       logSsgError(
-        { render: "ssg", action: "warmup_failed", route: route.pattern },
+        { action: "warmup_failed", render: "ssg", route: route.pattern },
         new Error(`staticParams() for "${route.pattern}" returned a non-array value`)
       );
       continue;
@@ -128,7 +128,7 @@ export async function warmSSGCache(
         try {
           await prerenderSSG(route, params, root, origin, undefined, searchRoutes);
         } catch (err) {
-          logSsgError({ render: "ssg", action: "prerender_failed", route: route.pattern }, err);
+          logSsgError({ action: "prerender_failed", render: "ssg", route: route.pattern }, err);
         }
       });
     }

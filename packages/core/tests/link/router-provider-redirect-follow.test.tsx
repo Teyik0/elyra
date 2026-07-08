@@ -20,21 +20,21 @@ function makePage(linkTo: string): React.ComponentType<Record<string, unknown>> 
 
 function makeRoute(path: string, linkTo: string): ClientRoute {
   return {
-    pattern: path,
-    regex: new RegExp(`^${path}$`),
     load: async () => ({
       default: {
-        component: makePage(linkTo),
         _route: { __type: "FURIN_ROUTE" } as never,
+        component: makePage(linkTo),
       },
     }),
+    pattern: path,
+    regex: new RegExp(`^${path}$`),
   };
 }
 
 /** Returns a single-line NDJSON response (CrossJSON-serialised) for the /_furin/data endpoint. */
 function makeNdjsonResponse(data: Record<string, unknown>): Response {
   const ndjson = JSON.stringify(toCrossJSON(data));
-  return new Response(ndjson, { status: 200, headers: { "Content-Type": "application/x-ndjson" } });
+  return new Response(ndjson, { headers: { "Content-Type": "application/x-ndjson" }, status: 200 });
 }
 
 interface RenderRouterResult {
@@ -75,31 +75,31 @@ async function renderRouterWithLink(
   flushSync(() => {
     root.render(
       createElement(RouterProvider, {
-        routes,
-        root: null,
-        initialMatch,
-        initialData: {},
-        initialDigest: undefined,
-        initialNotFound: undefined,
         autoRefresh: true,
         basePath: "",
         defaultPreload: "intent",
         defaultPreloadDelay: 50,
         defaultPreloadStaleTime: 30_000,
+        initialData: {},
+        initialDigest: undefined,
+        initialMatch,
+        initialNotFound: undefined,
         prefetchCacheSize: 50,
+        root: null,
+        routes,
       } as any)
     );
   });
 
   return {
-    container,
-    root,
     cleanup: () => {
       flushSync(() => {
         root.unmount();
       });
       container.remove();
     },
+    container,
+    root,
   };
 }
 

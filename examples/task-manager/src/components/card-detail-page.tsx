@@ -30,8 +30,8 @@ export function CardDetailPage({
     const data = new FormData(formRef.current);
     try {
       const { error } = await updateCard({
-        title: data.get("title") as string,
         description: data.get("description") as string,
+        title: data.get("title") as string,
       });
 
       if (error) {

@@ -30,147 +30,147 @@ if ((seedCount?.n ?? 0) === 0) {
 
   db.insert(boards)
     .values([
-      { id: b1, name: "Project Alpha", createdAt: now },
-      { id: b2, name: "Personal Tasks", createdAt: now },
+      { createdAt: now, id: b1, name: "Project Alpha" },
+      { createdAt: now, id: b2, name: "Personal Tasks" },
     ])
     .run();
 
   db.insert(cards)
     .values([
       {
-        id: uid(),
         boardId: b1,
         column: "backlog",
-        title: "Look into render bug in dashboard",
+        createdAt: now,
         description: "The dashboard chart flickers on resize — investigate root cause.",
+        id: uid(),
         position: 0,
-        createdAt: now,
+        title: "Look into render bug in dashboard",
       },
       {
-        id: uid(),
         boardId: b1,
         column: "backlog",
-        title: "SOX compliance checklist",
+        createdAt: now,
         description: "Review and document all access control policies.",
+        id: uid(),
         position: 1,
-        createdAt: now,
+        title: "SOX compliance checklist",
       },
       {
-        id: uid(),
         boardId: b1,
         column: "backlog",
-        title: "[SPIKE] Migrate to Bun runtime",
+        createdAt: now,
         description: "Evaluate performance gains of switching from Node to Bun.",
+        id: uid(),
         position: 2,
-        createdAt: now,
+        title: "[SPIKE] Migrate to Bun runtime",
       },
       {
-        id: uid(),
         boardId: b1,
         column: "todo",
-        title: "Design API schema",
+        createdAt: now,
         description: "Define REST endpoints and OpenAPI spec for v2.",
+        id: uid(),
         position: 0,
-        createdAt: now,
+        title: "Design API schema",
       },
       {
-        id: uid(),
         boardId: b1,
         column: "todo",
-        title: "Set up observability",
+        createdAt: now,
         description: "Wire evlog adapters to Datadog and configure alerts.",
+        id: uid(),
         position: 1,
-        createdAt: now,
+        title: "Set up observability",
       },
       {
-        id: uid(),
         boardId: b1,
         column: "todo",
-        title: "Postmortem for outage",
+        createdAt: now,
         description: "Write up the June 3rd incident and action items.",
+        id: uid(),
         position: 2,
-        createdAt: now,
+        title: "Postmortem for outage",
       },
       {
-        id: uid(),
         boardId: b1,
         column: "doing",
-        title: "Build Kanban UI",
+        createdAt: now,
         description: "Create reusable drag-and-drop board with framer-motion.",
+        id: uid(),
         position: 0,
-        createdAt: now,
+        title: "Build Kanban UI",
       },
       {
-        id: uid(),
         boardId: b1,
         column: "doing",
-        title: "Add logging to CRON jobs",
+        createdAt: now,
         description: "Ensure scheduled tasks emit structured events.",
+        id: uid(),
         position: 1,
-        createdAt: now,
+        title: "Add logging to CRON jobs",
       },
       {
-        id: uid(),
         boardId: b1,
         column: "done",
-        title: "Project scaffolding",
+        createdAt: now,
         description: "Initialize Bun + Elysia + Furin monorepo.",
+        id: uid(),
         position: 0,
-        createdAt: now,
+        title: "Project scaffolding",
       },
       {
-        id: uid(),
         boardId: b1,
         column: "done",
-        title: "Set up DD dashboards",
+        createdAt: now,
         description: "Lambda listener metrics now visible in Datadog.",
+        id: uid(),
         position: 1,
-        createdAt: now,
+        title: "Set up DD dashboards",
       },
       {
-        id: uid(),
         boardId: b2,
         column: "backlog",
-        title: "Read Bun docs",
+        createdAt: now,
         description: "Learn about Bun.serve, Bun.build and the native test runner.",
+        id: uid(),
         position: 0,
-        createdAt: now,
+        title: "Read Bun docs",
       },
       {
-        id: uid(),
         boardId: b2,
         column: "backlog",
-        title: "Explore Furin routing",
-        description: "Understand ISR, SSR and nested layout patterns.",
-        position: 1,
         createdAt: now,
+        description: "Understand ISR, SSR and nested layout patterns.",
+        id: uid(),
+        position: 1,
+        title: "Explore Furin routing",
       },
       {
-        id: uid(),
         boardId: b2,
         column: "todo",
-        title: "Write integration tests",
-        description: "Cover all API endpoints with Bun test.",
-        position: 0,
         createdAt: now,
+        description: "Cover all API endpoints with Bun test.",
+        id: uid(),
+        position: 0,
+        title: "Write integration tests",
       },
       {
-        id: uid(),
         boardId: b2,
         column: "doing",
-        title: "Refactor context providers",
-        description: "Replace prop-drilling with Zustand stores.",
-        position: 0,
         createdAt: now,
+        description: "Replace prop-drilling with Zustand stores.",
+        id: uid(),
+        position: 0,
+        title: "Refactor context providers",
       },
       {
-        id: uid(),
         boardId: b2,
         column: "done",
-        title: "Buy groceries",
-        description: "Milk, eggs, coffee, and sourdough bread.",
-        position: 0,
         createdAt: now,
+        description: "Milk, eggs, coffee, and sourdough bread.",
+        id: uid(),
+        position: 0,
+        title: "Buy groceries",
       },
     ])
     .run();
@@ -189,7 +189,7 @@ export function getBoard(id: string): Board | undefined {
 }
 
 export function createBoard(name: string): Board {
-  const board: Board = { id: uid(), name, createdAt: new Date().toISOString() };
+  const board: Board = { createdAt: new Date().toISOString(), id: uid(), name };
   db.insert(boards).values(board).run();
   return board;
 }
@@ -232,7 +232,7 @@ export interface BoardStats {
  * that just called `getBoardData`) to avoid a redundant DB roundtrip.
  */
 export function computeBoardStats(boardCards: Card[]): BoardStats {
-  const byColumn = { backlog: 0, todo: 0, doing: 0, done: 0 };
+  const byColumn = { backlog: 0, doing: 0, done: 0, todo: 0 };
   for (const card of boardCards) {
     byColumn[card.column as keyof typeof byColumn]++;
   }
@@ -240,7 +240,7 @@ export function computeBoardStats(boardCards: Card[]): BoardStats {
   const total = boardCards.length;
   const completionRate = total > 0 ? Math.round((byColumn.done / total) * 100) : 0;
 
-  return { total, byColumn, completionRate };
+  return { byColumn, completionRate, total };
 }
 
 export function getBoardStats(boardId: string): BoardStats | undefined {

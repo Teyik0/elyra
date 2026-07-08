@@ -8,9 +8,9 @@ const FURIN_DATA_REGEX = /<script id="__FURIN_DATA__"[^>]*>(.*?)<\/script>/s;
 // request context.  These unit tests call render functions directly, so we
 // provide a no-op stub.
 mock.module("evlog/elysia", () => ({
+  evlog: () => (app: unknown) => app,
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
   useLogger: () => ({ set() {} }),
-  evlog: () => (app: unknown) => app,
 }));
 
 import type { HTTPHeaders } from "elysia/types";
@@ -48,14 +48,14 @@ const DEFER_ERROR_RE = /defer\(\)/;
 
 function createMockLoaderContext(overrides: Partial<Context> = {}) {
   return {
-    params: {},
-    query: {},
-    request: new Request("http://localhost/test"),
-    headers: {},
     cookie: {},
-    redirect: (url) => new Response(null, { status: 302, headers: { Location: url } }),
-    set: { headers: {} as HTTPHeaders },
+    headers: {},
+    params: {},
     path: "/test",
+    query: {},
+    redirect: (url) => new Response(null, { headers: { Location: url }, status: 302 }),
+    request: new Request("http://localhost/test"),
+    set: { headers: {} as HTTPHeaders },
     ...overrides,
   } as Context;
 }
@@ -169,8 +169,8 @@ describe("render.tsx", () => {
 
       const ctx = createMockLoaderContext({
         params: { boardId: "abc" },
-        query: { tab: "active" },
         path: "/with-loader",
+        query: { tab: "active" },
       });
       const result = await runLoaders(withLoaderRoute, ctx);
 
@@ -231,8 +231,8 @@ describe("render.tsx", () => {
       const withLoaderRoute = await getRoute("/with-loader");
 
       const ctx = createMockLoaderContext({
-        path: "/with-loader",
         cookie: {} as Record<string, Cookie<unknown>>,
+        path: "/with-loader",
       });
 
       const customRoute = {
@@ -292,7 +292,7 @@ describe("render.tsx", () => {
         ...withLoaderRoute,
         page: {
           ...withLoaderRoute.page,
-          loader: () => notFound({ message: "Post gone", data: { slug: "missing" } }),
+          loader: () => notFound({ data: { slug: "missing" }, message: "Post gone" }),
         },
       } as ResolvedRoute;
 
@@ -320,8 +320,8 @@ describe("render.tsx", () => {
         const withLoaderRoute = await getRoute("/with-loader");
         const mockRoute = {
           ...withLoaderRoute,
-          routeChain: [withLoaderRoute.routeChain[0], producer, consumer],
           page: { ...withLoaderRoute.page, loader: undefined },
+          routeChain: [withLoaderRoute.routeChain[0], producer, consumer],
         } as ResolvedRoute;
         await runLoaders(mockRoute, createMockLoaderContext());
         expect(capturedToken).toBe("secret");
@@ -346,8 +346,8 @@ describe("render.tsx", () => {
         const withLoaderRoute = await getRoute("/with-loader");
         const mockRoute = {
           ...withLoaderRoute,
-          routeChain: [withLoaderRoute.routeChain[0], grandparent, parent, child],
           page: { ...withLoaderRoute.page, loader: undefined },
+          routeChain: [withLoaderRoute.routeChain[0], grandparent, parent, child],
         } as ResolvedRoute;
         await runLoaders(mockRoute, createMockLoaderContext());
         expect(capturedOrg).toBe("acme");
@@ -367,8 +367,8 @@ describe("render.tsx", () => {
         const withLoaderRoute = await getRoute("/with-loader");
         const mockRoute = {
           ...withLoaderRoute,
-          routeChain: [withLoaderRoute.routeChain[0], r],
           page: { ...withLoaderRoute.page, loader: undefined },
+          routeChain: [withLoaderRoute.routeChain[0], r],
         } as ResolvedRoute;
         await runLoaders(mockRoute, createMockLoaderContext({ path: "/test" }));
         // Must be direct values, not Promises
@@ -384,7 +384,6 @@ describe("render.tsx", () => {
         const withLoaderRoute = await getRoute("/with-loader");
         const mockRoute = {
           ...withLoaderRoute,
-          routeChain: [withLoaderRoute.routeChain[0], routeLoader],
           page: {
             ...withLoaderRoute.page,
             loader: async (ctx: Record<string, unknown>) => {
@@ -392,6 +391,7 @@ describe("render.tsx", () => {
               return { result: capturedFromPage };
             },
           },
+          routeChain: [withLoaderRoute.routeChain[0], routeLoader],
         } as ResolvedRoute;
         const res = await runLoaders(mockRoute, createMockLoaderContext());
         expect(capturedFromPage).toBe("alice");
@@ -417,8 +417,8 @@ describe("render.tsx", () => {
         const withLoaderRoute = await getRoute("/with-loader");
         const mockRoute = {
           ...withLoaderRoute,
-          routeChain: [withLoaderRoute.routeChain[0], p1, p2, consumer],
           page: { ...withLoaderRoute.page, loader: undefined },
+          routeChain: [withLoaderRoute.routeChain[0], p1, p2, consumer],
         } as ResolvedRoute;
         await runLoaders(mockRoute, createMockLoaderContext());
         expect(capturedA).toBe(1);
@@ -451,8 +451,8 @@ describe("render.tsx", () => {
         const withLoaderRoute = await getRoute("/with-loader");
         const mockRoute = {
           ...withLoaderRoute,
-          routeChain: [withLoaderRoute.routeChain[0], a1, a2],
           page: { ...withLoaderRoute.page, loader: undefined },
+          routeChain: [withLoaderRoute.routeChain[0], a1, a2],
         } as ResolvedRoute;
 
         await runLoaders(mockRoute, createMockLoaderContext());
@@ -468,11 +468,11 @@ describe("render.tsx", () => {
         const withLoaderRoute = await getRoute("/with-loader");
         const mockRoute = {
           ...withLoaderRoute,
-          routeChain: [withLoaderRoute.routeChain[0], a1, a2],
           page: {
             ...withLoaderRoute.page,
             loader: async () => ({ keyC: "valueC" }),
           },
+          routeChain: [withLoaderRoute.routeChain[0], a1, a2],
         } as unknown as ResolvedRoute;
         const result = await runLoaders(mockRoute, createMockLoaderContext());
         expect(result.type).toBe("data");
@@ -514,8 +514,8 @@ describe("render.tsx", () => {
 
       const ctx = createMockLoaderContext({
         params: { id: "456" },
-        query: { sort: "asc" },
         path: "/dynamic/456",
+        query: { sort: "asc" },
       });
       const result = await renderToHTML(dynamicRoute, ctx, root);
 
@@ -709,10 +709,10 @@ describe("render.tsx", () => {
           ...ssrRoute.page,
           component: () =>
             createElement(Link, {
-              to: "/",
-              inactiveProps: () => ({ "aria-label": "inactive-home" }),
               // biome-ignore lint/correctness/noChildrenProp: createElement accepts children as prop
               children: "Home",
+              inactiveProps: () => ({ "aria-label": "inactive-home" }),
+              to: "/",
             }),
         },
       };
@@ -737,11 +737,11 @@ describe("render.tsx", () => {
           ...ssrRoute.page,
           component: () =>
             createElement(Link, {
-              to: "/ssr-page",
-              search: { page: 2 },
               activeProps: ({ isActive }) => (isActive ? { "aria-label": "active-page" } : {}),
               // biome-ignore lint/correctness/noChildrenProp: createElement accepts children as prop
               children: "Page 2",
+              search: { page: 2 },
+              to: "/ssr-page",
             }),
         },
       };
@@ -816,22 +816,22 @@ describe("render.tsx", () => {
         ...ssrRoute,
         page: {
           ...ssrRoute.page,
-          loader: () =>
-            defer({
-              slow: new Promise((resolve) => setTimeout(() => resolve("done"), 50)),
-            }),
           component: (props: Record<string, unknown>) => {
             const slow = props.slow as Promise<string>;
             return createElement(
               Suspense,
               { fallback: createElement("span", null, "loading") },
               createElement(Await, {
-                resolve: slow,
                 // biome-ignore lint/correctness/noChildrenProp: render-prop pattern — Await requires children as a function; cannot be passed as 3rd createElement arg due to TypeScript overloads
                 children: (value: unknown) => createElement("span", null, String(value)),
+                resolve: slow,
               })
             );
           },
+          loader: () =>
+            defer({
+              slow: new Promise((resolve) => setTimeout(() => resolve("done"), 50)),
+            }),
         },
       } as unknown as ResolvedRoute;
 
@@ -851,7 +851,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const redirectMock = (url: string) =>
-        new Response(null, { status: 302, headers: { Location: url } });
+        new Response(null, { headers: { Location: url }, status: 302 });
       const ctx = createMockLoaderContext({
         path: "/ssr-page",
         redirect: redirectMock,
@@ -887,8 +887,8 @@ describe("render.tsx", () => {
           ...ssrRoute.page,
           loader: () =>
             defer({
-              slow: new Promise((r) => setTimeout(() => r("slow-value"), 80)),
               fast: new Promise((r) => setTimeout(() => r("fast-value"), 10)),
+              slow: new Promise((r) => setTimeout(() => r("slow-value"), 80)),
             }),
         },
       } as unknown as ResolvedRoute;
@@ -1059,21 +1059,21 @@ describe("render.tsx", () => {
       // during render if the user's error component is broken.
       const throwingComponentRoute = {
         ...isrRoute,
-        page: {
-          ...isrRoute.page,
-          // Loader throws → status 500, element built as error UI
-          loader: () => {
-            throw new Error("ISR-loader-boom");
-          },
-          // Page component would not be reached, but provide one just in case
-          component: () => {
-            throw new Error("should-not-reach-this");
-          },
-        },
         // Custom error component that also throws during render, to exercise the
         // double-fallback path (user error component → built-in DefaultErrorComponent).
         error: () => {
           throw new Error("error-tsx-also-broke");
+        },
+        page: {
+          ...isrRoute.page,
+          // Page component would not be reached, but provide one just in case
+          component: () => {
+            throw new Error("should-not-reach-this");
+          },
+          // Loader throws → status 500, element built as error UI
+          loader: () => {
+            throw new Error("ISR-loader-boom");
+          },
         },
       } as unknown as ResolvedRoute;
 
@@ -1246,10 +1246,10 @@ describe("render.tsx", () => {
         mode: "ssg" as const,
         page: {
           ...indexRoute.page,
-          staticParams: async () => [{}],
           component: () => {
             throw new Error("render boom");
           },
+          staticParams: async () => [{}],
         },
       } as ResolvedRoute;
 
@@ -1311,7 +1311,7 @@ describe("render.tsx", () => {
       const root = await getRoot();
 
       const redirectMock = (url: string) =>
-        new Response(null, { status: 307, headers: { Location: url } });
+        new Response(null, { headers: { Location: url }, status: 307 });
       const ctx = createMockLoaderContext({
         path: "/ssr-page",
         redirect: redirectMock,
@@ -1398,7 +1398,7 @@ describe("render.tsx", () => {
         page: {
           ...isrRoute.page,
           loader: () => {
-            throw new Response(null, { status: 302, headers: { Location: "/foo" } });
+            throw new Response(null, { headers: { Location: "/foo" }, status: 302 });
           },
         },
       } as ResolvedRoute;

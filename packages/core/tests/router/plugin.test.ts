@@ -11,7 +11,7 @@ async function getRoute(pattern: string) {
   if (!route) {
     throw new Error(`Route ${pattern} not found`);
   }
-  return { route, root: result.root };
+  return { root: result.root, route };
 }
 
 describe("createRoutePlugin", () => {

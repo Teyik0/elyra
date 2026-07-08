@@ -22,9 +22,9 @@ export async function stage2Selection(ctx: PipelineContext): Promise<void> {
     const chosen = await select({
       message: "Which template would you like to use?",
       options: registry.templates.map((t) => ({
-        value: t.id as TemplateId,
-        label: t.label,
         hint: t.description,
+        label: t.label,
+        value: t.id as TemplateId,
       })),
     });
 

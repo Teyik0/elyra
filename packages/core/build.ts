@@ -12,10 +12,6 @@ await $`bunx tsc --project tsconfig.dts.json`;
 // Bun folds some outputs into others or omits them entirely. Building each
 // entrypoint separately produces correct, self-contained bundles.
 const shared = {
-  outdir: `${import.meta.dir}/dist`,
-  root: `${import.meta.dir}/src`,
-  target: "bun" as const,
-  format: "esm" as const,
   external: [
     "elysia",
     "react",
@@ -24,8 +20,12 @@ const shared = {
     "@babel/parser",
     "@elysiajs/static",
   ],
+  format: "esm" as const,
   minify: false,
+  outdir: `${import.meta.dir}/dist`,
+  root: `${import.meta.dir}/src`,
   sourcemap: false,
+  target: "bun" as const,
 };
 
 await Promise.all([
@@ -49,10 +49,10 @@ await Promise.all([
 
 await Bun.build({
   ...shared,
-  entrypoints: [`${import.meta.dir}/src/rsc/server-codec.ts`],
-  outdir: `${import.meta.dir}/dist/rsc`,
   conditions: ["react-server"],
+  entrypoints: [`${import.meta.dir}/src/rsc/server-codec.ts`],
   naming: "server-codec.js",
+  outdir: `${import.meta.dir}/dist/rsc`,
 });
 
 // Copy ambient declaration so it is available for the ./env export.

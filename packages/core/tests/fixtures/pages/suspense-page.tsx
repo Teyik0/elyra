@@ -3,8 +3,8 @@ import { createRoute } from "../../../src/client";
 import { route as rootRoute } from "./root";
 
 const suspenseRoute = createRoute({
-  parent: rootRoute,
   mode: "ssr",
+  parent: rootRoute,
 });
 
 // Resolves synchronously on the next microtask — enough to trigger a Suspense boundary.

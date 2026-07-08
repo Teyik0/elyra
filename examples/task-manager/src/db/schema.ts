@@ -6,25 +6,25 @@ import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 // ---------------------------------------------------------------------------
 
 export const boards = sqliteTable("boards", {
+  createdAt: text("created_at").notNull(),
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  createdAt: text("created_at").notNull(),
 });
 
 export type ColumnType = "backlog" | "todo" | "doing" | "done";
 
 export const cards = sqliteTable("cards", {
-  id: text("id").primaryKey(),
   boardId: text("board_id")
     .notNull()
     .references(() => boards.id, { onDelete: "cascade" }),
   column: text("column", { enum: ["backlog", "todo", "doing", "done"] })
     .notNull()
     .$type<ColumnType>(),
-  title: text("title").notNull(),
-  description: text("description").notNull().default(""),
-  position: integer("position").notNull().default(0),
   createdAt: text("created_at").notNull(),
+  description: text("description").notNull().default(""),
+  id: text("id").primaryKey(),
+  position: integer("position").notNull().default(0),
+  title: text("title").notNull(),
 });
 
 // ---------------------------------------------------------------------------

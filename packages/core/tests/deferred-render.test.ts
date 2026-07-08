@@ -71,7 +71,7 @@ describe("buildDeferredResolution()", () => {
   });
 
   test("the seroval chunk can be deserialized by fromCrossJSON on the client (with empty options)", () => {
-    const value = { nested: { n: 1 }, arr: [1, 2, 3] };
+    const value = { arr: [1, 2, 3], nested: { n: 1 } };
     const chunk = toCrossJSON(value);
     const script = buildDeferredResolution("data", chunk, "resolve");
     // Simulates what the hydration code does: JSON.parse then fromCrossJSON

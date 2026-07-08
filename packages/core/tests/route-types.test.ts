@@ -3,7 +3,11 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { t } from "elysia";
-import { patternToTypeString, schemaToTypeString, writeRouteTypes } from "../src/build";
+import {
+  patternToTypeString,
+  schemaToTypeString,
+  writeRouteTypes,
+} from "../src/build/route-types.ts";
 import type { ResolvedRoute } from "../src/server/router/index.ts";
 
 // ── patternToTypeString ───────────────────────────────────────────────────────
@@ -63,61 +67,61 @@ describe("schemaToTypeString", () => {
 
   test("object schema — all required fields", () => {
     const schema = {
-      type: "object",
-      properties: { name: { type: "string" }, age: { type: "number" } },
+      properties: { age: { type: "number" }, name: { type: "string" } },
       required: ["name", "age"],
+      type: "object",
     };
-    expect(schemaToTypeString(schema)).toBe("{ name: string; age: number }");
+    expect(schemaToTypeString(schema)).toBe("{ age: number; name: string }");
   });
 
   test("object schema — all optional fields (not in required array)", () => {
     const schema = {
-      type: "object",
       properties: { page: { type: "number" }, tag: { type: "string" } },
       required: [],
+      type: "object",
     };
     expect(schemaToTypeString(schema)).toBe("{ page?: number; tag?: string }");
   });
 
   test("object schema — optional field with default is present", () => {
     const schema = {
-      type: "object",
-      properties: { city: { type: "string", default: "Paris" }, tag: { type: "string" } },
+      properties: { city: { default: "Paris", type: "string" }, tag: { type: "string" } },
       required: [],
+      type: "object",
     };
     expect(schemaToTypeString(schema)).toBe("{ city: string; tag?: string }");
   });
 
   test("object schema — mixed required and optional", () => {
     const schema = {
-      type: "object",
       properties: { id: { type: "string" }, page: { type: "number" } },
       required: ["id"],
+      type: "object",
     };
     expect(schemaToTypeString(schema)).toBe("{ id: string; page?: number }");
   });
 
   test("array schema — emits array item type", () => {
     const schema = {
-      type: "object",
-      properties: { tags: { type: "array", items: { type: "string" } } },
+      properties: { tags: { items: { type: "string" }, type: "array" } },
       required: [],
+      type: "object",
     };
     expect(schemaToTypeString(schema)).toBe("{ tags?: string[] }");
   });
 
   test("array schema — parenthesizes union item type", () => {
     const schema = {
-      type: "array",
       items: { anyOf: [{ type: "string" }, { type: "number" }] },
+      type: "array",
     };
     expect(schemaToTypeString(schema)).toBe("(string | number)[]");
   });
 
   test("object schema — no required array (all optional)", () => {
     const schema = {
-      type: "object",
       properties: { q: { type: "string" } },
+      type: "object",
     };
     expect(schemaToTypeString(schema)).toBe("{ q?: string }");
   });
@@ -152,7 +156,7 @@ describe("writeRouteTypes", () => {
   });
 
   afterAll(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
+    rmSync(tmpDir, { force: true, recursive: true });
   });
 
   /** Build minimal ResolvedRoute stubs. */
@@ -165,10 +169,10 @@ describe("writeRouteTypes", () => {
     const resolvedTags = tags ?? {};
     return patterns.map((pattern) => ({
       pattern,
-      tags: resolvedTags[pattern],
       routeChain: resolvedQuerySchemas[pattern]
         ? [{ __type: "FURIN_ROUTE" as const, query: resolvedQuerySchemas[pattern] }]
         : [],
+      tags: resolvedTags[pattern],
     })) as ResolvedRoute[];
   }
 
@@ -192,9 +196,9 @@ describe("writeRouteTypes", () => {
 
   test("static route with query schema — emits typed search", () => {
     const querySchema = {
-      type: "object",
       properties: { page: { type: "number" }, tag: { type: "string" } },
       required: [],
+      type: "object",
     };
     writeRouteTypes(routes(["/blog"], { "/blog": querySchema }, undefined), tmpDir);
 
@@ -206,9 +210,9 @@ describe("writeRouteTypes", () => {
 
   test("static route with query defaults — emits resolved read type and optional write input", () => {
     const querySchema = {
-      type: "object",
-      properties: { page: { type: "number", default: 1 }, tag: { type: "string" } },
+      properties: { page: { default: 1, type: "number" }, tag: { type: "string" } },
       required: [],
+      type: "object",
     };
     writeRouteTypes(routes(["/products"], { "/products": querySchema }, undefined), tmpDir);
 

@@ -5,6 +5,9 @@ import { getDocSourceText } from "@/lib/docs-server";
 import { route } from "./_route";
 
 export default route.page({
+  component: ({ doc, markdownSource }) => (
+    <DocPage Content={HeadSeo} doc={doc} markdownSource={markdownSource} />
+  ),
   head: () => ({
     meta: [{ title: "Head & SEO — Furin" }],
   }),
@@ -12,7 +15,4 @@ export default route.page({
     const doc = DOCS_BY_PATH["/docs/head-seo"];
     return { doc, markdownSource: getDocSourceText(doc.sourcePath) };
   },
-  component: ({ doc, markdownSource }) => (
-    <DocPage Content={HeadSeo} doc={doc} markdownSource={markdownSource} />
-  ),
 });

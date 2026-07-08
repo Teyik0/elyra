@@ -29,7 +29,6 @@ function statusFromResponseValue(responseValue: unknown): number | undefined {
       return code;
     }
   }
-  return;
 }
 
 export function isSuccessfulMutationResponse(

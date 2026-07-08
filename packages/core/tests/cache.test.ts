@@ -4,28 +4,28 @@ const emittedLogs: Record<string, unknown>[] = [];
 
 mock.module("evlog", () => ({
   createLogger: (ctx: Record<string, unknown>) => ({
-    set: (data: Record<string, unknown>) => {
-      Object.assign(ctx, data);
+    emit: () => {
+      emittedLogs.push({ ...ctx });
     },
     error: (err: Error) => {
       ctx.error = err;
     },
-    emit: () => {
-      emittedLogs.push({ ...ctx });
-    },
+    fork: (_label: string, fn: () => unknown) => fn(),
+    getContext: () => ctx,
     // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
     info: () => {},
+    set: (data: Record<string, unknown>) => {
+      Object.assign(ctx, data);
+    },
     // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
     warn: () => {},
-    getContext: () => ctx,
-    fork: (_label: string, fn: () => unknown) => fn(),
   }),
 }));
 
 mock.module("evlog/elysia", () => ({
+  evlog: () => (app: unknown) => app,
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
   useLogger: () => ({ set() {} }),
-  evlog: () => (app: unknown) => app,
 }));
 
 import {
@@ -84,8 +84,8 @@ afterEach(() => {
 describe("revalidatePath page eviction", () => {
   test("removes an exact ISR cache entry", () => {
     setISRCache("/blog/post", {
-      html: "<html>post</html>",
       generatedAt: Date.now(),
+      html: "<html>post</html>",
       revalidate: 60,
     });
     expect(isrCache.has("/blog/post")).toBe(true);
@@ -97,8 +97,8 @@ describe("revalidatePath page eviction", () => {
 
   test("returns true when a cache entry was deleted", () => {
     setISRCache("/blog/post", {
-      html: "<html>post</html>",
       generatedAt: Date.now(),
+      html: "<html>post</html>",
       revalidate: 60,
     });
 
@@ -129,13 +129,13 @@ describe("revalidatePath page eviction", () => {
 
   test("does not remove unrelated ISR cache entries", () => {
     setISRCache("/blog/post-1", {
-      html: "<html>1</html>",
       generatedAt: Date.now(),
+      html: "<html>1</html>",
       revalidate: 60,
     });
     setISRCache("/blog/post-2", {
-      html: "<html>2</html>",
       generatedAt: Date.now(),
+      html: "<html>2</html>",
       revalidate: 60,
     });
 
@@ -151,18 +151,18 @@ describe("revalidatePath page eviction", () => {
 describe("revalidatePath layout prefix eviction", () => {
   test("evicts all ISR cache entries under the given prefix", () => {
     setISRCache("/blog/post-1", {
-      html: "<html>1</html>",
       generatedAt: Date.now(),
+      html: "<html>1</html>",
       revalidate: 60,
     });
     setISRCache("/blog/post-2", {
-      html: "<html>2</html>",
       generatedAt: Date.now(),
+      html: "<html>2</html>",
       revalidate: 60,
     });
     setISRCache("/other/page", {
-      html: "<html>other</html>",
       generatedAt: Date.now(),
+      html: "<html>other</html>",
       revalidate: 60,
     });
 
@@ -202,8 +202,8 @@ describe("revalidatePath layout prefix eviction", () => {
 
   test("evicts the exact path itself when type is layout", () => {
     setISRCache("/blog", {
-      html: "<html>blog index</html>",
       generatedAt: Date.now(),
+      html: "<html>blog index</html>",
       revalidate: 60,
     });
 
@@ -214,8 +214,8 @@ describe("revalidatePath layout prefix eviction", () => {
 
   test("returns true when at least one entry was evicted", () => {
     setISRCache("/blog/post", {
-      html: "<html>post</html>",
       generatedAt: Date.now(),
+      html: "<html>post</html>",
       revalidate: 60,
     });
 
@@ -313,8 +313,8 @@ describe("setCachePurger", () => {
     });
 
     setISRCache("/blog/post", {
-      html: "<html>post</html>",
       generatedAt: Date.now(),
+      html: "<html>post</html>",
       revalidate: 60,
     });
     revalidatePath("/blog/post", "page");
@@ -349,13 +349,13 @@ describe("setCachePurger", () => {
     });
 
     setISRCache("/blog/post-1", {
-      html: "<html>1</html>",
       generatedAt: Date.now(),
+      html: "<html>1</html>",
       revalidate: 60,
     });
     setISRCache("/blog/post-2", {
-      html: "<html>2</html>",
       generatedAt: Date.now(),
+      html: "<html>2</html>",
       revalidate: 60,
     });
     revalidatePath("/blog", "layout");
@@ -420,8 +420,8 @@ describe("ISR LRU eviction", () => {
     const count = 1001;
     for (let i = 0; i < count; i++) {
       setISRCache(`/page-${i}`, {
-        html: `<html>${i}</html>`,
         generatedAt: Date.now(),
+        html: `<html>${i}</html>`,
         revalidate: 60,
       });
     }
@@ -453,17 +453,17 @@ describe("ISR LRU eviction", () => {
   test("getISRCache re-inserts entry at the end so it is not evicted as oldest", () => {
     // Insert 999 entries
     for (let i = 0; i < 999; i++) {
-      setISRCache(`/page-${i}`, { html: "", generatedAt: Date.now(), revalidate: 60 });
+      setISRCache(`/page-${i}`, { generatedAt: Date.now(), html: "", revalidate: 60 });
     }
 
     // Promote /page-0 to most-recently-used by reading it
     getISRCache("/page-0");
 
     // Insert one more entry to push size to 1000 (no eviction yet)
-    setISRCache("/page-999", { html: "", generatedAt: Date.now(), revalidate: 60 });
+    setISRCache("/page-999", { generatedAt: Date.now(), html: "", revalidate: 60 });
 
     // Insert the 1001st entry — oldest is now /page-1 (not /page-0)
-    setISRCache("/page-1000", { html: "", generatedAt: Date.now(), revalidate: 60 });
+    setISRCache("/page-1000", { generatedAt: Date.now(), html: "", revalidate: 60 });
 
     expect(isrCache.has("/page-0")).toBe(true); // promoted — still alive
     expect(isrCache.has("/page-1")).toBe(false); // true oldest — evicted

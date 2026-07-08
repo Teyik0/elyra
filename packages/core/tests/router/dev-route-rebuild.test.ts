@@ -21,10 +21,10 @@ function makePage(routeOverrides: Partial<RuntimeRoute>, hasLoader: boolean): Ru
 
 function makeBase(mode: "ssr" | "ssg" | "isr"): ResolvedRoute {
   return {
-    pattern: "/foo",
-    path: "/abs/pages/foo.tsx",
     mode,
     page: makePage({}, false),
+    path: "/abs/pages/foo.tsx",
+    pattern: "/foo",
     routeChain: [makeRuntimeRoute({})],
     segmentBoundaries: [],
   };
@@ -76,14 +76,14 @@ describe("rebuildDevRoute", () => {
     const baseError = () => null;
     const baseNotFound = () => null;
     const base: ResolvedRoute = {
-      pattern: "/foo",
-      path: "/abs/pages/foo.tsx",
+      error: baseError,
       mode: "ssr",
+      notFound: baseNotFound,
       page: makePage({}, true),
+      path: "/abs/pages/foo.tsx",
+      pattern: "/foo",
       routeChain: [makeRuntimeRoute({}), makeRuntimeRoute({})],
       segmentBoundaries: baseSegmentBoundaries,
-      error: baseError,
-      notFound: baseNotFound,
     };
     const freshPage = makePage({ revalidate: 10 }, true);
     const freshChain: RuntimeRoute[] = [makeRuntimeRoute({})];

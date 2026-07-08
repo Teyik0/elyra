@@ -25,10 +25,10 @@ function makeMouseEvent(overrides: {
   altKey?: boolean;
 }): MouseEvent {
   return new MouseEvent("click", {
+    altKey: overrides.altKey ?? false,
     ctrlKey: overrides.ctrlKey ?? false,
     metaKey: overrides.metaKey ?? false,
     shiftKey: overrides.shiftKey ?? false,
-    altKey: overrides.altKey ?? false,
   });
 }
 

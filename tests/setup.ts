@@ -1,4 +1,3 @@
-import { afterEach, beforeEach } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 // happy-dom overrides some native Web APIs with incomplete polyfills.
@@ -21,9 +20,10 @@ const nativeWritableStream = globalThis.WritableStream;
 GlobalRegistrator.register({
   settings: {
     disableCSSFileLoading: true,
-    disableJavaScriptFileLoading: true,
     disableJavaScriptEvaluation: true,
+    disableJavaScriptFileLoading: true,
   },
+  url: "http://localhost:3000/",
 });
 
 // happy-dom@20.9.0 omits window.SyntaxError, breaking CSS selector parsing
@@ -58,9 +58,6 @@ function ensureWindowShims(): void {
   }
   if (typeof window.history === "undefined") {
     (window as Window & { history: History }).history = {
-      length: 1,
-      scrollRestoration: "auto",
-      state: null,
       back: () => {
         /* noop */
       },
@@ -70,12 +67,15 @@ function ensureWindowShims(): void {
       go: () => {
         /* noop */
       },
+      length: 1,
       pushState: () => {
         /* noop */
       },
       replaceState: () => {
         /* noop */
       },
+      scrollRestoration: "auto",
+      state: null,
     } as History;
   }
 }
@@ -106,49 +106,3 @@ if (nativeReadableStream) {
 if (nativeWritableStream) {
   globalThis.WritableStream = nativeWritableStream;
 }
-
-beforeEach(() => {
-  // Re-apply SyntaxError patch before every test — bun --isolate may reset
-  // the global scope between test files, stripping the happy-dom patch.
-  patchSyntaxError();
-
-  // Re-ensure window APIs exist in case --isolate created a fresh scope.
-  ensureWindowShims();
-
-  // Ensure a valid origin for every test. happy-dom defaults to about:blank
-  // with a null origin, which breaks isInternal() in <Link> and any code
-  // that resolves relative URLs against window.location. We only navigate
-  // when needed — assigning to `location.href` recreates `window` and any
-  // patches we put on it (SyntaxError, etc.) would be wiped.
-  if (
-    typeof window !== "undefined" &&
-    typeof window.location !== "undefined" &&
-    window.location.href !== "http://localhost:3000/"
-  ) {
-    window.location.href = "http://localhost:3000/";
-  }
-
-  // Re-apply the SyntaxError patch and window shims *after* the potential nav:
-  // assigning to `location.href` makes happy-dom navigate the detached frame,
-  // which recreates `window` (and `document.defaultView`) without the patched
-  // SyntaxError or the window.open / window.history shims. Without this second
-  // pass, any test that subsequently parses CSS / a selector hits "undefined is
-  // not a constructor" inside happy-dom's SelectorParser, or finds a missing
-  // window.open / window.history — flakiness depending on test ordering.
-  patchSyntaxError();
-  ensureWindowShims();
-});
-
-afterEach(() => {
-  // Reset location to a safe default so cross-test pathname pollution
-  // (e.g. hash-only navigation tests that mutate window.location) does
-  // not bleed into the next test. Only navigate when the URL actually
-  // changed, to avoid happy-dom recreating `window` for nothing.
-  if (window.location.href !== "http://localhost:3000/") {
-    window.location.href = "http://localhost:3000/";
-  }
-  // Re-apply the patch and window shims in case the test (or happy-dom
-  // microtasks fired during it) swapped the window object.
-  patchSyntaxError();
-  ensureWindowShims();
-});

@@ -9,20 +9,20 @@ function makeRouterContext(overrides: Partial<RouterContextValue> | undefined): 
   return {
     basePath: "",
     currentHref: "/",
-    search: {},
-    searchRoutes: [],
+    defaultPreload: "intent",
+    defaultPreloadDelay: 50,
+    defaultPreloadStaleTime: 30_000,
+    invalidatePrefetch: () => {
+      /* noop */
+    },
+    isNavigating: false,
     navigate: () => Promise.resolve(),
     prefetch: () => {
       /* noop */
     },
-    invalidatePrefetch: () => {
-      /* noop */
-    },
     refresh: () => Promise.resolve(),
-    isNavigating: false,
-    defaultPreload: "intent",
-    defaultPreloadDelay: 50,
-    defaultPreloadStaleTime: 30_000,
+    search: {},
+    searchRoutes: [],
     ...(overrides ?? {}),
   };
 }
@@ -71,8 +71,8 @@ describe("buildRouterTree — error boundary fallback navigation", () => {
     container.remove();
     Object.defineProperty(window, "location", {
       configurable: true,
-      writable: true,
       value: { href: originalHref },
+      writable: true,
     });
   });
 
@@ -98,13 +98,13 @@ describe("buildRouterTree — error boundary fallback navigation", () => {
 
     // Simulate a plain left-click (no modifiers)
     const clickEvent = new MouseEvent("click", {
+      altKey: false,
       bubbles: true,
-      cancelable: true,
       button: 0,
+      cancelable: true,
       ctrlKey: false,
       metaKey: false,
       shiftKey: false,
-      altKey: false,
     });
     anchor.dispatchEvent(clickEvent);
 

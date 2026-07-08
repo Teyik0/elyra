@@ -1,15 +1,23 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const MAX_FLIGHT_BYTES = 4 * 1024 * 1024;
 
 interface ServerCodec {
-  renderFlight(model: unknown, signal: AbortSignal | undefined): ReadableStream<Uint8Array>;
+  renderFlight: (model: unknown, signal: AbortSignal | undefined) => ReadableStream<Uint8Array>;
 }
 
 let serverCodecPromise: Promise<ServerCodec> | undefined;
+
+export function resolveConfiguredCodecPath(configuredPath: string | undefined): string | undefined {
+  if (configuredPath === undefined) {
+    return;
+  }
+  const codecPath = isAbsolute(configuredPath) ? configuredPath : resolve(configuredPath);
+  return existsSync(codecPath) ? codecPath : undefined;
+}
 
 function loadServerCodec(): Promise<ServerCodec> {
   if (serverCodecPromise !== undefined) {
@@ -17,6 +25,10 @@ function loadServerCodec(): Promise<ServerCodec> {
   }
 
   serverCodecPromise = (async () => {
+    const configuredCodecPath = resolveConfiguredCodecPath(process.env.FURIN_RSC_CODEC_PATH);
+    if (configuredCodecPath !== undefined) {
+      return import(pathToFileURL(configuredCodecPath).href) as Promise<ServerCodec>;
+    }
     const builtCodecPath = join(import.meta.dir, "server-codec.js");
     if (existsSync(builtCodecPath)) {
       return import(pathToFileURL(builtCodecPath).href) as Promise<ServerCodec>;
@@ -30,13 +42,13 @@ function loadServerCodec(): Promise<ServerCodec> {
       );
     }
     const result = await Bun.build({
-      entrypoints: [sourcePath],
-      outdir,
-      target: "bun",
-      format: "esm",
       conditions: ["react-server"],
+      entrypoints: [sourcePath],
+      format: "esm",
       minify: false,
+      outdir,
       sourcemap: "none",
+      target: "bun",
     });
     if (!result.success || result.outputs.length !== 1) {
       const details = result.logs.map((log) => log.message).join("\n");

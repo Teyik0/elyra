@@ -21,9 +21,9 @@ export function parseSource(code: string, lang: SourceLang): ParseResult {
   }
   try {
     const file = babelParse(code, {
-      sourceType: "module",
-      plugins,
       createParenthesizedExpressions: true,
+      plugins,
+      sourceType: "module",
     });
     return { diagnostics: [], program: file.program as unknown as Program };
   } catch (error) {

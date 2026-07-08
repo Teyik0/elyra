@@ -2,16 +2,16 @@ import { describe, expect, mock, test } from "bun:test";
 
 // Stub evlog/elysia before importing render modules
 mock.module("evlog/elysia", () => ({
+  evlog: () => (app: unknown) => app,
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
   useLogger: () => ({ set() {} }),
-  evlog: () => (app: unknown) => app,
 }));
 
 mock.module("evlog", () => ({
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
-  log: { warn: () => {}, error: () => {}, info: () => {}, set: () => {} },
+  createLogger: () => ({ emit() {}, error() {}, info() {}, set() {}, warn() {} }),
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
-  createLogger: () => ({ set() {}, error() {}, emit() {}, info() {}, warn() {} }),
+  log: { error: () => {}, info: () => {}, set: () => {}, warn: () => {} },
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
   useLogger: () => ({ set() {} }),
 }));
@@ -24,14 +24,14 @@ import type { ResolvedRoute } from "../src/server/router/index.ts";
 
 function makeCtx(overrides: Partial<Context> = {}): Context {
   return {
-    params: {},
-    query: {},
-    request: new Request("http://localhost/test"),
-    headers: {},
     cookie: {},
-    redirect: (url: string) => new Response(null, { status: 302, headers: { Location: url } }),
-    set: { headers: {} as HTTPHeaders },
+    headers: {},
+    params: {},
     path: "/test",
+    query: {},
+    redirect: (url: string) => new Response(null, { headers: { Location: url }, status: 302 }),
+    request: new Request("http://localhost/test"),
+    set: { headers: {} as HTTPHeaders },
     ...overrides,
   } as Context;
 }
@@ -41,13 +41,7 @@ function makeRoute(
   routeLoaders: ((ctx: Record<string, unknown>) => unknown)[]
 ): ResolvedRoute {
   return {
-    pattern: "/test",
-    path: "/test",
     mode: "ssr",
-    routeChain: routeLoaders.map((loader) => ({
-      __type: "FURIN_ROUTE" as const,
-      loader: loader as (ctx: Record<string, unknown>) => Promise<Record<string, unknown>>,
-    })),
     page: pageLoader
       ? {
           __type: "FURIN_PAGE" as const,
@@ -60,13 +54,19 @@ function makeRoute(
           _route: { __type: "FURIN_ROUTE" as const },
           component: () => null,
         },
+    path: "/test",
+    pattern: "/test",
+    routeChain: routeLoaders.map((loader) => ({
+      __type: "FURIN_ROUTE" as const,
+      loader: loader as (ctx: Record<string, unknown>) => Promise<Record<string, unknown>>,
+    })),
     segmentBoundaries: [],
   } as unknown as ResolvedRoute;
 }
 
 describe("runLoaders — DeferredData", () => {
   test("normal loader (without defer) → syncData contains everything, deferredPromises absent", async () => {
-    const route = makeRoute(() => ({ title: "hello", count: 42 }), []);
+    const route = makeRoute(() => ({ count: 42, title: "hello" }), []);
     const result = await runLoaders(route, makeCtx());
 
     expect(result.type).toBe("data");
@@ -74,13 +74,13 @@ describe("runLoaders — DeferredData", () => {
       return;
     }
 
-    expect(result.syncData).toMatchObject({ title: "hello", count: 42 });
+    expect(result.syncData).toMatchObject({ count: 42, title: "hello" });
     expect(result.deferredPromises).toBeUndefined();
   });
 
   test("loader with defer() → syncData contains scalars, deferredPromises the Promises", async () => {
     const statsPromise = Promise.resolve(99);
-    const route = makeRoute(() => defer({ title: "hello", stats: statsPromise }), []);
+    const route = makeRoute(() => defer({ stats: statsPromise, title: "hello" }), []);
     const result = await runLoaders(route, makeCtx());
 
     expect(result.type).toBe("data");
@@ -119,8 +119,8 @@ describe("runLoaders — DeferredData", () => {
     const route = makeRoute(
       () =>
         defer({
-          title: "board",
           stats: Promise.resolve(1),
+          title: "board",
           users: Promise.resolve([]),
         }),
       []
@@ -144,7 +144,7 @@ describe("runLoaders — DeferredData", () => {
         resolve(7);
       },
     };
-    const route = makeRoute(() => defer({ title: "hello", stats: thenable }), []);
+    const route = makeRoute(() => defer({ stats: thenable, title: "hello" }), []);
 
     const result = await runLoaders(route, makeCtx());
 
@@ -166,7 +166,7 @@ describe("runLoaders — DeferredData", () => {
     if (result.type !== "data") {
       return;
     }
-    expect(result.syncData).toMatchObject({ routeData: "from-route", pageTitle: "page" });
+    expect(result.syncData).toMatchObject({ pageTitle: "page", routeData: "from-route" });
     expect(result.deferredPromises).toBeUndefined();
   });
 
@@ -188,7 +188,7 @@ describe("runLoaders — DeferredData", () => {
 
   test("layout deferred + page sync → layout Promises split, layout scalars merged into syncData", async () => {
     const route = makeRoute(
-      () => ({ pageTitle: "page", count: 3 }),
+      () => ({ count: 3, pageTitle: "page" }),
       [() => defer({ user: "alice", widgets: Promise.resolve(["w1", "w2"]) })]
     );
     const result = await runLoaders(route, makeCtx());
@@ -197,7 +197,7 @@ describe("runLoaders — DeferredData", () => {
     if (result.type !== "data") {
       return;
     }
-    expect(result.syncData).toMatchObject({ user: "alice", pageTitle: "page", count: 3 });
+    expect(result.syncData).toMatchObject({ count: 3, pageTitle: "page", user: "alice" });
     expect(result.syncData).not.toHaveProperty("widgets");
     expect(result.deferredPromises?.widgets).toBeInstanceOf(Promise);
     expect(await result.deferredPromises?.widgets).toEqual(["w1", "w2"]);
@@ -214,7 +214,7 @@ describe("runLoaders — DeferredData", () => {
     if (result.type !== "data") {
       return;
     }
-    expect(result.syncData).toMatchObject({ user: "alice", pageTitle: "page" });
+    expect(result.syncData).toMatchObject({ pageTitle: "page", user: "alice" });
     expect(result.deferredPromises).toHaveProperty("widgets");
     expect(result.deferredPromises).toHaveProperty("stats");
     expect(await result.deferredPromises?.stats).toBe(42);
@@ -232,7 +232,7 @@ describe("runLoaders — DeferredData", () => {
     if (result.type !== "data") {
       return;
     }
-    expect(result.syncData).toMatchObject({ org: "acme", user: "alice", pageTitle: "page" });
+    expect(result.syncData).toMatchObject({ org: "acme", pageTitle: "page", user: "alice" });
     expect(result.deferredPromises).toBeDefined();
     expect(result.deferredPromises).toHaveProperty("widgets");
     expect(Object.keys(result.deferredPromises ?? {})).toEqual(["widgets"]);

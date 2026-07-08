@@ -1,9 +1,12 @@
 import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import type { AnySchema } from "elysia/types";
 import { toCrossJSON, toCrossJSONAsync } from "seroval";
-import { isRscSource } from "../../rsc/shared.tsx";
 import { computeErrorDigest } from "../../shared/digest.ts";
-import { serializeRouteFrame, serializeRouteFrames } from "../../shared/route-frame.ts";
+import {
+  containsRscSource,
+  serializeRouteFrame,
+  serializeRouteFrames,
+} from "../../shared/route-frame.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { useLogger } from "../context-logger.ts";
@@ -22,12 +25,8 @@ import { extractTitle } from "../render/shell.ts";
 import { IS_DEV } from "../runtime-env.ts";
 import { handleDevRequest } from "./hmr.ts";
 import { buildRouteMatcher } from "./patterns.ts";
-import {
-  applySchemaDefaults,
-  mergeRouteSchemas,
-  parseDataEndpointPath,
-  parseRouteQuery,
-} from "./schemas.ts";
+import { mergeRouteSchemas } from "./schema-merge.ts";
+import { applySchemaDefaults, parseDataEndpointPath, parseRouteQuery } from "./schemas.ts";
 import type { ResolvedRoute, RootLayout } from "./types.ts";
 
 type SyntheticDataContext = Omit<Context, "params" | "query"> & {
@@ -51,12 +50,12 @@ async function createLoaderDataResponse(
   }
   if (result.type === "not-found") {
     const serialized = await toCrossJSONAsync({
+      __furinNotFound: { data: result.error.data, message: result.error.message },
       __furinStatus: 404,
-      __furinNotFound: { message: result.error.message, data: result.error.data },
     });
     return new Response(`${JSON.stringify(serialized)}\n`, {
-      status: 200,
       headers: { "content-type": "application/x-ndjson" },
+      status: 200,
     });
   }
   if (result.type === "error") {
@@ -68,14 +67,14 @@ async function createLoaderDataResponse(
       },
     });
     return new Response(`${JSON.stringify(serialized)}\n`, {
-      status: result.status,
       headers: { "content-type": "application/x-ndjson" },
+      status: result.status,
     });
   }
 
   const syncDataWithTitle = withResolvedTitle(route, result.syncData);
   if (result.deferredPromises !== undefined) {
-    const hasRsc = Object.values(syncDataWithTitle).some((value) => isRscSource(value));
+    const hasRsc = containsRscSource(syncDataWithTitle);
     const body = hasRsc
       ? createRscDeferredFrameStream(syncDataWithTitle, result.deferredPromises)
       : createDeferredNdjsonStream(syncDataWithTitle, result.deferredPromises);
@@ -86,7 +85,7 @@ async function createLoaderDataResponse(
       },
     });
   }
-  return new Response(serializeRouteFrames(syncDataWithTitle), {
+  return new Response(serializeRouteFrames(syncDataWithTitle, undefined), {
     headers: {
       ...result.headers,
       "content-type": "application/x-furin-route",
@@ -251,18 +250,18 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       const syntheticRequest = new Request(new URL(pathname + url.search, ctx.request.url));
       const syntheticSet = { headers: {} as Record<string, string>, status: 200 as number };
       const syntheticCtx: SyntheticDataContext = {
-        request: syntheticRequest,
-        params: matched.params,
-        query: Object.fromEntries(url.searchParams),
-        set: syntheticSet,
-        headers: ctx.headers,
         cookie: ctx.cookie,
+        headers: ctx.headers,
+        params: matched.params,
         path: pathname,
+        query: Object.fromEntries(url.searchParams),
         // Loader-emitted redirects flow through `runLoaders` → `result.type
         // === "redirect"` and are converted to NDJSON below. The Response we
         // return here only has to be detectable by that pipeline.
         redirect: (location: string, status?: number) =>
-          new Response(null, { status: status ?? 302, headers: { location } }),
+          new Response(null, { headers: { location }, status: status ?? 302 }),
+        request: syntheticRequest,
+        set: syntheticSet,
         // Synthetic `status` helper: numeric codes only. Callers that reach
         // this endpoint never dispatch a string-keyed status; rejecting them
         // is safer than coercing via `Number(code)` and silently producing
@@ -318,15 +317,17 @@ function createRscDeferredFrameStream(
   const encoder = new TextEncoder();
   return new ReadableStream<Uint8Array>({
     async start(controller) {
-      controller.enqueue(encoder.encode(serializeRouteFrames(syncData)));
+      controller.enqueue(
+        encoder.encode(serializeRouteFrames(syncData, Object.keys(deferredPromises)))
+      );
       await Promise.all(
         Object.entries(deferredPromises).map(async ([key, promise]) => {
           try {
             controller.enqueue(
               encoder.encode(
                 serializeRouteFrame({
-                  type: "defer-resolve",
                   key,
+                  type: "defer-resolve",
                   value: toCrossJSON(await promise),
                 })
               )
@@ -335,8 +336,8 @@ function createRscDeferredFrameStream(
             controller.enqueue(
               encoder.encode(
                 serializeRouteFrame({
-                  type: "defer-reject",
                   key,
+                  type: "defer-reject",
                   value: toCrossJSON(await serializeDeferredRejection(error)),
                 })
               )
@@ -401,13 +402,13 @@ function createDeferredNdjsonStream(
             const value = await promise;
             controller.enqueue(
               enc.encode(
-                `${JSON.stringify({ key, action: "resolve", value: toCrossJSON(value) })}\n`
+                `${JSON.stringify({ action: "resolve", key, value: toCrossJSON(value) })}\n`
               )
             );
           } catch (err) {
             const normalized = await serializeDeferredRejection(err);
             const value = toCrossJSON(normalized);
-            controller.enqueue(enc.encode(`${JSON.stringify({ key, action: "reject", value })}\n`));
+            controller.enqueue(enc.encode(`${JSON.stringify({ action: "reject", key, value })}\n`));
           }
         })
       );

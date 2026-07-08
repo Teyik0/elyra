@@ -70,6 +70,8 @@ const route = createRoute({
 
 The component receives `requestData` as a Promise. Read it below an explicit `<Suspense>` boundary. Furin caches only the public React 19.2 prerender shell and resumes the private section once per request. Pure static export rejects `requestLoader` because no request runtime exists.
 
+Public `loader` functions on these cached routes cannot read `request`, `cookie`, or request `headers`; Furin rejects that access to prevent user-specific data from entering a shared shell. Move all request-specific work to `requestLoader`.
+
 Mutations remain Elysia/Eden Treaty endpoints. Furin does not expose React Server Functions or accept incoming Flight payloads.
 
 ## SSR

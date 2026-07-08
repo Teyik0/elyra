@@ -171,7 +171,7 @@ export function buildRouteRegex(pattern: string): { regex: RegExp; paramNames: s
       i++;
     }
   }
-  return { regex: new RegExp(`^${source}$`), paramNames };
+  return { paramNames, regex: new RegExp(`^${source}$`) };
 }
 
 export interface RoutePatternLike {
@@ -212,7 +212,7 @@ export function buildRouteMatcher<TRoute extends RoutePatternLike>(
           params[name] = match[i + 1] ?? "";
         }
       }
-      return { route: candidate.route, params };
+      return { params, route: candidate.route };
     }
     return null;
   };

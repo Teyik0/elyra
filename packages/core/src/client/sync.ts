@@ -54,7 +54,7 @@ function getResolvedError(result: unknown): unknown | undefined {
   }
 
   const error = (result as EdenErrorResult).error;
-  return error == null ? undefined : error;
+  return error === null ? undefined : error;
 }
 
 export function useSync<TInput, TResult>(

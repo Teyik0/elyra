@@ -145,10 +145,10 @@ describe("FurinErrorBoundary", () => {
   test("componentDidUpdate calls onReset after clearing via resetKey change", () => {
     let called = 0;
     const boundary = makeErrorBoundaryInState(new Error("boom"), {
-      resetKey: 1,
       onReset: () => {
         called += 1;
       },
+      resetKey: 1,
     });
     Object.assign(boundary.props, { resetKey: 2 });
     boundary.componentDidUpdate({ children: null, resetKey: 1 });

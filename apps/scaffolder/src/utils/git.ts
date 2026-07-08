@@ -28,10 +28,10 @@ export interface GitInitResult {
 
 export function initGitRepo(targetDir: string): GitInitResult {
   if (!runGit(targetDir, ["init"]).ok) {
-    return { initialized: false, committed: false };
+    return { committed: false, initialized: false };
   }
   if (!runGit(targetDir, ["add", "-A"]).ok) {
-    return { initialized: true, committed: false };
+    return { committed: false, initialized: true };
   }
 
   const commitResult = runGit(targetDir, [
@@ -47,8 +47,8 @@ export function initGitRepo(targetDir: string): GitInitResult {
       commitResult.stderr.includes("unable to auto-detect email address");
 
     return {
-      initialized: true,
       committed: false,
+      initialized: true,
       message: missingIdentity
         ? "Initial commit skipped: configure git user.name and user.email to enable automatic commits."
         : commitResult.stderr || undefined,
@@ -56,7 +56,7 @@ export function initGitRepo(targetDir: string): GitInitResult {
   }
 
   return {
-    initialized: true,
     committed: true,
+    initialized: true,
   };
 }

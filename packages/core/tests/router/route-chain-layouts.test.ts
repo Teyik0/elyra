@@ -107,8 +107,8 @@ describe("resolveMode", () => {
       {
         __type: "FURIN_ROUTE",
         query: {
+          properties: { page: { default: 1, type: "number" } },
           type: "object",
-          properties: { page: { type: "number", default: 1 } },
         },
       },
     ] as RuntimeRoute[];
@@ -160,8 +160,8 @@ describe("resolveMode", () => {
     const page = {
       __type: "FURIN_PAGE" as const,
       _route: { __type: "FURIN_ROUTE" as const },
-      loader: async () => ({ data: "test" }),
       component: () => null,
+      loader: async () => ({ data: "test" }),
     } as RuntimePage;
     const chain = [] as RuntimeRoute[];
 
@@ -192,9 +192,9 @@ describe("resolveMode", () => {
     const page = {
       __type: "FURIN_PAGE" as const,
       _route: { __type: "FURIN_ROUTE" as const },
+      component: () => null,
       loader: async () => ({ data: "test" }),
       revalidate: 0,
-      component: () => null,
     } as RuntimePage;
     const chain = [] as RuntimeRoute[];
 
@@ -220,7 +220,7 @@ export { route };`
     expect(scanPages(tempDir)).rejects.toThrowError();
 
     if (existsSync(tempDir)) {
-      rmSync(tempDir, { recursive: true, force: true });
+      rmSync(tempDir, { force: true, recursive: true });
     }
   });
 });

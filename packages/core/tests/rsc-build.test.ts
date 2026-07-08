@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildRscGraph } from "../src/rsc/build";
 import { environmentGuardPlugin } from "../src/rsc/build/environment";
+import { resolveConfiguredCodecPath } from "../src/rsc/codec";
 import { assertCompatibleRscVersions } from "../src/rsc/version";
 
 const paths: string[] = [];
@@ -21,11 +22,11 @@ function buildProtectedImport(graph: "client" | "rsc", specifier: string) {
   const entry = join(root, "entry.ts");
   writeFileSync(entry, `import ${JSON.stringify(specifier)};`);
   return Bun.build({
+    conditions: graph === "rsc" ? ["react-server"] : undefined,
     entrypoints: [entry],
     outdir: join(root, "out"),
-    target: graph === "client" ? "browser" : "bun",
-    conditions: graph === "rsc" ? ["react-server"] : undefined,
     plugins: [environmentGuardPlugin(graph)],
+    target: graph === "client" ? "browser" : "bun",
   });
 }
 
@@ -39,6 +40,15 @@ describe("RSC graph environment guards", () => {
     await buildRscGraph([], { path: rootEntry, route: {} as never }, root, "test-build", undefined);
 
     expect(existsSync(join(root, "server-codec.js"))).toBe(true);
+  });
+
+  test("uses an explicitly configured prebuilt Flight codec", () => {
+    const root = mkdtempSync(join(tmpdir(), "furin-rsc-codec-"));
+    paths.push(root);
+    const codecPath = join(root, "server-codec.js");
+    writeFileSync(codecPath, "export const renderFlight = () => null;");
+
+    expect(resolveConfiguredCodecPath(codecPath)).toBe(codecPath);
   });
 
   test("rejects mismatched React and Flight codec versions", () => {

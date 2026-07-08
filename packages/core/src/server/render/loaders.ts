@@ -147,7 +147,7 @@ function splitOneLoaderResult(result: Record<string, unknown>): {
       sync[key] = value;
     }
   }
-  return { sync, deferred };
+  return { deferred, sync };
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
@@ -227,7 +227,7 @@ function mergeLoaderResults(results: unknown[]): {
     Object.assign(allSync, sync);
     Object.assign(allDeferred, deferred);
   }
-  return { allSync, allDeferred };
+  return { allDeferred, allSync };
 }
 
 /**
@@ -276,7 +276,9 @@ async function runLoadersInternal(
     // useLogger() resolves the correct logger for every rendering context:
     // live request → evlog request-scoped logger, synthetic render → detached
     // createLogger() from runInSyntheticRenderScope, outside any context → no-op.
-    const ctxRecord = { ...(ctx as Record<string, unknown>), log: useLogger() };
+    const ctxRecord = includeRequestData
+      ? { ...(ctx as Record<string, unknown>), log: useLogger() }
+      : createPublicLoaderContext(ctx);
     const loaderMap = new Map<RuntimeRoute, Promise<Record<string, unknown>>>();
 
     // All loaders in the chain start immediately. Each receives a Proxy where
@@ -336,22 +338,22 @@ async function runLoadersInternal(
     // Route context is always injected into syncData so components receive
     // params, query and path regardless of the serialisation path (SSR, SPA
     // nav, dev cache).
-    const routeCtx = { params: ctx.params, query: ctx.query, path: ctx.path };
+    const routeCtx = { params: ctx.params, path: ctx.path, query: ctx.query };
     return {
-      type: "data",
-      syncData: { ...allSync, ...routeCtx },
       deferredPromises: Object.keys(allDeferred).length > 0 ? allDeferred : undefined,
       headers,
+      syncData: { ...allSync, ...routeCtx },
+      type: "data",
     };
   } catch (err) {
     const headers: Record<string, string> = {};
     Object.assign(headers, ctx.set.headers);
     if (isNotFoundError(err)) {
-      return { type: "not-found", error: err, headers };
+      return { error: err, headers, type: "not-found" };
     }
     if (err instanceof Response) {
       if (isHttpRedirect(err)) {
-        return { type: "redirect", response: err };
+        return { response: err, type: "redirect" };
       }
       // Non-redirect Response → error. Read the body ONCE here so downstream
       // consumers (digest, logging, error UI) all share the same extracted
@@ -365,16 +367,38 @@ async function runLoadersInternal(
       const status = isMalformedRedirect ? 500 : err.status;
       const body = await readResponseMessage(err);
       const message = body || "Something went wrong";
-      return { type: "error", error: err, status, message, headers };
+      return { error: err, headers, message, status, type: "error" };
     }
     return {
-      type: "error",
       error: err,
-      status: 500,
-      message: "Something went wrong",
       headers,
+      message: "Something went wrong",
+      status: 500,
+      type: "error",
     };
   }
+}
+
+function createPublicLoaderContext(ctx: Context): Record<string, unknown> {
+  const publicContext: Record<string, unknown> = {
+    log: useLogger(),
+    params: ctx.params,
+    path: ctx.path,
+    query: ctx.query,
+    redirect: ctx.redirect,
+    set: ctx.set,
+  };
+  const fail = (): never => {
+    throw new Error(
+      "[furin] Cached public loaders cannot access request, cookie, or headers. Move request-specific work to requestLoader."
+    );
+  };
+  Object.defineProperties(publicContext, {
+    cookie: { enumerable: true, get: fail },
+    headers: { enumerable: true, get: fail },
+    request: { enumerable: true, get: fail },
+  });
+  return publicContext;
 }
 
 export function runLoaders(route: ResolvedRoute, ctx: Context): Promise<LoaderResult> {

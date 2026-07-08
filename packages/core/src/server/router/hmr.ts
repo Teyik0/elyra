@@ -78,8 +78,6 @@ async function importFreshLayoutRouteModule(
       return freshMod;
     }
   }
-
-  return;
 }
 
 function patchRouteEntryFromFreshModule(
@@ -173,9 +171,9 @@ export function rebuildDevRoute(
 ): ResolvedRoute {
   return {
     ...base,
+    mode: resolveMode(page, chain),
     page,
     routeChain: chain,
-    mode: resolveMode(page, chain),
     tags: collectRouteTags(chain, page),
   };
 }
@@ -255,7 +253,7 @@ export async function handleDevRequest(
   // delegating to renderSSR with an undefined page.
   return new Response(
     `<!doctype html><html><body><h1>Page load error</h1><p>Could not load ${route.path}. Check the server console for details.</p></body></html>`,
-    { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } }
+    { headers: { "Content-Type": "text/html; charset=utf-8" }, status: 500 }
   );
 }
 
@@ -276,10 +274,10 @@ export async function renderDevISRWithLoaderCache(
 
   if (cached && isDevLoaderCacheValid(cached)) {
     const precomputed: LoaderResult = {
-      type: "data",
-      syncData: cached.loaderData,
       deferredPromises: undefined,
       headers: cached.headers,
+      syncData: cached.loaderData,
+      type: "data",
     };
     return renderSSR(route, ctx, root, precomputed, searchRoutes);
   }
@@ -322,10 +320,10 @@ export async function renderDevSSGWithLoaderCache(
 
   if (cached && isDevLoaderCacheValid(cached)) {
     const precomputed: LoaderResult = {
-      type: "data",
-      syncData: cached.loaderData,
       deferredPromises: undefined,
       headers: cached.headers,
+      syncData: cached.loaderData,
+      type: "data",
     };
     return renderSSR(route, ctx, root, precomputed, searchRoutes);
   }

@@ -34,10 +34,10 @@ test("deletes a board with an idempotent Eden request", async () => {
     root.render(
       createElement(BoardCard, {
         board: {
-          id: "board-1",
-          name: "Test board",
           createdAt: "2026-06-26T00:00:00.000Z",
           formattedCreatedAt: "Jun 26, 2026",
+          id: "board-1",
+          name: "Test board",
         },
       })
     );

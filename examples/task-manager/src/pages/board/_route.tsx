@@ -20,13 +20,6 @@ function boardHue(id: string): string {
 }
 
 export const route = createRoute({
-  parent: rootRoute,
-  params: t.Object({ boardId: t.String() }),
-  tags: ["boards"],
-  loader: () => {
-    const sidebarBoards = getBoards();
-    return { sidebarBoards };
-  },
   layout: ({ children, sidebarBoards }) => (
     <div className="flex min-h-screen">
       {/* ─── Sidebar ──────────────────────────────────────────── */}
@@ -104,4 +97,11 @@ export const route = createRoute({
       <main className="flex flex-1 flex-col overflow-hidden">{children}</main>
     </div>
   ),
+  loader: () => {
+    const sidebarBoards = getBoards();
+    return { sidebarBoards };
+  },
+  params: t.Object({ boardId: t.String() }),
+  parent: rootRoute,
+  tags: ["boards"],
 });

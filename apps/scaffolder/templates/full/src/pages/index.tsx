@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { route } from "./root";
 
 export default route.page({
-  loader: () => getHelloPayload(),
   component: ({ message, source }) => (
     <div className="w-full space-y-8">
       <div className="space-y-2">
@@ -50,4 +49,5 @@ export default route.page({
       </Card>
     </div>
   ),
+  loader: () => getHelloPayload(),
 });

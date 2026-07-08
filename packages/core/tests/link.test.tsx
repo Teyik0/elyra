@@ -39,20 +39,20 @@ function makeRouterContext(overrides: Partial<RouterContextValue> | undefined): 
   return {
     basePath: "",
     currentHref: "/",
-    search: {},
-    searchRoutes: [],
+    defaultPreload: "intent",
+    defaultPreloadDelay: 50,
+    defaultPreloadStaleTime: 30_000,
+    invalidatePrefetch: () => {
+      /* noop */
+    },
+    isNavigating: false,
     navigate: () => Promise.resolve(),
     prefetch: () => {
       /* noop */
     },
-    invalidatePrefetch: () => {
-      /* noop */
-    },
     refresh: () => Promise.resolve(),
-    isNavigating: false,
-    defaultPreload: "intent",
-    defaultPreloadDelay: 50,
-    defaultPreloadStaleTime: 30_000,
+    search: {},
+    searchRoutes: [],
     ...(overrides ?? {}),
   };
 }
@@ -75,10 +75,10 @@ function makeMatch(
   const p = pattern ?? "/";
   return {
     component,
+    load: () => Promise.resolve({ default: { _route: pageRoute, component } }),
     pageRoute,
     pattern: p,
     regex: new RegExp(`^${p}$`),
-    load: () => Promise.resolve({ default: { component, _route: pageRoute } }),
   };
 }
 
@@ -283,7 +283,7 @@ describe("Link", () => {
 
   test("passes through className", () => {
     const html = renderToStaticMarkup(
-      createElement(Link, { to: "/about", className: "nav-link" }, "About")
+      createElement(Link, { className: "nav-link", to: "/about" }, "About")
     );
     expect(html).toContain('class="nav-link"');
     expect(html).toContain('href="/about"');
@@ -291,7 +291,7 @@ describe("Link", () => {
 
   test("passes through aria attributes", () => {
     const html = renderToStaticMarkup(
-      createElement(Link, { to: "/", "aria-label": "Home page" }, "Home")
+      createElement(Link, { "aria-label": "Home page", to: "/" }, "Home")
     );
     expect(html).toContain('aria-label="Home page"');
   });
@@ -320,7 +320,7 @@ describe("Link", () => {
   test("search params are serialized into the href", () => {
     const html = renderToStaticMarkup(
       // Cast to string since RouteManifest is unaugmented in tests
-      createElement(Link, { to: "/blog" as string, search: { page: 2 } }, "Next")
+      createElement(Link, { search: { page: 2 }, to: "/blog" as string }, "Next")
     );
     expect(html).toBe('<a href="/blog?page=2" data-furin-link="true">Next</a>');
   });
@@ -331,7 +331,7 @@ describe("Link", () => {
     } as Partial<RouterContextValue>);
 
     const html = renderWithRouter(
-      createElement(Link, { to: "/products" as string, search: { page: 1 } }, "Products"),
+      createElement(Link, { search: { page: 1 }, to: "/products" as string }, "Products"),
       ctx
     );
 
@@ -346,7 +346,7 @@ describe("Link", () => {
     const html = renderWithRouter(
       createElement(
         Link,
-        { to: "https://example.com/products" as string, search: { page: 1 } },
+        { search: { page: 1 }, to: "https://example.com/products" as string },
         "Products"
       ),
       ctx
@@ -359,7 +359,7 @@ describe("Link", () => {
 
   test("hash is appended to the href", () => {
     const html = renderToStaticMarkup(
-      createElement(Link, { to: "/about" as string, hash: "team" }, "Team")
+      createElement(Link, { hash: "team", to: "/about" as string }, "Team")
     );
     expect(html).toBe('<a href="/about#team" data-furin-link="true">Team</a>');
   });
@@ -380,10 +380,10 @@ describe("Link", () => {
     // children parameter is typed as ReactNode (not a function). biome-ignore is needed here.
     const html = renderToStaticMarkup(
       createElement(Link, {
-        to: "/blog" as string,
         // biome-ignore lint/correctness/noChildrenProp: function-children must be passed via props
         children: ({ isActive }: { isActive: boolean }) =>
           createElement("span", { "data-active": String(isActive) }, "Blog"),
+        to: "/blog" as string,
       })
     );
     expect(html).toContain('data-active="false"');
@@ -393,10 +393,10 @@ describe("Link", () => {
   test("children as render function — receives isActive=true when to='/'", () => {
     const html = renderToStaticMarkup(
       createElement(Link, {
-        to: "/" as string,
         // biome-ignore lint/correctness/noChildrenProp: function-children must be passed via props
         children: ({ isActive }: { isActive: boolean }) =>
           createElement("span", { "data-active": String(isActive) }, "Home"),
+        to: "/" as string,
       })
     );
     expect(html).toContain('data-active="true"');
@@ -407,8 +407,8 @@ describe("Link", () => {
       createElement(
         Link,
         {
-          to: "/" as string,
           activeProps: ({ isActive }) => (isActive ? { className: "active-link" } : {}),
+          to: "/" as string,
         },
         "Home"
       )
@@ -422,8 +422,8 @@ describe("Link", () => {
       createElement(
         Link,
         {
-          to: "/blog" as string,
           inactiveProps: () => ({ className: "muted-link" }),
+          to: "/blog" as string,
         },
         "Blog"
       )
@@ -434,7 +434,7 @@ describe("Link", () => {
 
   test("disabled — renders aria-disabled and keeps href", () => {
     const html = renderToStaticMarkup(
-      createElement(Link, { to: "/about" as string, disabled: true }, "About")
+      createElement(Link, { disabled: true, to: "/about" as string }, "About")
     );
     expect(html).toContain('aria-disabled="true"');
     expect(html).toContain('href="/about"');
@@ -818,17 +818,17 @@ describe("classifySpaResponse", () => {
 
   test("404 with __furinStatus=404 → not-found with empty error when __furinNotFound is absent", () => {
     const result = classifySpaResponse(404, { __furinStatus: 404 });
-    expect(result).toEqual({ kind: "not-found", error: {} });
+    expect(result).toEqual({ error: {}, kind: "not-found" });
   });
 
   test("404 with __furinStatus=404 AND __furinNotFound → carries message + data", () => {
     const result = classifySpaResponse(404, {
+      __furinNotFound: { data: { id: "abc" }, message: "Post not found" },
       __furinStatus: 404,
-      __furinNotFound: { message: "Post not found", data: { id: "abc" } },
     });
     expect(result).toEqual({
+      error: { data: { id: "abc" }, message: "Post not found" },
       kind: "not-found",
-      error: { message: "Post not found", data: { id: "abc" } },
     });
   });
 
@@ -852,7 +852,7 @@ describe("classifySpaResponse", () => {
   test("200 with __furinStatus=404 trusts the payload signal over HTTP status", () => {
     // Guards against odd proxy/CDN setups that rewrite the status but preserve HTML.
     const result = classifySpaResponse(200, { __furinStatus: 404 });
-    expect(result).toEqual({ kind: "not-found", error: {} });
+    expect(result).toEqual({ error: {}, kind: "not-found" });
   });
 
   // ── Slice 3 — error sentinel ─────────────────────────────────────────────
@@ -861,8 +861,8 @@ describe("classifySpaResponse", () => {
       __furinError: { digest: "abc1234567", message: "Boom", status: 500 },
     });
     expect(result).toEqual({
-      kind: "error",
       error: { digest: "abc1234567", message: "Boom", status: 500 },
+      kind: "error",
     });
   });
 
@@ -871,8 +871,8 @@ describe("classifySpaResponse", () => {
       __furinError: { digest: "deadbeef00", message: "Forbidden", status: 403 },
     });
     expect(result).toEqual({
-      kind: "error",
       error: { digest: "deadbeef00", message: "Forbidden", status: 403 },
+      kind: "error",
     });
   });
 
@@ -883,8 +883,8 @@ describe("classifySpaResponse", () => {
       __furinError: { digest: "feed00face", message: "Server error", status: 500 },
     });
     expect(result).toEqual({
-      kind: "error",
       error: { digest: "feed00face", message: "Server error", status: 500 },
+      kind: "error",
     });
   });
 });
@@ -970,13 +970,13 @@ describe("buildNotFoundPageElement", () => {
   test("forwards error.message and error.data to the NotFound component", () => {
     const seen: Array<{ message?: string; data?: unknown }> = [];
     const NF: NotFoundComponent = ({ error }) => {
-      seen.push({ message: error.message, data: error.data });
+      seen.push({ data: error.data, message: error.message });
       return createElement("div", null, "ok");
     };
     const boundaries = [{ depth: 0, notFound: NF }];
 
-    renderToStaticMarkup(buildNotFoundPageElement(boundaries, { message: "m", data: { id: 42 } }));
-    expect(seen).toEqual([{ message: "m", data: { id: 42 } }]);
+    renderToStaticMarkup(buildNotFoundPageElement(boundaries, { data: { id: 42 }, message: "m" }));
+    expect(seen).toEqual([{ data: { id: 42 }, message: "m" }]);
   });
 });
 

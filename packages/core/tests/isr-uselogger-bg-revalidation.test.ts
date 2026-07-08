@@ -21,20 +21,20 @@ import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from "bu
 // request context (no evlog ALS entry). This ensures the tests are not affected by
 // the no-op stub that render.test.ts installs for its own purposes.
 mock.module("evlog/elysia", () => ({
+  evlog: () => (app: unknown) => app,
   useLogger() {
     throw new Error(
       "[evlog] useLogger() was called outside of an evlog plugin context. Make sure app.use(evlog()) is registered before your routes."
     );
   },
-  evlog: () => (app: unknown) => app,
 }));
 
 import { useLogger as evlogUseLogger } from "evlog/elysia";
-import { __resetCacheState } from "../src/server/cache/index.ts";
+import { __resetCacheState } from "../src/server/cache/invalidation.ts";
 import { useLogger as furinUseLogger } from "../src/server/context-logger.ts";
-import { prerenderSSG } from "../src/server/render/index.ts";
-import type { ResolvedRoute } from "../src/server/router/index.ts";
-import { scanPages } from "../src/server/router/index.ts";
+import { prerenderSSG } from "../src/server/render/ssg.ts";
+import { scanPages } from "../src/server/router/discovery.ts";
+import type { ResolvedRoute } from "../src/server/router/types.ts";
 import { __setDevMode } from "../src/server/runtime-env.ts";
 
 const FIXTURES_DIR = `${import.meta.dirname}/fixtures/pages`;
@@ -53,17 +53,27 @@ async function getRoot() {
   return result.root;
 }
 
-beforeAll(() => __setDevMode(false));
-afterAll(() => __setDevMode(true));
-afterEach(() => __resetCacheState());
+beforeAll(async () => {
+  __setDevMode(false);
+  await Promise.resolve();
+});
+afterAll(async () => {
+  __setDevMode(true);
+  await Promise.resolve();
+});
+afterEach(async () => {
+  __resetCacheState();
+  await Promise.resolve();
+});
 
 describe("useLogger() in synthetic render contexts (no evlog ALS)", () => {
   // ── Root cause ──────────────────────────────────────────────────────────────
 
-  test("evlog/elysia useLogger() throws outside a request context", () => {
+  test("evlog/elysia useLogger() throws outside a request context", async () => {
     expect(() => evlogUseLogger()).toThrow(
       "[evlog] useLogger() was called outside of an evlog plugin context"
     );
+    await Promise.resolve();
   });
 
   // ── Bug: evlog/elysia import crashes prerenderSSG ───────────────────────────
@@ -90,11 +100,12 @@ describe("useLogger() in synthetic render contexts (no evlog ALS)", () => {
 
   // ── Fix: context-logger useLogger() works in all contexts ─────────────────
 
-  test("furin useLogger() does not throw outside a request context", () => {
+  test("furin useLogger() does not throw outside a request context", async () => {
     expect(() => furinUseLogger()).not.toThrow();
+    await Promise.resolve();
   });
 
-  test("furin useLogger() fallback logger methods are all callable without throwing", () => {
+  test("furin useLogger() fallback logger methods are all callable without throwing", async () => {
     const log = furinUseLogger();
     expect(() => log.set({ foo: "bar" })).not.toThrow();
     expect(() => log.info("msg")).not.toThrow();
@@ -104,6 +115,7 @@ describe("useLogger() in synthetic render contexts (no evlog ALS)", () => {
     expect(() => log.getContext()).not.toThrow();
     // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op for test
     expect(() => log.fork?.("op", () => {})).not.toThrow();
+    await Promise.resolve();
   });
 
   test("prerenderSSG succeeds when loader uses context-logger useLogger", async () => {

@@ -399,7 +399,7 @@ export function transformForClient(code: string, filename: string): TransformRes
 
   return {
     code: s.toString(),
-    map: s.generateMap({ source: filename, includeContent: true }),
+    map: s.generateMap({ includeContent: true, source: filename }),
     removedServerCode,
   };
 }

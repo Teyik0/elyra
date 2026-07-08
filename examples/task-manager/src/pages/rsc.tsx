@@ -27,6 +27,14 @@ const route = createRoute({
 });
 
 export default route.page({
+  component: ({ content }) => (
+    <CompositeComponent
+      CreateForm={() => <CreateBoardForm />}
+      DeleteButton={(boardId) => <DeleteBoardButton boardId={boardId} />}
+      src={content}
+    />
+  ),
+  head: () => ({ meta: [{ title: "Task Manager RSC — Furin" }] }),
   loader: async () => {
     const generatedAt = new Date().toLocaleTimeString("en-US", {
       hour: "2-digit",
@@ -126,12 +134,4 @@ export default route.page({
 
     return { content };
   },
-  head: () => ({ meta: [{ title: "Task Manager RSC — Furin" }] }),
-  component: ({ content }) => (
-    <CompositeComponent
-      CreateForm={() => <CreateBoardForm />}
-      DeleteButton={(boardId) => <DeleteBoardButton boardId={boardId} />}
-      src={content}
-    />
-  ),
 });

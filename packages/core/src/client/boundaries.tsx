@@ -129,7 +129,7 @@ export class FurinErrorBoundary extends Component<ErrorBoundaryProps, ErrorBound
       const status = isFurinServerError(error) ? error.status : DEFAULT_ERROR_STATUS;
       return (
         <Fallback
-          error={{ message, digest: finalDigest, status }}
+          error={{ digest: finalDigest, message, status }}
           reset={typeof window === "undefined" ? SERVER_RESET_NOOP : this.reset}
         />
       );
@@ -168,7 +168,7 @@ export class FurinNotFoundBoundary extends Component<NotFoundBoundaryProps, NotF
 
   override componentDidUpdate(prevProps: NotFoundBoundaryProps) {
     if (prevProps.resetKey !== this.props.resetKey && this.state.error) {
-      this.setState((s) => ({ error: null, epoch: s.epoch + 1 }));
+      this.setState((s) => ({ epoch: s.epoch + 1, error: null }));
     }
   }
 
@@ -179,7 +179,7 @@ export class FurinNotFoundBoundary extends Component<NotFoundBoundaryProps, NotF
         throw error;
       }
       const Fallback = this.props.fallback ?? DefaultNotFoundFallback;
-      return <Fallback error={{ message: error.message, data: error.data }} />;
+      return <Fallback error={{ data: error.data, message: error.message }} />;
     }
     return <Fragment key={epoch}>{this.props.children}</Fragment>;
   }

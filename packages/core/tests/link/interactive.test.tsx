@@ -18,20 +18,20 @@ function makeRouterContext(overrides: Partial<RouterContextValue> | undefined): 
   return {
     basePath: "",
     currentHref: "/",
-    search: {},
-    searchRoutes: [],
+    defaultPreload: "intent",
+    defaultPreloadDelay: 50,
+    defaultPreloadStaleTime: 30_000,
+    invalidatePrefetch: () => {
+      /* noop */
+    },
+    isNavigating: false,
     navigate: () => Promise.resolve(),
     prefetch: () => {
       /* noop */
     },
-    invalidatePrefetch: () => {
-      /* noop */
-    },
     refresh: () => Promise.resolve(),
-    isNavigating: false,
-    defaultPreload: "intent",
-    defaultPreloadDelay: 50,
-    defaultPreloadStaleTime: 30_000,
+    search: {},
+    searchRoutes: [],
     ...(overrides ?? {}),
   };
 }
@@ -60,8 +60,6 @@ function renderLink(
   const anchor = container.querySelector("a") as HTMLAnchorElement;
 
   return {
-    container,
-    root,
     anchor,
     cleanup: () => {
       flushSync(() => {
@@ -69,6 +67,8 @@ function renderLink(
       });
       container.remove();
     },
+    container,
+    root,
   };
 }
 
@@ -95,12 +95,12 @@ class MockIntersectionObserver {
 
   trigger(isIntersecting: boolean): void {
     const entries = this.elements.map((target) => ({
-      isIntersecting,
-      target,
       boundingClientRect: {} as DOMRectReadOnly,
       intersectionRatio: isIntersecting ? 1 : 0,
       intersectionRect: {} as DOMRectReadOnly,
+      isIntersecting,
       rootBounds: null,
+      target,
       time: Date.now(),
     }));
     this.callback(entries as IntersectionObserverEntry[], this as unknown as IntersectionObserver);
@@ -149,20 +149,20 @@ describe("Link SSR path", () => {
             value: {
               basePath: "/furin",
               currentHref: "/docs",
-              search: {},
-              searchRoutes: [],
+              defaultPreload: "intent",
+              defaultPreloadDelay: 50,
+              defaultPreloadStaleTime: 30_000,
+              invalidatePrefetch: () => {
+                /* noop */
+              },
+              isNavigating: false,
               navigate: () => Promise.resolve(),
               prefetch: () => {
                 /* noop */
               },
-              invalidatePrefetch: () => {
-                /* noop */
-              },
               refresh: () => Promise.resolve(),
-              isNavigating: false,
-              defaultPreload: "intent",
-              defaultPreloadDelay: 50,
-              defaultPreloadStaleTime: 30_000,
+              search: {},
+              searchRoutes: [],
             },
           },
           createElement(Link, { to: "/docs" }, "Docs")
@@ -183,7 +183,7 @@ describe("Link SSR path", () => {
 
     try {
       const html = renderToStaticMarkup(
-        createElement(Link, { to: "/blog", search: { page: 2 }, hash: "comments" }, "Blog")
+        createElement(Link, { hash: "comments", search: { page: 2 }, to: "/blog" }, "Blog")
       );
       expect(html).toBe('<a href="/blog?page=2#comments" data-furin-link="true">Blog</a>');
     } finally {
@@ -198,7 +198,7 @@ describe("Link SSR path", () => {
 
     try {
       const html = renderToStaticMarkup(
-        createElement(Link, { to: "/about", disabled: true }, "About")
+        createElement(Link, { disabled: true, to: "/about" }, "About")
       );
       expect(html).toBe('<a href="/about" data-furin-link="true" aria-disabled="true">About</a>');
     } finally {
@@ -214,10 +214,10 @@ describe("Link SSR path", () => {
     try {
       const html = renderToStaticMarkup(
         createElement(Link, {
-          to: "/",
           // biome-ignore lint/correctness/noChildrenProp: function-children must be passed via props
           children: ({ isActive }: { isActive: boolean }) =>
             createElement("span", { "data-active": String(isActive) }, "Home"),
+          to: "/",
         })
       );
       expect(html).toContain('data-active="true"');
@@ -239,27 +239,27 @@ describe("Link SSR path", () => {
             value: {
               basePath: "",
               currentHref: "/",
-              search: {},
-              searchRoutes: [],
+              defaultPreload: "intent",
+              defaultPreloadDelay: 50,
+              defaultPreloadStaleTime: 30_000,
+              invalidatePrefetch: () => {
+                /* noop */
+              },
+              isNavigating: false,
               navigate: () => Promise.resolve(),
               prefetch: () => {
                 /* noop */
               },
-              invalidatePrefetch: () => {
-                /* noop */
-              },
               refresh: () => Promise.resolve(),
-              isNavigating: false,
-              defaultPreload: "intent",
-              defaultPreloadDelay: 50,
-              defaultPreloadStaleTime: 30_000,
+              search: {},
+              searchRoutes: [],
             },
           },
           createElement(
             Link,
             {
-              to: "/",
               activeProps: ({ isActive }) => (isActive ? { className: "active-link" } : {}),
+              to: "/",
             },
             "Home"
           )
@@ -285,27 +285,27 @@ describe("Link SSR path", () => {
             value: {
               basePath: "",
               currentHref: "/other",
-              search: {},
-              searchRoutes: [],
+              defaultPreload: "intent",
+              defaultPreloadDelay: 50,
+              defaultPreloadStaleTime: 30_000,
+              invalidatePrefetch: () => {
+                /* noop */
+              },
+              isNavigating: false,
               navigate: () => Promise.resolve(),
               prefetch: () => {
                 /* noop */
               },
-              invalidatePrefetch: () => {
-                /* noop */
-              },
               refresh: () => Promise.resolve(),
-              isNavigating: false,
-              defaultPreload: "intent",
-              defaultPreloadDelay: 50,
-              defaultPreloadStaleTime: 30_000,
+              search: {},
+              searchRoutes: [],
             },
           },
           createElement(
             Link,
             {
-              to: "/blog",
               inactiveProps: () => ({ className: "muted-link" }),
+              to: "/blog",
             },
             "Blog"
           )
@@ -331,27 +331,27 @@ describe("Link SSR path", () => {
             value: {
               basePath: "/furin",
               currentHref: "/",
-              search: {},
-              searchRoutes: [],
+              defaultPreload: "intent",
+              defaultPreloadDelay: 50,
+              defaultPreloadStaleTime: 30_000,
+              invalidatePrefetch: () => {
+                /* noop */
+              },
+              isNavigating: false,
               navigate: () => Promise.resolve(),
               prefetch: () => {
                 /* noop */
               },
-              invalidatePrefetch: () => {
-                /* noop */
-              },
               refresh: () => Promise.resolve(),
-              isNavigating: false,
-              defaultPreload: "intent",
-              defaultPreloadDelay: 50,
-              defaultPreloadStaleTime: 30_000,
+              search: {},
+              searchRoutes: [],
             },
           },
           createElement(
             Link,
             {
-              to: "/blog",
               href: "/blog",
+              to: "/blog",
             } as any,
             "Blog"
           )
@@ -460,7 +460,7 @@ describe("LinkInteractive — client-side behaviour", () => {
   test("appends search and hash to href", () => {
     const ctx = makeRouterContext(undefined);
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", search: { page: 2 }, hash: "comments" }, "Blog"),
+      createElement(Link, { hash: "comments", search: { page: 2 }, to: "/blog" }, "Blog"),
       ctx
     );
     expect(anchor.getAttribute("href")).toBe("/blog?page=2#comments");
@@ -483,7 +483,7 @@ describe("LinkInteractive — client-side behaviour", () => {
 
   test("aria-disabled when disabled", () => {
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/about", disabled: true }, "About"),
+      createElement(Link, { disabled: true, to: "/about" }, "About"),
       undefined
     );
     expect(anchor.getAttribute("aria-disabled")).toBe("true");
@@ -494,10 +494,10 @@ describe("LinkInteractive — client-side behaviour", () => {
     const ctx = makeRouterContext({ currentHref: "/active" });
     const { container, cleanup } = renderLink(
       createElement(Link, {
-        to: "/active",
         // biome-ignore lint/correctness/noChildrenProp: function-children must be passed via props
         children: ({ isActive }: { isActive: boolean }) =>
           createElement("span", { "data-active": String(isActive) }),
+        to: "/active",
       }),
       ctx
     );
@@ -512,8 +512,8 @@ describe("LinkInteractive — client-side behaviour", () => {
       createElement(
         Link,
         {
-          to: "/",
           activeProps: ({ isActive }) => (isActive ? { className: "active-link" } : {}),
+          to: "/",
         },
         "Home"
       ),
@@ -529,8 +529,8 @@ describe("LinkInteractive — client-side behaviour", () => {
       createElement(
         Link,
         {
-          to: "/blog",
           inactiveProps: () => ({ className: "muted-link" }),
+          to: "/blog",
         },
         "Blog"
       ),
@@ -557,7 +557,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     const navigate = mock<RouterContextValue["navigate"]>(() => Promise.resolve());
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", disabled: true }, "Blog"),
+      createElement(Link, { disabled: true, to: "/blog" }, "Blog"),
       ctx
     );
 
@@ -612,7 +612,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), ctx);
 
     anchor.dispatchEvent(
-      new MouseEvent("click", { bubbles: true, cancelable: true, altKey: true })
+      new MouseEvent("click", { altKey: true, bubbles: true, cancelable: true })
     );
 
     expect(navigate).not.toHaveBeenCalled();
@@ -623,7 +623,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     const navigate = mock<RouterContextValue["navigate"]>(() => Promise.resolve());
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", target: "_blank" }, "Blog"),
+      createElement(Link, { target: "_blank", to: "/blog" }, "Blog"),
       ctx
     );
 
@@ -663,7 +663,7 @@ describe("LinkInteractive — client-side behaviour", () => {
       /* noop */
     });
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", onClick }, "Blog"),
+      createElement(Link, { onClick, to: "/blog" }, "Blog"),
       undefined
     );
 
@@ -678,7 +678,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     const ctx = makeRouterContext({ navigate });
     const onClick = (e: React.MouseEvent) => e.preventDefault();
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", onClick }, "Blog"),
+      createElement(Link, { onClick, to: "/blog" }, "Blog"),
       ctx
     );
 
@@ -692,7 +692,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     const navigate = mock<RouterContextValue["navigate"]>(() => Promise.resolve());
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", replace: true }, "Blog"),
+      createElement(Link, { replace: true, to: "/blog" }, "Blog"),
       ctx
     );
 
@@ -706,7 +706,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     const navigate = mock<RouterContextValue["navigate"]>(() => Promise.resolve());
     const ctx = makeRouterContext({ navigate });
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", resetScroll: false }, "Blog"),
+      createElement(Link, { resetScroll: false, to: "/blog" }, "Blog"),
       ctx
     );
 
@@ -724,7 +724,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     });
     const ctx = makeRouterContext({ prefetch });
     const { cleanup } = renderLink(
-      createElement(Link, { to: "/blog", preload: "render" }, "Blog"),
+      createElement(Link, { preload: "render", to: "/blog" }, "Blog"),
       ctx
     );
 
@@ -738,7 +738,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     });
     const ctx = makeRouterContext({ prefetch });
     const { cleanup } = renderLink(
-      createElement(Link, { to: "/blog", preload: "render", preloadStaleTime: 5000 }, "Blog"),
+      createElement(Link, { preload: "render", preloadStaleTime: 5000, to: "/blog" }, "Blog"),
       ctx
     );
 
@@ -754,7 +754,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     });
     const ctx = makeRouterContext({ prefetch });
     const { cleanup } = renderLink(
-      createElement(Link, { to: "/blog", preload: "viewport" }, "Blog"),
+      createElement(Link, { preload: "viewport", to: "/blog" }, "Blog"),
       ctx
     );
 
@@ -770,7 +770,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     });
     const ctx = makeRouterContext({ prefetch });
     const { cleanup } = renderLink(
-      createElement(Link, { to: "/blog", preload: "viewport" }, "Blog"),
+      createElement(Link, { preload: "viewport", to: "/blog" }, "Blog"),
       ctx
     );
 
@@ -787,7 +787,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     });
     const ctx = makeRouterContext({ prefetch });
     const { cleanup } = renderLink(
-      createElement(Link, { to: "/blog", preload: "viewport" }, "Blog"),
+      createElement(Link, { preload: "viewport", to: "/blog" }, "Blog"),
       ctx
     );
 
@@ -804,7 +804,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     });
     const ctx = makeRouterContext({ prefetch });
     const { cleanup } = renderLink(
-      createElement(Link, { to: "/blog", preload: false }, "Blog"),
+      createElement(Link, { preload: false, to: "/blog" }, "Blog"),
       ctx
     );
 
@@ -819,7 +819,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     const prefetch = ((...args: unknown[]) => {
       calls.push({ args });
     }) as RouterContextValue["prefetch"];
-    const ctx = makeRouterContext({ prefetch, defaultPreloadDelay: 10 });
+    const ctx = makeRouterContext({ defaultPreloadDelay: 10, prefetch });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), ctx);
 
     anchor.dispatchEvent(
@@ -841,9 +841,9 @@ describe("LinkInteractive — client-side behaviour", () => {
     const prefetch = mock<RouterContextValue["prefetch"]>(() => {
       /* noop */
     });
-    const ctx = makeRouterContext({ prefetch, defaultPreloadDelay: 10 });
+    const ctx = makeRouterContext({ defaultPreloadDelay: 10, prefetch });
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", disabled: true }, "Blog"),
+      createElement(Link, { disabled: true, to: "/blog" }, "Blog"),
       ctx
     );
 
@@ -860,7 +860,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     const prefetch = mock<RouterContextValue["prefetch"]>(() => {
       /* noop */
     });
-    const ctx = makeRouterContext({ prefetch, defaultPreloadDelay: 10 });
+    const ctx = makeRouterContext({ defaultPreloadDelay: 10, prefetch });
     const { anchor, cleanup } = renderLink(
       createElement(Link, { to: "https://example.com" }, "External"),
       ctx
@@ -879,9 +879,9 @@ describe("LinkInteractive — client-side behaviour", () => {
     const prefetch = mock<RouterContextValue["prefetch"]>(() => {
       /* noop */
     });
-    const ctx = makeRouterContext({ prefetch, defaultPreloadDelay: 10 });
+    const ctx = makeRouterContext({ defaultPreloadDelay: 10, prefetch });
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", preload: false }, "Blog"),
+      createElement(Link, { preload: false, to: "/blog" }, "Blog"),
       ctx
     );
 
@@ -898,7 +898,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     const prefetch = mock<RouterContextValue["prefetch"]>(() => {
       /* noop */
     });
-    const ctx = makeRouterContext({ prefetch, defaultPreloadDelay: 50 });
+    const ctx = makeRouterContext({ defaultPreloadDelay: 50, prefetch });
     const { anchor, cleanup } = renderLink(createElement(Link, { to: "/blog" }, "Blog"), ctx);
 
     anchor.dispatchEvent(
@@ -932,7 +932,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     });
     const ctx = makeRouterContext({ prefetch });
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", disabled: true }, "Blog"),
+      createElement(Link, { disabled: true, to: "/blog" }, "Blog"),
       ctx
     );
 
@@ -964,7 +964,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     });
     const ctx = makeRouterContext({ prefetch });
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", preload: false }, "Blog"),
+      createElement(Link, { preload: false, to: "/blog" }, "Blog"),
       ctx
     );
 
@@ -979,7 +979,7 @@ describe("LinkInteractive — client-side behaviour", () => {
       /* noop */
     });
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", onMouseEnter }, "Blog"),
+      createElement(Link, { onMouseEnter, to: "/blog" }, "Blog"),
       undefined
     );
 
@@ -996,7 +996,7 @@ describe("LinkInteractive — client-side behaviour", () => {
       /* noop */
     });
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", onMouseLeave }, "Blog"),
+      createElement(Link, { onMouseLeave, to: "/blog" }, "Blog"),
       undefined
     );
 
@@ -1013,7 +1013,7 @@ describe("LinkInteractive — client-side behaviour", () => {
       /* noop */
     });
     const { anchor, cleanup } = renderLink(
-      createElement(Link, { to: "/blog", onFocus }, "Blog"),
+      createElement(Link, { onFocus, to: "/blog" }, "Blog"),
       undefined
     );
 

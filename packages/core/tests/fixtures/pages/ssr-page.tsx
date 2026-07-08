@@ -2,8 +2,8 @@ import { createRoute } from "../../../src/client";
 import { route as rootRoute } from "./root";
 
 const ssrRoute = createRoute({
-  parent: rootRoute,
   mode: "ssr",
+  parent: rootRoute,
 });
 
 export default ssrRoute.page({

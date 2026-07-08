@@ -17,8 +17,8 @@ export const cardPlugin = new Elysia()
     ({ params, body }) => createCard(params.boardId, body.title, body.column),
     {
       body: t.Object({
-        title: t.String({ minLength: 1 }),
         column: columnType,
+        title: t.String({ minLength: 1 }),
       }),
       sync: { invalidate: { tags: ["cards"] } },
     }
@@ -38,8 +38,8 @@ export const cardPlugin = new Elysia()
     },
     {
       body: t.Object({
-        title: t.Optional(t.String()),
         description: t.Optional(t.String()),
+        title: t.Optional(t.String()),
       }),
       sync: { invalidate: { tags: ["cards"] } },
     }
@@ -59,10 +59,10 @@ export const cardPlugin = new Elysia()
     },
     {
       body: t.Object({
-        title: t.Optional(t.String()),
-        description: t.Optional(t.String()),
         column: t.Optional(columnType),
+        description: t.Optional(t.String()),
         position: t.Optional(t.Number()),
+        title: t.Optional(t.String()),
       }),
       sync: { invalidate: { tags: ["cards"] } },
     }

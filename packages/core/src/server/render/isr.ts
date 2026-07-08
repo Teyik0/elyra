@@ -73,7 +73,7 @@ function serveISRCacheHit(
   }
 
   useLogger().set({
-    furin: { render: "isr", route: route.pattern, cache: isFresh ? "hit" : "stale" },
+    furin: { cache: isFresh ? "hit" : "stale", render: "isr", route: route.pattern },
   });
   return injectSyncRuntimeScript(cached.html);
 }
@@ -112,11 +112,11 @@ async function renderISRNon200(
     finalDigest = shellError.digest;
     useLogger().set({
       furin: {
-        render: "isr",
-        route: route.pattern,
         cache: "miss",
         digest: finalDigest,
         phase: "shell",
+        render: "isr",
+        route: route.pattern,
       },
     });
     fallbackProps.__furinError = { digest: finalDigest, status: finalStatus };
@@ -134,10 +134,10 @@ async function renderISRNon200(
   const renderMs = generatedAt - renderStart;
   useLogger().set({
     furin: {
-      render: "isr",
-      route: route.pattern,
       cache: "miss",
+      render: "isr",
       render_ms: renderMs,
+      route: route.pattern,
       ...(finalDigest ? { digest: finalDigest } : {}),
       status: finalStatus,
     },
@@ -205,14 +205,14 @@ export async function handleISR(
 
   useLogger().set({
     furin: {
-      render: "isr",
-      route: route.pattern,
       cache: "miss",
+      render: "isr",
       render_ms: generatedAt - renderStart,
+      route: route.pattern,
     },
   });
 
-  setISRCache(cacheKey, { html, generatedAt, revalidate });
+  setISRCache(cacheKey, { generatedAt, html, revalidate });
   autoInvalidateRegistry.registerLoaderTags(cacheKey, route.tags);
 
   const etag = isrEtag(buildId, generatedAt);
@@ -245,10 +245,10 @@ function revalidateInBackground(
     const logger = createLogger({});
     logger.set({
       furin: {
-        render: "isr",
-        route: route.pattern,
         cache: "revalidation_skipped",
         reason: "already_in_flight",
+        render: "isr",
+        route: route.pattern,
       },
     });
     logger.emit();
@@ -276,10 +276,10 @@ function revalidateInBackground(
         const logger = createLogger({});
         logger.set({
           furin: {
-            render: "isr",
-            route: route.pattern,
             cache: "revalidation_skipped",
             reason: "non_200_render",
+            render: "isr",
+            route: route.pattern,
             status: result.status,
           },
         });
@@ -287,8 +287,8 @@ function revalidateInBackground(
         return;
       }
       setISRCache(cacheKey, {
-        html: result.html,
         generatedAt: Date.now(),
+        html: result.html,
         revalidate,
       });
     })
@@ -298,10 +298,10 @@ function revalidateInBackground(
         deleteISRCache(cacheKey);
         logger.set({
           furin: {
-            render: "isr",
-            route: route.pattern,
             cache: "revalidation_invalidated",
             reason: "not_found",
+            render: "isr",
+            route: route.pattern,
           },
         });
         logger.emit();
@@ -309,9 +309,9 @@ function revalidateInBackground(
       }
       logger.set({
         furin: {
+          cache: "revalidation_failed",
           render: "isr",
           route: route.pattern,
-          cache: "revalidation_failed",
         },
       });
       logger.error(err instanceof Error ? err : new Error(String(err)));

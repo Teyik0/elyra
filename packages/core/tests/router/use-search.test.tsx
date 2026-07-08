@@ -18,20 +18,20 @@ function makeRouterContext(overrides: Partial<RouterContextValue> | undefined): 
   return {
     basePath: "",
     currentHref: "/",
-    search: {},
-    searchRoutes: [],
+    defaultPreload: "intent",
+    defaultPreloadDelay: 50,
+    defaultPreloadStaleTime: 30_000,
+    invalidatePrefetch: (_path, _type) => {
+      /* noop */
+    },
+    isNavigating: false,
     navigate: (_href, _opts) => Promise.resolve(),
     prefetch: (_href, _opts) => {
       /* noop */
     },
-    invalidatePrefetch: (_path, _type) => {
-      /* noop */
-    },
     refresh: (_opts) => Promise.resolve(),
-    isNavigating: false,
-    defaultPreload: "intent",
-    defaultPreloadDelay: 50,
-    defaultPreloadStaleTime: 30_000,
+    search: {},
+    searchRoutes: [],
     ...(overrides ?? {}),
   };
 }
@@ -61,15 +61,15 @@ function renderWithRouter(
   });
 
   return {
-    container,
-    root,
-    searchStore,
     cleanup: () => {
       flushSync(() => {
         root.unmount();
       });
       container.remove();
     },
+    container,
+    root,
+    searchStore,
   };
 }
 
@@ -157,7 +157,7 @@ describe("useNavigate", () => {
     function Page(): React.ReactElement {
       const go = useNavigate();
       useEffect(() => {
-        go({ to: "/products", search: { page: 1 } });
+        go({ search: { page: 1 }, to: "/products" });
       }, [go]);
       return createElement("output");
     }
@@ -192,7 +192,7 @@ describe("useNavigate", () => {
     function Page(): React.ReactElement {
       const go = useNavigate();
       useEffect(() => {
-        go({ to: "/products", replace: true, resetScroll: false });
+        go({ replace: true, resetScroll: false, to: "/products" });
       }, [go]);
       return createElement("output");
     }

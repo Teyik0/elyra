@@ -14,7 +14,7 @@ export default route.page({
     const data = (await res.json()) as WeatherResponse | null;
 
     if (!data) {
-      return { weather: null, city, error: `City not found: "${city}"` };
+      return { city, error: `City not found: "${city}"`, weather: null };
     }
 
     const dailyWithDayName = data.daily.map((day) => ({
@@ -22,11 +22,8 @@ export default route.page({
       dayName: new Date(day.date).toLocaleDateString("en", { weekday: "short" }),
     }));
 
-    return { weather: { ...data, daily: dailyWithDayName }, city, error: null };
+    return { city, error: null, weather: { ...data, daily: dailyWithDayName } };
   },
-  head: ({ query }) => ({
-    meta: [{ title: `Weather in ${query.city ?? "Paris"}` }],
-  }),
   component: ({ weather, city, error }) => {
     return (
       <div className="space-y-8">
@@ -93,4 +90,7 @@ export default route.page({
       </div>
     );
   },
+  head: ({ query }) => ({
+    meta: [{ title: `Weather in ${query.city ?? "Paris"}` }],
+  }),
 });

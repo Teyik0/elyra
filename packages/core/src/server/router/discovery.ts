@@ -71,10 +71,10 @@ export function loadProdRoutes(ctx: CompileContext): {
   }
 
   const root: RootLayout = {
-    path: ctx.rootPath,
-    route: rootExport,
     error: resolveModuleComponent(ctx.rootConventions?.errorPath),
     notFound: resolveModuleComponent(ctx.rootConventions?.notFoundPath),
+    path: ctx.rootPath,
+    route: rootExport,
   };
 
   const routes: ResolvedRoute[] = [];
@@ -107,14 +107,14 @@ export function loadProdRoutes(ctx: CompileContext): {
     // declared at any segment level.
 
     routes.push({
-      pattern,
+      error,
+      mode,
+      notFound,
       page,
       path,
+      pattern,
       routeChain,
-      mode,
       segmentBoundaries: boundaries,
-      error,
-      notFound,
       tags: collectRouteTags(routeChain, page),
     });
   }
@@ -174,12 +174,12 @@ export async function scanRootLayout(pagesDir: string): Promise<RootLayout> {
     loadConventionComponent<ErrorComponent>(pagesDir, "error"),
   ]);
   return {
-    path: rootPath,
-    route: rootExport,
-    notFound: notFoundEntry?.component,
-    notFoundPath: notFoundEntry?.path,
     error: errorEntry?.component,
     errorPath: errorEntry?.path,
+    notFound: notFoundEntry?.component,
+    notFoundPath: notFoundEntry?.path,
+    path: rootPath,
+    route: rootExport,
   };
 }
 
@@ -219,7 +219,6 @@ async function loadConventionComponent<T>(
       }
     }
   }
-  return;
 }
 
 async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<ResolvedRoute[]> {
@@ -283,13 +282,13 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
     validateRouteChain(routeChain, root.route, relativePath);
 
     routes.push({
-      pattern: filePathToPattern(relativePath),
-      page,
-      path: absolutePath,
-      routeChain,
+      error: errorComponent,
       mode: resolveMode(page, routeChain),
       notFound,
-      error: errorComponent,
+      page,
+      path: absolutePath,
+      pattern: filePathToPattern(relativePath),
+      routeChain,
       segmentBoundaries,
       tags: collectRouteTags(routeChain, page),
     });
@@ -348,12 +347,12 @@ async function collectSegmentBoundaries(
     ]);
     if (errorEntry || notFoundEntry) {
       boundaries.push({
-        path: dir,
         depth,
         error: errorEntry?.component,
         errorPath: errorEntry?.path,
         notFound: notFoundEntry?.component,
         notFoundPath: notFoundEntry?.path,
+        path: dir,
       });
     }
   }
@@ -421,16 +420,16 @@ async function buildDevRoute(
   };
 
   return {
-    pattern: filePathToPattern(relativePath),
-    path: absolutePath,
     mode: page ? resolveMode(page, routeChain) : "ssr",
     // Still lazily re-imported on each request in createRoutePlugin for fresh code
     page: page ?? devStubPage,
+    path: absolutePath,
+    pattern: filePathToPattern(relativePath),
     routeChain,
-    tags: collectRouteTags(routeChain, page),
     // scanPageFiles() overwrites this with the real chain before the route
     // is pushed — present here to satisfy the ResolvedRoute required shape.
     segmentBoundaries: [],
+    tags: collectRouteTags(routeChain, page),
   };
 }
 

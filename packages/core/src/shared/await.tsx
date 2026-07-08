@@ -77,7 +77,7 @@ interface AsyncErrorBoundaryState {
 class AsyncErrorBoundary extends Component<AsyncErrorBoundaryProps, AsyncErrorBoundaryState> {
   constructor(props: AsyncErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: undefined, resolve: props.resolve };
+    this.state = { error: undefined, hasError: false, resolve: props.resolve };
   }
 
   static getDerivedStateFromProps(
@@ -85,13 +85,13 @@ class AsyncErrorBoundary extends Component<AsyncErrorBoundaryProps, AsyncErrorBo
     state: AsyncErrorBoundaryState
   ): Partial<AsyncErrorBoundaryState> | null {
     if (props.resolve !== state.resolve) {
-      return { hasError: false, error: undefined, resolve: props.resolve };
+      return { error: undefined, hasError: false, resolve: props.resolve };
     }
     return null;
   }
 
   static getDerivedStateFromError(error: unknown): Partial<AsyncErrorBoundaryState> {
-    return { hasError: true, error };
+    return { error, hasError: true };
   }
 
   override render(): ReactNode {
@@ -168,7 +168,7 @@ export function Await<T>({ resolve, errorElement, children }: AwaitProps<T>): Re
     AsyncErrorBoundary,
     { errorElement, resolve: guardedResolve as Promise<unknown> },
     // react-doctor-disable-next-line react/no-children-prop
-    createElement(AwaitInner<T>, { resolve: guardedResolve, children })
+    createElement(AwaitInner<T>, { children, resolve: guardedResolve })
   );
 }
 

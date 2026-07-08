@@ -3,7 +3,7 @@ import { Elysia } from "elysia";
 import { CompositeComponent, createCompositeComponent, renderServerComponent } from "furin/rsc";
 import type { ComponentType, ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
-import { createRoute, type RuntimePage, type RuntimeRoute } from "../src/client";
+import { createRoute, defer, type RuntimePage, type RuntimeRoute } from "../src/client";
 import { serializeLoaderDataNdjson } from "../src/server/render/ssr";
 import {
   createDataEndpoint,
@@ -88,6 +88,47 @@ describe("RSC public API", () => {
     const stream = await renderToReadableStream(syncData.article as ReactNode);
 
     expect(await new Response(stream).text()).toBe("<h1>Flight article</h1>");
+  });
+
+  test("SPA navigation returns nested RSC data before deferred fields settle", async () => {
+    let resolveSlow: ((value: string) => void) | undefined;
+    const slow = new Promise<string>((resolve) => {
+      resolveSlow = resolve;
+    });
+    const route = createRoute({
+      loader: async () =>
+        defer({
+          content: { article: await renderServerComponent(<h1>Nested Flight article</h1>) },
+          slow,
+        }),
+    });
+    const page = route.page({ component: () => null });
+    const resolved = {
+      mode: "ssr",
+      page: page as unknown as RuntimePage,
+      path: "/nested-rsc.tsx",
+      pattern: "/nested-rsc",
+      routeChain: [route as unknown as RuntimeRoute],
+      segmentBoundaries: [],
+    } satisfies ResolvedRoute;
+    const app = new Elysia().use(createDataEndpoint([resolved]));
+    const response = await app.handle(
+      new Request("http://localhost/_furin/data?path=%2Fnested-rsc")
+    );
+
+    expect(response.headers.get("content-type")).toBe("application/x-furin-route");
+    const parsed = await Promise.race([
+      parseDeferredNdjson(response.body as ReadableStream<Uint8Array>, undefined),
+      Bun.sleep(100).then(() => {
+        throw new Error("route frame parser waited for deferred data");
+      }),
+    ]);
+    const content = parsed.syncData.content as { article: ReactNode };
+    const stream = await renderToReadableStream(content.article);
+    expect(await new Response(stream).text()).toBe("<h1>Nested Flight article</h1>");
+
+    resolveSlow?.("done");
+    expect(await parsed.deferredPromises.slow).toBe("done");
   });
 
   test("a composite invokes children and render-prop slots", async () => {

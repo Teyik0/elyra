@@ -2,8 +2,8 @@ import { createRoute } from "../../../src/client";
 import { route as rootRoute } from "./root";
 
 const inlineRoute = createRoute({
-  parent: rootRoute,
   layout: ({ children }) => <div data-testid="inline-layout">{children}</div>,
+  parent: rootRoute,
 });
 
 export default inlineRoute.page({

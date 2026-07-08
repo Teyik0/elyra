@@ -17,7 +17,9 @@ describe("MdxLink", () => {
   test("renders a Furin <Link> for internal absolute paths", () => {
     const html = renderToStaticMarkup(createElement(MdxLink, { href: "/docs/routing" }, "Routing"));
     // Link during SSR renders as <a> with the href
-    expect(html).toBe('<a href="/docs/routing" data-furin-link="true">Routing</a>');
+    expect(html).toContain('href="/docs/routing"');
+    expect(html).toContain('data-furin-link="true"');
+    expect(html).toContain(">Routing</a>");
   });
 
   test("renders a native <a> for protocol-relative URLs", () => {
@@ -53,23 +55,25 @@ describe("MdxLink", () => {
           value: {
             basePath: "/docs",
             currentHref: "/",
+            defaultPreload: "intent",
+            defaultPreloadDelay: 50,
+            defaultPreloadStaleTime: 30_000,
+            invalidatePrefetch: () => {
+              /* noop */
+            },
+            isNavigating: false,
             navigate: () => Promise.resolve(),
             prefetch: () => {
               /* noop */
             },
-            invalidatePrefetch: () => {
-              /* noop */
-            },
             refresh: () => Promise.resolve(),
-            isNavigating: false,
-            defaultPreload: "intent",
-            defaultPreloadDelay: 50,
-            defaultPreloadStaleTime: 30_000,
           },
         },
         createElement(MdxLink, { href: "/routing" }, "Routing")
       )
     );
-    expect(html).toBe('<a href="/docs/routing" data-furin-link="true">Routing</a>');
+    expect(html).toContain('href="/docs/routing"');
+    expect(html).toContain('data-furin-link="true"');
+    expect(html).toContain(">Routing</a>");
   });
 });

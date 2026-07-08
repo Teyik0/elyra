@@ -37,16 +37,16 @@ const plugin: Bun.BunPlugin = {
   setup(build) {
     // ── browser stubs ───────────────────────────────────────────────────────
     build.onResolve({ filter: ELYSIA_FILTER }, () => ({
-      path: "elysia-stub",
       namespace: "furin-stubs",
+      path: "elysia-stub",
     }));
 
     build.onResolve({ filter: BUN_BUILTIN_FILTER }, () => ({
-      path: "bun-builtin-stub",
       namespace: "furin-stubs",
+      path: "bun-builtin-stub",
     }));
 
-    build.onLoad({ namespace: "furin-stubs", filter: ANY_FILTER }, (args) => ({
+    build.onLoad({ filter: ANY_FILTER, namespace: "furin-stubs" }, (args) => ({
       contents: args.path === "elysia-stub" ? ELYSIA_STUB : "",
       loader: "js",
     }));
@@ -70,7 +70,6 @@ const plugin: Bun.BunPlugin = {
         };
       } catch (err) {
         console.error(`[furin] strip-plugin transform error for ${args.path}:`, err);
-        return;
       }
     });
   },

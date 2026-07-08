@@ -5,17 +5,18 @@
  * calls setProductionTemplateContent() — a module-level singleton that is not
  * safe to mutate from concurrent describe blocks.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildStaticTarget } from "../src/adapter/static.ts";
 import type { BuildAppOptions } from "../src/build/types.ts";
-import { __resetCacheState } from "../src/server/cache/index.ts";
-import { __resetTemplateState } from "../src/server/render/template.ts";
 import { scanPages } from "../src/server/router/index.ts";
-import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
+import { __setDevMode } from "../src/server/runtime-env.ts";
 import { createTmpApp } from "./helpers/tmp-app.ts";
 import { withBuildStub } from "./helpers/with-build-stub.ts";
+
+(globalThis as typeof globalThis & { __FURIN_SKIP_DOM_RESET?: boolean }).__FURIN_SKIP_DOM_RESET =
+  true;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -28,27 +29,10 @@ const REQUEST_LOADER_STATIC_RE = /requestLoader.*static/i;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const tmpApps: Array<{ cleanup: () => void }> = [];
-
-let originalIsDev: boolean;
-beforeAll(() => {
-  originalIsDev = IS_DEV;
-  __setDevMode(false);
-});
-afterAll(() => __setDevMode(originalIsDev));
-
-afterEach(() => {
-  __resetCacheState();
-  __resetTemplateState();
-  while (tmpApps.length > 0) {
-    tmpApps.pop()?.cleanup();
-  }
-});
+__setDevMode(false);
 
 function makeApp(fixtureName = "cli-app") {
-  const app = createTmpApp(fixtureName);
-  tmpApps.push(app);
-  return app;
+  return createTmpApp(fixtureName);
 }
 
 async function runStaticBuild(fixtureName = "cli-app", extra?: Partial<BuildAppOptions>) {
@@ -58,8 +42,8 @@ async function runStaticBuild(fixtureName = "cli-app", extra?: Partial<BuildAppO
 
   await withBuildStub(() =>
     buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-      target: "static",
       staticConfig: { outDir: distDir },
+      target: "static",
       ...extra,
     })
   );
@@ -68,7 +52,7 @@ async function runStaticBuild(fixtureName = "cli-app", extra?: Partial<BuildAppO
 
 // ── All tests run serially to avoid singleton state races ─────────────────────
 
-describe.serial("buildStaticTarget", () => {
+describe("buildStaticTarget", () => {
   test("rejects routes that depend on requestLoader", async () => {
     const app = makeApp();
     const { root, routes } = await scanPages(join(app.path, "src/pages"));
@@ -177,8 +161,8 @@ describe.serial("buildStaticTarget", () => {
     await expect(
       withBuildStub(() =>
         buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-          target: "static",
           staticConfig: { outDir: distDir },
+          target: "static",
         })
       )
     ).rejects.toThrow(SSR_STATIC_RE);
@@ -195,8 +179,8 @@ describe.serial("buildStaticTarget", () => {
     try {
       await withBuildStub(() =>
         buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-          target: "static",
           staticConfig: { outDir: distDir },
+          target: "static",
         })
       );
     } catch (err) {
@@ -217,8 +201,8 @@ describe.serial("buildStaticTarget", () => {
     // Must NOT throw
     await withBuildStub(() =>
       buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
+        staticConfig: { onSSR: "skip", outDir: distDir },
         target: "static",
-        staticConfig: { outDir: distDir, onSSR: "skip" },
       })
     );
 
@@ -242,8 +226,8 @@ describe.serial("buildStaticTarget", () => {
     // Must NOT throw — just warn and skip
     await withBuildStub(() =>
       buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), root, {
-        target: "static",
         staticConfig: { outDir: distDir },
+        target: "static",
       })
     );
 
@@ -260,8 +244,8 @@ describe.serial("buildStaticTarget", () => {
 
     await withBuildStub(() =>
       buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
+        staticConfig: { basePath: "/furin", outDir: distDir },
         target: "static",
-        staticConfig: { outDir: distDir, basePath: "/furin" },
       })
     );
 
@@ -279,8 +263,8 @@ describe.serial("buildStaticTarget", () => {
 
     await expect(
       buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
+        staticConfig: { basePath: "sub-path", outDir: join(app.path, "dist") },
         target: "static",
-        staticConfig: { outDir: join(app.path, "dist"), basePath: "sub-path" },
       })
     ).rejects.toThrow(BASEPATH_RE);
   });
@@ -294,8 +278,8 @@ describe.serial("buildStaticTarget", () => {
 
     await withBuildStub(() =>
       buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
+        staticConfig: { basePath: "/furin/", outDir: distDir },
         target: "static",
-        staticConfig: { outDir: distDir, basePath: "/furin/" },
       })
     );
 
@@ -312,8 +296,8 @@ describe.serial("buildStaticTarget", () => {
 
     await expect(
       buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-        target: "static",
         staticConfig: { outDir: "/" },
+        target: "static",
       })
     ).rejects.toThrow(UNSAFE_DIR_RE);
   });
@@ -326,8 +310,8 @@ describe.serial("buildStaticTarget", () => {
 
     await expect(
       buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-        target: "static",
         staticConfig: { outDir: app.path },
+        target: "static",
       })
     ).rejects.toThrow(UNSAFE_DIR_RE);
   });
@@ -343,8 +327,8 @@ describe.serial("buildStaticTarget", () => {
 
     await expect(
       buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-        target: "static",
         staticConfig: { outDir: parentDir },
+        target: "static",
       })
     ).rejects.toThrow(UNSAFE_DIR_RE);
   });
@@ -363,12 +347,12 @@ describe.serial("buildStaticTarget", () => {
 
     const redirectingRoute = {
       ...baseRoute,
-      pattern: "/redirect-me",
       page: {
         ...baseRoute.page,
         loader: (): Promise<never> =>
-          Promise.reject(new Response(null, { status: 302, headers: { Location: "/home" } })),
+          Promise.reject(new Response(null, { headers: { Location: "/home" }, status: 302 })),
       },
+      pattern: "/redirect-me",
     };
 
     const manifest = await withBuildStub(() =>
@@ -377,7 +361,7 @@ describe.serial("buildStaticTarget", () => {
         app.path,
         join(app.path, ".furin/build"),
         root,
-        { target: "static", staticConfig: { outDir: distDir } }
+        { staticConfig: { outDir: distDir }, target: "static" }
       )
     );
 
@@ -400,11 +384,11 @@ describe.serial("buildStaticTarget", () => {
 
     const failingRoute = {
       ...baseRoute,
-      pattern: "/will-fail",
       page: {
         ...baseRoute.page,
         loader: (): Promise<never> => Promise.reject(new Error("prerender-boom")),
       },
+      pattern: "/will-fail",
     };
 
     const manifest = await withBuildStub(() =>
@@ -413,7 +397,7 @@ describe.serial("buildStaticTarget", () => {
         app.path,
         join(app.path, ".furin/build"),
         root,
-        { target: "static", staticConfig: { outDir: distDir, onSSR: "skip" } }
+        { staticConfig: { onSSR: "skip", outDir: distDir }, target: "static" }
       )
     );
 
@@ -435,11 +419,11 @@ describe.serial("buildStaticTarget", () => {
 
     const failingRoute = {
       ...baseRoute,
-      pattern: "/will-fail",
       page: {
         ...baseRoute.page,
         loader: (): Promise<never> => Promise.reject(new Error("prerender-boom")),
       },
+      pattern: "/will-fail",
     };
 
     await expect(
@@ -449,7 +433,7 @@ describe.serial("buildStaticTarget", () => {
           app.path,
           join(app.path, ".furin/build"),
           root,
-          { target: "static", staticConfig: { outDir: distDir } }
+          { staticConfig: { outDir: distDir }, target: "static" }
         )
       )
     ).rejects.toThrow(PRERENDER_FAIL_RE);
@@ -481,8 +465,8 @@ describe.serial("buildStaticTarget", () => {
 
     const manifest = await withBuildStub(() =>
       buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), root, {
-        target: "static",
         staticConfig: { outDir: distDir },
+        target: "static",
       })
     );
 
@@ -516,8 +500,8 @@ describe.serial("buildStaticTarget", () => {
     await expect(
       withBuildStub(() =>
         buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), root, {
-          target: "static",
           staticConfig: { outDir: distDir },
+          target: "static",
         })
       )
     ).rejects.toThrow(UNSAFE_PATH_RE);

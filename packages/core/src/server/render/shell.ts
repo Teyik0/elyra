@@ -9,7 +9,6 @@ export function extractTitle(meta?: MetaDescriptor[]): string | undefined {
       return (entry as { title: string }).title;
     }
   }
-  return;
 }
 
 export function isMetaTag(entry: MetaDescriptor): boolean {

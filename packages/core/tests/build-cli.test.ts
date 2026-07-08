@@ -1,39 +1,24 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { buildClient } from "../src/build/client.ts";
 import { buildApp, buildSSGCacheSnapshot } from "../src/build/index.ts";
-import { __resetCacheState } from "../src/server/cache/index.ts";
-import {
-  __resetTemplateState,
-  setProductionTemplateContent,
-} from "../src/server/render/template.ts";
+import { setProductionTemplateContent } from "../src/server/render/template.ts";
 import { scanPages } from "../src/server/router/index.ts";
 import { runCli } from "./helpers/run-cli.ts";
 import { createTmpApp, removeAppPath, writeAppFile } from "./helpers/tmp-app.ts";
 import { withBuildStub } from "./helpers/with-build-stub.ts";
 
-const tmpApps: Array<{ cleanup: () => void }> = [];
 const SERVER_JS_RE = /server\.js$/;
 const originalBunBuild = Bun.build;
 
 function rememberTmpApp<T extends { cleanup: () => void }>(app: T): T {
-  tmpApps.push(app);
   return app;
 }
 
 function readJsonFile<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
 }
-
-afterEach(() => {
-  Bun.build = originalBunBuild;
-  __resetTemplateState();
-  __resetCacheState();
-  while (tmpApps.length > 0) {
-    tmpApps.pop()?.cleanup();
-  }
-});
 
 describe.serial("CLI/build Bun feature", () => {
   test("buildApp({ target: 'bun' }) writes manifest and built client assets", async () => {
@@ -58,11 +43,11 @@ describe.serial("CLI/build Bun feature", () => {
     const outDir = join(app.path, ".furin/build/bundle-guard");
 
     const result = await buildClient(routes, {
-      outDir,
-      rootLayout: root.path,
-      publicPath: "/_client/",
       basePath: "",
       clientLogging: false,
+      outDir,
+      publicPath: "/_client/",
+      rootLayout: root.path,
     });
 
     const hydrateEntry = readFileSync(join(outDir, "client", basename(result.entryChunk)), "utf8");
@@ -78,28 +63,32 @@ describe.serial("CLI/build Bun feature", () => {
     const outDir = join(app.path, ".furin/build/no-sourcemaps");
     let sourcemap: unknown;
 
-    Bun.build = ((config: Parameters<typeof Bun.build>[0]) => {
-      sourcemap = config.sourcemap;
-      return Promise.resolve({
-        logs: [],
-        outputs: [
-          {
-            kind: "entry-point",
-            path: join(outDir, "client", "_hydrate.js"),
-            size: 128,
-          },
-        ],
-        success: true,
-      } as unknown as Awaited<ReturnType<typeof Bun.build>>);
-    }) as typeof Bun.build;
+    try {
+      Bun.build = ((config: Parameters<typeof Bun.build>[0]) => {
+        sourcemap = config.sourcemap;
+        return Promise.resolve({
+          logs: [],
+          outputs: [
+            {
+              kind: "entry-point",
+              path: join(outDir, "client", "_hydrate.js"),
+              size: 128,
+            },
+          ],
+          success: true,
+        } as unknown as Awaited<ReturnType<typeof Bun.build>>);
+      }) as typeof Bun.build;
 
-    await buildClient(routes, {
-      outDir,
-      rootLayout: root.path,
-      publicPath: "/_client/",
-      basePath: "",
-      clientLogging: false,
-    });
+      await buildClient(routes, {
+        basePath: "",
+        clientLogging: false,
+        outDir,
+        publicPath: "/_client/",
+        rootLayout: root.path,
+      });
+    } finally {
+      Bun.build = originalBunBuild;
+    }
 
     expect(sourcemap).toBe("none");
   });
@@ -223,7 +212,7 @@ describe.serial("CLI/build Bun feature", () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
     removeAppPath(app.path, "src/server.ts");
 
-    expect(buildApp({ rootDir: app.path, target: "bun", compile: "server" })).rejects.toThrow(
+    expect(buildApp({ compile: "server", rootDir: app.path, target: "bun" })).rejects.toThrow(
       "server.ts"
     );
   });
@@ -286,8 +275,8 @@ describe.serial("CLI/build Bun feature", () => {
     const result = await withBuildStub(() =>
       buildApp({
         rootDir: app.path,
-        target: "static",
         staticConfig: { outDir: distDir },
+        target: "static",
       })
     );
 
@@ -313,8 +302,8 @@ describe.serial("CLI/build Bun feature", () => {
     const result = await withBuildStub(() =>
       buildApp({
         rootDir: app.path,
-        target: "bun",
         serverEntry: "src/server.ts",
+        target: "bun",
       })
     );
 
@@ -343,7 +332,7 @@ describe.serial("CLI/build Bun feature", () => {
     // Ignore EISDIR — may occur when Bun.build() runs concurrently with other test files.
     // We only care that the plugin setup() was invoked at least once.
     try {
-      await buildApp({ rootDir: app.path, target: "bun", plugins: [trackingPlugin] });
+      await buildApp({ plugins: [trackingPlugin], rootDir: app.path, target: "bun" });
     } catch {
       // noop
     }

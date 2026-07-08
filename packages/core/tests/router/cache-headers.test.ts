@@ -2,9 +2,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from "bu
 import { join } from "node:path";
 
 mock.module("evlog/elysia", () => ({
+  evlog: () => (app: unknown) => app,
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
   useLogger: () => ({ set() {} }),
-  evlog: () => (app: unknown) => app,
 }));
 
 import { Elysia } from "elysia";
@@ -39,7 +39,7 @@ async function getRoute(pattern: string) {
   if (!route) {
     throw new Error(`Route ${pattern} not found in fixtures`);
   }
-  return { route, root: result.root };
+  return { root: result.root, route };
 }
 
 // ── Bullet 7: ISR response has correct Cache-Control with must-revalidate ──────

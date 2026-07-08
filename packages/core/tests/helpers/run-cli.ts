@@ -38,8 +38,8 @@ export function runCli(
 
   return {
     exitCode: proc.exitCode,
-    stdout: decodeBuffer(proc.stdout),
     stderr: decodeBuffer(proc.stderr),
+    stdout: decodeBuffer(proc.stdout),
   };
 }
 
@@ -106,15 +106,15 @@ export function startProcess(
   });
 
   return {
-    getStdout: () => stdout,
-    getStderr: () => stderr,
-    kill: () => {
-      proc.kill();
-    },
     exitCode: (async () => {
       const code = await proc.exited;
       await Promise.all([stdoutPromise, stderrPromise]);
       return code;
     })(),
+    getStderr: () => stderr,
+    getStdout: () => stdout,
+    kill: () => {
+      proc.kill();
+    },
   };
 }

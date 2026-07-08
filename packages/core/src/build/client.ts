@@ -3,6 +3,7 @@ import { basename, join } from "node:path";
 import { transformForClient } from "../plugin/transform-client";
 import { environmentGuardPlugin } from "../rsc/build/environment.ts";
 import type { ResolvedRoute } from "../server/router/index.ts";
+import { runBunBuild } from "./bun-build.ts";
 import { generateHydrateEntry } from "./hydrate";
 import { CLIENT_MODULE_PATH, LINK_MODULE_PATH, SEARCH_MODULE_PATH } from "./shared";
 import type { BuildClientOptions, BunBuildAliasConfig } from "./types";
@@ -130,7 +131,7 @@ export async function buildClient(
     },
   };
 
-  const result = await Bun.build(clientBuildConfig);
+  const result = await runBunBuild(clientBuildConfig);
   for (const output of result.outputs) {
     console.log(`[furin]   ${output.path} (${(output.size / 1024).toFixed(1)} KB)`);
   }

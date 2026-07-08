@@ -45,7 +45,7 @@ describe("scanPages: route order is deterministic", () => {
   });
 
   afterEach(() => {
-    rmSync(tempDir, { recursive: true, force: true });
+    rmSync(tempDir, { force: true, recursive: true });
   });
 
   function writePage(absPath: string) {

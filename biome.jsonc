@@ -13,6 +13,14 @@
     "enabled": true,
     "lineWidth": 100
   },
+  "assist": {
+    "actions": {
+      "source": {
+        "useSortedKeys": "off",
+        "useSortedProperties": "off"
+      }
+    }
+  },
   "linter": {
     "rules": {
       "suspicious": {

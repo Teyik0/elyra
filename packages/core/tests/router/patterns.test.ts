@@ -123,15 +123,15 @@ describe("buildRouteMatcher", () => {
     const dynamicRoute = { pattern: "/users/:id" };
     const matcher = buildRouteMatcher([dynamicRoute, staticRoute]);
 
-    expect(matcher("/users/new")).toEqual({ route: staticRoute, params: {} });
-    expect(matcher("/users/123")).toEqual({ route: dynamicRoute, params: { id: "123" } });
+    expect(matcher("/users/new")).toEqual({ params: {}, route: staticRoute });
+    expect(matcher("/users/123")).toEqual({ params: { id: "123" }, route: dynamicRoute });
   });
 
   test("does not treat static dots as wildcards", () => {
     const route = { pattern: "/v1.0" };
     const matcher = buildRouteMatcher([route]);
 
-    expect(matcher("/v1.0")).toEqual({ route, params: {} });
+    expect(matcher("/v1.0")).toEqual({ params: {}, route });
     expect(matcher("/v1x0")).toBeNull();
   });
 });

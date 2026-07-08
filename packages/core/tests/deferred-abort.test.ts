@@ -24,7 +24,7 @@ function makeControlledStream(initialBytes: Uint8Array): ControlledStream {
   if (!captured) {
     throw new Error("controller not captured");
   }
-  return { stream, controller: captured };
+  return { controller: captured, stream };
 }
 
 describe("parseDeferredNdjson — error paths", () => {
@@ -40,7 +40,7 @@ describe("parseDeferredNdjson — error paths", () => {
   });
 
   test("malformed NDJSON resolution line → the corresponding promise rejects, others do not leak", async () => {
-    const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["a"] }));
+    const initial = ndjsonLine(toCrossJSON({ __furinDeferredKeys: ["a"], title: "x" }));
     const { stream, controller } = makeControlledStream(initial);
 
     const result = await parseDeferredNdjson(stream, undefined);
@@ -55,7 +55,7 @@ describe("parseDeferredNdjson — error paths", () => {
   });
 
   test("stream cut mid-way (done before all chunks) → remaining resolvers reject", async () => {
-    const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["a", "b"] }));
+    const initial = ndjsonLine(toCrossJSON({ __furinDeferredKeys: ["a", "b"], title: "x" }));
     const { stream, controller } = makeControlledStream(initial);
 
     const result = await parseDeferredNdjson(stream, undefined);
@@ -63,7 +63,7 @@ describe("parseDeferredNdjson — error paths", () => {
     const pB = result.deferredPromises.b as Promise<unknown>;
 
     // Resolve "a", then close the stream without "b".
-    controller.enqueue(ndjsonLine({ key: "a", action: "resolve", value: toCrossJSON(1) }));
+    controller.enqueue(ndjsonLine({ action: "resolve", key: "a", value: toCrossJSON(1) }));
     controller.close();
 
     expect(await pA).toBe(1);
@@ -83,7 +83,7 @@ describe("parseDeferredNdjson — error paths", () => {
 
 describe("parseDeferredNdjson — AbortSignal", () => {
   test("abandoned deferred promises do not leak an unhandled AbortError", async () => {
-    const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["abandoned"] }));
+    const initial = ndjsonLine(toCrossJSON({ __furinDeferredKeys: ["abandoned"], title: "x" }));
     const { stream } = makeControlledStream(initial);
     const unhandled: unknown[] = [];
     const onUnhandled = (error: unknown) => unhandled.push(error);
@@ -101,7 +101,7 @@ describe("parseDeferredNdjson — AbortSignal", () => {
   });
 
   test("signal that aborts while waiting → pending promises reject with AbortError", async () => {
-    const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["a", "b"] }));
+    const initial = ndjsonLine(toCrossJSON({ __furinDeferredKeys: ["a", "b"], title: "x" }));
     const { stream } = makeControlledStream(initial);
 
     const abort = new AbortController();
@@ -124,7 +124,7 @@ describe("parseDeferredNdjson — AbortSignal", () => {
   });
 
   test("signal already aborted before the call → cancels before reading bytes", async () => {
-    const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["a"] }));
+    const initial = ndjsonLine(toCrossJSON({ __furinDeferredKeys: ["a"], title: "x" }));
     const { stream } = makeControlledStream(initial);
 
     const abort = new AbortController();
@@ -146,24 +146,24 @@ describe("parseDeferredNdjson — AbortSignal", () => {
     ]);
 
     expect(result).not.toBe("pending");
-    expect(result).toEqual({ syncData: {}, deferredPromises: {} });
+    expect(result).toEqual({ deferredPromises: {}, syncData: {} });
   });
 
   test("undefined signal → works as before, promises resolved by chunks", async () => {
-    const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["a"] }));
+    const initial = ndjsonLine(toCrossJSON({ __furinDeferredKeys: ["a"], title: "x" }));
     const { stream, controller } = makeControlledStream(initial);
 
     const result = await parseDeferredNdjson(stream, undefined);
     const pA = result.deferredPromises.a as Promise<unknown>;
 
-    controller.enqueue(ndjsonLine({ key: "a", action: "resolve", value: toCrossJSON(42) }));
+    controller.enqueue(ndjsonLine({ action: "resolve", key: "a", value: toCrossJSON(42) }));
     controller.close();
 
     expect(await pA).toBe(42);
   });
 
   test("chunks that arrived before abort are preserved, only pending ones reject", async () => {
-    const initial = ndjsonLine(toCrossJSON({ title: "x", __furinDeferredKeys: ["a", "b"] }));
+    const initial = ndjsonLine(toCrossJSON({ __furinDeferredKeys: ["a", "b"], title: "x" }));
     const { stream, controller } = makeControlledStream(initial);
 
     const abort = new AbortController();
@@ -172,7 +172,7 @@ describe("parseDeferredNdjson — AbortSignal", () => {
     const pB = result.deferredPromises.b as Promise<unknown>;
 
     // Resolve "a" before abort.
-    controller.enqueue(ndjsonLine({ key: "a", action: "resolve", value: toCrossJSON("done") }));
+    controller.enqueue(ndjsonLine({ action: "resolve", key: "a", value: toCrossJSON("done") }));
 
     // Give the parser a microtask to consume "a".
     await new Promise((r) => setTimeout(r, 5));

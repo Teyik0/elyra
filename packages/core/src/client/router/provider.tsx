@@ -81,8 +81,8 @@ export function RouterProvider({
   // Initial state. When `initialMatch` is `null`, `initialNotFound` MUST be set —
   // the provider boots into the inline not-found UI.
   const [state, setState] = useState<RouterState>(() => ({
-    match: initialMatch,
     data: initialData,
+    match: initialMatch,
     notFound: initialNotFound,
   }));
   const [isNavigating, setIsNavigating] = useState(false);
@@ -141,7 +141,6 @@ export function RouterProvider({
         return [depth0];
       }
     }
-    return;
   }, [routes]);
 
   /**
@@ -164,12 +163,12 @@ export function RouterProvider({
       }
       const { __furinStatus: _s, __furinNotFound: _n, ...cleanData } = data ?? {};
       return {
-        match: currentMatchRef.current,
         data: cleanData,
-        title,
         finalHref,
+        match: currentMatchRef.current,
         notFound: kind.error,
         notFoundBoundaries: rootBoundaries,
+        title,
       };
     },
     [basePath, rootBoundaries]
@@ -217,9 +216,9 @@ export function RouterProvider({
         } catch (parseErr) {
           log.warn({
             action: "navigate_server_error",
+            error: String(parseErr),
             href: physicalHref,
             status: res.status,
-            error: String(parseErr),
           });
           return null;
         }
@@ -265,11 +264,11 @@ export function RouterProvider({
         // Loader threw a non-redirect Response (or an Error).
         if (__furinError) {
           return {
-            match: loadedMatch,
             data: {},
-            title,
-            finalHref,
             error: __furinError,
+            finalHref,
+            match: loadedMatch,
+            title,
           };
         }
 
@@ -281,26 +280,26 @@ export function RouterProvider({
 
         if (__furinStatus === 404) {
           return {
-            match: loadedMatch,
             data,
-            title,
             finalHref,
+            match: loadedMatch,
             notFound: (__furinNotFound as { data?: unknown; message?: string }) ?? {},
+            title,
           };
         }
 
         // Server-side redirect: do not mount the pre-redirect route.
         if (finalHref) {
-          return { match: null, data, title, finalHref };
+          return { data, finalHref, match: null, title };
         }
 
-        return { match: loadedMatch, data, title, finalHref };
+        return { data, finalHref, match: loadedMatch, title };
       } catch (err: unknown) {
         if (!isAbortError(err)) {
           log.error({
             action: "navigate_failed",
-            href: basePath + logicalHref,
             error: String(err),
+            href: basePath + logicalHref,
           });
         }
         return null;
@@ -345,8 +344,8 @@ export function RouterProvider({
         prefetchCache.current,
         href,
         {
-          promise: fetchPageState(href, undefined),
           createdAt: Date.now(),
+          promise: fetchPageState(href, undefined),
           staleTime,
         },
         prefetchCacheSize
@@ -399,8 +398,8 @@ export function RouterProvider({
             prefetchCache.current,
             logicalHref,
             {
-              promise: Promise.resolve(newState),
               createdAt: Date.now(),
+              promise: Promise.resolve(newState),
               staleTime: defaultPreloadStaleTime,
             },
             prefetchCacheSize
@@ -467,7 +466,7 @@ export function RouterProvider({
         const logicalPath = normalizeHref(toLogical(effectiveUrl.pathname, basePath));
         setCurrentHref(logicalPath + effectiveUrl.search);
         if (opts?.resetScroll ?? true) {
-          pendingScrollRef.current = { type: "reset", href: physicalEffective };
+          pendingScrollRef.current = { href: physicalEffective, type: "reset" };
         }
       } finally {
         if (navVersion.current === myVersion) {
@@ -597,9 +596,9 @@ export function RouterProvider({
         }
         setCurrentHref(normalizeHref(effectiveLogical));
         if (destKey) {
-          pendingScrollRef.current = { type: "restore", key: destKey };
+          pendingScrollRef.current = { key: destKey, type: "restore" };
         } else {
-          window.scrollTo({ top: 0, behavior: "instant" });
+          window.scrollTo({ behavior: "instant", top: 0 });
         }
       } finally {
         if (navVersion.current === myVersion) {
@@ -633,9 +632,9 @@ export function RouterProvider({
         const raw = sessionStorage.getItem(SCROLL_STORAGE_KEY);
         const positions: Record<string, number> = raw ? JSON.parse(raw) : {};
         const y = positions[instruction.key] ?? 0;
-        window.scrollTo({ top: y, behavior: "instant" });
+        window.scrollTo({ behavior: "instant", top: y });
       } catch {
-        window.scrollTo({ top: 0, behavior: "instant" });
+        window.scrollTo({ behavior: "instant", top: 0 });
       }
       return;
     }
@@ -648,7 +647,7 @@ export function RouterProvider({
         element.scrollIntoView({ behavior: "instant", block: "start" });
       }
     } else {
-      window.scrollTo({ top: 0, behavior: "instant" });
+      window.scrollTo({ behavior: "instant", top: 0 });
     }
   }, [currentHref]);
 
@@ -856,16 +855,16 @@ export function RouterProvider({
         {
           basePath,
           currentHref,
-          search: resolvedSearch,
-          searchRoutes: routes,
-          navigate,
-          prefetch,
-          refresh,
-          invalidatePrefetch,
-          isNavigating,
           defaultPreload,
           defaultPreloadDelay,
           defaultPreloadStaleTime,
+          invalidatePrefetch,
+          isNavigating,
+          navigate,
+          prefetch,
+          refresh,
+          search: resolvedSearch,
+          searchRoutes: routes,
         },
         pageElement,
         {

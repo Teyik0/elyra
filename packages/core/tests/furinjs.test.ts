@@ -78,21 +78,21 @@ describe.serial("furin()", () => {
     ]);
 
     __setCompileContext({
-      rootPath,
       modules: {
         [rootPath]: rootMod,
         [indexPath]: indexMod,
         [blogSlugPath]: blogSlugMod,
       },
-      routes: [
-        { pattern: "/", path: indexPath, mode: "ssg" },
-        { pattern: "/blog/:slug", path: blogSlugPath, mode: "ssg" },
-      ],
       rootConventions: {},
+      rootPath,
       routeMetadata: {
         [indexPath]: { segmentBoundaries: [] },
         [blogSlugPath]: { segmentBoundaries: [] },
       },
+      routes: [
+        { mode: "ssg", path: indexPath, pattern: "/" },
+        { mode: "ssg", path: blogSlugPath, pattern: "/blog/:slug" },
+      ],
     });
 
     const plugin = await furin({
@@ -131,28 +131,28 @@ describe.serial("furin()", () => {
     ]);
 
     __setCompileContext({
-      rootPath,
+      embedded: {
+        assets: {
+          "/_client/app.js": clientAssetPath,
+          "/public/logo.png": publicAssetPath,
+        },
+        template: templatePath,
+      },
       modules: {
         [rootPath]: rootMod,
         [indexPath]: indexMod,
         [blogSlugPath]: blogSlugMod,
       },
-      routes: [
-        { pattern: "/", path: indexPath, mode: "ssg" },
-        { pattern: "/blog/:slug", path: blogSlugPath, mode: "ssg" },
-      ],
-      embedded: {
-        template: templatePath,
-        assets: {
-          "/_client/app.js": clientAssetPath,
-          "/public/logo.png": publicAssetPath,
-        },
-      },
       rootConventions: {},
+      rootPath,
       routeMetadata: {
         [indexPath]: { segmentBoundaries: [] },
         [blogSlugPath]: { segmentBoundaries: [] },
       },
+      routes: [
+        { mode: "ssg", path: indexPath, pattern: "/" },
+        { mode: "ssg", path: blogSlugPath, pattern: "/blog/:slug" },
+      ],
     });
 
     const instance = await furin({ pagesDir: join(app.path, "src/pages") });

@@ -8,8 +8,13 @@ export const CLIENT_FALLBACK_ROUTER: RouterContextValue = {
   // Use the same "/" as SSR_FALLBACK_ROUTER so SSR and client render the
   // same active-state when no RouterProvider is present, avoiding hydration mismatches.
   currentHref: "/",
-  search: {},
-  searchRoutes: [],
+  defaultPreload: "intent",
+  defaultPreloadDelay: 50,
+  defaultPreloadStaleTime: 30_000,
+  invalidatePrefetch: (_path, _type) => {
+    /* noop fallback */
+  },
+  isNavigating: false,
   navigate: (href, _opts) => {
     window.location.href = href;
     return Promise.resolve();
@@ -17,17 +22,12 @@ export const CLIENT_FALLBACK_ROUTER: RouterContextValue = {
   prefetch: (_href, _opts) => {
     /* noop fallback */
   },
-  invalidatePrefetch: (_path, _type) => {
-    /* noop fallback */
-  },
   refresh: (_opts) => {
     window.location.reload();
     return Promise.resolve();
   },
-  isNavigating: false,
-  defaultPreload: "intent",
-  defaultPreloadDelay: 50,
-  defaultPreloadStaleTime: 30_000,
+  search: {},
+  searchRoutes: [],
 };
 
 /**

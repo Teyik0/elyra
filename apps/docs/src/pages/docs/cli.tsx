@@ -5,6 +5,9 @@ import { getDocSourceText } from "@/lib/docs-server";
 import { route } from "./_route";
 
 export default route.page({
+  component: ({ markdownSource }) => (
+    <DocPage Content={Cli} doc={DOCS_BY_PATH["/docs/cli"]} markdownSource={markdownSource} />
+  ),
   head: () => ({
     meta: [{ title: "CLI — Furin" }],
   }),
@@ -12,7 +15,4 @@ export default route.page({
     const doc = DOCS_BY_PATH["/docs/cli"];
     return { markdownSource: getDocSourceText(doc.sourcePath) };
   },
-  component: ({ markdownSource }) => (
-    <DocPage Content={Cli} doc={DOCS_BY_PATH["/docs/cli"]} markdownSource={markdownSource} />
-  ),
 });

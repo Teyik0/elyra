@@ -11,8 +11,8 @@ export function stage3Design(ctx: PipelineContext): void {
   // ── Build ordered GeneratedFile list from manifest ─────────────────────
   ctx.fileTree = ctx.manifest.files.map(
     (f): GeneratedFile => ({
-      relativePath: f.dest,
       kind: f.kind,
+      relativePath: f.dest,
       sourcePath: resolveTemplateSrc(f.src),
     })
   );

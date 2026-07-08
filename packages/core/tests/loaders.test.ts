@@ -14,14 +14,18 @@ import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 
 mock.module("evlog/elysia", () => ({
+  evlog: () => (app: unknown) => app,
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
   useLogger: () => ({ set() {} }),
-  evlog: () => (app: unknown) => app,
 }));
 
 import type { Context } from "elysia";
 import type { HTTPHeaders } from "elysia/types";
-import { runLoaders, runRequestLoaderData } from "../src/server/render/loaders.ts";
+import {
+  runLoaders,
+  runPublicLoaders,
+  runRequestLoaderData,
+} from "../src/server/render/loaders.ts";
 import type { ResolvedRoute } from "../src/server/router/index.ts";
 import { scanPages } from "../src/server/router/index.ts";
 import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
@@ -31,19 +35,41 @@ const FIXTURES_DIR = join(import.meta.dirname, "fixtures/pages");
 
 function createMockLoaderContext(overrides: Partial<Context>): Context {
   return {
-    params: {},
-    query: {},
-    request: new Request("http://localhost/test"),
-    headers: {},
     cookie: {},
-    redirect: (url: string) => new Response(null, { status: 302, headers: { Location: url } }),
-    set: { headers: {} as HTTPHeaders },
+    headers: {},
+    params: {},
     path: "/test",
+    query: {},
+    redirect: (url: string) => new Response(null, { headers: { Location: url }, status: 302 }),
+    request: new Request("http://localhost/test"),
+    set: { headers: {} as HTTPHeaders },
     ...overrides,
   } as Context;
 }
 
 describe("runLoaders requestLoader", () => {
+  test("rejects request-bound access while building a cached public shell", async () => {
+    const baseRoute = await getRoute("/with-loader");
+    const route = withLoader(baseRoute, (context?: unknown) => {
+      const cookie = (context as Context).cookie;
+      return { session: cookie.session?.value };
+    });
+    const result = await runPublicLoaders(
+      route,
+      createMockLoaderContext({
+        cookie: { session: { value: "alice" } } as unknown as Context["cookie"],
+      })
+    );
+    expect(result.type).toBe("error");
+    if (result.type === "error") {
+      expect(result.error).toEqual(
+        new Error(
+          "[furin] Cached public loaders cannot access request, cookie, or headers. Move request-specific work to requestLoader."
+        )
+      );
+    }
+  });
+
   test("runs private data once with a read-only request context", async () => {
     const route = await getRoute("/with-loader");
     let calls = 0;
@@ -54,8 +80,8 @@ describe("runLoaders requestLoader", () => {
       return { user: ctx.cookies.get("session") };
     };
     const context = createMockLoaderContext({
-      path: "/with-loader",
       cookie: { session: { value: "alice" } } as unknown as Context["cookie"],
+      path: "/with-loader",
     });
 
     const result = await runLoaders(route, context);
@@ -139,7 +165,7 @@ describe("runLoaders — thrown Response classification", () => {
   test("Response(302) with Location is classified as redirect", async () => {
     const baseRoute = await getRoute("/with-loader");
     const route = withLoader(baseRoute, () => {
-      throw new Response(null, { status: 302, headers: { Location: "/x" } });
+      throw new Response(null, { headers: { Location: "/x" }, status: 302 });
     });
 
     const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));

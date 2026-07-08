@@ -118,7 +118,7 @@ export function shouldRefetch(entry: CacheEntry): boolean {
  * @internal Exported for unit testing only.
  */
 export function shouldInterceptClick(
-  anchor: { href: string; target: string; hasAttribute(name: string): boolean },
+  anchor: { href: string; target: string; hasAttribute: (name: string) => boolean },
   event: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean },
   basePath: string,
   currentOrigin: string,

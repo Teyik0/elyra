@@ -11,19 +11,19 @@ export { createLogger };
  * (not in a live request, not in a synthetic render scope).
  */
 const noopLogger: RequestLogger = {
+  emit: () => null,
+  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op
+  error: () => {},
+  fork: (_label, fn) => fn() as undefined,
+  getContext: () => ({}),
+  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op
+  info: () => {},
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op
   set: () => {},
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op
   setLevel: () => {},
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op
-  error: () => {},
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op
-  info: () => {},
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op
   warn: () => {},
-  emit: () => null,
-  getContext: () => ({}),
-  fork: (_label, fn) => fn() as undefined,
 };
 
 const syntheticRenderStorage = new AsyncLocalStorage<RequestLogger>();

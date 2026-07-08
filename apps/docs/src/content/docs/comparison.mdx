@@ -25,7 +25,7 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 | **Streaming** | ✅ | ✅ | ✅ |
 | **Deferred data streaming** | ❌ | ✅ (`defer` + `<Await>`) | ✅ (`defer()` + `<Await>`) |
 | **RSC** | ✅ | ⚠️ Experimental | ✅ Composite RSC |
-| **PPR** | ⚠️ Experimental | ❌ | ❌ |
+| **PPR** | ✅ Cache Components | ❌ | ✅ (`requestLoader` + Suspense) |
 | **Binary compile** | ❌ | ❌ | ✅ |
 | **ISR in dev** | ❌ | ❌ | ⚠️ Partial (loader cache, no background revalidation, deferred Promises not cached) |
 
@@ -81,7 +81,7 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 | **ISR** | ✅ (`revalidate`, `revalidatePath`) | ❌ (caching via `staleTime` + TanStack Query only) | ✅ (`revalidate` on route, `revalidatePath()`) |
 | **Streaming SSR** | ✅ (React 18 `renderToReadableStream`) | ✅ | ✅ (React 18 `renderToReadableStream`) |
 | **RSC (React Server Components)** | ✅ | ⚠️ Experimental | ✅ Composite RSC |
-| **PPR (Partial Prerendering)** | ⚠️ Experimental | ❌ | ❌ |
+| **PPR (Partial Prerendering)** | ✅ Cache Components | ❌ | ✅ (`requestLoader` + Suspense) |
 | **Server Actions** | ✅ | ✅ (`createServerFn()`) | ❌ |
 | **Suspense boundaries** | ✅ | ✅ | ✅ |
 | **Error boundaries** | ✅ (`error.js`) | ✅ (React ErrorBoundary) | ✅ (`error.tsx` per segment) |
@@ -91,7 +91,7 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 >
 > ⚠️ **Furin limitation** — Furin's composite RSC model is explicit: server-owned markup is returned by a loader and client interactivity enters through typed slots. Unlike Next.js App Router, components are not server components by default and Furin does not provide Server Actions.
 >
-> 💡 **Furin note** — `defer()` is optimized for SSR. SSG and ISR routes support it, but deferred Promises resolve synchronously during the render pass (no streaming benefit).
+> 💡 **Furin note** — `defer()` is supported on SSR routes. For SSG and ISR personalization, use `requestLoader` below an explicit Suspense boundary.
 
 ---
 

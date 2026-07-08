@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { mergeRouteSchemas, type ResolvedRoute } from "../server/router/index.ts";
+import { mergeRouteSchemas } from "../server/router/schema-merge.ts";
+import type { ResolvedRoute } from "../server/router/types.ts";
 
 /** @internal Exported for unit testing only. */
 export function patternToTypeString(pattern: string): string {

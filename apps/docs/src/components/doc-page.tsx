@@ -47,7 +47,7 @@ export function MdxLink({
   );
 }
 
-const MDX_COMPONENTS = { a: MdxLink, CodeTabs, CodeTab };
+const MDX_COMPONENTS = { a: MdxLink, CodeTab, CodeTabs };
 
 interface DocPageProps {
   Content: ComponentType<{ components?: Record<string, unknown> }>;

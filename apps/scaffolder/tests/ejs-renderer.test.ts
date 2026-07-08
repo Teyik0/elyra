@@ -6,21 +6,21 @@ import type { EjsTemplateVars } from "../src/pipeline/context";
 const TEMPLATES_DIR = resolve(import.meta.dir, "../templates");
 
 const mockVars: EjsTemplateVars = {
+  features: ["tailwind"],
+  furinVersion: "0.1.0-alpha.4",
   projectName: "My Test App",
   projectNameKebab: "my-test-app",
   projectNamePascal: "MyTestApp",
-  furinVersion: "0.1.0-alpha.4",
-  features: ["tailwind"],
   versions: {
     "@teyik0/furin": "0.1.0-alpha.4",
+    "@types/bun": "latest",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
     "bun-plugin-tailwind": "^0.0.16",
     elysia: "^1.4.28",
     evlog: "^2.10.0",
     react: "^19.1.0",
     "react-dom": "^19.1.0",
-    "@types/bun": "latest",
-    "@types/react": "^19.1.0",
-    "@types/react-dom": "^19.1.0",
     tailwindcss: "^4.1.3",
     typescript: "^5.8.3",
   },
@@ -63,8 +63,8 @@ describe("renderEjsFile — full template", () => {
   it("renders package.json.ejs with shadcn deps", async () => {
     const fullVars: EjsTemplateVars = {
       ...mockVars,
-      furinVersion: "0.1.0-alpha.4",
       features: ["tailwind", "shadcn"],
+      furinVersion: "0.1.0-alpha.4",
       versions: {
         ...mockVars.versions,
         "@radix-ui/react-slot": "^1.2.3",

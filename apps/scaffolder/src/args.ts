@@ -14,10 +14,10 @@ type BooleanFlag = "help" | "version" | "yes";
 
 const FLAG_ALIASES: Record<string, BooleanFlag> = {
   "--help": "help",
-  "-h": "help",
   "--version": "version",
-  "-v": "version",
   "--yes": "yes",
+  "-h": "help",
+  "-v": "version",
   "-y": "yes",
 };
 

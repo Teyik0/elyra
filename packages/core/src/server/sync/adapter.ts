@@ -56,10 +56,10 @@ export type SyncChangeListener = (change: SyncChange) => void;
 type MaybePromise<T> = Promise<T> | T;
 
 export interface SyncAdapter {
-  abortMutation(input: AbortMutationInput): MaybePromise<void>;
-  appendChanges(input: AppendChangesInput): MaybePromise<AppendChangesResult>;
-  beginMutation(input: BeginMutationInput): MaybePromise<BeginMutationResult>;
-  commitMutation(input: CommitMutationInput): MaybePromise<void>;
-  readChanges(input: ReadChangesInput): MaybePromise<ChangePage>;
-  subscribe(path: string, listener: SyncChangeListener): () => void;
+  abortMutation: (input: AbortMutationInput) => MaybePromise<void>;
+  appendChanges: (input: AppendChangesInput) => MaybePromise<AppendChangesResult>;
+  beginMutation: (input: BeginMutationInput) => MaybePromise<BeginMutationResult>;
+  commitMutation: (input: CommitMutationInput) => MaybePromise<void>;
+  readChanges: (input: ReadChangesInput) => MaybePromise<ChangePage>;
+  subscribe: (path: string, listener: SyncChangeListener) => () => void;
 }

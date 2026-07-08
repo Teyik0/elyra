@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import type { Context } from "elysia";
 import { createElement } from "react";
@@ -6,40 +6,38 @@ import { createElement } from "react";
 const capturedLogs: Record<string, unknown>[] = [];
 
 mock.module("evlog/elysia", () => ({
+  evlog: () => (app: unknown) => app,
   useLogger: () => ({
     set: (entry: Record<string, unknown>) => {
       capturedLogs.push(entry);
     },
   }),
-  evlog: () => (app: unknown) => app,
 }));
 
 import type { HTTPHeaders } from "elysia/types";
 import { renderSSR, renderToHTML } from "../src/server/render/index.ts";
 import { type ResolvedRoute, scanPages } from "../src/server/router/index.ts";
-import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
+import { __setDevMode } from "../src/server/runtime-env.ts";
 
 const FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages-error-nested");
 
 function createMockLoaderContext(overrides: Partial<Context> = {}) {
   return {
-    params: {},
-    query: {},
-    request: new Request("http://localhost/test"),
-    headers: {},
     cookie: {},
-    redirect: (url: string) => new Response(null, { status: 302, headers: { Location: url } }),
-    set: { headers: {} as HTTPHeaders },
+    headers: {},
+    params: {},
     path: "/test",
+    query: {},
+    redirect: (url: string) => new Response(null, { headers: { Location: url }, status: 302 }),
+    request: new Request("http://localhost/test"),
+    set: { headers: {} as HTTPHeaders },
     ...overrides,
   } as Context;
 }
 
-describe("renderToHTML — error handling", () => {
-  const originalDevMode = IS_DEV;
-  beforeAll(() => __setDevMode(false));
-  afterAll(() => __setDevMode(originalDevMode));
+__setDevMode(false);
 
+describe("renderToHTML — error handling", () => {
   test("renders the nearest error component when loader throws an Error", async () => {
     const result = await scanPages(FIXTURES_DIR);
     const blogRoute = result.routes.find((r) => r.pattern === "/blog");
@@ -223,14 +221,14 @@ describe("renderToHTML — error handling", () => {
 
     const routeWithDoubleFailure = {
       ...blogRoute,
+      error: () => {
+        throw new Error("error-tsx-boom");
+      },
       page: {
         ...blogRoute.page,
         component: () => {
           throw new Error("primary-boom");
         },
-      },
-      error: () => {
-        throw new Error("error-tsx-boom");
       },
     } as ResolvedRoute;
 
@@ -408,10 +406,6 @@ const CUSTOM_ERROR_DIGEST_RE = /digest=[0-9a-f]{10}/;
 const FURIN_ERROR_DIGEST_RE = /"digest":"[0-9a-f]{10}"/;
 
 describe("renderToHTML — digest", () => {
-  const originalDevMode = IS_DEV;
-  beforeAll(() => __setDevMode(false));
-  afterAll(() => __setDevMode(originalDevMode));
-
   test("default error component renders a 10-hex-char digest", async () => {
     const BARE_FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages");
     const result = await scanPages(BARE_FIXTURES_DIR);
@@ -512,10 +506,6 @@ describe("renderToHTML — digest", () => {
 });
 
 describe("renderSSR — digest", () => {
-  const originalDevMode = IS_DEV;
-  beforeAll(() => __setDevMode(false));
-  afterAll(() => __setDevMode(originalDevMode));
-
   test("__FURIN_DATA__ blob contains a digest under __furinError on 500 response", async () => {
     const result = await scanPages(FIXTURES_DIR);
     const blogRoute = result.routes.find((r) => r.pattern === "/blog");

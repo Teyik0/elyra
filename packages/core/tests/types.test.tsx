@@ -132,7 +132,6 @@ describe("RouteContext types (for loaders)", () => {
     });
 
     createRoute({
-      parent: parentRoute,
       loader: async ({ user, request }) => {
         // user comes from parent → must be a Promise
         expectTypeOf(user).toEqualTypeOf<Promise<{ id: number; name: string }>>();
@@ -141,6 +140,7 @@ describe("RouteContext types (for loaders)", () => {
         const resolved = await user;
         return { greeting: `Hello ${resolved.name}` };
       },
+      parent: parentRoute,
     });
   });
 
@@ -150,18 +150,18 @@ describe("RouteContext types (for loaders)", () => {
     });
 
     const parent = createRoute({
-      parent: grandparent,
       loader: async () => ({ team: { id: "team-1" } }),
+      parent: grandparent,
     });
 
     createRoute({
-      parent,
       loader: ({ org, team }) => {
         // org and team are Promises — type-check only (no await needed here)
         expectTypeOf(org).toEqualTypeOf<Promise<{ id: string }>>();
         expectTypeOf(team).toEqualTypeOf<Promise<{ id: string }>>();
         return {};
       },
+      parent,
     });
   });
 });
@@ -217,8 +217,8 @@ describe("createRoute types", () => {
     });
 
     const page = route.page({
-      tags: ["board"],
       component: () => null,
+      tags: ["board"],
     });
 
     expectTypeOf(route.tags).toEqualTypeOf<string[] | undefined>();
@@ -242,8 +242,8 @@ describe("createRoute types", () => {
   test("route with loader — data flows to page", () => {
     const route = createRoute({
       loader: async () => ({
-        user: { id: 1, name: "Alice" },
         count: 42,
+        user: { id: 1, name: "Alice" },
       }),
     });
 
@@ -258,14 +258,14 @@ describe("createRoute types", () => {
 
   test("route with loader + layout — layout sees loader data", () => {
     const route = createRoute({
-      loader: async () => ({
-        post: { id: 1, title: "Hello" },
-      }),
       layout: ({ post, children }) => {
         expectTypeOf(post).toEqualTypeOf<{ id: number; title: string }>();
         expectTypeOf(children).toEqualTypeOf<React.ReactNode>();
         return null;
       },
+      loader: async () => ({
+        post: { id: 1, title: "Hello" },
+      }),
     });
 
     route.page({
@@ -278,11 +278,11 @@ describe("createRoute types", () => {
 
   test("route with params + query — schemas are inferred", () => {
     const route = createRoute({
-      params: t.Object({ slug: t.String() }),
-      query: t.Object({ page: t.Optional(t.Number()) }),
       loader: async ({ params }) => ({
         post: { id: 1, slug: params.slug },
       }),
+      params: t.Object({ slug: t.String() }),
+      query: t.Object({ page: t.Optional(t.Number()) }),
     });
 
     route.page({
@@ -297,8 +297,8 @@ describe("createRoute types", () => {
   test("loader can use cookie to extract values for component", () => {
     const route = createRoute({
       loader: async ({ cookie }) => ({
-        theme: (cookie.theme?.value as string | undefined) ?? "light",
         sessionId: cookie.session?.value as string | undefined,
+        theme: (cookie.theme?.value as string | undefined) ?? "light",
       }),
     });
 
@@ -325,12 +325,12 @@ describe("createRoute types", () => {
     }
 
     createRoute({
-      loader: () => getHelloPayload(),
       layout: ({ message, source }) => {
         expectTypeOf(message).toEqualTypeOf<string>();
         expectTypeOf(source).toEqualTypeOf<string>();
         return null;
       },
+      loader: () => getHelloPayload(),
     });
   });
 
@@ -363,8 +363,8 @@ describe("createRoute types", () => {
   test("loader can use headers to extract values for component", () => {
     const route = createRoute({
       loader: async ({ headers }) => ({
-        userAgent: headers["user-agent"],
         acceptLanguage: headers["accept-language"],
+        userAgent: headers["user-agent"],
       }),
     });
 
@@ -398,7 +398,6 @@ describe("nested layouts", () => {
     });
 
     const childRoute = createRoute({
-      parent: parentRoute,
       loader: async ({ user }) => {
         // user is a Promise in the loader context
         expectTypeOf(user).toEqualTypeOf<Promise<{ id: number; name: string; orgId: string }>>();
@@ -408,6 +407,7 @@ describe("nested layouts", () => {
           users: [{ id: 1 }] as Array<{ id: number }>,
         };
       },
+      parent: parentRoute,
     });
 
     childRoute.page({
@@ -426,17 +426,16 @@ describe("nested layouts", () => {
     });
 
     const parentRoute = createRoute({
-      parent: grandparentRoute,
       loader: async ({ org }) => {
         // org is a Promise in the loader — await to access properties
         const o = await org;
         expectTypeOf(o.name).toBeString();
         return { team: { id: "team-1", orgId: o.id } };
       },
+      parent: grandparentRoute,
     });
 
     const childRoute = createRoute({
-      parent: parentRoute,
       loader: async ({ org, team }) => {
         // both ancestor fields are individual Promises
         const [o, t] = await Promise.all([org, team]);
@@ -444,6 +443,7 @@ describe("nested layouts", () => {
         expectTypeOf(t.orgId).toBeString();
         return { members: [{ name: "Bob" }] as Array<{ name: string }> };
       },
+      parent: parentRoute,
     });
 
     childRoute.page({
@@ -459,20 +459,20 @@ describe("nested layouts", () => {
 
   test("params propagation through nesting", () => {
     const parentRoute = createRoute({
-      params: t.Object({ orgId: t.String() }),
       loader: async ({ params }) => ({
         org: { id: params.orgId },
       }),
+      params: t.Object({ orgId: t.String() }),
     });
 
     const childRoute = createRoute({
-      parent: parentRoute,
-      params: t.Object({ userId: t.String() }),
       loader: ({ params }) => {
         expectTypeOf(params.orgId).toBeString();
         expectTypeOf(params.userId).toBeString();
         return { profile: { name: "Bob" } };
       },
+      params: t.Object({ userId: t.String() }),
+      parent: parentRoute,
     });
 
     childRoute.page({
@@ -494,12 +494,12 @@ describe("page-level loader", () => {
     });
 
     route.page({
-      loader: async () => ({ comments: [{ text: "hi" }] as Array<{ text: string }> }),
       component: ({ user, comments }) => {
         expectTypeOf(user).toEqualTypeOf<{ id: number }>();
         expectTypeOf(comments).toEqualTypeOf<Array<{ text: string }>>();
         return null;
       },
+      loader: async () => ({ comments: [{ text: "hi" }] as Array<{ text: string }> }),
     });
   });
 
@@ -507,12 +507,12 @@ describe("page-level loader", () => {
     const route = createRoute();
 
     route.page({
-      loader: async () => ({ title: "Hello", count: 42 }),
       component: ({ title, count }) => {
         expectTypeOf(title).toBeString();
         expectTypeOf(count).toBeNumber();
         return null;
       },
+      loader: async () => ({ count: 42, title: "Hello" }),
     });
   });
 
@@ -525,9 +525,9 @@ describe("page-level loader", () => {
       loader: ({ query }) => {
         const data = null as null | { name: string };
         if (!data) {
-          return { result: null, error: `not found: ${query.city}` };
+          return { error: `not found: ${query.city}`, result: null };
         }
-        return { result: data, error: null };
+        return { error: null, result: data };
       },
       component: ({ result, error }) => {
         expectTypeOf(result).toEqualTypeOf<{ name: string } | null>();
@@ -549,19 +549,19 @@ describe("page-level loader", () => {
       loader: ({ query }) => {
         const data = null as null | { name: string; country: string };
         if (!data) {
-          return { result: null, error: `not found: ${query.city}` };
+          return { error: `not found: ${query.city}`, result: null };
         }
-        return { result: data, error: null };
+        return { error: null, result: data };
       },
-      head: ({ query, result }) => ({
-        meta: [{ title: `${result?.name ?? query.city}` }],
-      }),
       component: ({ result, error, query }) => {
         expectTypeOf(result).toEqualTypeOf<{ name: string; country: string } | null>();
         expectTypeOf(error).toEqualTypeOf<string | null>();
         expectTypeOf(query.city).toEqualTypeOf<string | undefined>();
         return null;
       },
+      head: ({ query, result }) => ({
+        meta: [{ title: `${result?.name ?? query.city}` }],
+      }),
     });
   });
 
@@ -593,13 +593,13 @@ describe("defer() page loader", () => {
     const route = createRoute();
 
     route.page({
-      loader: () => defer({ board: "my board" }),
       component: (props) => {
         expectTypeOf(props.board).toBeString();
         // @ts-expect-error — the internal brand must NOT surface as a component prop
         props.__isDeferred;
         return null;
       },
+      loader: () => defer({ board: "my board" }),
     });
   });
 
@@ -607,16 +607,16 @@ describe("defer() page loader", () => {
     const route = createRoute();
 
     route.page({
-      loader: () =>
-        defer({
-          board: "my board",
-          stats: Promise.resolve({ count: 42 }),
-        }),
       component: ({ board, stats }) => {
         expectTypeOf(board).toBeString();
         expectTypeOf(stats).toEqualTypeOf<Promise<{ count: number }>>();
         return null;
       },
+      loader: () =>
+        defer({
+          board: "my board",
+          stats: Promise.resolve({ count: 42 }),
+        }),
     });
   });
 
@@ -624,14 +624,14 @@ describe("defer() page loader", () => {
     const route = createRoute();
 
     route.page({
-      loader: () => defer({ board: "my board" }),
+      component: () => null,
       head: (ctx) => {
         expectTypeOf(ctx.board).toBeString();
         // @ts-expect-error — the internal brand must NOT surface in head() ctx
         ctx.__isDeferred;
         return { meta: [{ title: ctx.board }] };
       },
-      component: () => null,
+      loader: () => defer({ board: "my board" }),
     });
   });
 
@@ -645,6 +645,7 @@ describe("defer() page loader", () => {
     });
 
     parent.page({
+      component: () => null,
       loader: async (ctx) => {
         expectTypeOf(ctx.slow).toEqualTypeOf<Promise<{ kind: "value" }>>();
         // A single await must yield the resolved value — not another Promise.
@@ -652,7 +653,6 @@ describe("defer() page loader", () => {
         expectTypeOf(v).toEqualTypeOf<{ kind: "value" }>();
         return { received: v };
       },
-      component: () => null,
     });
   });
 
@@ -662,13 +662,13 @@ describe("defer() page loader", () => {
     });
 
     parent.page({
+      component: () => null,
       loader: async (ctx) => {
         expectTypeOf(ctx.user).toEqualTypeOf<Promise<string>>();
         const u = await ctx.user;
         expectTypeOf(u).toBeString();
         return { greet: `hi ${u}` };
       },
-      component: () => null,
     });
   });
 });
@@ -676,19 +676,19 @@ describe("defer() page loader", () => {
 describe("page head", () => {
   test("head receives accumulated data + page loader data", () => {
     const route = createRoute({
-      loader: async () => ({ post: { title: "Hello", excerpt: "World" } }),
+      loader: async () => ({ post: { excerpt: "World", title: "Hello" } }),
     });
 
     route.page({
-      loader: async () => ({
-        comments: [{ text: "Nice" }],
-      }),
+      component: () => null,
       head: ({ post, comments }) => {
         expectTypeOf(post.title).toBeString();
         expectTypeOf(comments).toEqualTypeOf<Array<{ text: string }>>();
         return { meta: [{ title: post.title }] };
       },
-      component: () => null,
+      loader: async () => ({
+        comments: [{ text: "Nice" }],
+      }),
     });
   });
 });
@@ -768,8 +768,8 @@ describe("collectRouteChainFromRoute", () => {
     });
 
     const childRoute = createRoute({
-      parent: parentRoute,
       loader: async () => ({ team: "dev" }),
+      parent: parentRoute,
     });
 
     const page = childRoute.page({ component: () => null }) as any;
@@ -787,13 +787,13 @@ describe("collectRouteChainFromRoute", () => {
     });
 
     const parent = createRoute({
-      parent: grandparent,
       loader: async () => ({ level: "parent" }),
+      parent: grandparent,
     });
 
     const child = createRoute({
-      parent,
       loader: async () => ({ level: "child" }),
+      parent,
     });
 
     const page = child.page({ component: () => null }) as any;

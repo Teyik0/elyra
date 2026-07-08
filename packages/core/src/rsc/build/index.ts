@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runBunBuild } from "../../build/bun-build.ts";
 import type { ResolvedRoute, RootLayout } from "../../server/router/index.ts";
 import { environmentGuardPlugin } from "./environment.ts";
 import { assertInstalledRscVersions } from "../version.ts";
@@ -43,7 +44,7 @@ export async function buildRscGraph(
       });
     },
   };
-  const result = await Bun.build({
+  const result = await runBunBuild({
     entrypoints: [root.path, ...routes.map((route) => route.path)],
     outdir: graphDir,
     target: "bun",
@@ -63,7 +64,7 @@ export async function buildRscGraph(
       `[furin] RSC graph build failed.\n${result.logs.map((log) => log.message).join("\n")}`
     );
   }
-  const codecResult = await Bun.build({
+  const codecResult = await runBunBuild({
     entrypoints: [fileURLToPath(import.meta.resolve("../server-codec.ts"))],
     outdir: outDir,
     target: "bun",

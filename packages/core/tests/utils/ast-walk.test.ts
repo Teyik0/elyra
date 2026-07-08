@@ -5,11 +5,11 @@ describe("walkAST", () => {
   test("invokes visitor for every node with a type property", () => {
     const visited: string[] = [];
     const ast = {
-      type: "Program",
       body: [
-        { type: "ExpressionStatement", expression: { type: "Literal", value: 1 } },
-        { type: "ExpressionStatement", expression: { type: "Identifier", name: "x" } },
+        { expression: { type: "Literal", value: 1 }, type: "ExpressionStatement" },
+        { expression: { name: "x", type: "Identifier" }, type: "ExpressionStatement" },
       ],
+      type: "Program",
     };
 
     walkAST(ast, (node) => visited.push(node.type));
@@ -26,10 +26,10 @@ describe("walkAST", () => {
   test("skips type/start/end keys so visitor is not called on positional metadata", () => {
     const visited: string[] = [];
     const ast = {
-      type: "Node",
-      start: 0,
-      end: 10,
       body: [{ type: "Child" }],
+      end: 10,
+      start: 0,
+      type: "Node",
     };
 
     walkAST(ast, (node) => visited.push(node.type));
@@ -51,8 +51,8 @@ describe("walkAST", () => {
   test("traverses arrays at any depth", () => {
     const visited: string[] = [];
     const ast = {
-      type: "Root",
       list: [[{ type: "NestedA" }, { type: "NestedB" }]],
+      type: "Root",
     };
 
     walkAST(ast, (node) => visited.push(node.type));
@@ -65,8 +65,8 @@ describe("walkAST", () => {
     // This test simply documents that behaviour.
     const visited: string[] = [];
     const ast = {
-      type: "Root",
       child: { type: "Leaf" },
+      type: "Root",
     };
 
     walkAST(ast, (node) => {

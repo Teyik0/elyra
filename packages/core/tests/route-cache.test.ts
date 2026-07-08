@@ -19,12 +19,12 @@ describe("createRouteCache", () => {
     const deleted: Array<{ key: string; html: string }> = [];
     const cache = createRouteCache<{ html: string }>({
       name: "dev",
+      onDelete: (key, entry) => {
+        deleted.push({ html: entry.html, key });
+      },
       pathFromKey: (key) => {
         const sep = key.lastIndexOf(":/");
         return sep === -1 ? null : key.slice(sep + 1);
-      },
-      onDelete: (key, entry) => {
-        deleted.push({ key, html: entry.html });
       },
     });
     const root = "C:/Users/me/app/src/pages";
@@ -37,11 +37,11 @@ describe("createRouteCache", () => {
     expect(result).toEqual({ deleted: true, purgedPaths: ["/blog/post"] });
     expect(cache.get(key)).toBeUndefined();
     expect(cache.get(`${root}:/other`)).toEqual({ html: "other" });
-    expect(deleted).toEqual([{ key, html: "post" }]);
+    expect(deleted).toEqual([{ html: "post", key }]);
   });
 
   test("applies LRU eviction and promotes entries on read", () => {
-    const cache = createRouteCache<{ html: string }>({ name: "lru", maxSize: 2 });
+    const cache = createRouteCache<{ html: string }>({ maxSize: 2, name: "lru" });
     cache.set("/a", { html: "a" });
     cache.set("/b", { html: "b" });
 

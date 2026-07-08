@@ -23,13 +23,13 @@ const HEADING_2_RE = /^##\s+(.+)$/;
 const HEADING_3_RE = /^###\s+(.+)$/;
 
 const searchSchema = {
-  title: "string",
-  section: "string",
-  description: "string",
   content: "string",
+  description: "string",
   href: "string",
   kind: "string",
   order: "number",
+  section: "string",
+  title: "string",
 } as const;
 
 const searchIndexEntries = buildSearchIndexEntries();
@@ -197,10 +197,10 @@ export async function searchDocs(
   const limit = clampLimit(rawLimit);
   const response = await search(index, {
     boost: {
-      title: 5,
-      section: 3,
-      description: 2,
       content: 1,
+      description: 2,
+      section: 3,
+      title: 5,
     },
     limit: limit * 2,
     properties: ["title", "section", "description", "content"],

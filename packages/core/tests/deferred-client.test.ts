@@ -28,13 +28,13 @@ function makeNdjsonStream(lines: string[]): ReadableStream<Uint8Array> {
 describe("parseDeferredNdjson()", () => {
   test("parses an NDJSON stream with only synchronous data", async () => {
     // Simulates toCrossJSONStream({ title: "hello" }) → 1 line (no Promises)
-    const syncValue = { title: "hello", count: 42 };
+    const syncValue = { count: 42, title: "hello" };
     const crossJson = toCrossJSON(syncValue);
     const stream = makeNdjsonStream([JSON.stringify(crossJson)]);
 
     const result = await parseDeferredNdjson(stream, undefined);
 
-    expect(result.syncData).toEqual({ title: "hello", count: 42 });
+    expect(result.syncData).toEqual({ count: 42, title: "hello" });
     expect(Object.keys(result.deferredPromises)).toHaveLength(0);
   });
 
@@ -42,7 +42,7 @@ describe("parseDeferredNdjson()", () => {
     // Simulates toCrossJSONStream({ title: "board", stats: Promise.resolve(99) })
     const statsPromise = Promise.resolve(99);
     const ndjsonLines: string[] = [];
-    const stream = toCrossJSONStream({ title: "board", stats: statsPromise });
+    const stream = toCrossJSONStream({ stats: statsPromise, title: "board" });
     const reader = stream.getReader();
     for (;;) {
       const { done, value } = await reader.read();
@@ -75,7 +75,7 @@ describe("parseDeferredNdjson()", () => {
     const parsePromise = parseDeferredNdjson(stream, undefined);
     controller.enqueue(
       enc.encode(
-        `${JSON.stringify(toCrossJSON({ title: "hello", __furinDeferredKeys: ["data"] }))}\n`
+        `${JSON.stringify(toCrossJSON({ __furinDeferredKeys: ["data"], title: "hello" }))}\n`
       )
     );
 
@@ -96,7 +96,7 @@ describe("parseDeferredNdjson()", () => {
 
     controller.enqueue(
       enc.encode(
-        `${JSON.stringify({ key: "data", action: "resolve", value: toCrossJSON("slow") })}\n`
+        `${JSON.stringify({ action: "resolve", key: "data", value: toCrossJSON("slow") })}\n`
       )
     );
     controller.close();

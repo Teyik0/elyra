@@ -36,11 +36,11 @@ function renderHook<TInput, TResult>(
   }
 
   return {
-    run,
     cleanup: () => {
       flushSync(() => root.unmount());
       container.remove();
     },
+    run,
   };
 }
 
@@ -67,11 +67,11 @@ function renderVoidHook<TResult>(
   }
 
   return {
-    run,
     cleanup: () => {
       flushSync(() => root.unmount());
       container.remove();
     },
+    run,
   };
 }
 
@@ -106,11 +106,11 @@ describe("useSync", () => {
     };
 
     const { cleanup, run } = renderHook(mutation, {
-      optimistic: ({ input }) => {
-        optimisticInputs.push(input);
-      },
       onSuccess: ({ result }) => {
         successResults.push(result);
+      },
+      optimistic: ({ input }) => {
+        optimisticInputs.push(input);
       },
     });
 
@@ -136,12 +136,12 @@ describe("useSync", () => {
     });
 
     const { cleanup, run } = renderHook<CardPatch, MutationResult>(mutation, {
+      onError: ({ error }) => {
+        events.push((error as { message: string }).message);
+      },
       optimistic: () => {
         events.push("optimistic");
         return () => events.push("rollback");
-      },
-      onError: ({ error }) => {
-        events.push((error as { message: string }).message);
       },
     });
 
@@ -160,10 +160,10 @@ describe("useSync", () => {
     const { cleanup, run } = renderHook<CardPatch, { error: false }>(
       async () => ({ error: false }),
       {
-        optimistic: () => () => events.push("rollback"),
         onError: ({ error }) => {
           events.push(String(error));
         },
+        optimistic: () => () => events.push("rollback"),
       }
     );
 
@@ -180,13 +180,13 @@ describe("useSync", () => {
     const { cleanup, run } = renderHook<CardPatch, MutationResult>(
       async () => ({ data: { ok: true }, error: null }),
       {
-        optimistic: () => () => events.push("rollback"),
         onError: () => {
           events.push("error");
         },
         onSuccess: () => {
           throw new Error("callback failed");
         },
+        optimistic: () => () => events.push("rollback"),
       }
     );
 

@@ -53,11 +53,11 @@ describe.serial("render/template", () => {
   test("getDevTemplate caches within TTL and re-fetches after expiry", async () => {
     let requestCount = 0;
     const server = Bun.serve({
-      port: 0,
       fetch() {
         requestCount += 1;
         return new Response("<html>dev-template</html>");
       },
+      port: 0,
     });
 
     try {
@@ -77,10 +77,10 @@ describe.serial("render/template", () => {
 
   test("getDevTemplate throws on failed fetch", async () => {
     const server = Bun.serve({
-      port: 0,
       fetch() {
         return new Response("boom", { status: 500 });
       },
+      port: 0,
     });
 
     try {

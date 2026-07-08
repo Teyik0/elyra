@@ -7,9 +7,9 @@ import { route as rootRoute } from "./root";
  * miss (advanced timestamp) is directly observable in the rendered HTML.
  */
 const ssgLoaderRoute = createRoute({
-  parent: rootRoute,
-  mode: "ssg",
   loader: () => Promise.resolve({ timestamp: Date.now() }),
+  mode: "ssg",
+  parent: rootRoute,
 });
 
 export default ssgLoaderRoute.page({

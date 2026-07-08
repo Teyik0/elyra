@@ -15,13 +15,13 @@ import type { ResolvedRoute } from "../src/server/router/index.ts";
 
 function makeRoute(pattern: string, filePath: string): ResolvedRoute {
   return {
-    pattern,
-    path: filePath,
     mode: "ssg",
     page: {
-      component: () => null,
       _route: { __type: "FURIN_ROUTE" },
+      component: () => null,
     },
+    path: filePath,
+    pattern,
   } as unknown as ResolvedRoute;
 }
 
@@ -71,8 +71,8 @@ describe("generateHydrateEntry", () => {
         {
           __type: "FURIN_ROUTE" as const,
           query: {
+            properties: { page: { default: 1, type: "number" } },
             type: "object",
-            properties: { page: { type: "number", default: 1 } },
           },
         },
       ],
@@ -261,13 +261,13 @@ function makeRouteWithBoundaries(
     // hydrate emission. The tests synthesize marker objects.
     segmentBoundaries: boundaries.map((b) => ({
       depth: b.depth,
-      path: "/unused",
       // Marker components — `generateHydrateEntry` only reads the `*Path`
       // fields, so the identity of these functions doesn't matter.
       error: b.errorPath ? () => null : undefined,
-      notFound: b.notFoundPath ? () => null : undefined,
       errorPath: b.errorPath,
+      notFound: b.notFoundPath ? () => null : undefined,
       notFoundPath: b.notFoundPath,
+      path: "/unused",
     })),
   } as ResolvedRoute;
 }

@@ -16,20 +16,14 @@
  * with no `error.tsx` / `not-found.tsx` are skipped — no wrapper inserted.
  */
 import { describe, expect, test } from "bun:test";
-import {
-  buildElement,
-  buildErrorElement,
-  type ErrorComponent,
-  FurinErrorBoundary,
-  FurinNotFoundBoundary,
-  type NotFoundComponent,
-  type ResolvedRoute,
-  type RuntimePage,
-  type RuntimeRoute,
-  type SegmentBoundary,
-} from "furin";
 import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
+import { FurinErrorBoundary, FurinNotFoundBoundary } from "../src/client/boundaries.tsx";
+import type { RuntimePage, RuntimeRoute } from "../src/client.ts";
+import { buildElement, buildErrorElement } from "../src/server/render/element.tsx";
+import type { ResolvedRoute, SegmentBoundary } from "../src/server/router/types.ts";
 import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
+import type { ErrorComponent } from "../src/shared/error.ts";
+import type { NotFoundComponent } from "../src/shared/not-found.ts";
 
 // Captured once so the dev-mode toggles in the error-message tests restore cleanly.
 const originalDevMode = IS_DEV;

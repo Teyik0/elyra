@@ -2,9 +2,9 @@ import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 
 mock.module("evlog/elysia", () => ({
+  evlog: () => (app: unknown) => app,
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
   useLogger: () => ({ set() {} }),
-  evlog: () => (app: unknown) => app,
 }));
 
 import { Elysia } from "elysia";

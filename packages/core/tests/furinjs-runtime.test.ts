@@ -32,12 +32,12 @@ async function setCompileContext(
   const [rootMod, indexMod] = await Promise.all([import(rootPath), import(indexPath)]);
 
   __setCompileContext({
-    rootPath,
     modules: {
       [rootPath]: rootMod,
       [indexPath]: indexMod,
     },
-    routes: [{ pattern: "/", path: indexPath, mode: "ssg" }],
+    rootPath,
+    routes: [{ mode: "ssg", path: indexPath, pattern: "/" }],
     ...(embedded ? { embedded } : {}),
     rootConventions: {},
     routeMetadata: {
@@ -238,16 +238,16 @@ describe.serial("furin() production runtime resolution", () => {
     const indexPath = join(app.path, "src/pages/index.tsx");
     const [rootMod, indexMod] = await Promise.all([import(rootPath), import(indexPath)]);
     __setCompileContext({
-      rootPath,
       modules: {
         [rootPath]: rootMod,
         [indexPath]: indexMod,
       },
-      routes: [{ pattern: "/", path: indexPath, mode: "ssg" }],
       rootConventions: {},
+      rootPath,
       routeMetadata: {
         [indexPath]: { segmentBoundaries: [] },
       },
+      routes: [{ mode: "ssg", path: indexPath, pattern: "/" }],
       ssgCache: {
         "/": {
           cachedAt: 123,
@@ -278,16 +278,16 @@ describe.serial("furin() production runtime resolution", () => {
     const indexPath = join(app.path, "src/pages/index.tsx");
     const [rootMod, indexMod] = await Promise.all([import(rootPath), import(indexPath)]);
     __setCompileContext({
-      rootPath,
       modules: {
         [rootPath]: rootMod,
         [indexPath]: indexMod,
       },
-      routes: [{ pattern: "/", path: indexPath, mode: "ssg" }],
       rootConventions: {},
+      rootPath,
       routeMetadata: {
         [indexPath]: { segmentBoundaries: [] },
       },
+      routes: [{ mode: "ssg", path: indexPath, pattern: "/" }],
       ssgCache: {
         "/": {
           cachedAt: 123,
@@ -337,7 +337,7 @@ describe.serial("furin() production runtime resolution", () => {
     __setDevMode(false);
     process.chdir(app.path);
 
-    await setCompileContext(app.path, { template: "", assets: {} });
+    await setCompileContext(app.path, { assets: {}, template: "" });
     expect(furin({ pagesDir: join(app.path, "src/pages") })).rejects.toThrow("HTML template");
   });
 
@@ -354,11 +354,11 @@ describe.serial("furin() production runtime resolution", () => {
     writeFileSync(publicAsset, "logo");
 
     await setCompileContext(app.path, {
-      template: templatePath,
       assets: {
         "/_client/app.js": clientAsset,
         "/public/logo.png": publicAsset,
       },
+      template: templatePath,
     });
 
     const instance = await furin({ pagesDir: join(app.path, "src/pages") });

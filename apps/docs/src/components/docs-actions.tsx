@@ -18,11 +18,11 @@ interface DocsActionsProps {
 }
 
 const OPEN_IN_LABELS = {
-  github: "GitHub",
   chatgpt: "ChatGPT",
   claude: "Claude",
-  cursor: "Cursor",
   copilot: "Copilot",
+  cursor: "Cursor",
+  github: "GitHub",
 } as const;
 
 export function DocsActions({ doc, markdownSource }: DocsActionsProps) {

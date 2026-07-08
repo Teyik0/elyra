@@ -8,7 +8,7 @@ describe("defer()", () => {
   });
 
   test("preserves synchronous values", () => {
-    const result = defer({ title: "hello", count: 42 });
+    const result = defer({ count: 42, title: "hello" });
     expect(result.title).toBe("hello");
     expect(result.count).toBe(42);
   });

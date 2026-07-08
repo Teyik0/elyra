@@ -104,6 +104,15 @@ export function createSyncStreamPlugin(path?: string, channel?: string) {
       let controllerRef: ReadableStreamDefaultController<Uint8Array> | undefined;
       let heartbeat: ReturnType<typeof setInterval> | undefined;
       const stream = new ReadableStream<Uint8Array>({
+        cancel() {
+          if (controllerRef) {
+            state.clients.delete(controllerRef);
+          }
+          if (heartbeat) {
+            clearInterval(heartbeat);
+            state.heartbeats.delete(heartbeat);
+          }
+        },
         start(controller) {
           controllerRef = controller;
           state.clients.add(controller);
@@ -120,15 +129,6 @@ export function createSyncStreamPlugin(path?: string, channel?: string) {
             }
           }, 15_000);
           state.heartbeats.add(heartbeat);
-        },
-        cancel() {
-          if (controllerRef) {
-            state.clients.delete(controllerRef);
-          }
-          if (heartbeat) {
-            clearInterval(heartbeat);
-            state.heartbeats.delete(heartbeat);
-          }
         },
       });
 

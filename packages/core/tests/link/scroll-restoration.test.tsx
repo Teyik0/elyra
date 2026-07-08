@@ -24,21 +24,21 @@ function makePage(content: string, linkTo?: string): React.ComponentType<Record<
 function makeRoute(path: string, content: string, linkTo?: string): ClientRoute {
   const Page = makePage(content, linkTo);
   return {
-    pattern: path,
-    regex: new RegExp(`^${path.replace(/\*/g, ".*")}$`),
     load: async () => ({
       default: {
-        component: Page,
         _route: { layout: null } as never,
+        component: Page,
       },
     }),
+    pattern: path,
+    regex: new RegExp(`^${path.replace(/\*/g, ".*")}$`),
   };
 }
 
 /** Returns a single-line NDJSON response (CrossJSON-serialised) for the /_furin/data endpoint. */
 function makeNdjsonResponse(data: Record<string, unknown>): Response {
   const ndjson = JSON.stringify(toCrossJSON(data));
-  return new Response(ndjson, { status: 200, headers: { "Content-Type": "application/x-ndjson" } });
+  return new Response(ndjson, { headers: { "Content-Type": "application/x-ndjson" }, status: 200 });
 }
 
 function waitFor(predicate: () => boolean, timeout = 2000, interval = 10): Promise<void> {
@@ -92,25 +92,23 @@ async function renderRouter(routes: ClientRoute[], initialPath = "/"): Promise<R
   flushSync(() => {
     root.render(
       createElement(RouterProvider, {
-        routes,
-        root: null,
-        initialMatch,
-        initialData: {},
-        initialDigest: undefined,
-        initialNotFound: undefined,
         autoRefresh: true,
         basePath: "",
         defaultPreload: "intent",
         defaultPreloadDelay: 50,
         defaultPreloadStaleTime: 30_000,
+        initialData: {},
+        initialDigest: undefined,
+        initialMatch,
+        initialNotFound: undefined,
         prefetchCacheSize: 50,
+        root: null,
+        routes,
       } as any)
     );
   });
 
   return {
-    container,
-    root,
     cleanup: () => {
       flushSync(() => {
         root.unmount();
@@ -118,6 +116,8 @@ async function renderRouter(routes: ClientRoute[], initialPath = "/"): Promise<R
       container.remove();
       sessionStorage.removeItem(SCROLL_STORAGE_KEY);
     },
+    container,
+    root,
   };
 }
 
@@ -144,11 +144,11 @@ describe("scroll restoration on browser back", () => {
       configurable: true,
       value: {
         getItem: (key: string) => storage[key] ?? null,
-        setItem: (key: string, value: string) => {
-          storage[key] = value;
-        },
         removeItem: (key: string) => {
           delete storage[key];
+        },
+        setItem: (key: string, value: string) => {
+          storage[key] = value;
         },
       },
     });
@@ -162,7 +162,7 @@ describe("scroll restoration on browser back", () => {
     // Mock window.scrollTo to capture calls
     win.scrollTo = mock((options: ScrollToOptions | number, _y?: number) => {
       if (typeof options === "object") {
-        scrollPositions.push({ top: options.top ?? 0, behavior: options.behavior });
+        scrollPositions.push({ behavior: options.behavior, top: options.top ?? 0 });
         currentScrollY = options.top ?? 0;
       } else if (typeof options === "number" && typeof _y === "number") {
         scrollPositions.push({ top: _y });

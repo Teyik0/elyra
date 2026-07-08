@@ -32,9 +32,9 @@ export function StatsBarSkeleton() {
 
 const COLUMN_COLORS = {
   backlog: "text-zinc-400",
-  todo: "text-blue-400",
   doing: "text-amber-400",
   done: "text-emerald-400",
+  todo: "text-blue-400",
 } as const;
 
 export function StatsBar({ stats }: { stats: BoardStats }) {

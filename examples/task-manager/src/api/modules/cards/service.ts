@@ -31,11 +31,11 @@ export function createCard(boardId: string, title: string, column: ColumnType): 
 
   db.insert(cards)
     .values({
-      id,
       boardId,
       column,
-      title,
+      createdAt,
       description: "",
+      id,
       position: sql<number>`coalesce(
         (
           select max(${cards.position})
@@ -44,7 +44,7 @@ export function createCard(boardId: string, title: string, column: ColumnType): 
         ),
         -1
       ) + 1`,
-      createdAt,
+      title,
     })
     .run();
 

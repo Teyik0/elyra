@@ -12,9 +12,9 @@ import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 
 mock.module("evlog/elysia", () => ({
+  evlog: () => (app: unknown) => app,
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
   useLogger: () => ({ set() {} }),
-  evlog: () => (app: unknown) => app,
 }));
 
 import { Elysia, t } from "elysia";
@@ -112,9 +112,9 @@ describe("mergeRouteSchemas", () => {
   test("throws when multi-route schemas include a plain JSON Schema object", () => {
     const parent = t.Object({ parentField: t.Optional(t.String()) });
     const child = {
-      type: "object",
       properties: { childField: { type: "string" } },
       required: ["childField"],
+      type: "object",
     };
     const chain = [
       { __type: "FURIN_ROUTE" as const, query: parent },

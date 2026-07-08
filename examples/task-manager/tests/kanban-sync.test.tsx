@@ -80,7 +80,7 @@ function setTextareaValue(element: HTMLTextAreaElement, value: string): void {
   const InputEventConstructor = document.defaultView?.InputEvent;
   element.dispatchEvent(
     InputEventConstructor
-      ? new InputEventConstructor("input", { bubbles: true, inputType: "insertText", data: value })
+      ? new InputEventConstructor("input", { bubbles: true, data: value, inputType: "insertText" })
       : new EventConstructor("input", { bubbles: true })
   );
   element.dispatchEvent(new EventConstructor("change", { bubbles: true }));

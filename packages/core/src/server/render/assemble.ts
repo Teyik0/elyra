@@ -1,6 +1,5 @@
 import type { toCrossJSON } from "seroval";
-import { isRscSource } from "../../rsc/shared.tsx";
-import { serializeRouteFrames } from "../../shared/route-frame.ts";
+import { containsRscSource, serializeRouteFrames } from "../../shared/route-frame.ts";
 import { getSyncStreamPath } from "../sync/config.ts";
 import type { buildHeadInjection } from "./shell";
 import { safeJson } from "./shell";
@@ -110,7 +109,7 @@ interface SplitTemplate {
 export function splitTemplate(template: string): SplitTemplate {
   const [headPre, afterHead = ""] = template.split("<!--ssr-head-->");
   const [bodyPre, bodyPost = ""] = afterHead.split("<!--ssr-outlet-->");
-  return { headPre, bodyPre, bodyPost } as SplitTemplate;
+  return { bodyPost, bodyPre, headPre } as SplitTemplate;
 }
 
 export function assembleHTML(
@@ -123,8 +122,8 @@ export function assembleHTML(
 
   let dataScript = "";
   if (data !== undefined) {
-    dataScript = Object.values(data).some((value) => isRscSource(value))
-      ? buildRouteFrameTemplate(serializeRouteFrames(data))
+    dataScript = containsRscSource(data)
+      ? buildRouteFrameTemplate(serializeRouteFrames(data, undefined))
       : `<script id="__FURIN_DATA__" type="application/json">${safeJson(data)}</script>`;
   }
   const syncScript = buildSyncRuntimeScript();

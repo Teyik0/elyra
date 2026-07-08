@@ -3,15 +3,15 @@ import { fromCrossJSON, toCrossJSON } from "seroval";
 
 // Stub evlog so render/* can import without a live request scope.
 mock.module("evlog/elysia", () => ({
+  evlog: () => (app: unknown) => app,
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
   useLogger: () => ({ set() {} }),
-  evlog: () => (app: unknown) => app,
 }));
 mock.module("evlog", () => ({
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
-  log: { warn: () => {}, error: () => {}, info: () => {}, set: () => {} },
+  createLogger: () => ({ emit() {}, error() {}, info() {}, set() {}, warn() {} }),
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
-  createLogger: () => ({ set() {}, error() {}, emit() {}, info() {}, warn() {} }),
+  log: { error: () => {}, info: () => {}, set: () => {}, warn: () => {} },
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
   useLogger: () => ({ set() {} }),
 }));
@@ -29,7 +29,7 @@ describe("serializeDeferredRejection — preserves rejection semantics over Cros
   test("notFound(): brand preserved so isNotFoundError() is true on the client", async () => {
     let thrown: unknown;
     try {
-      notFound({ message: "missing", data: { id: "x" } });
+      notFound({ data: { id: "x" }, message: "missing" });
     } catch (e) {
       thrown = e;
     }

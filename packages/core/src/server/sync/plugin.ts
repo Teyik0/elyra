@@ -91,8 +91,8 @@ function conflictResponse(reason: "in-progress" | "payload-mismatch"): Response 
         : "The Idempotency-Key was already used with a different request.",
     },
     {
-      status: 409,
       headers: inProgress ? { "retry-after": "1" } : undefined,
+      status: 409,
     }
   );
 }
@@ -104,8 +104,8 @@ async function beginMutation(ctx: MutationContext): Promise<Response | undefined
   const idempotencyKey = getIdempotencyKey(ctx);
   if (!idempotencyKey) {
     return new Response("Missing Idempotency-Key header", {
-      status: 428,
       headers: { "content-type": "text/plain; charset=utf-8" },
+      status: 428,
     });
   }
   if (!supportsReplayBody(ctx.request)) {

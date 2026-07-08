@@ -57,10 +57,10 @@ function makeMatch(
 ): LoadedClientRoute {
   return {
     component: Page,
+    load: () => Promise.resolve({ default: { _route: pageRoute, component: Page } }),
     pageRoute,
     pattern: "/",
     regex: ROOT_REGEX,
-    load: () => Promise.resolve({ default: { component: Page, _route: pageRoute } }),
     segmentBoundaries,
   };
 }

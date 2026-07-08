@@ -2,14 +2,17 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { __resetCacheState } from "../../../packages/core/src/server/cache";
 
+(globalThis as typeof globalThis & { __FURIN_SKIP_DOM_RESET?: boolean }).__FURIN_SKIP_DOM_RESET =
+  true;
+
 let deleteBoardResult = true;
 let nextBoardId = "board-created";
 
 mock.module("../src/api/modules/boards/service", () => ({
   createBoard: (name: string) => ({
+    createdAt: "2026-05-01T00:00:00.000Z",
     id: nextBoardId,
     name,
-    createdAt: "2026-05-01T00:00:00.000Z",
   }),
   deleteBoard: () => deleteBoardResult,
   getBoardData: () => undefined,

@@ -19,10 +19,10 @@ export {
   resolveMode,
 } from "./patterns.ts";
 export { createDataEndpoint, createRoutePlugin } from "./plugin.ts";
+export { mergeRouteSchemas } from "./schema-merge.ts";
 export {
   applySchemaDefaults,
   createSearchRouteMetadata,
-  mergeRouteSchemas,
   parseDataEndpointPath,
 } from "./schemas.ts";
 export type { ResolvedRoute, RootLayout, SegmentBoundary } from "./types.ts";

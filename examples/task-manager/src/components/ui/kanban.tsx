@@ -218,6 +218,12 @@ const Column = ({
         options
       ),
     {
+      onError: () => {
+        setErrorMessage("Could not move the card. The board has been restored.");
+      },
+      onSuccess: () => {
+        onMutation?.();
+      },
       optimistic: ({ input }) => {
         let previousColumn: ColumnType | undefined;
         let previousIndex = -1;
@@ -245,12 +251,6 @@ const Column = ({
             )
           );
         };
-      },
-      onError: () => {
-        setErrorMessage("Could not move the card. The board has been restored.");
-      },
-      onSuccess: () => {
-        onMutation?.();
       },
     }
   );
@@ -322,8 +322,8 @@ const Column = ({
     const lastIndicator = indicators.at(-1);
     if (!lastIndicator) {
       return {
-        offset: Number.NEGATIVE_INFINITY,
         element: null,
+        offset: Number.NEGATIVE_INFINITY,
       };
     }
 
@@ -333,13 +333,13 @@ const Column = ({
         const box = child.getBoundingClientRect();
         const offset = e.clientY - (box.top + DISTANCE_OFFSET);
         if (offset < 0 && offset > closest.offset) {
-          return { offset, element: child };
+          return { element: child, offset };
         }
         return closest;
       },
       {
-        offset: Number.NEGATIVE_INFINITY,
         element: lastIndicator,
+        offset: Number.NEGATIVE_INFINITY,
       }
     );
   };
@@ -407,7 +407,7 @@ const Card = ({ title, id, column, boardId, handleDragStart }: CardProps) => {
         draggable="true"
         layout
         layoutId={id}
-        onDragStart={(e) => handleDragStart(e as unknown as DragEvent, { title, id, column })}
+        onDragStart={(e) => handleDragStart(e as unknown as DragEvent, { column, id, title })}
       >
         <p className="pr-5 text-neutral-200 text-sm leading-snug">{title}</p>
 
@@ -471,6 +471,12 @@ const BurnBarrel = ({
   const deleteCard = useSync(
     (cardId: string, options) => apiClient.api.cards({ id: cardId }).delete(undefined, options),
     {
+      onError: () => {
+        setErrorMessage("Could not delete the card. It has been restored.");
+      },
+      onSuccess: () => {
+        onMutation?.();
+      },
       optimistic: ({ input: cardId }) => {
         let deletedCard: KanbanCard | undefined;
         let deletedIndex = -1;
@@ -486,12 +492,6 @@ const BurnBarrel = ({
           const cardToRestore = deletedCard;
           setCards((currentCards) => restoreDeletedCard(currentCards, cardToRestore, deletedIndex));
         };
-      },
-      onError: () => {
-        setErrorMessage("Could not delete the card. It has been restored.");
-      },
-      onSuccess: () => {
-        onMutation?.();
       },
     }
   );
@@ -561,16 +561,6 @@ const AddCard = ({ column, setCards, boardId, onMutation }: AddCardProps) => {
     (input: { column: ColumnType; title: string }, options) =>
       apiClient.api.boards({ boardId }).cards.post(input, options),
     {
-      optimistic: ({ idempotencyKey, input }) => {
-        const optimisticId = `optimistic-${idempotencyKey}`;
-        setCards((currentCards) => [
-          ...currentCards,
-          { column: input.column, id: optimisticId, title: input.title },
-        ]);
-        return () => {
-          setCards((currentCards) => currentCards.filter((card) => card.id !== optimisticId));
-        };
-      },
       onSuccess: ({ idempotencyKey, result }) => {
         const newCard = result.data;
         if (!newCard || newCard instanceof Response) {
@@ -586,6 +576,16 @@ const AddCard = ({ column, setCards, boardId, onMutation }: AddCardProps) => {
         );
         onMutation?.();
       },
+      optimistic: ({ idempotencyKey, input }) => {
+        const optimisticId = `optimistic-${idempotencyKey}`;
+        setCards((currentCards) => [
+          ...currentCards,
+          { column: input.column, id: optimisticId, title: input.title },
+        ]);
+        return () => {
+          setCards((currentCards) => currentCards.filter((card) => card.id !== optimisticId));
+        };
+      },
     }
   );
 
@@ -596,7 +596,7 @@ const AddCard = ({ column, setCards, boardId, onMutation }: AddCardProps) => {
     }
 
     setAddError(null);
-    const { data: newCard, error } = await createCard({ title: text.trim(), column });
+    const { data: newCard, error } = await createCard({ column, title: text.trim() });
     if (!newCard || newCard instanceof Response || error) {
       const message =
         error && typeof error === "object" && "message" in error

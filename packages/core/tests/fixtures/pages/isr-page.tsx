@@ -2,10 +2,10 @@ import { createRoute } from "../../../src/client";
 import { route as rootRoute } from "./root";
 
 const isrRoute = createRoute({
-  parent: rootRoute,
-  mode: "isr",
-  revalidate: 60,
   loader: async () => ({ timestamp: Date.now() }),
+  mode: "isr",
+  parent: rootRoute,
+  revalidate: 60,
 });
 
 export default isrRoute.page({

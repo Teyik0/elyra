@@ -53,6 +53,8 @@ function locationOf(fromDir: string, specifier: string): string {
 }
 
 const FORBIDDEN_TARGETS: Record<"shared" | "client", Set<string>> = {
+  // client may use shared + the contracts barrel, but never server runtime.
+  client: new Set(["server", "furin.ts", "config.ts", "build", "plugin", "cli", "adapter"]),
   // shared is the isomorphic leaf: no client- or server-only code, no tooling.
   shared: new Set([
     "client",
@@ -64,8 +66,6 @@ const FORBIDDEN_TARGETS: Record<"shared" | "client", Set<string>> = {
     "cli",
     "adapter",
   ]),
-  // client may use shared + the contracts barrel, but never server runtime.
-  client: new Set(["server", "furin.ts", "config.ts", "build", "plugin", "cli", "adapter"]),
 };
 
 function collectViolations(layer: "shared" | "client"): string[] {

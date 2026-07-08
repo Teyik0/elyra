@@ -13,7 +13,7 @@ describe("createMutationFingerprint", () => {
 
     const [first, second] = await Promise.all([
       createMutationFingerprint({
-        body: { z: 1, a: 2 },
+        body: { a: 2, z: 1 },
         request: new Request("http://localhost/cards?z=1&a=2", { method: "POST" }),
       }),
       createMutationFingerprint({

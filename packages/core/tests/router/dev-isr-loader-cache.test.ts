@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("evlog/elysia", () => ({
+  evlog: () => (app: unknown) => app,
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
   useLogger: () => ({ set() {} }),
-  evlog: () => (app: unknown) => app,
 }));
 
 import { Elysia } from "elysia";
@@ -398,9 +398,9 @@ describe("dev cache primitives", () => {
 
   test("isDevLoaderCacheFresh returns false for stale ISR entries", () => {
     const entry = makeEntry({
+      generatedAt: Date.now() - 2000, // 2 s ago — beyond the 1 s window
       mode: "isr",
       revalidate: 1,
-      generatedAt: Date.now() - 2000, // 2 s ago — beyond the 1 s window
     });
     expect(isDevLoaderCacheFresh(entry)).toBe(false);
   });
@@ -418,7 +418,7 @@ describe("dev cache primitives", () => {
   });
 
   test("invalidateDevLoaderCacheBySource is SSG / ISR independent — only the affected kind is cleared", () => {
-    const isrEntry = makeEntry({ mode: "isr", revalidate: 60, dependencies: ["/shared.tsx"] });
+    const isrEntry = makeEntry({ dependencies: ["/shared.tsx"], mode: "isr", revalidate: 60 });
     const ssgEntry = makeEntry({ dependencies: ["/shared.tsx"] });
 
     setDevISRLoaderCache("/isr-route", isrEntry);
@@ -450,14 +450,14 @@ describe("dev cache primitives", () => {
     const dep1 = "/old-dep.tsx";
     const dep2 = "/new-dep.tsx";
 
-    const v1 = makeEntry({ mode: "isr", revalidate: 60, dependencies: [dep1] });
+    const v1 = makeEntry({ dependencies: [dep1], mode: "isr", revalidate: 60 });
     setDevISRLoaderCache("/isr-route", v1);
 
     // dep1 must now be in the reverse index.
     expect(invalidateDevLoaderCacheBySource(dep1).isr).toBe(1);
 
     // Re-set with a different dependency set — the old dep must be removed.
-    const v2 = makeEntry({ mode: "isr", revalidate: 60, dependencies: [dep2] });
+    const v2 = makeEntry({ dependencies: [dep2], mode: "isr", revalidate: 60 });
     setDevISRLoaderCache("/isr-route", v2);
 
     // dep1 must NOT trigger invalidation any more (stale link was cleaned).
@@ -505,8 +505,8 @@ describe("isDevLoaderCacheValid", () => {
   function setupTmp(): { dir: string; cleanup: () => void } {
     const dir = makeTmpDir();
     return {
+      cleanup: () => rmSync(dir, { force: true, recursive: true }),
       dir,
-      cleanup: () => rmSync(dir, { recursive: true, force: true }),
     };
   }
 

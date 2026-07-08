@@ -82,13 +82,13 @@ export interface RouteContext<TParams = {}, TQuery = {}> {
 }
 
 export interface RequestCookies {
-  get(name: string): unknown;
+  get: (name: string) => unknown;
 }
 
 export interface RequestHeaders {
-  entries(): IterableIterator<[string, string]>;
-  get(name: string): string | null;
-  has(name: string): boolean;
+  entries: () => IterableIterator<[string, string]>;
+  get: (name: string) => string | null;
+  has: (name: string) => boolean;
 }
 
 export interface RequestLoaderContext<TParams = {}, TQuery = {}> {
@@ -192,12 +192,14 @@ export interface PageConfig<
 export interface RuntimeRoute {
   __type: "FURIN_ROUTE";
   layout?: React.FC<Record<string, unknown> & { children: React.ReactNode }>;
-  loader?(ctx: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
+  loader?: (
+    ctx: Record<string, unknown>
+  ) => Promise<Record<string, unknown>> | Record<string, unknown>;
   mode?: "ssr" | "ssg" | "isr";
   params?: unknown;
   parent?: RuntimeRoute;
   query?: unknown;
-  requestLoader?(ctx: RequestLoaderContext): Promise<object> | object;
+  requestLoader?: (ctx: RequestLoaderContext) => Promise<object> | object;
   revalidate?: number;
   tags?: string[];
 }
@@ -206,10 +208,12 @@ export interface RuntimePage {
   __type: "FURIN_PAGE";
   _route: RuntimeRoute;
   component: React.FC<Record<string, unknown>>;
-  head?(ctx: Record<string, unknown>): HeadOptions;
-  loader?(ctx: Record<string, unknown>): Promise<Record<string, unknown>> | Record<string, unknown>;
-  requestLoader?(ctx: RequestLoaderContext): Promise<object> | object;
-  staticParams?(): Promise<Record<string, string>[]> | Record<string, string>[];
+  head?: (ctx: Record<string, unknown>) => HeadOptions;
+  loader?: (
+    ctx: Record<string, unknown>
+  ) => Promise<Record<string, unknown>> | Record<string, unknown>;
+  requestLoader?: (ctx: RequestLoaderContext) => Promise<object> | object;
+  staticParams?: () => Promise<Record<string, string>[]> | Record<string, string>[];
   tags?: string[];
 }
 
@@ -256,9 +260,9 @@ export interface Route<
         TQuery
       >
   >;
-  loader?(
+  loader?: (
     ctx: RouteContext<TParams, TQuery> & PromisifyData<TParentData>
-  ): Promise<TParentData> | TParentData;
+  ) => Promise<TParentData> | TParentData;
   mode?: "ssr" | "ssg" | "isr";
 
   // Overload 1 — loader present (required).
@@ -305,7 +309,9 @@ export interface Route<
 
   /** Branded ref for type inference when used as a parent. */
   ref: RouteRef<TParentData, TParams, TQuery, TRequestData>;
-  requestLoader?(ctx: RequestLoaderContext<TParams, TQuery>): Promise<TRequestData> | TRequestData;
+  requestLoader?: (
+    ctx: RequestLoaderContext<TParams, TQuery>
+  ) => Promise<TRequestData> | TRequestData;
   revalidate?: number;
   tags?: string[];
 }
@@ -370,7 +376,6 @@ export function createRoute<
   const route = {
     ...config,
     __type: "FURIN_ROUTE" as const,
-    ref: {} as RouteRef<R["data"], R["params"], R["query"], R["requestData"]>,
 
     // biome-ignore lint/suspicious/noExplicitAny: implementation signature for both overloads
     page(pageConfig: any) {
@@ -380,6 +385,7 @@ export function createRoute<
         _route: route,
       };
     },
+    ref: {} as RouteRef<R["data"], R["params"], R["query"], R["requestData"]>,
   };
   return route as Route<R["data"], R["params"], R["query"], R["requestData"]>;
 }

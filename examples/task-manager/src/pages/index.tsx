@@ -4,29 +4,6 @@ import { CreateBoardForm } from "@/components/create-board-form";
 import { route } from "./root";
 
 export default route.page({
-  mode: "isr",
-  revalidate: 10,
-  tags: ["boards"],
-  loader: () => {
-    const rawBoards = getBoards();
-    const generatedAt = new Date().toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-    const boards = rawBoards.map((board) => ({
-      ...board,
-      formattedCreatedAt: new Date(board.createdAt).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }),
-    }));
-    return { boards, generatedAt, test: "tert" };
-  },
-  head: () => ({
-    meta: [{ title: "Task Manager — Furin" }],
-  }),
   component: ({ boards, generatedAt }) => {
     return (
       <div className="mx-auto max-w-5xl px-6 py-14">
@@ -101,4 +78,27 @@ export default route.page({
       </div>
     );
   },
+  head: () => ({
+    meta: [{ title: "Task Manager — Furin" }],
+  }),
+  loader: () => {
+    const rawBoards = getBoards();
+    const generatedAt = new Date().toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    const boards = rawBoards.map((board) => ({
+      ...board,
+      formattedCreatedAt: new Date(board.createdAt).toLocaleDateString("en-US", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      }),
+    }));
+    return { boards, generatedAt, test: "tert" };
+  },
+  mode: "isr",
+  revalidate: 10,
+  tags: ["boards"],
 });

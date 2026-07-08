@@ -1,6 +1,7 @@
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runBunBuild } from "../build/bun-build.ts";
 import { buildClient } from "../build/client.ts";
 import { generateCompileEntry } from "../build/compile-entry.ts";
 import type { BuildEntryOptions, EntryAppContext } from "../build/entry-template.ts";
@@ -262,7 +263,7 @@ export async function buildBunTarget(
       publicDir,
     });
 
-    await Bun.build({
+    await runBunBuild({
       entrypoints: [entryPath],
       compile: { outfile },
       minify: true,
@@ -294,7 +295,7 @@ export async function buildBunTarget(
       outDir: targetDir,
     });
 
-    await Bun.build({
+    await runBunBuild({
       entrypoints: [entryPath],
       outdir: targetDir,
       target: "bun",

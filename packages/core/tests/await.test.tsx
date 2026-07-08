@@ -19,9 +19,9 @@ describe("<Await>", () => {
         Suspense,
         { fallback: createElement("p", null, "loading") },
         createElement(Await<string>, {
-          resolve: promise,
           // biome-ignore lint/correctness/noChildrenProp: render-prop pattern — children is a function, not a ReactNode
           children: (val: string) => createElement("p", null, val),
+          resolve: promise,
         })
       )
     );
@@ -36,9 +36,9 @@ describe("<Await>", () => {
         Suspense,
         { fallback: createElement("span", null, "waiting") },
         createElement(Await<string>, {
-          resolve: delayed,
           // biome-ignore lint/correctness/noChildrenProp: render-prop pattern — children is a function, not a ReactNode
           children: (val: string) => createElement("span", null, val),
+          resolve: delayed,
         })
       )
     );
@@ -64,10 +64,10 @@ describe("<Await>", () => {
         Suspense,
         { fallback: createElement("p", null, "loading") },
         createElement(Await<string>, {
-          resolve: rejected,
-          errorElement: createElement(ErrorFallback, null),
           // biome-ignore lint/correctness/noChildrenProp: render-prop pattern — children is a function, not a ReactNode
           children: (val: string) => createElement("p", null, val),
+          errorElement: createElement(ErrorFallback, null),
+          resolve: rejected,
         })
       ),
       {
@@ -90,16 +90,16 @@ describe("<Await>", () => {
   });
 
   test("renders children with a resolved complex object", async () => {
-    const data = { name: "Alice", count: 42 };
+    const data = { count: 42, name: "Alice" };
     const promise = Promise.resolve(data);
     const html = await renderToString(
       createElement(
         Suspense,
         { fallback: null },
         createElement(Await<typeof data>, {
-          resolve: promise,
           // biome-ignore lint/correctness/noChildrenProp: render-prop pattern — children is a function, not a ReactNode
           children: (val: typeof data) => createElement("div", null, `${val.name}:${val.count}`),
+          resolve: promise,
         })
       )
     );
@@ -127,10 +127,10 @@ describe("<Await>", () => {
             Suspense,
             { fallback: createElement("p", null, "loading") },
             createElement(Await<string>, {
-              resolve: abortingPromise,
-              errorElement: createElement(ErrorFallback, null),
               // biome-ignore lint/correctness/noChildrenProp: render-prop pattern — children is a function, not a ReactNode
               children: (val: string) => createElement("p", null, val),
+              errorElement: createElement(ErrorFallback, null),
+              resolve: abortingPromise,
             })
           )
         );

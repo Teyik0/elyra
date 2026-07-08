@@ -2,17 +2,17 @@ import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 
 mock.module("evlog/elysia", () => ({
+  evlog: () => (app: unknown) => app,
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
   useLogger: () => ({ set() {} }),
-  evlog: () => (app: unknown) => app,
 }));
 mock.module("evlog", () => ({
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
-  log: { error: () => {}, warn: () => {}, info: () => {}, debug: () => {} },
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
   initLogger: () => {},
   // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
-  useLogger: () => ({ set() {}, info() {}, warn() {}, error() {} }),
+  log: { debug: () => {}, error: () => {}, info: () => {}, warn: () => {} },
+  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
+  useLogger: () => ({ error() {}, info() {}, set() {}, warn() {} }),
 }));
 
 import { Elysia } from "elysia";
@@ -223,8 +223,8 @@ describe("GET /_furin/data", () => {
       ...deferRoute.page,
       loader: () =>
         defer({
-          title: "deferred page",
           stats: new Promise((resolve) => setTimeout(() => resolve(42), 50)),
+          title: "deferred page",
         }),
     };
 
@@ -264,9 +264,12 @@ describe("GET /_furin/data", () => {
     // Shallow-copy `.page` rather than mutating the shared module export.
     route.page = {
       ...route.page,
-      head: ({ pageData }: { pageData: string }) => ({
-        meta: [{ title: `Page: ${pageData}` }],
-      }),
+      head: (ctx) => {
+        const { pageData } = ctx as { pageData: string };
+        return {
+          meta: [{ title: `Page: ${pageData}` }],
+        };
+      },
     };
 
     const app = new Elysia().use(createDataEndpoint(routes));
@@ -352,10 +355,10 @@ describe("GET /_furin/data", () => {
       ...layoutEntry,
       loader: () =>
         defer({
-          layoutData: "from-layout-defer",
           asyncWidget: new Promise((resolve) =>
             setTimeout(() => resolve(["item-a", "item-b"]), 20)
           ),
+          layoutData: "from-layout-defer",
         }),
     };
     route.routeChain = route.routeChain.map((r) => (r === layoutEntry ? patched : r));
@@ -387,8 +390,8 @@ describe("GET /_furin/data", () => {
       ...layoutEntry,
       loader: () =>
         defer({
-          layoutData: "from-layout",
           asyncWidget: new Promise((resolve) => setTimeout(() => resolve("widget-ok"), 10)),
+          layoutData: "from-layout",
         }),
     };
     route.routeChain = route.routeChain.map((r) => (r === layoutEntry ? patchedLayout : r));
@@ -396,8 +399,8 @@ describe("GET /_furin/data", () => {
       ...route.page,
       loader: () =>
         defer({
-          pageData: "from-page",
           asyncStats: new Promise((resolve) => setTimeout(() => resolve(99), 15)),
+          pageData: "from-page",
         }),
     };
 
@@ -428,9 +431,9 @@ describe("GET /_furin/data", () => {
       ...deferRoute.page,
       loader: () =>
         defer({
-          title: "deferred page",
-          slow: new Promise((resolve) => setTimeout(() => resolve("slow-value"), 80)),
           fast: new Promise((resolve) => setTimeout(() => resolve("fast-value"), 10)),
+          slow: new Promise((resolve) => setTimeout(() => resolve("slow-value"), 80)),
+          title: "deferred page",
         }),
     };
 
