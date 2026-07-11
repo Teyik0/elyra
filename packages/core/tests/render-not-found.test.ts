@@ -1,6 +1,6 @@
-import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
-import { join } from "node:path";
+import { describe, expect, mock, test } from "bun:test";
 import type { Context } from "elysia";
+import { createElement, type ReactNode } from "react";
 
 // Render pipeline uses useLogger() under the hood; stub as in render.test.ts.
 mock.module("evlog/elysia", () => ({
@@ -10,15 +10,56 @@ mock.module("evlog/elysia", () => ({
 }));
 
 import type { HTTPHeaders } from "elysia/types";
+import type { RuntimePage, RuntimeRoute } from "../src/client.ts";
 import { renderSSR, renderToHTML } from "../src/server/render/index.ts";
-import { type ResolvedRoute, scanPages } from "../src/server/router/index.ts";
-import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
-import { notFound } from "../src/shared/not-found.ts";
-
-const FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages-not-found-nested");
+import type { ResolvedRoute, RootLayout } from "../src/server/router/index.ts";
+import { __setDevMode } from "../src/server/runtime-env.ts";
+import { type NotFoundComponent, notFound } from "../src/shared/not-found.ts";
 
 const FURIN_DATA_SCRIPT_RE =
   /<script id="__FURIN_DATA__" type="application\/json">([\s\S]*?)<\/script>/;
+
+const ROOT_ROUTE: RuntimeRoute = {
+  __type: "FURIN_ROUTE",
+  layout: ({ children }: { children: ReactNode | undefined }) =>
+    createElement("div", { "data-testid": "root-layout" }, children),
+};
+
+const BlogNotFound: NotFoundComponent = () =>
+  createElement("div", { "data-testid": "blog-not-found" }, "Blog 404");
+const RootNotFound: NotFoundComponent = () =>
+  createElement("div", { "data-testid": "root-not-found" }, "Root 404");
+
+function createTestRoot(notFoundComponent: NotFoundComponent | undefined): RootLayout {
+  return {
+    notFound: notFoundComponent,
+    path: "/test-pages",
+    route: ROOT_ROUTE,
+  };
+}
+
+function createTestRoute(options: {
+  component: RuntimePage["component"];
+  loader: RuntimePage["loader"] | undefined;
+  notFound: NotFoundComponent | undefined;
+  pattern: string;
+}): ResolvedRoute {
+  return {
+    mode: "ssr",
+    notFound: options.notFound,
+    page: {
+      __type: "FURIN_PAGE",
+      _route: ROOT_ROUTE,
+      component: options.component,
+      ...(options.loader ? { loader: options.loader } : {}),
+    },
+    path: `/test-pages${options.pattern}/index.tsx`,
+    pattern: options.pattern,
+    routeChain: [ROOT_ROUTE],
+    segmentBoundaries: [],
+    tags: [],
+  };
+}
 
 function createMockLoaderContext(overrides: Partial<Context>) {
   return {
@@ -34,30 +75,23 @@ function createMockLoaderContext(overrides: Partial<Context>) {
   } as Context;
 }
 
+__setDevMode(false);
+
 describe("renderToHTML — not-found handling", () => {
-  const originalDevMode = IS_DEV;
-  beforeAll(() => __setDevMode(false));
-  afterAll(() => __setDevMode(originalDevMode));
-
   test("renders the nearest not-found component when loader throws notFound()", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
-    if (!blogRoute) {
-      throw new Error("Expected /blog route in fixture");
-    }
-
-    const routeWithNotFound = {
-      ...blogRoute,
-      page: {
-        ...blogRoute.page,
-        loader: () => notFound(undefined),
+    const routeWithNotFound = createTestRoute({
+      component: () => createElement("div", { "data-testid": "blog-index" }, "Blog"),
+      loader: () => {
+        notFound(undefined);
       },
-    } as ResolvedRoute;
+      notFound: BlogNotFound,
+      pattern: "/blog",
+    });
 
     const rendered = await renderToHTML(
       routeWithNotFound,
       createMockLoaderContext({ path: "/blog" }),
-      result.root
+      createTestRoot(RootNotFound)
     );
 
     expect(rendered.html).toContain("Blog 404");
@@ -65,24 +99,19 @@ describe("renderToHTML — not-found handling", () => {
   });
 
   test("renderSSR returns a 404 Response when loader throws notFound()", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
-    if (!blogRoute) {
-      throw new Error("Expected /blog route in fixture");
-    }
-
-    const routeWithNotFound = {
-      ...blogRoute,
-      page: {
-        ...blogRoute.page,
-        loader: () => notFound(undefined),
+    const routeWithNotFound = createTestRoute({
+      component: () => createElement("div", { "data-testid": "blog-index" }, "Blog"),
+      loader: () => {
+        notFound(undefined);
       },
-    } as ResolvedRoute;
+      notFound: BlogNotFound,
+      pattern: "/blog",
+    });
 
     const response = await renderSSR(
       routeWithNotFound,
       createMockLoaderContext({ path: "/blog" }),
-      result.root,
+      createTestRoot(RootNotFound),
       undefined
     );
 
@@ -93,24 +122,19 @@ describe("renderToHTML — not-found handling", () => {
   });
 
   test("renderSSR injects __furinStatus=404 into __FURIN_DATA__ for SPA nav detection (Slice 8)", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
-    if (!blogRoute) {
-      throw new Error("Expected /blog route in fixture");
-    }
-
-    const routeWithNotFound = {
-      ...blogRoute,
-      page: {
-        ...blogRoute.page,
-        loader: () => notFound({ data: { reason: "deleted" }, message: "missing" }),
+    const routeWithNotFound = createTestRoute({
+      component: () => createElement("div", { "data-testid": "blog-index" }, "Blog"),
+      loader: () => {
+        notFound({ data: { reason: "deleted" }, message: "missing" });
       },
-    } as ResolvedRoute;
+      notFound: BlogNotFound,
+      pattern: "/blog",
+    });
 
     const response = await renderSSR(
       routeWithNotFound,
       createMockLoaderContext({ path: "/blog" }),
-      result.root,
+      createTestRoot(RootNotFound),
       undefined
     );
 
@@ -129,25 +153,19 @@ describe("renderToHTML — not-found handling", () => {
   });
 
   test("falls back to the built-in 404 component when no not-found.tsx exists", async () => {
-    const BARE_FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages");
-    const result = await scanPages(BARE_FIXTURES_DIR);
-    const loaderRoute = result.routes.find((r) => r.pattern === "/with-loader");
-    if (!loaderRoute) {
-      throw new Error("Expected /with-loader route in fixture");
-    }
-
-    const routeWithNotFound = {
-      ...loaderRoute,
-      page: {
-        ...loaderRoute.page,
-        loader: () => notFound(undefined),
+    const routeWithNotFound = createTestRoute({
+      component: () => createElement("div", { "data-testid": "with-loader" }, "With loader"),
+      loader: () => {
+        notFound(undefined);
       },
-    } as ResolvedRoute;
+      notFound: undefined,
+      pattern: "/with-loader",
+    });
 
     const rendered = await renderToHTML(
       routeWithNotFound,
       createMockLoaderContext({ path: "/with-loader" }),
-      result.root
+      createTestRoot(undefined)
     );
 
     expect(rendered.html).toContain("404 — NOT FOUND");

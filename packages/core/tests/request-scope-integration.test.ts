@@ -1,25 +1,30 @@
-/**
- * Integration test: verifies that per-request AsyncLocalStorage scope is
- * established when furin is mounted as a sub-plugin inside a parent Elysia
- * instance. Without this, global pending invalidations leak into every request.
- */
-import { afterEach, describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
+
+const TESTS_DIR_SUFFIX_RE = /\/tests$/;
+
+test("request scope isolation when furin is mounted as a plugin", () => {
+  const proc = Bun.spawnSync({
+    cmd: [
+      "bun",
+      "-e",
+      `
+import { expect } from "bun:test";
 import { join } from "node:path";
 import { Elysia } from "elysia";
 import { furin, revalidatePath } from "furin";
-import { __resetCacheState } from "../src/server/cache/index.ts";
-import { __resetCompileContext } from "../src/server/internal.ts";
+import { __resetCacheState } from "./src/server/cache/index.ts";
+import { __resetCompileContext } from "./src/server/internal.ts";
 import {
   setProductionTemplateContent,
   setProductionTemplatePath,
-} from "../src/server/render/template.ts";
-import { __setDevMode } from "../src/server/runtime-env.ts";
-import { createTmpApp, writeAppFile } from "./helpers/tmp-app.ts";
+} from "./src/server/render/template.ts";
+import { __setDevMode } from "./src/server/runtime-env.ts";
+import { createTmpApp, writeAppFile } from "./tests/helpers/tmp-app.ts";
 
-const tmpApps: Array<{ cleanup: () => void }> = [];
+const tmpApps = [];
 const originalCwd = process.cwd();
 
-afterEach(() => {
+function resetState() {
   __setDevMode(true);
   setProductionTemplatePath(null);
   __resetCompileContext();
@@ -28,122 +33,101 @@ afterEach(() => {
   while (tmpApps.length > 0) {
     tmpApps.pop()?.cleanup();
   }
-});
+}
 
-describe.serial("request scope isolation when furin is mounted as a plugin", () => {
-  test("global pending invalidations do not leak into plugin request scope", async () => {
-    const app = createTmpApp("cli-app");
-    tmpApps.push(app);
-    __setDevMode(true);
-    process.chdir(app.path);
+function writeRevalidatePages(appPath, asyncLoader) {
+  const loaderPrefix = asyncLoader ? "async " : "";
+  writeAppFile(
+    appPath,
+    "src/pages/revalidate-a.tsx",
+    [
+      'import { route as rootRoute } from "./root";',
+      'import { revalidatePath } from "@teyik0/furin";',
+      "",
+      "export default rootRoute.page({",
+      "  loader: " + loaderPrefix + "() => {",
+      '    revalidatePath("/page-a", "page");',
+      "    return {};",
+      "  },",
+      "  component: () => <div>Page A</div>,",
+      "});",
+    ].join("\\n")
+  );
 
-    writeAppFile(
-      app.path,
-      "src/pages/revalidate-a.tsx",
-      [
-        'import { route as rootRoute } from "./root";',
-        'import { revalidatePath } from "@teyik0/furin";',
-        "",
-        "export default rootRoute.page({",
-        "  loader: () => {",
-        '    revalidatePath("/page-a", "page");',
-        "    return {};",
-        "  },",
-        "  component: () => <div>Page A</div>,",
-        "});",
-      ].join("\n")
-    );
+  writeAppFile(
+    appPath,
+    "src/pages/revalidate-b.tsx",
+    [
+      'import { route as rootRoute } from "./root";',
+      'import { revalidatePath } from "@teyik0/furin";',
+      "",
+      "export default rootRoute.page({",
+      "  loader: " + loaderPrefix + "() => {",
+      '    revalidatePath("/page-b", "page");',
+      "    return {};",
+      "  },",
+      "  component: () => <div>Page B</div>,",
+      "});",
+    ].join("\\n")
+  );
+}
 
-    writeAppFile(
-      app.path,
-      "src/pages/revalidate-b.tsx",
-      [
-        'import { route as rootRoute } from "./root";',
-        'import { revalidatePath } from "@teyik0/furin";',
-        "",
-        "export default rootRoute.page({",
-        "  loader: () => {",
-        '    revalidatePath("/page-b", "page");',
-        "    return {};",
-        "  },",
-        "  component: () => <div>Page B</div>,",
-        "});",
-      ].join("\n")
-    );
+try {
+  resetState();
+  let app = createTmpApp("cli-app");
+  tmpApps.push(app);
+  __setDevMode(true);
+  process.chdir(app.path);
 
-    setProductionTemplateContent("<html><body><!--ssr-outlet--></body></html>");
+  writeRevalidatePages(app.path, false);
+  setProductionTemplateContent("<html><body><!--ssr-outlet--></body></html>");
 
-    const plugin = await furin({ pagesDir: join(app.path, "src/pages") });
-    const parent = new Elysia().use(plugin);
+  let plugin = await furin({ pagesDir: join(app.path, "src/pages") });
+  let parent = new Elysia().use(plugin);
 
-    // Global invalidation (outside any request scope).
-    // If the plugin request scope is broken, this path leaks into the response.
-    revalidatePath("/global-leak", "page");
+  revalidatePath("/global-leak", "page");
 
-    const response = await parent.handle(new Request("http://furin/revalidate-a"));
-    const header = response.headers.get("x-furin-revalidate");
+  let response = await parent.handle(new Request("http://furin/revalidate-a"));
+  expect(response.headers.get("x-furin-revalidate")).toBe("/page-a");
 
-    // With proper per-request scoping, only /page-a should be present.
-    // If handle mutation is used (and lost by plugin merge), the global Set
-    // is shared and header would be "/global-leak,/page-a".
-    expect(header).toBe("/page-a");
+  resetState();
+  app = createTmpApp("cli-app");
+  tmpApps.push(app);
+  __setDevMode(true);
+  process.chdir(app.path);
+
+  writeRevalidatePages(app.path, true);
+  setProductionTemplateContent("<html><body><!--ssr-outlet--></body></html>");
+
+  plugin = await furin({ pagesDir: join(app.path, "src/pages") });
+  parent = new Elysia().use(plugin);
+
+  const [resA, resB] = await Promise.all([
+    parent.handle(new Request("http://furin/revalidate-a")),
+    parent.handle(new Request("http://furin/revalidate-b")),
+  ]);
+
+  expect(resA.headers.get("x-furin-revalidate")).toBe("/page-a");
+  expect(resB.headers.get("x-furin-revalidate")).toBe("/page-b");
+} finally {
+  resetState();
+}
+`,
+    ],
+    cwd: import.meta.dir.replace(TESTS_DIR_SUFFIX_RE, ""),
+    stderr: "pipe",
+    stdout: "pipe",
   });
 
-  test("concurrent requests do not steal each other's pending invalidations", async () => {
-    const app = createTmpApp("cli-app");
-    tmpApps.push(app);
-    __setDevMode(true);
-    process.chdir(app.path);
-
-    writeAppFile(
-      app.path,
-      "src/pages/revalidate-a.tsx",
+  if (proc.exitCode !== 0) {
+    throw new Error(
       [
-        'import { route as rootRoute } from "./root";',
-        'import { revalidatePath } from "@teyik0/furin";',
-        "",
-        "export default rootRoute.page({",
-        "  loader: async () => {",
-        '    revalidatePath("/page-a", "page");',
-        "    return {};",
-        "  },",
-        "  component: () => <div>Page A</div>,",
-        "});",
+        `request scope subprocess exited with ${proc.exitCode}`,
+        new TextDecoder().decode(proc.stdout),
+        new TextDecoder().decode(proc.stderr),
       ].join("\n")
     );
+  }
 
-    writeAppFile(
-      app.path,
-      "src/pages/revalidate-b.tsx",
-      [
-        'import { route as rootRoute } from "./root";',
-        'import { revalidatePath } from "@teyik0/furin";',
-        "",
-        "export default rootRoute.page({",
-        "  loader: async () => {",
-        '    revalidatePath("/page-b", "page");',
-        "    return {};",
-        "  },",
-        "  component: () => <div>Page B</div>,",
-        "});",
-      ].join("\n")
-    );
-
-    setProductionTemplateContent("<html><body><!--ssr-outlet--></body></html>");
-
-    const plugin = await furin({ pagesDir: join(app.path, "src/pages") });
-    const parent = new Elysia().use(plugin);
-
-    const [resA, resB] = await Promise.all([
-      parent.handle(new Request("http://furin/revalidate-a")),
-      parent.handle(new Request("http://furin/revalidate-b")),
-    ]);
-
-    const headerA = resA.headers.get("x-furin-revalidate");
-    const headerB = resB.headers.get("x-furin-revalidate");
-
-    // Each request should only see its own invalidation path.
-    expect(headerA).toBe("/page-a");
-    expect(headerB).toBe("/page-b");
-  });
+  expect(proc.exitCode).toBe(0);
 });

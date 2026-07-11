@@ -17,7 +17,11 @@ import {
 } from "../../client/router/search-store.ts";
 import { isRscSource } from "../../rsc/shared.tsx";
 import { computeErrorDigest } from "../../shared/digest.ts";
-import { serializeRouteFrames } from "../../shared/route-frame.ts";
+import {
+  containsRscSource,
+  serializeRouteFrame,
+  serializeRouteFrames,
+} from "../../shared/route-frame.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { runInSyntheticRenderScope, useLogger } from "../context-logger.ts";
@@ -418,8 +422,30 @@ export async function serializeLoaderDataNdjson(
     ...syncData,
     ...(deferredPromises ?? {}),
   };
-  if (Object.values(payload).some((value) => isRscSource(value))) {
-    return serializeRouteFrames(payload);
+  if (containsRscSource(payload)) {
+    const deferredEntries = Object.entries(deferredPromises ?? {});
+    let ndjson = serializeRouteFrames(
+      syncData,
+      deferredEntries.length > 0 ? deferredEntries.map(([key]) => key) : undefined
+    );
+    await Promise.all(
+      deferredEntries.map(async ([key, promise]) => {
+        try {
+          ndjson += serializeRouteFrame({
+            key,
+            type: "defer-resolve",
+            value: toCrossJSON(await promise),
+          });
+        } catch (error) {
+          ndjson += serializeRouteFrame({
+            key,
+            type: "defer-reject",
+            value: toCrossJSON(await serializeDeferredRejection(error)),
+          });
+        }
+      })
+    );
+    return ndjson;
   }
   const serialized = await toCrossJSONAsync(payload);
   return `${JSON.stringify(serialized)}\n`;

@@ -1,143 +1,124 @@
-import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
+import { expect, test } from "bun:test";
+
+const ROUTER_TESTS_DIR_RE = /\/tests\/router$/;
+
+test("createRoutePlugin scenarios", () => {
+  const proc = Bun.spawnSync({
+    cmd: [
+      "bun",
+      "-e",
+      `
+import { expect, mock } from "bun:test";
 import { join } from "node:path";
 
 mock.module("evlog/elysia", () => ({
-  evlog: () => (app: unknown) => app,
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
+  evlog: () => (app) => app,
   useLogger: () => ({ set() {} }),
 }));
 
-import { Elysia } from "elysia";
-import { createRoutePlugin, scanPages } from "../../src/server/router/index.ts";
-import { __setDevMode, IS_DEV } from "../../src/server/runtime-env.ts";
+const { Elysia } = await import("elysia");
+const { scanPages } = await import("./src/server/router/discovery.ts");
+const { createRoutePlugin } = await import("./src/server/router/plugin.ts");
+const { __setDevMode, IS_DEV } = await import("./src/server/runtime-env.ts");
 
-const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
+const fixturesDir = join(import.meta.dir, "tests/fixtures/pages");
+const originalDevMode = IS_DEV;
+__setDevMode(false);
 
-let originalDevMode: boolean;
-beforeAll(() => {
-  originalDevMode = IS_DEV;
-  __setDevMode(false);
-});
-afterAll(() => __setDevMode(originalDevMode));
+try {
+  let result = await scanPages(fixturesDir);
+  const ssgRoute = result.routes.find((route) => route.mode === "ssg");
+  if (!ssgRoute) {
+    throw new Error("No SSG route in fixtures");
+  }
 
-describe("createRoutePlugin", () => {
-  test("SSG route returns HTML with cache headers", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const ssgRoute = result.routes.find((r) => r.mode === "ssg");
-    if (!ssgRoute) {
-      throw new Error("No SSG route in fixtures");
-    }
+  let app = new Elysia().use(createRoutePlugin(ssgRoute, result.root));
+  let res = await app.handle(new Request("http://localhost" + ssgRoute.pattern));
 
-    const app = new Elysia().use(createRoutePlugin(ssgRoute, result.root));
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toContain("text/html");
+  expect(await res.text()).toContain("<!DOCTYPE html>");
 
-    const res = await app.handle(new Request(`http://localhost${ssgRoute.pattern}`));
+  result = await scanPages(fixturesDir);
+  const ssrRoute = result.routes.find((route) => route.mode === "ssr");
+  if (!ssrRoute) {
+    throw new Error("No SSR route in fixtures");
+  }
 
+  app = new Elysia().use(createRoutePlugin(ssrRoute, result.root));
+  res = await app.handle(new Request("http://localhost" + ssrRoute.pattern));
+
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toContain("text/html");
+
+  result = await scanPages(fixturesDir);
+  const isrRoute = result.routes.find((route) => route.mode === "isr");
+  if (isrRoute) {
+    app = new Elysia().use(createRoutePlugin(isrRoute, result.root));
+    res = await app.handle(new Request("http://localhost" + isrRoute.pattern));
     expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("text/html");
-    const html = await res.text();
-    expect(html).toContain("<!DOCTYPE html>");
-  });
+  }
 
-  test("SSR route returns streamed HTML", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const ssrRoute = result.routes.find((r) => r.mode === "ssr");
-    if (!ssrRoute) {
-      throw new Error("No SSR route in fixtures — add an SSR fixture to ensure this test runs");
-    }
-
-    const app = new Elysia().use(createRoutePlugin(ssrRoute, result.root));
-
-    const res = await app.handle(new Request(`http://localhost${ssrRoute.pattern}`));
-
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("text/html");
-  });
-
-  test("ISR route returns HTML", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const isrRoute = result.routes.find((r) => r.mode === "isr");
-    if (!isrRoute) {
-      return; // skip if no ISR routes in fixtures
-    }
-
-    const app = new Elysia().use(createRoutePlugin(isrRoute, result.root));
-
-    const res = await app.handle(new Request(`http://localhost${isrRoute.pattern}`));
-
-    expect(res.status).toBe(200);
-  });
-
-  test("route with params schema sets up guard", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    // Find a route with dynamic params like /blog/:slug
-    const paramRoute = result.routes.find((r) => r.pattern.includes(":"));
-    if (!paramRoute) {
-      return;
-    }
-
-    const app = new Elysia().use(createRoutePlugin(paramRoute, result.root));
-
-    // The plugin should set up correctly (no throw)
+  result = await scanPages(fixturesDir);
+  const paramRoute = result.routes.find((route) => route.pattern.includes(":"));
+  if (paramRoute) {
+    app = new Elysia().use(createRoutePlugin(paramRoute, result.root));
     expect(app).toBeInstanceOf(Elysia);
-  });
-});
+  }
 
-describe("query defaults", () => {
-  test("resolves default query values without redirecting", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const route = result.routes.find((r) => r.pattern === "/query-default");
-    if (!route) {
-      throw new Error("No query-default route in fixtures");
-    }
+  result = await scanPages(fixturesDir);
+  let route = result.routes.find((candidate) => candidate.pattern === "/query-default");
+  if (!route) {
+    throw new Error("No query-default route in fixtures");
+  }
 
-    const app = new Elysia().use(createRoutePlugin(route, result.root));
+  app = new Elysia().use(createRoutePlugin(route, result.root));
+  res = await app.handle(new Request("http://localhost/query-default"));
+  expect(res.status).toBe(200);
+  expect(res.headers.get("location")).toBeNull();
+  expect(await res.text()).toContain('data-city="Paris"');
 
-    const res = await app.handle(new Request("http://localhost/query-default"));
+  result = await scanPages(fixturesDir);
+  route = result.routes.find((candidate) => candidate.pattern === "/query-default");
+  if (!route) {
+    throw new Error("No query-default route in fixtures");
+  }
 
+  app = new Elysia().use(createRoutePlugin(route, result.root));
+  res = await app.handle(new Request("http://localhost/query-default?city=Paris"));
+  expect(res.status).toBe(200);
+
+  app = new Elysia().use(createRoutePlugin(route, result.root));
+  res = await app.handle(new Request("http://localhost/query-default?city=Tokyo"));
+  expect(res.status).toBe(200);
+
+  result = await scanPages(fixturesDir);
+  const routeWithoutQuery = result.routes.find((candidate) => candidate.mode === "ssg");
+  if (routeWithoutQuery) {
+    app = new Elysia().use(createRoutePlugin(routeWithoutQuery, result.root));
+    res = await app.handle(new Request("http://localhost" + routeWithoutQuery.pattern));
     expect(res.status).toBe(200);
-    expect(res.headers.get("location")).toBeNull();
-    expect(await res.text()).toContain('data-city="Paris"');
+  }
+} finally {
+  __setDevMode(originalDevMode);
+}
+process.exit(0);
+`,
+    ],
+    cwd: import.meta.dir.replace(ROUTER_TESTS_DIR_RE, ""),
+    stderr: "pipe",
+    stdout: "pipe",
   });
 
-  test("does NOT redirect when query param is explicitly provided", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const route = result.routes.find((r) => r.pattern === "/query-default");
-    if (!route) {
-      throw new Error("No query-default route in fixtures");
-    }
+  if (proc.exitCode !== 0) {
+    throw new Error(
+      [
+        `route plugin subprocess exited with ${proc.exitCode}`,
+        new TextDecoder().decode(proc.stdout),
+        new TextDecoder().decode(proc.stderr),
+      ].join("\n")
+    );
+  }
 
-    const app = new Elysia().use(createRoutePlugin(route, result.root));
-
-    const res = await app.handle(new Request("http://localhost/query-default?city=Paris"));
-
-    expect(res.status).toBe(200);
-  });
-
-  test("does NOT redirect when query param has a non-default value", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const route = result.routes.find((r) => r.pattern === "/query-default");
-    if (!route) {
-      throw new Error("No query-default route in fixtures");
-    }
-
-    const app = new Elysia().use(createRoutePlugin(route, result.root));
-
-    const res = await app.handle(new Request("http://localhost/query-default?city=Tokyo"));
-
-    expect(res.status).toBe(200);
-  });
-
-  test("does NOT redirect for route without query schema", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const ssgRoute = result.routes.find((r) => r.mode === "ssg");
-    if (!ssgRoute) {
-      return;
-    }
-
-    const app = new Elysia().use(createRoutePlugin(ssgRoute, result.root));
-
-    const res = await app.handle(new Request(`http://localhost${ssgRoute.pattern}`));
-
-    expect(res.status).toBe(200);
-  });
+  expect(proc.exitCode).toBe(0);
 });

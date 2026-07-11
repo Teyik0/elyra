@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 export type FurinGraph = "client" | "rsc" | "ssr";
 
 const SERVER_ONLY_RE = /^(?:@teyik0\/)?furin\/server-only$/;
@@ -13,7 +15,7 @@ export function environmentGuardPlugin(graph: FurinGraph): Bun.BunPlugin {
             `[furin] ${args.importer} imports furin/server-only from the client graph.`
           );
         }
-        return { path: import.meta.resolve("../../server-only.ts") };
+        return { path: fileURLToPath(import.meta.resolve("../../server-only.ts")) };
       });
       build.onResolve({ filter: CLIENT_ONLY_RE }, (args) => {
         if (graph !== "client") {
@@ -21,7 +23,7 @@ export function environmentGuardPlugin(graph: FurinGraph): Bun.BunPlugin {
             `[furin] ${args.importer} imports furin/client-only from the ${graph} graph.`
           );
         }
-        return { path: import.meta.resolve("../../client-only.ts") };
+        return { path: fileURLToPath(import.meta.resolve("../../client-only.ts")) };
       });
     },
   };

@@ -110,8 +110,8 @@
   "scripts": {
     "benchmark:rsc": "bun scripts/benchmark-rsc-transport.ts",
     "fix": "ultracite fix",
-    "test": "FURIN_RSC_CODEC_PATH=./dist/rsc/server-codec.js bun test tests/architecture/layering.test.ts tests/auto-invalidate.test.ts tests/await.test.tsx tests/build-embed.test.ts tests/cli-config.test.ts tests/defer.test.ts tests/deferred-abort.test.ts tests/deferred-client.test.ts tests/deferred-hydration-race.test.ts tests/deferred-loaders.test.ts tests/deferred-rejection.test.ts tests/deferred-render.test.ts tests/dev-hmr-cache-invalidation.integration.test.ts tests/dev-hmr-parent-child.integration.test.ts tests/dev-hmr.integration.test.ts tests/dev-page-plugin.test.ts tests/error-boundary-navigation.test.tsx tests/ppr.test.tsx tests/react-singleton-integration.test.ts tests/render-boundaries.test.tsx tests/render-digest.test.ts tests/render-element-boundaries.test.tsx tests/render-template.test.ts tests/route-cache.test.ts tests/route-types.test.ts tests/rsc-build.test.ts --parallel=2 --isolate --bail --timeout 30000 --preload ../../tests/setup.ts",
-    "test:dev": "FURIN_RSC_CODEC_PATH=./dist/rsc/server-codec.js bun test --changed --parallel=2 --isolate --bail --timeout 30000 --preload ../../tests/setup.ts",
+    "test": "bash scripts/test.sh",
+    "test:dev": "FURIN_TEST_CHANGED=1 bash scripts/test.sh",
     "tscheck": "tsc --noEmit",
     "build": "bun run build.ts"
   },

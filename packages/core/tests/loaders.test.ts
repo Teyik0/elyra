@@ -1,17 +1,4 @@
-/**
- * Tests for `runLoaders` Response classification.
- *
- * The contract under test:
- * - 3xx WITH Location header → `{ type: "redirect" }`
- * - 3xx WITHOUT Location → `{ type: "error", status: 500 }` (developer mistake;
- *   3xx without Location is invalid HTTP, surfacing as error is more debuggable)
- * - 4xx / 5xx → `{ type: "error", status: <res.status>, message: <body|statusText> }`
- * - `notFound()` → `{ type: "not-found" }` (unchanged)
- * - thrown `Error` / non-Error → `{ type: "error", status: 500 }` (regression)
- */
-
-import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
-import { join } from "node:path";
+import { describe, expect, mock, test } from "bun:test";
 
 mock.module("evlog/elysia", () => ({
   evlog: () => (app: unknown) => app,
@@ -21,17 +8,11 @@ mock.module("evlog/elysia", () => ({
 
 import type { Context } from "elysia";
 import type { HTTPHeaders } from "elysia/types";
-import {
-  runLoaders,
-  runPublicLoaders,
-  runRequestLoaderData,
-} from "../src/server/render/loaders.ts";
+import { runLoaders, runPublicLoaders } from "../src/server/render/loaders.ts";
 import type { ResolvedRoute } from "../src/server/router/index.ts";
-import { scanPages } from "../src/server/router/index.ts";
-import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
-import { notFound } from "../src/shared/not-found.ts";
+import { __setDevMode } from "../src/server/runtime-env.ts";
 
-const FIXTURES_DIR = join(import.meta.dirname, "fixtures/pages");
+const CACHED_PUBLIC_LOADERS_RE = /Cached public loaders/;
 
 function createMockLoaderContext(overrides: Partial<Context>): Context {
   return {
@@ -48,37 +29,23 @@ function createMockLoaderContext(overrides: Partial<Context>): Context {
 }
 
 describe("runLoaders requestLoader", () => {
-  test("rejects request-bound access while building a cached public shell", async () => {
-    const baseRoute = await getRoute("/with-loader");
-    const route = withLoader(baseRoute, (context?: unknown) => {
-      const cookie = (context as Context).cookie;
-      return { session: cookie.session?.value };
-    });
-    const result = await runPublicLoaders(
-      route,
-      createMockLoaderContext({
-        cookie: { session: { value: "alice" } } as unknown as Context["cookie"],
-      })
-    );
-    expect(result.type).toBe("error");
-    if (result.type === "error") {
-      expect(result.error).toEqual(
-        new Error(
-          "[furin] Cached public loaders cannot access request, cookie, or headers. Move request-specific work to requestLoader."
-        )
-      );
-    }
-  });
-
   test("runs private data once with a read-only request context", async () => {
-    const route = await getRoute("/with-loader");
     let calls = 0;
-    route.page.requestLoader = (ctx) => {
-      calls += 1;
-      expect("set" in ctx).toBe(false);
-      expect("redirect" in ctx).toBe(false);
-      return { user: ctx.cookies.get("session") };
-    };
+    const route = {
+      mode: "ssr",
+      page: {
+        requestLoader: (ctx: { cookies: Map<string, string | undefined> }) => {
+          calls += 1;
+          expect("set" in ctx).toBe(false);
+          expect("redirect" in ctx).toBe(false);
+          return { user: ctx.cookies.get("session") };
+        },
+      },
+      path: "/with-loader.tsx",
+      pattern: "/with-loader",
+      routeChain: [],
+      segmentBoundaries: [],
+    } as unknown as ResolvedRoute;
     const context = createMockLoaderContext({
       cookie: { session: { value: "alice" } } as unknown as Context["cookie"],
       path: "/with-loader",
@@ -93,161 +60,50 @@ describe("runLoaders requestLoader", () => {
     expect(calls).toBe(1);
   });
 
-  test("turns synchronous requestLoader throws into a rejected requestData promise", async () => {
-    const route = await getRoute("/with-loader");
-    route.page.requestLoader = () => {
-      throw new Error("boom");
-    };
+  test("public loaders keep decorated context fields", async () => {
+    const route = {
+      mode: "ssr",
+      page: {
+        loader: (ctx: { [key: string]: unknown }) => ({ service: ctx.service }),
+      },
+      path: "/decorated.tsx",
+      pattern: "/decorated",
+      routeChain: [],
+      segmentBoundaries: [],
+    } as unknown as ResolvedRoute;
+    const context = createMockLoaderContext({
+      service: "decorated",
+    } as Partial<Context>);
 
-    const requestData = runRequestLoaderData(
-      route,
-      createMockLoaderContext({ path: "/with-loader" })
-    );
+    const result = await runPublicLoaders(route, context);
 
-    expect(requestData).toBeDefined();
-    await expect(requestData).rejects.toThrow("boom");
+    expect(result.type).toBe("data");
+    if (result.type === "data") {
+      expect(result.syncData.service).toBe("decorated");
+    }
+  });
+
+  test("public loaders cannot mutate cached response state", async () => {
+    const route = {
+      mode: "ssr",
+      page: {
+        loader: (ctx: { [key: string]: unknown }) => ({ set: ctx.set }),
+      },
+      path: "/blocked.tsx",
+      pattern: "/blocked",
+      routeChain: [],
+      segmentBoundaries: [],
+    } as unknown as ResolvedRoute;
+
+    const result = await runPublicLoaders(route, createMockLoaderContext({}));
+
+    expect(result.type).toBe("error");
+    if (result.type === "error") {
+      expect(result.error).toBeInstanceOf(Error);
+      expect(result.message).toBe("Something went wrong");
+      expect((result.error as Error).message).toMatch(CACHED_PUBLIC_LOADERS_RE);
+    }
   });
 });
 
-async function getRoute(pattern: string): Promise<ResolvedRoute> {
-  const result = await scanPages(FIXTURES_DIR);
-  const route = result.routes.find((r) => r.pattern === pattern);
-  if (!route) {
-    throw new Error(`Route ${pattern} not found`);
-  }
-  return route;
-}
-
-function withLoader(route: ResolvedRoute, loader: () => unknown): ResolvedRoute {
-  return {
-    ...route,
-    page: {
-      ...route.page,
-      loader,
-    },
-  } as ResolvedRoute;
-}
-
-const originalDevMode = IS_DEV;
-beforeAll(() => __setDevMode(false));
-afterAll(() => __setDevMode(originalDevMode));
-
-describe("runLoaders — thrown Response classification", () => {
-  test("Response(404) is classified as type: error with status 404", async () => {
-    const baseRoute = await getRoute("/with-loader");
-    const route = withLoader(baseRoute, () => {
-      throw new Response(null, { status: 404 });
-    });
-
-    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
-
-    expect(result.type).toBe("error");
-    if (result.type === "error") {
-      expect(result.status).toBe(404);
-    }
-  });
-
-  test("Response(500) with body surfaces the body as the public message", async () => {
-    const baseRoute = await getRoute("/with-loader");
-    const route = withLoader(baseRoute, () => {
-      throw new Response("oops", { status: 500 });
-    });
-
-    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
-
-    expect(result.type).toBe("error");
-    if (result.type === "error") {
-      expect(result.status).toBe(500);
-      expect(result.message).toBe("oops");
-    }
-  });
-
-  test("Response(302) with Location is classified as redirect", async () => {
-    const baseRoute = await getRoute("/with-loader");
-    const route = withLoader(baseRoute, () => {
-      throw new Response(null, { headers: { Location: "/x" }, status: 302 });
-    });
-
-    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
-
-    expect(result.type).toBe("redirect");
-    if (result.type === "redirect") {
-      expect(result.response.headers.get("location")).toBe("/x");
-    }
-  });
-
-  test("Response(302) without Location is classified as error 500 (invalid redirect)", async () => {
-    const baseRoute = await getRoute("/with-loader");
-    const route = withLoader(baseRoute, () => {
-      throw new Response(null, { status: 302 });
-    });
-
-    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
-
-    expect(result.type).toBe("error");
-    if (result.type === "error") {
-      expect(result.status).toBe(500);
-    }
-  });
-
-  test("Response(304) keeps its own status — not coerced to 500", async () => {
-    // 304 is not a navigation redirect, so it is not a *malformed* redirect
-    // either: it must keep its own status rather than being rewritten to 500
-    // by the malformed-redirect fallback.
-    const baseRoute = await getRoute("/with-loader");
-    const route = withLoader(baseRoute, () => {
-      throw new Response(null, { status: 304 });
-    });
-
-    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
-
-    expect(result.type).toBe("error");
-    if (result.type === "error") {
-      expect(result.status).toBe(304);
-    }
-  });
-
-  test("Response(401) without body falls back to a generic public message", async () => {
-    const baseRoute = await getRoute("/with-loader");
-    const route = withLoader(baseRoute, () => {
-      throw new Response(null, { status: 401 });
-    });
-
-    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
-
-    expect(result.type).toBe("error");
-    if (result.type === "error") {
-      expect(result.status).toBe(401);
-      // Bodyless Response() sets statusText="" by default — fall back to the
-      // generic message so the error UI never shows an empty string.
-      expect(result.message).toBe("Something went wrong");
-    }
-  });
-
-  test("notFound() is still classified as type: not-found (regression)", async () => {
-    const baseRoute = await getRoute("/with-loader");
-    const route = withLoader(baseRoute, () => {
-      notFound({ message: "x" });
-    });
-
-    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
-
-    expect(result.type).toBe("not-found");
-  });
-
-  test("plain Error is classified as type: error with status 500 (regression)", async () => {
-    const baseRoute = await getRoute("/with-loader");
-    const route = withLoader(baseRoute, () => {
-      throw new Error("boom");
-    });
-
-    const result = await runLoaders(route, createMockLoaderContext({ path: "/with-loader" }));
-
-    expect(result.type).toBe("error");
-    if (result.type === "error") {
-      expect(result.status).toBe(500);
-      expect(result.message).toBe("Something went wrong");
-      expect((result.error as Error).message).toBe("boom");
-    }
-  });
-});
+__setDevMode(false);

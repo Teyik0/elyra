@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { toCrossJSON } from "seroval";
 import { Link, RouterProvider } from "../../src/client/link.tsx";
 import type { ClientRoute } from "../../src/client/router/index.ts";
+import { installDom, resetDomState, uninstallDom } from "../helpers/dom.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -112,6 +113,8 @@ describe("RouterProvider server-side redirect follow", () => {
   let currentCleanup: (() => void) | undefined;
 
   beforeEach(() => {
+    installDom();
+    resetDomState();
     originalFetch = globalThis.fetch;
     originalReplaceState =
       typeof window !== "undefined" && typeof window.history !== "undefined"
@@ -150,7 +153,7 @@ describe("RouterProvider server-side redirect follow", () => {
     }
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     globalThis.fetch = originalFetch;
     if (
       originalReplaceState &&
@@ -161,6 +164,7 @@ describe("RouterProvider server-side redirect follow", () => {
     }
     currentCleanup?.();
     currentCleanup = undefined;
+    await uninstallDom();
   });
 
   test(

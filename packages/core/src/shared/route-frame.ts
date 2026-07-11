@@ -44,14 +44,15 @@ function isPlainObject(value: object): boolean {
 function extractRscSources(
   value: unknown,
   sources: CollectedRscSource[],
-  seen: WeakMap<object, unknown>
+  seen: WeakMap<object, unknown>,
+  idPrefix: string
 ): unknown {
   if (isRscSource(value)) {
     const state = getRscSourceState(value);
     if (state === undefined) {
       return value;
     }
-    const id = `rsc-${sources.length}`;
+    const id = `${idPrefix}-${sources.length}`;
     sources.push({ bytes: state.bytes, id, kind: state.kind });
     return { [RSC_DESCRIPTOR]: id } satisfies RscDescriptor;
   }
@@ -66,7 +67,7 @@ function extractRscSources(
     const result: unknown[] = [];
     seen.set(value, result);
     for (const entry of value) {
-      result.push(extractRscSources(entry, sources, seen));
+      result.push(extractRscSources(entry, sources, seen, idPrefix));
     }
     return result;
   }
@@ -76,7 +77,7 @@ function extractRscSources(
   const result: { [key: string]: unknown } = {};
   seen.set(value, result);
   for (const [key, entry] of Object.entries(value)) {
-    result[key] = extractRscSources(entry, sources, seen);
+    result[key] = extractRscSources(entry, sources, seen, idPrefix);
   }
   return result;
 }
@@ -137,6 +138,28 @@ export function serializeRouteFrame(frame: RouteFrame): string {
   return encodeFrame(frame);
 }
 
+export function serializeRouteFrameValue(
+  value: unknown,
+  idPrefix = "rsc"
+): {
+  rscFrames: string;
+  value: SerovalNode;
+} {
+  const sources: CollectedRscSource[] = [];
+  const serializable = extractRscSources(value, sources, new WeakMap(), idPrefix);
+  const rscFrames = sources
+    .flatMap((source) => [
+      encodeFrame({ id: source.id, kind: source.kind, type: "rsc-start" }),
+      ...bytesToFrameValues(source.bytes).map((chunk) =>
+        encodeFrame({ id: source.id, type: "rsc-chunk", value: chunk })
+      ),
+      encodeFrame({ id: source.id, type: "rsc-end" }),
+    ])
+    .join("");
+
+  return { rscFrames, value: toCrossJSON(serializable) };
+}
+
 export function containsRscSource(value: unknown): boolean {
   return containsRscSourceInner(value, new WeakSet());
 }
@@ -166,7 +189,7 @@ export function serializeRouteFrames(
   deferredKeys: readonly string[] | undefined
 ): string {
   const sources: CollectedRscSource[] = [];
-  const serializable = extractRscSources(data, sources, new WeakMap());
+  const serializable = extractRscSources(data, sources, new WeakMap(), "rsc");
   const lines = [
     encodeFrame({
       deferredKeys: deferredKeys ?? [],
@@ -197,7 +220,11 @@ export function isRouteFrameLine(line: string): boolean {
   }
 }
 
-function hydrateRscDescriptors(value: unknown, sources: Map<string, unknown>): unknown {
+function hydrateRscDescriptors(
+  value: unknown,
+  sources: Map<string, unknown>,
+  seen = new WeakMap<object, unknown>()
+): unknown {
   if (value === null || typeof value !== "object") {
     return value;
   }
@@ -209,28 +236,45 @@ function hydrateRscDescriptors(value: unknown, sources: Map<string, unknown>): u
     }
     return source;
   }
+  const previous = seen.get(value);
+  if (previous !== undefined) {
+    return previous;
+  }
   if (Array.isArray(value)) {
-    return value.map((entry) => hydrateRscDescriptors(entry, sources));
+    seen.set(value, value);
+    for (let i = 0; i < value.length; i++) {
+      value[i] = hydrateRscDescriptors(value[i], sources, seen);
+    }
+    return value;
   }
   if (!isPlainObject(value)) {
     return value;
   }
+  seen.set(value, value);
   for (const [key, entry] of Object.entries(value)) {
-    Reflect.set(value, key, hydrateRscDescriptors(entry, sources));
+    Reflect.set(value, key, hydrateRscDescriptors(entry, sources, seen));
   }
   return value;
 }
 
-function collectRscDescriptorIds(value: unknown, ids: Set<string>): void {
+function collectRscDescriptorIds(
+  value: unknown,
+  ids: Set<string>,
+  seen = new WeakSet<object>()
+): void {
   if (value === null || typeof value !== "object") {
     return;
   }
+  if (seen.has(value)) {
+    return;
+  }
+  seen.add(value);
   if (isPlainObject(value) && typeof (value as { __furinRsc?: unknown }).__furinRsc === "string") {
     ids.add((value as RscDescriptor).__furinRsc);
     return;
   }
   for (const entry of Array.isArray(value) ? value : Object.values(value)) {
-    collectRscDescriptorIds(entry, ids);
+    collectRscDescriptorIds(entry, ids, seen);
   }
 }
 
@@ -257,6 +301,17 @@ export async function parseRouteFrameLines(
       resolver.reject(reason);
     }
     resolvers.clear();
+  };
+  const deferredRscValues = new Map<string, { ids: Set<string>; value: unknown }>();
+  const tryResolveDeferredRscValues = (): void => {
+    for (const [key, deferred] of deferredRscValues) {
+      if ([...deferred.ids].some((id) => !sources.has(id))) {
+        continue;
+      }
+      resolvers.get(key)?.resolve(hydrateRscDescriptors(deferred.value, sources));
+      resolvers.delete(key);
+      deferredRscValues.delete(key);
+    }
   };
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one bounded state machine validates every versioned frame variant
   const processLine = (line: string): void => {
@@ -299,11 +354,19 @@ export async function parseRouteFrameLines(
       }
       sources.set(frame.id, restoreRscSource(source.kind, bytes));
       pending.delete(frame.id);
+      tryResolveDeferredRscValues();
     } else if (frame.type === "rsc-error") {
       throw new Error(`[furin] RSC stream failed (${frame.digest})`);
     } else if (frame.type === "defer-resolve") {
-      resolvers.get(frame.key)?.resolve(fromCrossJSON(frame.value, {}));
-      resolvers.delete(frame.key);
+      const value = fromCrossJSON(frame.value, {});
+      const ids = new Set<string>();
+      collectRscDescriptorIds(value, ids);
+      if ([...ids].some((id) => !sources.has(id))) {
+        deferredRscValues.set(frame.key, { ids, value });
+      } else {
+        resolvers.get(frame.key)?.resolve(hydrateRscDescriptors(value, sources));
+        resolvers.delete(frame.key);
+      }
     } else if (frame.type === "defer-reject") {
       resolvers.get(frame.key)?.reject(fromCrossJSON(frame.value, {}));
       resolvers.delete(frame.key);
@@ -339,11 +402,17 @@ export async function parseRouteFrameLines(
     if (pending.size > 0) {
       throw new Error("[furin] route frame stream ended before an RSC source completed");
     }
+    if (deferredRscValues.size > 0) {
+      throw new Error("[furin] route frame stream ended before an RSC source completed");
+    }
     for (const [key, resolver] of resolvers) {
       resolver.reject(new Error(`[furin] deferred stream closed before "${key}" was resolved`));
     }
     resolvers.clear();
-  })().catch((error: unknown) => rejectPending(error));
+  })().catch((error: unknown) => {
+    rejectPending(error);
+    throw error;
+  });
 
   return {
     abort: rejectPending,

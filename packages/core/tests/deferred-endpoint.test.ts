@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 
 mock.module("evlog/elysia", () => ({
@@ -18,7 +18,7 @@ mock.module("evlog", () => ({
 import { Elysia } from "elysia";
 import { defer } from "../src/client";
 import { createDataEndpoint, scanPages } from "../src/server/router/index.ts";
-import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
+import { __setDevMode } from "../src/server/runtime-env.ts";
 import { parseDeferredNdjson } from "../src/shared/deferred-ndjson.ts";
 
 const FIXTURES_DIR = join(import.meta.dirname, "fixtures/pages");
@@ -28,15 +28,11 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-let originalDevMode: boolean;
-beforeAll(() => {
-  originalDevMode = IS_DEV;
-  __setDevMode(false);
-});
-afterAll(() => __setDevMode(originalDevMode));
+__setDevMode(false);
 
 describe("GET /_furin/data", () => {
   test("returns 400 if the path parameter is missing", async () => {
+    await Promise.resolve();
     const { routes } = await scanPages(FIXTURES_DIR);
     const app = new Elysia().use(createDataEndpoint(routes));
 

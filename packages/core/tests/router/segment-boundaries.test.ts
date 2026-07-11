@@ -10,7 +10,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { scanPages } from "../../src/server/router/index.ts";
+import { scanPages } from "../../src/server/router/discovery.ts";
 
 const ERROR_NESTED_DIR = join(import.meta.dirname, "..", "fixtures", "pages-error-nested");
 const ERROR_NESTED_POSIX_DIR = ERROR_NESTED_DIR.replaceAll("\\", "/");

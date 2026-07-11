@@ -13,7 +13,7 @@
     "prepare": "lefthook install",
     "fix": "ultracite fix",
     "dev": "bun run --parallel --filter '*' --if-present dev",
-    "test": "bun run --filter '*' test",
+    "test": "cd packages/core && bash scripts/test.sh && cd ../.. && bun run --filter '!@teyik0/furin' test",
     "test:dev": "bun run --parallel --filter '*' test:dev",
     "tscheck": "bun run --parallel --filter '*' tscheck",
     "build": "bun run --filter '@teyik0/furin' build && bun run --parallel --filter '!@teyik0/furin' build",

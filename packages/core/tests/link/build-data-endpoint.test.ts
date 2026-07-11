@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { buildDataEndpoint, detectStaticMode } from "../../src/client/router/index.ts";
+import { installDom, resetDomState, uninstallDom } from "../helpers/dom.ts";
 
 describe("buildDataEndpoint — runtime mode (SSR/ISR/dev)", () => {
   test("uses /_furin/data?path= with the percent-encoded logical href", () => {
@@ -55,15 +56,18 @@ describe("detectStaticMode", () => {
   let originalMeta: HTMLMetaElement | null;
 
   beforeEach(() => {
+    installDom();
+    resetDomState();
     originalMeta = document.querySelector<HTMLMetaElement>('meta[name="furin-mode"]');
     originalMeta?.remove();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     document.querySelector<HTMLMetaElement>('meta[name="furin-mode"]')?.remove();
     if (originalMeta) {
       document.head.appendChild(originalMeta);
     }
+    await uninstallDom();
   });
 
   test("returns false when no furin-mode meta tag is present (SSR/dev shell)", () => {

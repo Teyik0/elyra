@@ -1,7 +1,7 @@
 import type { Context } from "elysia";
 import type { SearchRouteMetadata } from "../../shared/search-params.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
-import type { RevalidateType } from "../cache/route-cache.ts";
+import { type Cache, createRouteCache, type RevalidateType } from "../cache/route-cache.ts";
 import type { ResolvedRoute, RootLayout } from "../router/index.ts";
 import { resolvePath } from "./assemble.ts";
 import { type LoaderResult, runPublicLoaders, runRequestLoaderData } from "./loaders.ts";
@@ -13,12 +13,26 @@ interface CachedPprRoute {
   revalidate: number;
 }
 
-const pprRoutesByRoot = new Map<RootLayout, Map<string, CachedPprRoute>>();
+const MAX_PPR_ROUTE_CACHE_SIZE = 1000;
 
-function getPprRoutes(root: RootLayout): Map<string, CachedPprRoute> {
+const pprRoutesByRoot = new Map<RootLayout, Cache<CachedPprRoute>>();
+
+function pathFromPprCacheKey(key: string): string | null {
+  const separator = key.indexOf(":");
+  if (separator === -1) {
+    return null;
+  }
+  return new URL(key.slice(separator + 1), "http://furin.local").pathname;
+}
+
+function getPprRoutes(root: RootLayout): Cache<CachedPprRoute> {
   let routes = pprRoutesByRoot.get(root);
   if (routes === undefined) {
-    routes = new Map();
+    routes = createRouteCache<CachedPprRoute>({
+      maxSize: MAX_PPR_ROUTE_CACHE_SIZE,
+      name: "render:ppr-public-shell",
+      pathFromKey: pathFromPprCacheKey,
+    });
     pprRoutesByRoot.set(root, routes);
   }
   return routes;
@@ -73,7 +87,9 @@ export async function renderPprRoute(
       requestData,
     },
   };
-  return renderSSR(route, ctx, root, actualResult, searchRoutes);
+  const response = await renderSSR(route, ctx, root, actualResult, searchRoutes);
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
 }
 
 export function clearPprRouteCache(): void {
@@ -83,16 +99,7 @@ export function clearPprRouteCache(): void {
 export function invalidatePprRoute(path: string, type: RevalidateType): boolean {
   let deleted = false;
   for (const pprRoutes of pprRoutesByRoot.values()) {
-    for (const key of pprRoutes.keys()) {
-      const routePath = new URL(key.slice(key.indexOf(":") + 1), "http://furin.local").pathname;
-      const matches =
-        type === "layout"
-          ? routePath === path || routePath.startsWith(path.endsWith("/") ? path : `${path}/`)
-          : routePath === path;
-      if (matches) {
-        deleted = pprRoutes.delete(key) || deleted;
-      }
-    }
+    deleted = pprRoutes.invalidatePath(path, type).deleted || deleted;
   }
   return deleted;
 }

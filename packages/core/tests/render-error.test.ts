@@ -1,7 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
-import { join } from "node:path";
 import type { Context } from "elysia";
-import { createElement } from "react";
+import { createElement, type ReactNode } from "react";
 
 const capturedLogs: Record<string, unknown>[] = [];
 
@@ -15,13 +14,55 @@ mock.module("evlog/elysia", () => ({
 }));
 
 import type { HTTPHeaders } from "elysia/types";
+import type { RuntimePage, RuntimeRoute } from "../src/client.ts";
 import { renderSSR, renderToHTML } from "../src/server/render/index.ts";
-import { type ResolvedRoute, scanPages } from "../src/server/router/index.ts";
+import type { ResolvedRoute, RootLayout } from "../src/server/router/index.ts";
 import { __setDevMode } from "../src/server/runtime-env.ts";
+import type { ErrorComponent } from "../src/shared/error.ts";
 
-const FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages-error-nested");
+const ROOT_ROUTE: RuntimeRoute = {
+  __type: "FURIN_ROUTE",
+  layout: ({ children }: { children: ReactNode | undefined }) =>
+    createElement("div", { "data-testid": "root-layout" }, children),
+};
 
-function createMockLoaderContext(overrides: Partial<Context> = {}) {
+const RootError: ErrorComponent = () =>
+  createElement("div", { "data-testid": "root-error" }, "Root error");
+const BlogError: ErrorComponent = () =>
+  createElement("div", { "data-testid": "blog-error" }, "Blog error");
+
+function createTestRoot(error: ErrorComponent | undefined): RootLayout {
+  return {
+    error,
+    path: "/test-pages",
+    route: ROOT_ROUTE,
+  };
+}
+
+function createTestRoute(options: {
+  component: RuntimePage["component"];
+  error: ErrorComponent | undefined;
+  loader: RuntimePage["loader"] | undefined;
+  pattern: string;
+}): ResolvedRoute {
+  return {
+    error: options.error,
+    mode: "ssr",
+    page: {
+      __type: "FURIN_PAGE",
+      _route: ROOT_ROUTE,
+      component: options.component,
+      ...(options.loader ? { loader: options.loader } : {}),
+    },
+    path: `/test-pages${options.pattern}/index.tsx`,
+    pattern: options.pattern,
+    routeChain: [ROOT_ROUTE],
+    segmentBoundaries: [],
+    tags: [],
+  };
+}
+
+function createMockLoaderContext(overrides: Partial<Context>) {
   return {
     cookie: {},
     headers: {},
@@ -39,26 +80,19 @@ __setDevMode(false);
 
 describe("renderToHTML — error handling", () => {
   test("renders the nearest error component when loader throws an Error", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
-    if (!blogRoute) {
-      throw new Error("Expected /blog route in fixture");
-    }
-
-    const routeWithError = {
-      ...blogRoute,
-      page: {
-        ...blogRoute.page,
-        loader: () => {
-          throw new Error("boom");
-        },
+    const routeWithError = createTestRoute({
+      component: () => createElement("div", { "data-testid": "blog-index" }, "Blog"),
+      error: BlogError,
+      loader: () => {
+        throw new Error("boom");
       },
-    } as ResolvedRoute;
+      pattern: "/blog",
+    });
 
     const rendered = await renderToHTML(
       routeWithError,
       createMockLoaderContext({ path: "/blog" }),
-      result.root
+      createTestRoot(RootError)
     );
 
     expect(rendered.html).toContain("Blog error");
@@ -66,26 +100,19 @@ describe("renderToHTML — error handling", () => {
   });
 
   test("renderSSR returns a 500 Response when loader throws an error", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
-    if (!blogRoute) {
-      throw new Error("Expected /blog route in fixture");
-    }
-
-    const routeWithError = {
-      ...blogRoute,
-      page: {
-        ...blogRoute.page,
-        loader: () => {
-          throw new Error("kaboom");
-        },
+    const routeWithError = createTestRoute({
+      component: () => createElement("div", { "data-testid": "blog-index" }, "Blog"),
+      error: BlogError,
+      loader: () => {
+        throw new Error("kaboom");
       },
-    } as ResolvedRoute;
+      pattern: "/blog",
+    });
 
     const response = await renderSSR(
       routeWithError,
       createMockLoaderContext({ path: "/blog" }),
-      result.root,
+      createTestRoot(RootError),
       undefined
     );
 
@@ -96,27 +123,19 @@ describe("renderToHTML — error handling", () => {
   });
 
   test("falls back to the built-in 500 component when no error.tsx exists", async () => {
-    const BARE_FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages");
-    const result = await scanPages(BARE_FIXTURES_DIR);
-    const loaderRoute = result.routes.find((r) => r.pattern === "/with-loader");
-    if (!loaderRoute) {
-      throw new Error("Expected /with-loader route in fixture");
-    }
-
-    const routeWithError = {
-      ...loaderRoute,
-      page: {
-        ...loaderRoute.page,
-        loader: () => {
-          throw new Error("kaboom");
-        },
+    const routeWithError = createTestRoute({
+      component: () => createElement("div", { "data-testid": "with-loader" }, "With loader"),
+      error: undefined,
+      loader: () => {
+        throw new Error("kaboom");
       },
-    } as ResolvedRoute;
+      pattern: "/with-loader",
+    });
 
     const rendered = await renderToHTML(
       routeWithError,
       createMockLoaderContext({ path: "/with-loader" }),
-      result.root
+      createTestRoot(undefined)
     );
 
     expect(rendered.html).toContain("500 — ERROR");
@@ -124,28 +143,20 @@ describe("renderToHTML — error handling", () => {
   });
 
   test("renders the built-in 500 component with a string error (no message)", async () => {
-    const BARE_FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages");
-    const result = await scanPages(BARE_FIXTURES_DIR);
-    const loaderRoute = result.routes.find((r) => r.pattern === "/with-loader");
-    if (!loaderRoute) {
-      throw new Error("Expected /with-loader route in fixture");
-    }
-
-    const routeWithError = {
-      ...loaderRoute,
-      page: {
-        ...loaderRoute.page,
-        loader: () => {
-          // biome-ignore lint/style/useThrowOnlyError: intentional non-Error throw for coverage
-          throw "plain string boom";
-        },
+    const routeWithError = createTestRoute({
+      component: () => createElement("div", { "data-testid": "with-loader" }, "With loader"),
+      error: undefined,
+      loader: () => {
+        // biome-ignore lint/style/useThrowOnlyError: intentional non-Error throw for coverage
+        throw "plain string boom";
       },
-    } as ResolvedRoute;
+      pattern: "/with-loader",
+    });
 
     const rendered = await renderToHTML(
       routeWithError,
       createMockLoaderContext({ path: "/with-loader" }),
-      result.root
+      createTestRoot(undefined)
     );
 
     expect(rendered.html).toContain("500 — ERROR");
@@ -153,26 +164,19 @@ describe("renderToHTML — error handling", () => {
   });
 
   test("renderSSR returns 500 with nearest error.tsx when shell render throws", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
-    if (!blogRoute) {
-      throw new Error("Expected /blog route in fixture");
-    }
-
-    const routeWithShellError = {
-      ...blogRoute,
-      page: {
-        ...blogRoute.page,
-        component: () => {
-          throw new Error("shell-boom");
-        },
+    const routeWithShellError = createTestRoute({
+      component: () => {
+        throw new Error("shell-boom");
       },
-    } as ResolvedRoute;
+      error: BlogError,
+      loader: undefined,
+      pattern: "/blog",
+    });
 
     const response = await renderSSR(
       routeWithShellError,
       createMockLoaderContext({ path: "/blog" }),
-      result.root,
+      createTestRoot(RootError),
       undefined
     );
 
@@ -182,27 +186,19 @@ describe("renderToHTML — error handling", () => {
   });
 
   test("renderSSR falls back to built-in 500 when shell render throws and no error.tsx exists", async () => {
-    const BARE_FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages");
-    const result = await scanPages(BARE_FIXTURES_DIR);
-    const loaderRoute = result.routes.find((r) => r.pattern === "/with-loader");
-    if (!loaderRoute) {
-      throw new Error("Expected /with-loader route in fixture");
-    }
-
-    const routeWithShellError = {
-      ...loaderRoute,
-      page: {
-        ...loaderRoute.page,
-        component: () => {
-          throw new Error("shell-boom");
-        },
+    const routeWithShellError = createTestRoute({
+      component: () => {
+        throw new Error("shell-boom");
       },
-    } as ResolvedRoute;
+      error: undefined,
+      loader: undefined,
+      pattern: "/with-loader",
+    });
 
     const response = await renderSSR(
       routeWithShellError,
       createMockLoaderContext({ path: "/with-loader" }),
-      result.root,
+      createTestRoot(undefined),
       undefined
     );
 
@@ -213,29 +209,21 @@ describe("renderToHTML — error handling", () => {
   });
 
   test("renderSSR falls back to built-in 500 when user's error.tsx itself throws during shell recovery", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
-    if (!blogRoute) {
-      throw new Error("Expected /blog route in fixture");
-    }
-
-    const routeWithDoubleFailure = {
-      ...blogRoute,
+    const routeWithDoubleFailure = createTestRoute({
+      component: () => {
+        throw new Error("primary-boom");
+      },
       error: () => {
         throw new Error("error-tsx-boom");
       },
-      page: {
-        ...blogRoute.page,
-        component: () => {
-          throw new Error("primary-boom");
-        },
-      },
-    } as ResolvedRoute;
+      loader: undefined,
+      pattern: "/blog",
+    });
 
     const response = await renderSSR(
       routeWithDoubleFailure,
       createMockLoaderContext({ path: "/blog" }),
-      result.root,
+      createTestRoot(RootError),
       undefined
     );
 
@@ -248,26 +236,19 @@ describe("renderToHTML — error handling", () => {
 
   // ── thrown Response → error.tsx ─────────────────────────────────────────────
   test("renderSSR returns the Response status when loader throws a non-redirect Response", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
-    if (!blogRoute) {
-      throw new Error("Expected /blog route in fixture");
-    }
-
-    const routeWithUnauthorized = {
-      ...blogRoute,
-      page: {
-        ...blogRoute.page,
-        loader: () => {
-          throw new Response("Login required", { status: 401 });
-        },
+    const routeWithUnauthorized = createTestRoute({
+      component: () => createElement("div", { "data-testid": "blog-index" }, "Blog"),
+      error: BlogError,
+      loader: () => {
+        throw new Response("Login required", { status: 401 });
       },
-    } as ResolvedRoute;
+      pattern: "/blog",
+    });
 
     const response = await renderSSR(
       routeWithUnauthorized,
       createMockLoaderContext({ path: "/blog" }),
-      result.root,
+      createTestRoot(RootError),
       undefined
     );
 
@@ -280,12 +261,6 @@ describe("renderToHTML — error handling", () => {
   });
 
   test("error.tsx receives the thrown Response.status via error.status prop", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
-    if (!blogRoute) {
-      throw new Error("Expected /blog route in fixture");
-    }
-
     const ErrorWithStatus = ({
       error,
     }: {
@@ -298,21 +273,19 @@ describe("renderToHTML — error handling", () => {
         createElement("span", null, `msg=${error.message}`)
       );
 
-    const routeWithForbidden = {
-      ...blogRoute,
+    const routeWithForbidden = createTestRoute({
+      component: () => createElement("div", { "data-testid": "blog-index" }, "Blog"),
       error: ErrorWithStatus,
-      page: {
-        ...blogRoute.page,
-        loader: () => {
-          throw new Response("nope", { status: 403 });
-        },
+      loader: () => {
+        throw new Response("nope", { status: 403 });
       },
-    } as ResolvedRoute;
+      pattern: "/blog",
+    });
 
     const rendered = await renderToHTML(
       routeWithForbidden,
       createMockLoaderContext({ path: "/blog" }),
-      result.root
+      createTestRoot(RootError)
     );
 
     // The user error.tsx received status=403 — the Response status, not a
@@ -323,12 +296,6 @@ describe("renderToHTML — error handling", () => {
   });
 
   test("plain Error throws still surface error.status === 500 by default (regression)", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
-    if (!blogRoute) {
-      throw new Error("Expected /blog route in fixture");
-    }
-
     const ErrorWithStatus = ({
       error,
     }: {
@@ -340,49 +307,39 @@ describe("renderToHTML — error handling", () => {
         createElement("span", null, `status=${error.status}`)
       );
 
-    const routeWithError = {
-      ...blogRoute,
+    const routeWithError = createTestRoute({
+      component: () => createElement("div", { "data-testid": "blog-index" }, "Blog"),
       error: ErrorWithStatus,
-      page: {
-        ...blogRoute.page,
-        loader: () => {
-          throw new Error("boom");
-        },
+      loader: () => {
+        throw new Error("boom");
       },
-    } as ResolvedRoute;
+      pattern: "/blog",
+    });
 
     const rendered = await renderToHTML(
       routeWithError,
       createMockLoaderContext({ path: "/blog" }),
-      result.root
+      createTestRoot(RootError)
     );
 
     expect(rendered.html).toContain("status=500");
   });
 
   test("renders the built-in 500 component with no message for non-Error, non-string throws", async () => {
-    const BARE_FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages");
-    const result = await scanPages(BARE_FIXTURES_DIR);
-    const loaderRoute = result.routes.find((r) => r.pattern === "/with-loader");
-    if (!loaderRoute) {
-      throw new Error("Expected /with-loader route in fixture");
-    }
-
-    const routeWithError = {
-      ...loaderRoute,
-      page: {
-        ...loaderRoute.page,
-        loader: () => {
-          // biome-ignore lint/style/useThrowOnlyError: intentional non-Error throw for coverage
-          throw { secret: "leaked-payload" };
-        },
+    const routeWithError = createTestRoute({
+      component: () => createElement("div", { "data-testid": "with-loader" }, "With loader"),
+      error: undefined,
+      loader: () => {
+        // biome-ignore lint/style/useThrowOnlyError: intentional non-Error throw for coverage
+        throw { secret: "leaked-payload" };
       },
-    } as ResolvedRoute;
+      pattern: "/with-loader",
+    });
 
     const rendered = await renderToHTML(
       routeWithError,
       createMockLoaderContext({ path: "/with-loader" }),
-      result.root
+      createTestRoot(undefined)
     );
 
     expect(rendered.html).toContain("500 — ERROR");
@@ -407,39 +364,25 @@ const FURIN_ERROR_DIGEST_RE = /"digest":"[0-9a-f]{10}"/;
 
 describe("renderToHTML — digest", () => {
   test("default error component renders a 10-hex-char digest", async () => {
-    const BARE_FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages");
-    const result = await scanPages(BARE_FIXTURES_DIR);
-    const loaderRoute = result.routes.find((r) => r.pattern === "/with-loader");
-    if (!loaderRoute) {
-      throw new Error("Expected /with-loader route in fixture");
-    }
-
-    const routeWithError = {
-      ...loaderRoute,
-      page: {
-        ...loaderRoute.page,
-        loader: () => {
-          throw new Error("boom");
-        },
+    const routeWithError = createTestRoute({
+      component: () => createElement("div", { "data-testid": "with-loader" }, "With loader"),
+      error: undefined,
+      loader: () => {
+        throw new Error("boom");
       },
-    } as ResolvedRoute;
+      pattern: "/with-loader",
+    });
 
     const rendered = await renderToHTML(
       routeWithError,
       createMockLoaderContext({ path: "/with-loader" }),
-      result.root
+      createTestRoot(undefined)
     );
 
     expect(rendered.html).toMatch(DIGEST_RE);
   });
 
   test("user-defined error component receives a digest prop", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
-    if (!blogRoute) {
-      throw new Error("Expected /blog route in fixture");
-    }
-
     const CustomError = ({ error }: { error: { message: string; digest: string } }) =>
       createElement(
         "div",
@@ -448,55 +391,45 @@ describe("renderToHTML — digest", () => {
         createElement("span", null, `digest=${error.digest}`)
       );
 
-    const routeWithError = {
-      ...blogRoute,
+    const routeWithError = createTestRoute({
+      component: () => createElement("div", { "data-testid": "blog-index" }, "Blog"),
       error: CustomError,
-      page: {
-        ...blogRoute.page,
-        loader: () => {
-          throw new Error("boom");
-        },
+      loader: () => {
+        throw new Error("boom");
       },
-    } as ResolvedRoute;
+      pattern: "/blog",
+    });
 
     const rendered = await renderToHTML(
       routeWithError,
       createMockLoaderContext({ path: "/blog" }),
-      result.root
+      createTestRoot(RootError)
     );
 
     expect(rendered.html).toMatch(CUSTOM_ERROR_DIGEST_RE);
   });
 
   test("identical errors produce identical digests across renders", async () => {
-    const BARE_FIXTURES_DIR = join(import.meta.dirname, "fixtures", "pages");
-    const result = await scanPages(BARE_FIXTURES_DIR);
-    const loaderRoute = result.routes.find((r) => r.pattern === "/with-loader");
-    if (!loaderRoute) {
-      throw new Error("Expected /with-loader route in fixture");
-    }
-
     const fixedErr = new Error("stable");
     fixedErr.stack = "Error: stable\n  at frozen (/frozen:1:1)";
-    const routeWithError = {
-      ...loaderRoute,
-      page: {
-        ...loaderRoute.page,
-        loader: () => {
-          throw fixedErr;
-        },
+    const routeWithError = createTestRoute({
+      component: () => createElement("div", { "data-testid": "with-loader" }, "With loader"),
+      error: undefined,
+      loader: () => {
+        throw fixedErr;
       },
-    } as ResolvedRoute;
+      pattern: "/with-loader",
+    });
 
     const a = await renderToHTML(
       routeWithError,
       createMockLoaderContext({ path: "/with-loader" }),
-      result.root
+      createTestRoot(undefined)
     );
     const b = await renderToHTML(
       routeWithError,
       createMockLoaderContext({ path: "/with-loader" }),
-      result.root
+      createTestRoot(undefined)
     );
     const digestA = a.html.match(DIGEST_RE)?.[0];
     const digestB = b.html.match(DIGEST_RE)?.[0];
@@ -507,26 +440,19 @@ describe("renderToHTML — digest", () => {
 
 describe("renderSSR — digest", () => {
   test("__FURIN_DATA__ blob contains a digest under __furinError on 500 response", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
-    if (!blogRoute) {
-      throw new Error("Expected /blog route in fixture");
-    }
-
-    const routeWithError = {
-      ...blogRoute,
-      page: {
-        ...blogRoute.page,
-        loader: () => {
-          throw new Error("kaboom");
-        },
+    const routeWithError = createTestRoute({
+      component: () => createElement("div", { "data-testid": "blog-index" }, "Blog"),
+      error: BlogError,
+      loader: () => {
+        throw new Error("kaboom");
       },
-    } as ResolvedRoute;
+      pattern: "/blog",
+    });
 
     const response = await renderSSR(
       routeWithError,
       createMockLoaderContext({ path: "/blog" }),
-      result.root,
+      createTestRoot(RootError),
       undefined
     );
     const body = await response.text();
@@ -536,26 +462,19 @@ describe("renderSSR — digest", () => {
 
   test("server logs the digest alongside the rendered error", async () => {
     capturedLogs.length = 0;
-    const result = await scanPages(FIXTURES_DIR);
-    const blogRoute = result.routes.find((r) => r.pattern === "/blog");
-    if (!blogRoute) {
-      throw new Error("Expected /blog route in fixture");
-    }
-
-    const routeWithError = {
-      ...blogRoute,
-      page: {
-        ...blogRoute.page,
-        loader: () => {
-          throw new Error("log-me");
-        },
+    const routeWithError = createTestRoute({
+      component: () => createElement("div", { "data-testid": "blog-index" }, "Blog"),
+      error: BlogError,
+      loader: () => {
+        throw new Error("log-me");
       },
-    } as ResolvedRoute;
+      pattern: "/blog",
+    });
 
     const response = await renderSSR(
       routeWithError,
       createMockLoaderContext({ path: "/blog" }),
-      result.root,
+      createTestRoot(RootError),
       undefined
     );
     await response.text(); // drain

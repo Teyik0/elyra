@@ -3,6 +3,7 @@ import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { type SyncMutationOptions, type UseSyncOptions, useSync } from "../src/client.ts";
+import { useDomTests } from "./helpers/dom.ts";
 
 interface CardPatch {
   title: string;
@@ -76,6 +77,8 @@ function renderVoidHook<TResult>(
 }
 
 describe("useSync", () => {
+  useDomTests();
+
   test("calls a mutation without input without requiring a placeholder argument", async () => {
     const calls: Array<{ input: undefined; key: string }> = [];
     const mutation = (input: undefined, options: SyncMutationOptions): Promise<MutationResult> => {

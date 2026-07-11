@@ -88,12 +88,16 @@ export async function streamToString(stream: ReadableStream): Promise<string> {
   const decoder = new TextDecoder();
   let html = "";
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      html += decoder.decode(value, { stream: true });
     }
-    html += decoder.decode(value, { stream: true });
+  } finally {
+    reader.releaseLock();
   }
 
   html += decoder.decode();

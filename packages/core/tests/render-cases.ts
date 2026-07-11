@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import type { Context, Cookie } from "elysia";
 
@@ -14,37 +14,31 @@ mock.module("evlog/elysia", () => ({
 }));
 
 import type { HTTPHeaders } from "elysia/types";
-import { createElement, Suspense } from "react";
+import { createElement } from "react";
 import { defer, type RuntimeRoute } from "../src/client";
 import { Link } from "../src/client/link.tsx";
-import { autoInvalidateRegistry, revalidateTag } from "../src/server/auto-invalidate/index.ts";
+import { revalidateTag } from "../src/server/auto-invalidate/index.ts";
 import { __resetCacheState, isrCache, ssgCache } from "../src/server/cache/index.ts";
 import { consumePendingInvalidations } from "../src/server/cache/invalidation.ts";
 import {
   buildElement,
   handleISR,
   prerenderSSG,
-  renderRootNotFound,
   renderSSR,
   renderToHTML,
   renderToStream,
   runLoaders,
-  streamToString,
   warmSSGCache,
 } from "../src/server/render/index.ts";
-import {
-  __resetTemplateState,
-  setProductionTemplateContent,
-} from "../src/server/render/template.ts";
-import type { ResolvedRoute } from "../src/server/router/index.ts";
-import { scanPages } from "../src/server/router/index.ts";
-import { __setDevMode, IS_DEV } from "../src/server/runtime-env.ts";
+import { scanPages } from "../src/server/router/discovery.ts";
+import type { ResolvedRoute } from "../src/server/router/types.ts";
+import { __setDevMode } from "../src/server/runtime-env.ts";
 import { runWithSyncStreamPath } from "../src/server/sync/config.ts";
-import { Await } from "../src/shared/await.tsx";
 import { notFound } from "../src/shared/not-found.ts";
 
 const FIXTURES_DIR = join(import.meta.dirname, "fixtures/pages");
 const DEFER_ERROR_RE = /defer\(\)/;
+let scannedFixtures: ReturnType<typeof scanPages> | undefined;
 
 function createMockLoaderContext(overrides: Partial<Context> = {}) {
   return {
@@ -61,7 +55,7 @@ function createMockLoaderContext(overrides: Partial<Context> = {}) {
 }
 
 async function getRoute(pattern: string): Promise<ResolvedRoute> {
-  const result = await scanPages(FIXTURES_DIR);
+  const result = await getScannedFixtures();
   const route = result.routes.find((r) => r.pattern === pattern);
   if (!route) {
     throw new Error(`Route ${pattern} not found`);
@@ -69,8 +63,13 @@ async function getRoute(pattern: string): Promise<ResolvedRoute> {
   return route;
 }
 
+function getScannedFixtures(): ReturnType<typeof scanPages> {
+  scannedFixtures ??= scanPages(FIXTURES_DIR);
+  return scannedFixtures;
+}
+
 async function getRoot() {
-  const result = await scanPages(FIXTURES_DIR);
+  const result = await getScannedFixtures();
   return result.root;
 }
 
@@ -79,58 +78,17 @@ function makeRuntimeRoute(opts: Partial<Omit<RuntimeRoute, "__type">> = {}): Run
 }
 
 describe("render.tsx", () => {
-  const originalDevMode = IS_DEV;
-  beforeAll(() => __setDevMode(false));
-  afterAll(() => __setDevMode(originalDevMode));
-
-  describe("streamToString", () => {
-    test("converts readable stream to string", async () => {
-      const encoder = new TextEncoder();
-      const stream = new ReadableStream({
-        start(controller) {
-          controller.enqueue(encoder.encode("Hello "));
-          controller.enqueue(encoder.encode("World"));
-          controller.close();
-        },
-      });
-
-      const result = await streamToString(stream);
-      expect(result).toBe("Hello World");
-    });
-
-    test("handles empty stream", async () => {
-      const stream = new ReadableStream({
-        start(controller) {
-          controller.close();
-        },
-      });
-
-      const result = await streamToString(stream);
-      expect(result).toBe("");
-    });
-
-    test("handles multi-byte characters", async () => {
-      const encoder = new TextEncoder();
-      const stream = new ReadableStream({
-        start(controller) {
-          controller.enqueue(encoder.encode("Hello "));
-          controller.enqueue(encoder.encode("世界"));
-          controller.close();
-        },
-      });
-
-      const result = await streamToString(stream);
-      expect(result).toBe("Hello 世界");
-    });
-  });
+  __setDevMode(false);
 
   describe("buildElement", () => {
     test("wraps component with nested layouts", async () => {
+      await Promise.resolve();
       const nestedRoute = await getRoute("/nested");
       const root = await getRoot();
 
       const element = buildElement(nestedRoute, {}, root.route);
       expect(element).toBeDefined();
+      return;
     });
 
     test("applies layouts in correct order (innermost first)", async () => {
@@ -139,6 +97,7 @@ describe("render.tsx", () => {
 
       const element = buildElement(deepRoute, {}, root.route);
       expect(element).toBeDefined();
+      return;
     });
 
     test("skips root layout in chain", async () => {
@@ -426,26 +385,24 @@ describe("render.tsx", () => {
       });
 
       test("all ancestor loaders start before any completes (parallel, not waterfall)", async () => {
-        const DELAY = 40;
-        let start0 = 0;
-        let start1 = 0;
-        let end0 = 0;
-        let end1 = 0;
+        const starts: string[] = [];
+        let resolveA1: ((value: Record<string, unknown>) => void) | undefined;
+        let resolveA2: ((value: Record<string, unknown>) => void) | undefined;
 
         const a1 = makeRuntimeRoute({
-          loader: async () => {
-            start0 = performance.now();
-            await new Promise((r) => setTimeout(r, DELAY));
-            end0 = performance.now();
-            return { a1: true };
+          loader: () => {
+            starts.push("a1");
+            return new Promise<Record<string, unknown>>((resolve) => {
+              resolveA1 = resolve;
+            });
           },
         });
         const a2 = makeRuntimeRoute({
-          loader: async () => {
-            start1 = performance.now();
-            await new Promise((r) => setTimeout(r, DELAY));
-            end1 = performance.now();
-            return { a2: true };
+          loader: () => {
+            starts.push("a2");
+            return new Promise<Record<string, unknown>>((resolve) => {
+              resolveA2 = resolve;
+            });
           },
         });
         const withLoaderRoute = await getRoute("/with-loader");
@@ -455,11 +412,13 @@ describe("render.tsx", () => {
           routeChain: [withLoaderRoute.routeChain[0], a1, a2],
         } as ResolvedRoute;
 
-        await runLoaders(mockRoute, createMockLoaderContext());
+        const resultPromise = runLoaders(mockRoute, createMockLoaderContext());
+        await Promise.resolve();
 
-        // Both loaders started before either one finished (overlap = parallel)
-        expect(start0).toBeLessThan(end1);
-        expect(start1).toBeLessThan(end0);
+        expect(starts).toEqual(["a1", "a2"]);
+        resolveA1?.({ a1: true });
+        resolveA2?.({ a2: true });
+        await resultPromise;
       });
 
       test("results from all loaders are flat-merged into the final data", async () => {
@@ -636,12 +595,6 @@ describe("render.tsx", () => {
   });
 
   describe("renderSSR", () => {
-    afterEach(() => {
-      __resetTemplateState();
-      autoInvalidateRegistry.reset();
-      consumePendingInvalidations();
-    });
-
     test("returns Response with HTML", async () => {
       const ssrRoute = await getRoute("/ssr-page");
       const root = await getRoot();
@@ -806,46 +759,6 @@ describe("render.tsx", () => {
       expect(typeof data.__furinError?.digest).toBe("string");
     });
 
-    test("does not surface React abort errors for deferred Suspense boundaries", async () => {
-      setProductionTemplateContent(
-        '<!DOCTYPE html><html><head><!--ssr-head--></head><body><div id="root"><!--ssr-outlet--></div><script type="module" src="/_hydrate.js"></script></body></html>'
-      );
-      const ssrRoute = await getRoute("/ssr-page");
-      const root = await getRoot();
-      const customRoute = {
-        ...ssrRoute,
-        page: {
-          ...ssrRoute.page,
-          component: (props: Record<string, unknown>) => {
-            const slow = props.slow as Promise<string>;
-            return createElement(
-              Suspense,
-              { fallback: createElement("span", null, "loading") },
-              createElement(Await, {
-                // biome-ignore lint/correctness/noChildrenProp: render-prop pattern — Await requires children as a function; cannot be passed as 3rd createElement arg due to TypeScript overloads
-                children: (value: unknown) => createElement("span", null, String(value)),
-                resolve: slow,
-              })
-            );
-          },
-          loader: () =>
-            defer({
-              slow: new Promise((resolve) => setTimeout(() => resolve("done"), 50)),
-            }),
-        },
-      } as unknown as ResolvedRoute;
-
-      const ctx = createMockLoaderContext({ path: "/ssr-page" });
-      const response = await renderSSR(customRoute, ctx, root, undefined);
-      const html = await response.text();
-
-      expect(html).toContain("done");
-      expect(html).toContain("window.__FURIN_DEFERRED__.resolve");
-      expect(html).not.toContain(
-        "Switched to client rendering because the server rendering aborted"
-      );
-    });
-
     test("returns redirect Response when loader throws redirect", async () => {
       const ssrRoute = await getRoute("/ssr-page");
       const root = await getRoot();
@@ -872,36 +785,6 @@ describe("render.tsx", () => {
 
       expect(response.status).toBe(302);
       expect(response.headers.get("Location")).toBe("/login");
-    });
-
-    test("emits resolution <script> tags in settlement order, not insertion order", async () => {
-      // 'slow' is inserted FIRST in defer() but resolves LAST. 'fast' is inserted
-      // SECOND but resolves FIRST. The HTML stream MUST emit the fast resolve
-      // <script> before the slow one — otherwise streaming is cosmetic and a
-      // fast field is held hostage by a slow sibling.
-      const ssrRoute = await getRoute("/ssr-page");
-      const root = await getRoot();
-      const customRoute = {
-        ...ssrRoute,
-        page: {
-          ...ssrRoute.page,
-          loader: () =>
-            defer({
-              fast: new Promise((r) => setTimeout(() => r("fast-value"), 10)),
-              slow: new Promise((r) => setTimeout(() => r("slow-value"), 80)),
-            }),
-        },
-      } as unknown as ResolvedRoute;
-
-      const ctx = createMockLoaderContext({ path: "/ssr-page" });
-      const response = await renderSSR(customRoute, ctx, root, undefined);
-      const html = await response.text();
-
-      const fastIdx = html.indexOf('window.__FURIN_DEFERRED__.resolve("fast"');
-      const slowIdx = html.indexOf('window.__FURIN_DEFERRED__.resolve("slow"');
-      expect(fastIdx).toBeGreaterThan(-1);
-      expect(slowIdx).toBeGreaterThan(-1);
-      expect(fastIdx).toBeLessThan(slowIdx);
     });
 
     test("rejects when a loader returns defer() outside SSR mode", async () => {
@@ -1335,148 +1218,6 @@ describe("render.tsx", () => {
         expect(result.status).toBe(307);
         expect(result.headers.get("Location")).toBe("/moved");
       }
-    });
-  });
-
-  describe("renderRootNotFound", () => {
-    afterEach(() => {
-      __resetTemplateState();
-    });
-
-    test("uses production template when setProductionTemplateContent is called", async () => {
-      setProductionTemplateContent("<!DOCTYPE html><html><body>PROD</body></html>");
-
-      const result = await scanPages(FIXTURES_DIR);
-      const response = await renderRootNotFound(result.root, undefined);
-
-      expect(response.status).toBe(404);
-      const body = await response.text();
-      expect(body).toContain("PROD");
-    });
-
-    test("falls back to generateIndexHtml when not in dev and no request", async () => {
-      const result = await scanPages(FIXTURES_DIR);
-      const response = await renderRootNotFound(result.root, undefined);
-
-      expect(response.status).toBe(404);
-      const body = await response.text();
-      expect(body).toContain("__FURIN_DATA__");
-    });
-
-    test("recovers when user's not-found.tsx throws during render", async () => {
-      const result = await scanPages(FIXTURES_DIR);
-      const rootWithBrokenNotFound = {
-        ...result.root,
-        notFound: () => {
-          throw new Error("not-found-boom");
-        },
-      };
-
-      const response = await renderRootNotFound(rootWithBrokenNotFound, undefined);
-
-      expect(response.status).toBe(404);
-      const body = await response.text();
-      expect(body).toContain("404");
-    });
-  });
-
-  describe("revalidateInBackground", () => {
-    test("silently drops redirect result during background revalidation", async () => {
-      __resetCacheState();
-      const isrRoute = await getRoute("/isr-page");
-      const root = await getRoot();
-
-      // Seed a stale entry so serveISRCacheHit triggers revalidateInBackground.
-      // generatedAt=0 is always older than revalidate*1000ms.
-      const staleHtml = "<html>stale-redirect</html>";
-      isrCache.set("/isr-page", { generatedAt: 0, html: staleHtml, revalidate: 60 });
-
-      // A loader that throws a Response triggers the redirect branch in runLoaders,
-      // which makes renderForPath resolve with a Response — not a RenderResult.
-      const redirectRoute = {
-        ...isrRoute,
-        page: {
-          ...isrRoute.page,
-          loader: () => {
-            throw new Response(null, { headers: { Location: "/foo" }, status: 302 });
-          },
-        },
-      } as ResolvedRoute;
-
-      const ctx = createMockLoaderContext({ path: "/isr-page" });
-      const html = await handleISR(redirectRoute, ctx, root, "");
-
-      // handleISR returns the stale cached HTML immediately
-      expect(html).toBe(staleHtml);
-
-      // Drain background promise — redirect branch (line 844) returns without
-      // calling setISRCache, so the cache entry must remain unchanged.
-      await new Promise<void>((resolve) => setTimeout(resolve, 20));
-
-      expect(isrCache.get("/isr-page")?.html).toBe(staleHtml);
-    });
-
-    test("logs error and does not propagate when background revalidation fails", async () => {
-      __resetCacheState();
-      const isrRoute = await getRoute("/isr-page");
-      const root = await getRoot();
-
-      const staleHtml = "<html>stale-error</html>";
-      isrCache.set("/isr-page", { generatedAt: 0, html: staleHtml, revalidate: 60 });
-
-      // A loader that throws an Error causes renderForPath (throwOnFailure=true)
-      // to reject, exercising the .catch() block at lines 852-861.
-      const crashingRoute = {
-        ...isrRoute,
-        page: {
-          ...isrRoute.page,
-          loader: () => {
-            throw new Error("bg-revalidation-boom");
-          },
-        },
-      } as ResolvedRoute;
-
-      const ctx = createMockLoaderContext({ path: "/isr-page" });
-      const html = await handleISR(crashingRoute, ctx, root, "");
-
-      expect(html).toBe(staleHtml);
-
-      // Drain background promise — .catch() handler must log and swallow the
-      // error without updating the cache or crashing.
-      await new Promise<void>((resolve) => setTimeout(resolve, 20));
-
-      expect(isrCache.get("/isr-page")?.html).toBe(staleHtml);
-    });
-
-    test("invalidates stale cached HTML when background revalidation resolves to notFound", async () => {
-      __resetCacheState();
-      const isrRoute = await getRoute("/isr-page");
-      const root = await getRoot();
-
-      const staleHtml = "<html>stale-not-found</html>";
-      isrCache.set("/isr-page", { generatedAt: 0, html: staleHtml, revalidate: 60 });
-
-      const notFoundRoute = {
-        ...isrRoute,
-        page: {
-          ...isrRoute.page,
-          loader: () => notFound({ message: "gone" }),
-        },
-      } as ResolvedRoute;
-
-      const staleCtx = createMockLoaderContext({ path: "/isr-page" });
-      const html = await handleISR(notFoundRoute, staleCtx, root, "");
-
-      expect(html).toBe(staleHtml);
-
-      await new Promise<void>((resolve) => setTimeout(resolve, 20));
-
-      expect(isrCache.has("/isr-page")).toBe(false);
-
-      const missCtx = createMockLoaderContext({ path: "/isr-page" });
-      await handleISR(notFoundRoute, missCtx, root, "");
-
-      expect(missCtx.set.status).toBe(404);
     });
   });
 

@@ -6,6 +6,7 @@ import {
   containsRscSource,
   serializeRouteFrame,
   serializeRouteFrames,
+  serializeRouteFrameValue,
 } from "../../shared/route-frame.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
@@ -321,17 +322,21 @@ function createRscDeferredFrameStream(
         encoder.encode(serializeRouteFrames(syncData, Object.keys(deferredPromises)))
       );
       await Promise.all(
-        Object.entries(deferredPromises).map(async ([key, promise]) => {
+        Object.entries(deferredPromises).map(async ([key, promise], index) => {
           try {
+            const { rscFrames, value } = serializeRouteFrameValue(await promise, `defer-${index}`);
             controller.enqueue(
               encoder.encode(
                 serializeRouteFrame({
                   key,
                   type: "defer-resolve",
-                  value: toCrossJSON(await promise),
+                  value,
                 })
               )
             );
+            if (rscFrames) {
+              controller.enqueue(encoder.encode(rscFrames));
+            }
           } catch (error) {
             controller.enqueue(
               encoder.encode(

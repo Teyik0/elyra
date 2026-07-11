@@ -74,9 +74,10 @@ describe("partial prerendering", () => {
     } satisfies RootLayout;
     const app = new Elysia().use(createRoutePlugin(resolved, root, "build-1"));
 
-    const alice = await app
-      .handle(new Request("http://localhost/account", { headers: { cookie: "session=alice" } }))
-      .then((response) => response.text());
+    const aliceResponse = await app.handle(
+      new Request("http://localhost/account", { headers: { cookie: "session=alice" } })
+    );
+    const alice = await aliceResponse.text();
     const bob = await app
       .handle(new Request("http://localhost/account", { headers: { cookie: "session=bob" } }))
       .then((response) => response.text());
@@ -84,6 +85,7 @@ describe("partial prerendering", () => {
     expect(alice).toContain("Shoes");
     expect(alice).toContain("alice");
     expect(bob).toContain("bob");
+    expect(aliceResponse.headers.get("cache-control")).toBe("private, no-store");
     expect(publicCalls).toBe(1);
     expect(privateCalls).toBe(2);
   });

@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { toCrossJSON } from "seroval";
 import { Link, RouterProvider } from "../../src/client/link.tsx";
 import type { ClientRoute } from "../../src/client/router/index.ts";
+import { installDom, resetDomState, uninstallDom } from "../helpers/dom.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -112,6 +113,8 @@ describe("RouterProvider click interception", () => {
   let pageBRequests = 0;
 
   beforeEach(() => {
+    installDom();
+    resetDomState();
     originalFetch = globalThis.fetch;
     originalPushState =
       typeof window !== "undefined" && typeof window.history !== "undefined"
@@ -160,13 +163,14 @@ describe("RouterProvider click interception", () => {
     }
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     globalThis.fetch = originalFetch;
     if (originalPushState) {
       window.history.pushState = originalPushState;
     }
     currentCleanup?.();
     currentCleanup = undefined;
+    await uninstallDom();
   });
 
   test("click on Furin Link triggers history.pushState exactly once", async () => {

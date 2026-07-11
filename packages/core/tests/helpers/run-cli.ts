@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { withBuildTestLock } from "./build-lock.ts";
 
 const CLI_ENTRY = resolve(import.meta.dir, "../../src/cli/index.ts");
 
@@ -15,32 +16,31 @@ export interface RunningCli {
   kill: () => void;
 }
 
-function decodeBuffer(buffer?: Uint8Array<ArrayBufferLike>): string {
-  return buffer ? new TextDecoder().decode(buffer) : "";
-}
-
 export function runCli(
   args: string[],
   options: {
     cwd: string;
     env?: Record<string, string | undefined>;
   }
-): CliResult {
-  const proc = Bun.spawnSync(["bun", CLI_ENTRY, ...args], {
-    cwd: options.cwd,
-    env: {
-      ...process.env,
-      ...options.env,
-    },
-    stderr: "pipe",
-    stdout: "pipe",
-  });
+): Promise<CliResult> {
+  return withBuildTestLock(async () => {
+    const proc = startCli(args, options);
+    const exitCode = await Promise.race([
+      proc.exitCode,
+      new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          proc.kill();
+          reject(new Error(`CLI command timed out: ${args.join(" ")}`));
+        }, 30_000);
+      }),
+    ]);
 
-  return {
-    exitCode: proc.exitCode,
-    stderr: decodeBuffer(proc.stderr),
-    stdout: decodeBuffer(proc.stdout),
-  };
+    return {
+      exitCode,
+      stderr: proc.getStderr(),
+      stdout: proc.getStdout(),
+    };
+  });
 }
 
 async function collectStream(
@@ -75,7 +75,7 @@ export function startCli(
     env?: Record<string, string | undefined>;
   }
 ): RunningCli {
-  return startProcess(["bun", CLI_ENTRY, ...args], options);
+  return startProcess([process.execPath, CLI_ENTRY, ...args], options);
 }
 
 export function startProcess(

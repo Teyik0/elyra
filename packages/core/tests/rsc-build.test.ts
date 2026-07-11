@@ -51,6 +51,10 @@ describe("RSC graph environment guards", () => {
     expect(resolveConfiguredCodecPath(codecPath)).toBe(codecPath);
   });
 
+  test("treats a blank configured Flight codec path as unset", () => {
+    expect(resolveConfiguredCodecPath("   ")).toBeUndefined();
+  });
+
   test("rejects mismatched React and Flight codec versions", () => {
     expect(() =>
       assertCompatibleRscVersions({

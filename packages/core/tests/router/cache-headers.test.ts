@@ -1,283 +1,123 @@
-import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
+import { expect, test } from "bun:test";
+
+const CORE_DIR_SUFFIX_RE = /\/tests\/router$/;
+
+const CACHE_HEADER_SCENARIOS = String.raw`
 import { join } from "node:path";
-
-mock.module("evlog/elysia", () => ({
-  evlog: () => (app: unknown) => app,
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-  useLogger: () => ({ set() {} }),
-}));
-
 import { Elysia } from "elysia";
-import { __resetCacheState } from "../../src/server/cache/index.ts";
-import { createRoutePlugin, scanPages } from "../../src/server/router/index.ts";
-import { __setDevMode, IS_DEV } from "../../src/server/runtime-env.ts";
+import { __resetCacheState } from "./src/server/cache/index.ts";
+import { scanPages } from "./src/server/router/discovery.ts";
+import { createRoutePlugin } from "./src/server/router/plugin.ts";
+import { __setDevMode } from "./src/server/runtime-env.ts";
 
-const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
+const fixturesDir = join(process.cwd(), "tests/fixtures/pages");
+const etagPattern = /^"testbuild:\d+"$/;
 
-const ETAG_PATTERN = /^"testbuild:\d+"$/;
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
 
-let originalDevMode: boolean;
+function assertEqual(actual, expected, message) {
+  if (actual !== expected) {
+    throw new Error(message + ": expected " + String(expected) + ", got " + String(actual));
+  }
+}
 
-beforeAll(() => {
-  originalDevMode = IS_DEV;
-  __setDevMode(false);
-});
-
-afterEach(() => {
-  __resetCacheState();
-});
-
-afterAll(() => {
-  __setDevMode(originalDevMode);
-});
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-async function getRoute(pattern: string) {
-  const result = await scanPages(FIXTURES_DIR);
-  const route = result.routes.find((r) => r.pattern === pattern);
+async function getRoute(pattern) {
+  const result = await scanPages(fixturesDir);
+  const route = result.routes.find((candidate) => candidate.pattern === pattern);
   if (!route) {
-    throw new Error(`Route ${pattern} not found in fixtures`);
+    throw new Error("Route " + pattern + " not found in fixtures");
   }
   return { root: result.root, route };
 }
 
-// ── Bullet 7: ISR response has correct Cache-Control with must-revalidate ──────
+async function routeResponse(pattern, buildId) {
+  __resetCacheState();
+  const { root, route } = await getRoute(pattern);
+  const app = new Elysia().use(createRoutePlugin(route, root, buildId));
+  return app.handle(new Request("http://localhost" + pattern));
+}
 
-describe("ISR Cache-Control headers", () => {
-  test("contains must-revalidate directive", async () => {
-    const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
+__setDevMode(false);
 
-    const res = await app.handle(new Request("http://localhost/isr-page"));
+let response = await routeResponse("/isr-page", undefined);
+assertEqual(response.status, 200, "ISR response should return 200");
+let cacheControl = response.headers.get("cache-control") ?? "";
+for (const directive of ["must-revalidate", "max-age=0", "public", "s-maxage=", "stale-while-revalidate"]) {
+  assert(cacheControl.includes(directive), "ISR Cache-Control should include " + directive);
+}
+assertEqual(response.headers.get("cache-tag"), "/isr-page", "ISR cache-tag should match path");
 
-    expect(res.status).toBe(200);
-    const cc = res.headers.get("cache-control") ?? "";
-    expect(cc).toContain("must-revalidate");
+response = await routeResponse("/isr-page", "testbuild");
+const etag = response.headers.get("etag");
+assert(etag !== null, "ISR response should include ETag when buildId is set");
+assert(etagPattern.test(etag), "ISR ETag should match testbuild timestamp format");
+
+response = await routeResponse("/isr-page", "");
+assert(response.headers.get("etag") === null, "ISR response should omit ETag when buildId is empty");
+
+{
+  __resetCacheState();
+  const { root, route } = await getRoute("/isr-page");
+  const app = new Elysia().use(createRoutePlugin(route, root, "testbuild"));
+  const first = await app.handle(new Request("http://localhost/isr-page"));
+  const firstEtag = first.headers.get("etag");
+  assert(firstEtag !== null, "first ISR response should include ETag");
+  const second = await app.handle(
+    new Request("http://localhost/isr-page", { headers: { "if-none-match": firstEtag } })
+  );
+  assertEqual(second.status, 304, "matching If-None-Match should return 304");
+}
+
+{
+  __resetCacheState();
+  const { root, route } = await getRoute("/isr-page");
+  const app = new Elysia().use(createRoutePlugin(route, root, "testbuild"));
+  const stale = await app.handle(
+    new Request("http://localhost/isr-page", { headers: { "if-none-match": '"stale-build:0"' } })
+  );
+  assertEqual(stale.status, 200, "stale If-None-Match should return 200");
+}
+
+response = await routeResponse("/ssg-page", undefined);
+assertEqual(response.headers.get("cache-tag"), "/ssg-page", "SSG cache-tag should match path");
+cacheControl = response.headers.get("cache-control") ?? "";
+for (const directive of ["s-maxage=31536000", "must-revalidate", "public", "max-age=0"]) {
+  assert(cacheControl.includes(directive), "SSG Cache-Control should include " + directive);
+}
+
+response = await routeResponse("/ssr-page", undefined);
+assertEqual(
+  response.headers.get("cache-control"),
+  "no-store, no-cache, must-revalidate",
+  "SSR Cache-Control should be no-store"
+);
+assert(response.headers.get("cache-tag") === null, "SSR response should omit cache-tag");
+assert(response.headers.get("etag") === null, "SSR response should omit etag");
+
+process.exit(0);
+`;
+
+test("route cache header scenarios", () => {
+  const proc = Bun.spawnSync({
+    cmd: ["bun", "-e", CACHE_HEADER_SCENARIOS],
+    cwd: import.meta.dir.replace(CORE_DIR_SUFFIX_RE, ""),
+    stderr: "pipe",
+    stdout: "pipe",
   });
 
-  test("contains max-age=0 directive", async () => {
-    const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
-
-    const res = await app.handle(new Request("http://localhost/isr-page"));
-
-    const cc = res.headers.get("cache-control") ?? "";
-    expect(cc).toContain("max-age=0");
-  });
-
-  test("contains public directive", async () => {
-    const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
-
-    const res = await app.handle(new Request("http://localhost/isr-page"));
-
-    const cc = res.headers.get("cache-control") ?? "";
-    expect(cc).toContain("public");
-  });
-
-  test("contains s-maxage directive", async () => {
-    const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
-
-    const res = await app.handle(new Request("http://localhost/isr-page"));
-
-    const cc = res.headers.get("cache-control") ?? "";
-    expect(cc).toContain("s-maxage=");
-  });
-
-  test("contains stale-while-revalidate directive", async () => {
-    const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
-
-    const res = await app.handle(new Request("http://localhost/isr-page"));
-
-    const cc = res.headers.get("cache-control") ?? "";
-    expect(cc).toContain("stale-while-revalidate");
-  });
-});
-
-// ── Bullet 8: ISR response has Cache-Tag header ────────────────────────────────
-
-describe("ISR Cache-Tag header", () => {
-  test("cache-tag header is present in ISR response", async () => {
-    const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
-
-    const res = await app.handle(new Request("http://localhost/isr-page"));
-
-    expect(res.headers.get("cache-tag")).toBeTruthy();
-  });
-
-  test("cache-tag value matches the resolved path", async () => {
-    const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
-
-    const res = await app.handle(new Request("http://localhost/isr-page"));
-
-    expect(res.headers.get("cache-tag")).toBe("/isr-page");
-  });
-});
-
-// ── Bullet 9: ISR response has ETag when buildId is set ───────────────────────
-
-describe("ISR ETag header", () => {
-  test("etag header is present when buildId is set", async () => {
-    const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root, "testbuild"));
-
-    const res = await app.handle(new Request("http://localhost/isr-page"));
-
-    expect(res.headers.get("etag")).toBeTruthy();
-  });
-
-  test("etag header matches format testbuild:TIMESTAMP", async () => {
-    const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root, "testbuild"));
-
-    const res = await app.handle(new Request("http://localhost/isr-page"));
-
-    const etag = res.headers.get("etag") ?? "";
-    // Format: "testbuild:1234567890" — quoted string
-    expect(etag).toMatch(ETAG_PATTERN);
-  });
-
-  test("etag header is absent when buildId is empty", async () => {
-    const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root, ""));
-
-    const res = await app.handle(new Request("http://localhost/isr-page"));
-
-    expect(res.headers.get("etag")).toBeNull();
-  });
-});
-
-// ── Bullet 10: ISR responds 304 when ETag matches ─────────────────────────────
-
-describe("ISR 304 conditional request", () => {
-  test("returns 304 when If-None-Match matches the etag", async () => {
-    const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root, "testbuild"));
-
-    // First request: get the ETag
-    const res1 = await app.handle(new Request("http://localhost/isr-page"));
-    expect(res1.status).toBe(200);
-    const etag = res1.headers.get("etag");
-    expect(etag).toBeTruthy();
-
-    // Second request with If-None-Match
-    const res2 = await app.handle(
-      new Request("http://localhost/isr-page", {
-        headers: { "if-none-match": etag as string },
-      })
+  if (proc.exitCode !== 0) {
+    throw new Error(
+      [
+        `cache header subprocess exited with ${proc.exitCode}`,
+        new TextDecoder().decode(proc.stdout),
+        new TextDecoder().decode(proc.stderr),
+      ].join("\n")
     );
+  }
 
-    expect(res2.status).toBe(304);
-  });
-
-  test("returns 200 when If-None-Match does not match", async () => {
-    const { route, root } = await getRoute("/isr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root, "testbuild"));
-
-    const res = await app.handle(
-      new Request("http://localhost/isr-page", {
-        headers: { "if-none-match": '"stale-build:0"' },
-      })
-    );
-
-    expect(res.status).toBe(200);
-  });
-});
-
-// ── Bullet 11: SSG response has Cache-Tag and immutable-style Cache-Control ────
-
-describe("SSG cache headers", () => {
-  test("cache-tag header is present in SSG response", async () => {
-    const { route, root } = await getRoute("/ssg-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
-
-    const res = await app.handle(new Request("http://localhost/ssg-page"));
-
-    expect(res.headers.get("cache-tag")).toBeTruthy();
-  });
-
-  test("cache-tag value matches the resolved path for SSG", async () => {
-    const { route, root } = await getRoute("/ssg-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
-
-    const res = await app.handle(new Request("http://localhost/ssg-page"));
-
-    expect(res.headers.get("cache-tag")).toBe("/ssg-page");
-  });
-
-  test("Cache-Control contains s-maxage=31536000", async () => {
-    const { route, root } = await getRoute("/ssg-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
-
-    const res = await app.handle(new Request("http://localhost/ssg-page"));
-
-    const cc = res.headers.get("cache-control") ?? "";
-    expect(cc).toContain("s-maxage=31536000");
-  });
-
-  test("Cache-Control contains must-revalidate", async () => {
-    const { route, root } = await getRoute("/ssg-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
-
-    const res = await app.handle(new Request("http://localhost/ssg-page"));
-
-    const cc = res.headers.get("cache-control") ?? "";
-    expect(cc).toContain("must-revalidate");
-  });
-
-  test("Cache-Control contains public directive", async () => {
-    const { route, root } = await getRoute("/ssg-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
-
-    const res = await app.handle(new Request("http://localhost/ssg-page"));
-
-    const cc = res.headers.get("cache-control") ?? "";
-    expect(cc).toContain("public");
-  });
-
-  test("Cache-Control contains max-age=0", async () => {
-    const { route, root } = await getRoute("/ssg-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
-
-    const res = await app.handle(new Request("http://localhost/ssg-page"));
-
-    const cc = res.headers.get("cache-control") ?? "";
-    expect(cc).toContain("max-age=0");
-  });
-});
-
-// ── Bullet 12: SSR response has no-store ──────────────────────────────────────
-
-describe("SSR cache headers", () => {
-  test("Cache-Control is no-store, no-cache, must-revalidate", async () => {
-    const { route, root } = await getRoute("/ssr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
-
-    const res = await app.handle(new Request("http://localhost/ssr-page"));
-
-    expect(res.headers.get("cache-control")).toBe("no-store, no-cache, must-revalidate");
-  });
-
-  test("SSR response has no cache-tag header", async () => {
-    const { route, root } = await getRoute("/ssr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
-
-    const res = await app.handle(new Request("http://localhost/ssr-page"));
-
-    expect(res.headers.get("cache-tag")).toBeNull();
-  });
-
-  test("SSR response has no etag header", async () => {
-    const { route, root } = await getRoute("/ssr-page");
-    const app = new Elysia().use(createRoutePlugin(route, root));
-
-    const res = await app.handle(new Request("http://localhost/ssr-page"));
-
-    expect(res.headers.get("etag")).toBeNull();
-  });
+  expect(proc.exitCode).toBe(0);
 });

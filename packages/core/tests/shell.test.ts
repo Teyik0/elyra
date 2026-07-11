@@ -169,7 +169,7 @@ describe("shell.tsx", () => {
     test("builds standard meta tags", () => {
       const meta: MetaDescriptor[] = [{ content: "Test description", name: "description" }];
       const result = buildMetaParts(meta);
-      expect(result).toContain('<meta name="description" content="Test description" />');
+      expect(result).toContain('<meta content="Test description" name="description" />');
     });
 
     test("builds script:ld+json", () => {
@@ -203,7 +203,7 @@ describe("shell.tsx", () => {
       const links = [{ href: "/style.css", rel: "stylesheet" }];
       const result = buildLinkParts(links);
       expect(result).toHaveLength(1);
-      expect(result[0]).toBe('<link rel="stylesheet" href="/style.css" />');
+      expect(result[0]).toBe('<link href="/style.css" rel="stylesheet" />');
     });
 
     test("builds multiple link tags", () => {

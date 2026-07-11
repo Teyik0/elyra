@@ -11,6 +11,7 @@ import {
 } from "../../src/client/link.tsx";
 import { setPrefetchCacheEntry } from "../../src/client/router/provider.tsx";
 import type { CacheEntry } from "../../src/client/router/types.ts";
+import { installDom, resetDomState, uninstallDom } from "../helpers/dom.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -123,7 +124,7 @@ describe("Link SSR path", () => {
 
     try {
       const html = renderToStaticMarkup(createElement(Link, { to: "/blog" }, "Blog"));
-      expect(html).toBe('<a href="/blog" data-furin-link="true">Blog</a>');
+      expect(html).toBe('<a data-furin-link="true" href="/blog">Blog</a>');
     } finally {
       globalThis.window = originalWindow;
     }
@@ -169,7 +170,7 @@ describe("Link SSR path", () => {
         )
       );
       expect(html).toBe(
-        '<a href="/furin/docs" data-furin-link="true" data-status="active">Docs</a>'
+        '<a data-furin-link="true" href="/furin/docs" data-status="active">Docs</a>'
       );
     } finally {
       globalThis.window = originalWindow;
@@ -185,7 +186,7 @@ describe("Link SSR path", () => {
       const html = renderToStaticMarkup(
         createElement(Link, { hash: "comments", search: { page: 2 }, to: "/blog" }, "Blog")
       );
-      expect(html).toBe('<a href="/blog?page=2#comments" data-furin-link="true">Blog</a>');
+      expect(html).toBe('<a data-furin-link="true" href="/blog?page=2#comments">Blog</a>');
     } finally {
       globalThis.window = originalWindow;
     }
@@ -200,7 +201,7 @@ describe("Link SSR path", () => {
       const html = renderToStaticMarkup(
         createElement(Link, { disabled: true, to: "/about" }, "About")
       );
-      expect(html).toBe('<a href="/about" data-furin-link="true" aria-disabled="true">About</a>');
+      expect(html).toBe('<a data-furin-link="true" href="/about" aria-disabled="true">About</a>');
     } finally {
       globalThis.window = originalWindow;
     }
@@ -357,7 +358,7 @@ describe("Link SSR path", () => {
           )
         )
       );
-      expect(html).toBe('<a href="/furin/blog" data-furin-link="true">Blog</a>');
+      expect(html).toBe('<a data-furin-link="true" href="/furin/blog">Blog</a>');
     } finally {
       globalThis.window = originalWindow;
     }
@@ -392,6 +393,8 @@ describe("LinkInteractive — client-side behaviour", () => {
   let originalHrefDescriptor: PropertyDescriptor | undefined;
 
   beforeEach(() => {
+    installDom();
+    resetDomState();
     MockIntersectionObserver.cleanup();
     globalThis.IntersectionObserver =
       MockIntersectionObserver as unknown as typeof IntersectionObserver;
@@ -423,8 +426,13 @@ describe("LinkInteractive — client-side behaviour", () => {
     });
   });
 
-  afterEach(() => {
-    globalThis.IntersectionObserver = OriginalIntersectionObserver;
+  afterEach(async () => {
+    if (OriginalIntersectionObserver) {
+      globalThis.IntersectionObserver = OriginalIntersectionObserver;
+    } else {
+      // biome-ignore lint/performance/noDelete: remove test-only DOM shim before unregistering happy-dom
+      delete (globalThis as unknown as { IntersectionObserver?: unknown }).IntersectionObserver;
+    }
     MockIntersectionObserver.cleanup();
     if (originalOpen && typeof window !== "undefined") {
       window.open = originalOpen;
@@ -435,9 +443,10 @@ describe("LinkInteractive — client-side behaviour", () => {
       } else {
         // href lives on the Location prototype — delete our own-property override
         // biome-ignore lint/performance/noDelete: removing an own property to restore prototype accessor behavior
-        delete (window.location as unknown as Record<string, unknown>).href;
+        delete (window.location as unknown as { href?: unknown }).href;
       }
     }
+    await uninstallDom();
   });
 
   // ── Rendering ───────────────────────────────────────────────────────────────
@@ -1031,7 +1040,7 @@ describe("LinkInteractive — client-side behaviour", () => {
       Object.defineProperty(window.location, "href", originalHrefDescriptor);
     } else {
       // biome-ignore lint/performance/noDelete: removing an own property to restore prototype accessor behavior
-      delete (window.location as unknown as Record<string, unknown>).href;
+      delete (window.location as unknown as { href?: unknown }).href;
     }
 
     const originalHref = window.location.href;

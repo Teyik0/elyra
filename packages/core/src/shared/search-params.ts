@@ -108,13 +108,13 @@ export function stripSearchDefaults(
 }
 
 export function appendSearchParamValue(params: URLSearchParams, key: string, value: unknown): void {
-  if (value === null) {
+  if (value == null) {
     return;
   }
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      if (item !== null) {
+      if (item != null) {
         params.append(key, typeof item === "object" ? JSON.stringify(item) : String(item));
       }
     }

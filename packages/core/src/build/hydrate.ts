@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateIndexHtml } from "../server/render/shell.ts";
-import { mergeRouteSchemas } from "../server/router/index.ts";
 import { buildRouteRegex } from "../server/router/patterns.ts";
-import type { ResolvedRoute } from "../server/router/index.ts";
+import { mergeRouteSchemas } from "../server/router/schema-merge.ts";
+import type { ResolvedRoute } from "../server/router/types.ts";
 import { collectSearchDefaults } from "../shared/search-params.ts";
 import { writeRouteTypes } from "./route-types";
 import type { BuildClientOptions } from "./types";

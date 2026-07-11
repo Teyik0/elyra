@@ -10,7 +10,7 @@ const config: KnipConfig = {
       entry: ["doctor.config.ts"],
       // @biomejs/biome is used via biome.jsonc but not directly imported in JS/TS
       // @commitlint/cli is the CLI runner; commitlint plugin detects config-conventional
-      ignoreDependencies: ["@biomejs/biome", "@commitlint/cli"],
+      ignoreDependencies: ["@biomejs/biome", "@commitlint/cli", "@happy-dom/global-registrator"],
     },
     "apps/docs": {
       // Furin uses file-based routing: all files in pages/ are entry points
@@ -34,6 +34,14 @@ const config: KnipConfig = {
       project: ["src/**/*.{ts,tsx}"],
     },
     "packages/core": {
+      entry: ["tests/render-cases.ts"],
+      ignore: [
+        "src/server/cache/dev-loader.ts",
+        "src/server/internal.ts",
+        "src/server/render/template.ts",
+        "src/server/sync/stream.ts",
+      ],
+      ignoreDependencies: ["expect-type"],
       project: ["src/**/*.{ts,tsx}"],
     },
   },

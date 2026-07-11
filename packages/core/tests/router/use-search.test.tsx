@@ -11,6 +11,7 @@ import {
   SearchStoreContext,
   searchSnapshotFromRouterContext,
 } from "../../src/client/router/search-store.ts";
+import { useDomTests } from "../helpers/dom.ts";
 
 const PRODUCTS_RE = /^\/products$/;
 
@@ -74,6 +75,8 @@ function renderWithRouter(
 }
 
 describe("useSearch", () => {
+  useDomTests();
+
   test("reads the current server-resolved search from router context", () => {
     function Page(): React.ReactElement {
       const [search] = useSearch("/products");
@@ -151,6 +154,8 @@ describe("useSearch", () => {
 });
 
 describe("useNavigate", () => {
+  useDomTests();
+
   test("navigates with typed search and omits default-equivalent values", async () => {
     const navigate = mock<RouterContextValue["navigate"]>(() => Promise.resolve());
 
@@ -214,6 +219,8 @@ describe("useNavigate", () => {
 });
 
 describe("useSearch setter", () => {
+  useDomTests();
+
   test("updates search by navigating from the current logical pathname", async () => {
     const navigate = mock<RouterContextValue["navigate"]>(() => Promise.resolve());
 

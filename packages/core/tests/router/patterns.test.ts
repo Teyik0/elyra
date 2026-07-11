@@ -4,8 +4,8 @@ import {
   buildRouteRegex,
   compareRouteSpecificity,
   filePathToPattern,
-  routeSpecificity,
-} from "../../src/server/router/index.ts";
+  compareRouteSpecificity as routeSpecificity,
+} from "../../src/server/router/patterns.ts";
 
 describe("filePathToPattern", () => {
   test("converts index route to root", () => {

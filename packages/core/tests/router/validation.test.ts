@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RuntimeRoute } from "../../src/client.ts";
-import { scanRootLayout } from "../../src/server/router/index.ts";
+import { scanRootLayout } from "../../src/server/router/discovery.ts";
 import {
   collectRouteChainFromRoute,
   hasCycle,

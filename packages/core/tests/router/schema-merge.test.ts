@@ -9,7 +9,6 @@
  */
 
 import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
-import { join } from "node:path";
 
 mock.module("evlog/elysia", () => ({
   evlog: () => (app: unknown) => app,
@@ -18,18 +17,13 @@ mock.module("evlog/elysia", () => ({
 }));
 
 import { Elysia, t } from "elysia";
-import type { RuntimeRoute } from "furin";
-import {
-  collectRouteTags,
-  createRoutePlugin,
-  mergeRouteSchemas,
-  scanPages,
-} from "furin/server/router";
-import { __setDevMode, IS_DEV } from "furin/server/runtime-env";
+import type { RuntimeRoute } from "../../src/client.ts";
+import { collectRouteTags } from "../../src/server/router/discovery.ts";
+import { mergeRouteSchemas } from "../../src/server/router/schema-merge.ts";
 import { parseRouteQuery } from "../../src/server/router/schemas.ts";
+import { __setDevMode, IS_DEV } from "../../src/server/runtime-env.ts";
 
-const FIXTURES_DIR = join(import.meta.dirname, "../fixtures/pages");
-const ROUTE_PATTERN = "/schema-merge-parent/child";
+const ROUTER_TESTS_DIR_RE = /\/tests\/router$/;
 
 let originalDevMode: boolean;
 beforeAll(() => {
@@ -190,50 +184,70 @@ describe("collectRouteTags", () => {
 // ── Integration: HTTP requests resolve defaults from all ancestors ────────────
 
 describe("schema merge — parent + child both declare query schemas", () => {
-  test("routeChain contains query schemas from both parent and child _route.tsx", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const route = result.routes.find((r) => r.pattern === ROUTE_PATTERN);
+  test("HTTP requests resolve merged query defaults", () => {
+    const proc = Bun.spawnSync({
+      cmd: [
+        "bun",
+        "-e",
+        `
+import { expect, mock } from "bun:test";
 
-    if (!route) {
-      throw new Error(`Route ${ROUTE_PATTERN} not found — did the fixture files get created?`);
+mock.module("evlog/elysia", () => ({
+  evlog: () => (app) => app,
+  useLogger: () => ({ set() {} }),
+}));
+
+const { Elysia } = await import("elysia");
+const { join } = await import("node:path");
+const { scanPages } = await import("./src/server/router/discovery.ts");
+const { createRoutePlugin } = await import("./src/server/router/plugin.ts");
+const { __setDevMode, IS_DEV } = await import("./src/server/runtime-env.ts");
+
+const originalDevMode = IS_DEV;
+const routePattern = "/schema-merge-parent/child";
+__setDevMode(false);
+
+try {
+  const result = await scanPages(join(import.meta.dir, "tests/fixtures/pages"));
+  const route = result.routes.find((candidate) => candidate.pattern === routePattern);
+  if (!route) {
+    throw new Error("Route " + routePattern + " not found");
+  }
+
+  const chainEntries = route.routeChain.filter((entry) => entry.query);
+  expect(chainEntries.length).toBe(2);
+
+  let app = new Elysia().use(createRoutePlugin(route, result.root));
+  let res = await app.handle(new Request("http://localhost" + routePattern));
+  expect(res.status).toBe(200);
+  expect(res.headers.get("location")).toBeNull();
+
+  app = new Elysia().use(createRoutePlugin(route, result.root));
+  res = await app.handle(
+    new Request("http://localhost" + routePattern + "?parentFilter=parent-default&childFilter=child-default")
+  );
+  expect(res.status).toBe(200);
+} finally {
+  __setDevMode(originalDevMode);
+}
+process.exit(0);
+`,
+      ],
+      cwd: import.meta.dir.replace(ROUTER_TESTS_DIR_RE, ""),
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+
+    if (proc.exitCode !== 0) {
+      throw new Error(
+        [
+          `schema merge subprocess exited with ${proc.exitCode}`,
+          new TextDecoder().decode(proc.stdout),
+          new TextDecoder().decode(proc.stderr),
+        ].join("\n")
+      );
     }
 
-    const chainEntries = route.routeChain.filter((r) => r.query);
-    expect(chainEntries.length).toBe(2);
-  });
-
-  test("query defaults from all ancestors resolve without redirecting", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const route = result.routes.find((r) => r.pattern === ROUTE_PATTERN);
-
-    if (!route) {
-      throw new Error(`Route ${ROUTE_PATTERN} not found — did the fixture files get created?`);
-    }
-
-    const app = new Elysia().use(createRoutePlugin(route, result.root));
-
-    const res = await app.handle(new Request(`http://localhost${ROUTE_PATTERN}`));
-
-    expect(res.status).toBe(200);
-    expect(res.headers.get("location")).toBeNull();
-  });
-
-  test("keeps serving when all merged defaults are already in the URL", async () => {
-    const result = await scanPages(FIXTURES_DIR);
-    const route = result.routes.find((r) => r.pattern === ROUTE_PATTERN);
-
-    if (!route) {
-      throw new Error(`Route ${ROUTE_PATTERN} not found`);
-    }
-
-    const app = new Elysia().use(createRoutePlugin(route, result.root));
-
-    const res = await app.handle(
-      new Request(
-        `http://localhost${ROUTE_PATTERN}?parentFilter=parent-default&childFilter=child-default`
-      )
-    );
-
-    expect(res.status).toBe(200);
+    expect(proc.exitCode).toBe(0);
   });
 });

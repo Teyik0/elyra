@@ -21,20 +21,20 @@ afterEach(() => {
 describe.serial("compile: embed", () => {
   // Compile tests use runCli (subprocess) to avoid Bun.build({ compile }) EISDIR race
 
-  test("CLI build --compile embed without server entry fails with clear error", () => {
+  test("CLI build --compile embed without server entry fails with clear error", async () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
     removeAppPath(app.path, "src/server.ts");
 
-    const result = runCli(["build", "--compile", "embed"], { cwd: app.path });
+    const result = await runCli(["build", "--compile", "embed"], { cwd: app.path });
 
     expect(result.exitCode).toBeGreaterThan(0);
     expect(result.stderr + result.stdout).toContain("server.ts");
   });
 
-  test("CLI build --compile embed writes a single server binary", () => {
+  test("CLI build --compile embed writes a single server binary", async () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
 
-    const result = runCli(["build", "--compile", "embed"], { cwd: app.path });
+    const result = await runCli(["build", "--compile", "embed"], { cwd: app.path });
 
     expect(result.exitCode).toBe(0);
     const targetDir = join(app.path, ".furin/build/bun");

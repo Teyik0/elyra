@@ -5,6 +5,42 @@ type BunBuildGlobal = typeof globalThis & {
   __FURIN_BUN_BUILD_FOR_TESTS?: typeof Bun.build;
 };
 
+async function withQueuedBunBuild<T>(build: typeof Bun.build, run: () => Promise<T>): Promise<T> {
+  const previousTestBuild = (globalThis as BunBuildGlobal).__FURIN_BUN_BUILD_FOR_TESTS;
+  (globalThis as BunBuildGlobal).__FURIN_BUN_BUILD_FOR_TESTS = build;
+
+  try {
+    return await run();
+  } finally {
+    (globalThis as BunBuildGlobal).__FURIN_BUN_BUILD_FOR_TESTS = previousTestBuild;
+  }
+}
+
+export function withBunBuildOverride<T>(
+  build: typeof Bun.build,
+  run: () => Promise<T>
+): Promise<T> {
+  return withQueuedBunBuild(build, run);
+}
+
+function runPluginSetups(plugins: Bun.BunPlugin[] | undefined): void {
+  const builder = {
+    module() {
+      /* noop */
+    },
+    onLoad() {
+      /* noop */
+    },
+    onResolve() {
+      /* noop */
+    },
+  } as unknown as Parameters<Bun.BunPlugin["setup"]>[0];
+
+  for (const plugin of plugins ?? []) {
+    plugin.setup(builder);
+  }
+}
+
 /**
  * Runs `fn` with `Bun.build` replaced by a lightweight stub that returns a
  * synthetic build output (one JS entry-point + one CSS asset).  The real
@@ -18,10 +54,11 @@ type BunBuildGlobal = typeof globalThis & {
  * Used by both build-cli.test.ts and adapter-bun.test.ts to avoid spawning
  * an actual Bun bundler process during unit tests.
  */
-export async function withBuildStub<T>(run: () => Promise<T>): Promise<T> {
+export function withBuildStub<T>(run: () => Promise<T>): Promise<T> {
   let buildCallCount = 0;
 
-  (globalThis as BunBuildGlobal).__FURIN_BUN_BUILD_FOR_TESTS = ((config) => {
+  const build = ((config) => {
+    runPluginSetups((config as Bun.BuildConfig).plugins);
     const outdir = (config as Bun.BuildConfig).outdir;
     const compile = (config as Bun.BuildConfig).compile;
     const outfile = typeof compile === "object" ? compile.outfile : undefined;
@@ -57,9 +94,5 @@ export async function withBuildStub<T>(run: () => Promise<T>): Promise<T> {
     } as unknown as Bun.BuildOutput);
   }) as typeof Bun.build;
 
-  try {
-    return await run();
-  } finally {
-    (globalThis as BunBuildGlobal).__FURIN_BUN_BUILD_FOR_TESTS = undefined;
-  }
+  return withQueuedBunBuild(build, run);
 }

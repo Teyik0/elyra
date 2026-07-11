@@ -1,180 +1,215 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
+
+const TESTS_DIR_SUFFIX_RE = /\/tests$/;
+
+test("RSC public API scenarios", () => {
+  const proc = Bun.spawnSync({
+    cmd: [
+      "bun",
+      "-e",
+      `
+import { expect } from "bun:test";
 import { Elysia } from "elysia";
 import { CompositeComponent, createCompositeComponent, renderServerComponent } from "furin/rsc";
-import type { ComponentType, ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
-import { createRoute, defer, type RuntimePage, type RuntimeRoute } from "../src/client";
-import { serializeLoaderDataNdjson } from "../src/server/render/ssr";
-import {
-  createDataEndpoint,
-  createRoutePlugin,
-  type ResolvedRoute,
-  type RootLayout,
-} from "../src/server/router";
-import { __setDevMode, IS_DEV } from "../src/server/runtime-env";
-import { parseDeferredNdjson } from "../src/shared/deferred-ndjson";
+import { createRoute, defer } from "./src/client.ts";
+import { serializeLoaderDataNdjson } from "./src/server/render/ssr.ts";
+import { createDataEndpoint, createRoutePlugin } from "./src/server/router/plugin.ts";
+import { __setDevMode } from "./src/server/runtime-env.ts";
+import { parseDeferredNdjson } from "./src/shared/deferred-ndjson.ts";
+import { parseRouteFrameLines, serializeRouteFrames } from "./src/shared/route-frame.ts";
 
-describe("RSC public API", () => {
-  function createRscRoute() {
-    const route = createRoute({
-      loader: async () => ({ article: await renderServerComponent(<h1>Flight article</h1>) }),
-    });
-    const page = route.page({ component: ({ article }) => <main>{article}</main> });
-    const resolved = {
-      mode: "ssr",
-      page: page as unknown as RuntimePage,
-      path: "/rsc.tsx",
-      pattern: "/rsc",
-      routeChain: [route as unknown as RuntimeRoute],
-      segmentBoundaries: [],
-    } satisfies ResolvedRoute;
-    const root = {
-      path: "/root.tsx",
-      route: {
-        __type: "FURIN_ROUTE",
-        layout: ({ children }) => (
-          <html lang="en">
-            <body>{children}</body>
-          </html>
-        ),
-      },
-    } satisfies RootLayout;
-    return { resolved, root };
+__setDevMode(false);
+
+function createRscRoute() {
+  const route = createRoute({
+    loader: async () => ({ article: await renderServerComponent(<h1>Flight article</h1>) }),
+  });
+  const page = route.page({ component: ({ article }) => <main>{article}</main> });
+  const resolved = {
+    mode: "ssr",
+    page,
+    path: "/rsc.tsx",
+    pattern: "/rsc",
+    routeChain: [route],
+    segmentBoundaries: [],
+  };
+  const root = {
+    path: "/root.tsx",
+    route: {
+      __type: "FURIN_ROUTE",
+      layout: ({ children }) => (
+        <html lang="en">
+          <body>{children}</body>
+        </html>
+      ),
+    },
+  };
+  return { resolved, root };
+}
+
+let article = await renderServerComponent(<h1>Composite RSC</h1>);
+let stream = await renderToReadableStream(<main>{article}</main>);
+let html = await new Response(stream).text();
+expect(html).toBe("<main><h1>Composite RSC</h1></main>");
+
+article = await renderServerComponent(<h1>Transported RSC</h1>);
+let payload = await serializeLoaderDataNdjson({ article }, undefined);
+let response = new Response(payload);
+let parsedNdjson = await parseDeferredNdjson(response.body, undefined);
+stream = await renderToReadableStream(<main>{parsedNdjson.syncData.article}</main>);
+expect(await new Response(stream).text()).toBe("<main><h1>Transported RSC</h1></main>");
+
+article = await renderServerComponent(<h1>Buffered Flight article</h1>);
+payload = await serializeLoaderDataNdjson(
+  { content: { article } },
+  { slow: Promise.resolve("done") }
+);
+response = new Response(payload);
+parsedNdjson = await parseDeferredNdjson(response.body, undefined);
+stream = await renderToReadableStream(parsedNdjson.syncData.content.article);
+expect(await new Response(stream).text()).toBe("<h1>Buffered Flight article</h1>");
+expect(await parsedNdjson.deferredPromises.slow).toBe("done");
+
+const firstLine = serializeRouteFrames({ title: "ready" }, undefined).trimEnd();
+let parsedFrames = await parseRouteFrameLines(firstLine, () =>
+  Promise.reject(new Error("stream failed"))
+);
+expect(parsedFrames.syncData.title).toBe("ready");
+await expect(parsedFrames.completion).rejects.toThrow("stream failed");
+
+article = await renderServerComponent(<h1>Cyclic Flight article</h1>);
+const data = { article };
+data.self = data;
+const lines = serializeRouteFrames(data, undefined).trimEnd().split("\\n");
+const cyclicFirstLine = lines.shift();
+if (cyclicFirstLine === undefined) {
+  throw new Error("route frame payload was empty");
+}
+parsedFrames = await parseRouteFrameLines(cyclicFirstLine, async () => lines.shift());
+expect(parsedFrames.syncData.self).toBe(parsedFrames.syncData);
+stream = await renderToReadableStream(parsedFrames.syncData.article);
+expect(await new Response(stream).text()).toBe("<h1>Cyclic Flight article</h1>");
+
+let routeFixture = createRscRoute();
+let app = new Elysia().use(createRoutePlugin(routeFixture.resolved, routeFixture.root));
+html = await app.handle(new Request("http://localhost/rsc")).then((res) => res.text());
+expect(html).toContain("Flight article");
+expect(html).toContain('id="__FURIN_ROUTE_FRAMES__"');
+
+routeFixture = createRscRoute();
+app = new Elysia().use(createDataEndpoint([routeFixture.resolved]));
+response = await app.handle(new Request("http://localhost/_furin/data?path=%2Frsc"));
+parsedNdjson = await parseDeferredNdjson(response.body, undefined);
+stream = await renderToReadableStream(parsedNdjson.syncData.article);
+expect(await new Response(stream).text()).toBe("<h1>Flight article</h1>");
+
+let resolveSlow;
+const slow = new Promise((resolve) => {
+  resolveSlow = resolve;
+});
+const route = createRoute({
+  loader: async () =>
+    defer({
+      content: { article: await renderServerComponent(<h1>Nested Flight article</h1>) },
+      slow,
+    }),
+});
+const page = route.page({ component: () => null });
+const resolved = {
+  mode: "ssr",
+  page,
+  path: "/nested-rsc.tsx",
+  pattern: "/nested-rsc",
+  routeChain: [route],
+  segmentBoundaries: [],
+};
+app = new Elysia().use(createDataEndpoint([resolved]));
+response = await app.handle(new Request("http://localhost/_furin/data?path=%2Fnested-rsc"));
+
+expect(response.headers.get("content-type")).toBe("application/x-furin-route");
+const parsedRace = await Promise.race([
+  parseDeferredNdjson(response.body, undefined),
+  Bun.sleep(100).then(() => {
+    throw new Error("route frame parser waited for deferred data");
+  }),
+]);
+stream = await renderToReadableStream(parsedRace.syncData.content.article);
+expect(await new Response(stream).text()).toBe("<h1>Nested Flight article</h1>");
+resolveSlow("done");
+expect(await parsedRace.deferredPromises.slow).toBe("done");
+
+const deferredRscRoute = createRoute({
+  loader: async () =>
+    defer({
+      readyArticle: await renderServerComponent(<h1>Ready Flight article</h1>),
+      slowArticle: Promise.resolve(await renderServerComponent(<h1>Deferred Flight article</h1>)),
+    }),
+});
+const deferredRscResolved = {
+  mode: "ssr",
+  page: deferredRscRoute.page({ component: () => null }),
+  path: "/deferred-rsc.tsx",
+  pattern: "/deferred-rsc",
+  routeChain: [deferredRscRoute],
+  segmentBoundaries: [],
+};
+app = new Elysia().use(createDataEndpoint([deferredRscResolved]));
+response = await app.handle(new Request("http://localhost/_furin/data?path=%2Fdeferred-rsc"));
+parsedNdjson = await parseDeferredNdjson(response.body, undefined);
+stream = await renderToReadableStream(parsedNdjson.syncData.readyArticle);
+expect(await new Response(stream).text()).toBe("<h1>Ready Flight article</h1>");
+stream = await renderToReadableStream(await parsedNdjson.deferredPromises.slowArticle);
+expect(await new Response(stream).text()).toBe("<h1>Deferred Flight article</h1>");
+
+const Card = await createCompositeComponent(({ children, footer }) => (
+  <article>
+    {children}
+    <footer>{footer("Loaded")}</footer>
+  </article>
+));
+
+stream = await renderToReadableStream(
+  <CompositeComponent footer={(label) => <button type="button">{label}</button>} src={Card}>
+    <h2>Profile</h2>
+  </CompositeComponent>
+);
+html = await new Response(stream).text();
+expect(html).toBe(
+  '<article><h2>Profile</h2><footer><button type="button">Loaded</button></footer></article>'
+);
+
+const Toolbar = await createCompositeComponent(({ Action }) => (
+  <nav>
+    <Action label="Save" />
+  </nav>
+));
+
+stream = await renderToReadableStream(
+  <CompositeComponent
+    Action={({ label }) => <button type="button">{label}</button>}
+    src={Toolbar}
+  />
+);
+html = await new Response(stream).text();
+expect(html).toBe('<nav><button type="button">Save</button></nav>');
+`,
+    ],
+    cwd: import.meta.dir.replace(TESTS_DIR_SUFFIX_RE, ""),
+    env: { ...process.env, FURIN_RSC_CODEC_PATH: "" },
+    stderr: "pipe",
+    stdout: "pipe",
+  });
+
+  if (proc.exitCode !== 0) {
+    throw new Error(
+      [
+        `RSC subprocess exited with ${proc.exitCode}`,
+        new TextDecoder().decode(proc.stdout),
+        new TextDecoder().decode(proc.stderr),
+      ].join("\n")
+    );
   }
 
-  test("renderServerComponent returns a React-renderable value", async () => {
-    const article = await renderServerComponent(<h1>Composite RSC</h1>);
-
-    const stream = await renderToReadableStream(<main>{article}</main>);
-    const html = await new Response(stream).text();
-
-    expect(html).toBe("<main><h1>Composite RSC</h1></main>");
-  });
-
-  test("a server-renderable value round-trips through the loader transport", async () => {
-    const article = await renderServerComponent(<h1>Transported RSC</h1>);
-    const payload = await serializeLoaderDataNdjson({ article }, undefined);
-    const response = new Response(payload);
-
-    const { syncData } = await parseDeferredNdjson(
-      response.body as ReadableStream<Uint8Array>,
-      undefined
-    );
-    const stream = await renderToReadableStream(<main>{syncData.article as ReactNode}</main>);
-
-    expect(await new Response(stream).text()).toBe("<main><h1>Transported RSC</h1></main>");
-  });
-
-  test("initial SSR embeds Flight frames in the same document response", async () => {
-    const { resolved, root } = createRscRoute();
-    const app = new Elysia().use(createRoutePlugin(resolved, root));
-
-    const html = await app
-      .handle(new Request("http://localhost/rsc"))
-      .then((response) => response.text());
-
-    expect(html).toContain("Flight article");
-    expect(html).toContain('id="__FURIN_ROUTE_FRAMES__"');
-  });
-
-  test("SPA navigation decodes the same Flight source", async () => {
-    const { resolved } = createRscRoute();
-    const app = new Elysia().use(createDataEndpoint([resolved]));
-    const response = await app.handle(new Request("http://localhost/_furin/data?path=%2Frsc"));
-    const { syncData } = await parseDeferredNdjson(
-      response.body as ReadableStream<Uint8Array>,
-      undefined
-    );
-    const stream = await renderToReadableStream(syncData.article as ReactNode);
-
-    expect(await new Response(stream).text()).toBe("<h1>Flight article</h1>");
-  });
-
-  test("SPA navigation returns nested RSC data before deferred fields settle", async () => {
-    let resolveSlow: ((value: string) => void) | undefined;
-    const slow = new Promise<string>((resolve) => {
-      resolveSlow = resolve;
-    });
-    const route = createRoute({
-      loader: async () =>
-        defer({
-          content: { article: await renderServerComponent(<h1>Nested Flight article</h1>) },
-          slow,
-        }),
-    });
-    const page = route.page({ component: () => null });
-    const resolved = {
-      mode: "ssr",
-      page: page as unknown as RuntimePage,
-      path: "/nested-rsc.tsx",
-      pattern: "/nested-rsc",
-      routeChain: [route as unknown as RuntimeRoute],
-      segmentBoundaries: [],
-    } satisfies ResolvedRoute;
-    const app = new Elysia().use(createDataEndpoint([resolved]));
-    const response = await app.handle(
-      new Request("http://localhost/_furin/data?path=%2Fnested-rsc")
-    );
-
-    expect(response.headers.get("content-type")).toBe("application/x-furin-route");
-    const parsed = await Promise.race([
-      parseDeferredNdjson(response.body as ReadableStream<Uint8Array>, undefined),
-      Bun.sleep(100).then(() => {
-        throw new Error("route frame parser waited for deferred data");
-      }),
-    ]);
-    const content = parsed.syncData.content as { article: ReactNode };
-    const stream = await renderToReadableStream(content.article);
-    expect(await new Response(stream).text()).toBe("<h1>Nested Flight article</h1>");
-
-    resolveSlow?.("done");
-    expect(await parsed.deferredPromises.slow).toBe("done");
-  });
-
-  test("a composite invokes children and render-prop slots", async () => {
-    const Card = await createCompositeComponent<{
-      children: ReactNode;
-      footer: (label: string) => ReactNode;
-    }>(({ children, footer }) => (
-      <article>
-        {children}
-        <footer>{footer("Loaded")}</footer>
-      </article>
-    ));
-
-    const stream = await renderToReadableStream(
-      <CompositeComponent footer={(label) => <button type="button">{label}</button>} src={Card}>
-        <h2>Profile</h2>
-      </CompositeComponent>
-    );
-    const html = await new Response(stream).text();
-
-    expect(html).toBe(
-      '<article><h2>Profile</h2><footer><button type="button">Loaded</button></footer></article>'
-    );
-  });
-
-  test("a composite invokes a typed component slot", async () => {
-    const Toolbar = await createCompositeComponent<{
-      Action: ComponentType<{ label: string }>;
-    }>(({ Action }) => (
-      <nav>
-        <Action label="Save" />
-      </nav>
-    ));
-
-    const stream = await renderToReadableStream(
-      <CompositeComponent
-        Action={({ label }) => <button type="button">{label}</button>}
-        src={Toolbar}
-      />
-    );
-    const html = await new Response(stream).text();
-
-    expect(html).toBe('<nav><button type="button">Save</button></nav>');
-  });
+  expect(proc.exitCode).toBe(0);
 });
-
-const originalDevMode = IS_DEV;
-beforeAll(() => __setDevMode(false));
-afterAll(() => __setDevMode(originalDevMode));

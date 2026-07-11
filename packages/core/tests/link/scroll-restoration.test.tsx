@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { toCrossJSON } from "seroval";
 import { Link, RouterProvider } from "../../src/client/link.tsx";
 import type { ClientRoute } from "../../src/client/router/index.ts";
+import { installDom, resetDomState, uninstallDom, waitForDom } from "../helpers/dom.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -41,37 +42,25 @@ function makeNdjsonResponse(data: Record<string, unknown>): Response {
   return new Response(ndjson, { headers: { "Content-Type": "application/x-ndjson" }, status: 200 });
 }
 
-function waitFor(predicate: () => boolean, timeout = 2000, interval = 10): Promise<void> {
-  const start = Date.now();
-  return new Promise((resolve, reject) => {
-    const tick = () => {
-      if (predicate()) {
-        resolve();
-      } else if (Date.now() - start > timeout) {
-        reject(new Error("waitFor timed out"));
-      } else {
-        setTimeout(tick, interval);
-      }
-    };
-    tick();
-  });
-}
-
 interface RenderRouterResult {
   cleanup: () => void;
   container: HTMLDivElement;
   root: Root;
 }
 
-async function renderRouter(routes: ClientRoute[], initialPath = "/"): Promise<RenderRouterResult> {
+async function renderRouter(
+  routes: ClientRoute[],
+  initialPath: string | undefined
+): Promise<RenderRouterResult> {
   const doc = (globalThis as unknown as { document: Document }).document;
   const container = doc.createElement("div");
   doc.body.appendChild(container);
   const root = createRoot(container);
 
   const win = globalThis as unknown as Window & typeof globalThis;
-  win.location.href = `http://localhost:3000${initialPath}`;
-  win.history.replaceState(null, "", initialPath);
+  const path = initialPath ?? "/";
+  win.location.href = `http://localhost:3000${path}`;
+  win.history.replaceState(null, "", path);
 
   let initialMatch:
     | (ClientRoute & {
@@ -79,7 +68,7 @@ async function renderRouter(routes: ClientRoute[], initialPath = "/"): Promise<R
         pageRoute: unknown;
       })
     | null = null;
-  const rawMatch = routes.find((r) => r.regex.test(initialPath));
+  const rawMatch = routes.find((r) => r.regex.test(path));
   if (rawMatch) {
     const mod = await rawMatch.load();
     initialMatch = {
@@ -131,6 +120,8 @@ describe("scroll restoration on browser back", () => {
   let currentScrollY = 0;
 
   beforeEach(() => {
+    installDom();
+    resetDomState();
     const win = globalThis as unknown as Window & typeof globalThis;
     originalFetch = globalThis.fetch;
     originalScrollY = Object.getOwnPropertyDescriptor(win, "scrollY");
@@ -192,7 +183,7 @@ describe("scroll restoration on browser back", () => {
     }) as unknown as typeof globalThis.fetch;
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     const win = globalThis as unknown as Window & typeof globalThis;
     globalThis.fetch = originalFetch;
 
@@ -204,6 +195,7 @@ describe("scroll restoration on browser back", () => {
     }
 
     win.scrollTo = originalScrollTo;
+    await uninstallDom();
   });
 
   test("restores scroll position on browser back button", async () => {
@@ -221,16 +213,18 @@ describe("scroll restoration on browser back", () => {
 
     linkB.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-    await waitFor(
-      () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B")
+    await waitForDom(
+      () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B"),
+      undefined
     );
     expect(currentScrollY).toBe(0);
 
     // 4. Simulate browser back button
     win.history.back();
 
-    await waitFor(
-      () => win.location.pathname === "/page-a" && container.textContent?.includes("Page A")
+    await waitForDom(
+      () => win.location.pathname === "/page-a" && container.textContent?.includes("Page A"),
+      undefined
     );
 
     // 5. Verify we're back on Page A and scroll is restored
@@ -250,8 +244,9 @@ describe("scroll restoration on browser back", () => {
     const linkB = container.querySelector('a[href="/page-b"]') as HTMLAnchorElement;
     linkB.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
-    await waitFor(
-      () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B")
+    await waitForDom(
+      () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B"),
+      undefined
     );
 
     expect(win.location.pathname).toBe("/page-b");
@@ -273,8 +268,9 @@ describe("scroll restoration on browser back", () => {
     currentScrollY = 100;
     const linkB = container.querySelector('a[href="/page-b"]') as HTMLAnchorElement;
     linkB.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await waitFor(
-      () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B")
+    await waitForDom(
+      () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B"),
+      undefined
     );
 
     // Scroll down on Page B to 200
@@ -283,23 +279,26 @@ describe("scroll restoration on browser back", () => {
     // Navigate B -> C
     const linkC = container.querySelector('a[href="/page-c"]') as HTMLAnchorElement;
     linkC.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await waitFor(
-      () => win.location.pathname === "/page-c" && container.textContent?.includes("Page C")
+    await waitForDom(
+      () => win.location.pathname === "/page-c" && container.textContent?.includes("Page C"),
+      undefined
     );
 
     expect(win.location.pathname).toBe("/page-c");
 
     // Back to B
     win.history.back();
-    await waitFor(
-      () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B")
+    await waitForDom(
+      () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B"),
+      undefined
     );
     expect(currentScrollY).toBe(200);
 
     // Back to A
     win.history.back();
-    await waitFor(
-      () => win.location.pathname === "/page-a" && container.textContent?.includes("Page A")
+    await waitForDom(
+      () => win.location.pathname === "/page-a" && container.textContent?.includes("Page A"),
+      undefined
     );
     expect(currentScrollY).toBe(100); // Position when we left A
 

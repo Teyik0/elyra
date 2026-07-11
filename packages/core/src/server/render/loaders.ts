@@ -379,24 +379,24 @@ async function runLoadersInternal(
   }
 }
 
-function createPublicLoaderContext(ctx: Context): Record<string, unknown> {
-  const publicContext: Record<string, unknown> = {
-    log: useLogger(),
-    params: ctx.params,
-    path: ctx.path,
-    query: ctx.query,
-    redirect: ctx.redirect,
-    set: ctx.set,
-  };
+function createPublicLoaderContext(ctx: Context): { [key: string]: unknown } {
+  const publicContext = {} as { [key: string]: unknown };
+  Object.defineProperties(publicContext, Object.getOwnPropertyDescriptors(ctx));
   const fail = (): never => {
     throw new Error(
-      "[furin] Cached public loaders cannot access request, cookie, or headers. Move request-specific work to requestLoader."
+      "[furin] Cached public loaders cannot access request, cookie, headers, or set. Move request-specific work to requestLoader."
     );
   };
   Object.defineProperties(publicContext, {
     cookie: { enumerable: true, get: fail },
     headers: { enumerable: true, get: fail },
+    log: { enumerable: true, value: useLogger() },
+    params: { enumerable: true, value: ctx.params },
+    path: { enumerable: true, value: ctx.path },
+    query: { enumerable: true, value: ctx.query },
+    redirect: { enumerable: true, value: ctx.redirect },
     request: { enumerable: true, get: fail },
+    set: { enumerable: true, get: fail },
   });
   return publicContext;
 }

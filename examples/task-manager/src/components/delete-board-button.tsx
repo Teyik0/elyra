@@ -4,9 +4,14 @@ import { apiClient } from "@/lib/api";
 
 export function DeleteBoardButton({ boardId }: { boardId: string }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const deleteBoard = useSync(apiClient.api.boards({ boardId }).delete);
 
   const handleDelete = async () => {
+    if (isDeleting) {
+      return;
+    }
+    setIsDeleting(true);
     try {
       const { error } = await deleteBoard();
       if (error) {
@@ -17,6 +22,8 @@ export function DeleteBoardButton({ boardId }: { boardId: string }) {
       setErrorMessage(
         error instanceof Error ? error.message : "Could not delete the board. Please try again."
       );
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -25,6 +32,7 @@ export function DeleteBoardButton({ boardId }: { boardId: string }) {
       <button
         aria-label={`Delete ${boardId}`}
         className="flex size-6 items-center justify-center rounded-full bg-white/8 text-white/40 text-xs transition-colors hover:bg-red-500/20 hover:text-red-400"
+        disabled={isDeleting}
         onClick={handleDelete}
         title="Delete board"
         type="button"

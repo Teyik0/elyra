@@ -169,7 +169,9 @@ async function buildOneApp(
     serverEntry
   );
   const buildId = Bun.hash(buildFingerprint).toString(16).slice(0, 12);
-  await buildRscGraph(routes, root, targetDir, buildId, options.plugins);
+  if (serverEntry) {
+    await buildRscGraph(routes, root, targetDir, buildId, options.plugins);
+  }
 
   // Write index.html with the buildId meta tag injected so the client can
   // detect stale deploys via X-Furin-Build-ID header comparison.
@@ -244,9 +246,11 @@ export async function buildBunTarget(
       targetManifest.buildId = built.buildId;
     }
   }
-  targetManifest.rscManifestPath = toPosixPath(
-    join(targetManifest.targetDir, "rsc", "manifest.json")
-  );
+  if (serverEntry) {
+    targetManifest.rscManifestPath = toPosixPath(
+      join(targetManifest.targetDir, "rsc", "manifest.json")
+    );
+  }
 
   const targetPublicDir = publicDir ? join(targetDir, "public") : undefined;
   if (publicDir && targetPublicDir && options.compile !== "embed") {

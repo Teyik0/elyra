@@ -1,16 +1,24 @@
-import { describe, expect, test } from "bun:test";
-import type { RuntimePage, RuntimeRoute } from "../../src/client.ts";
-import { type ResolvedRoute, rebuildDevRoute } from "../../src/server/router/index.ts";
+import { expect, test } from "bun:test";
 
-function makeRuntimeRoute(overrides: Partial<RuntimeRoute>): RuntimeRoute {
+const ROUTER_TESTS_DIR_RE = /\/tests\/router$/;
+
+test("rebuildDevRoute scenarios", () => {
+  const proc = Bun.spawnSync({
+    cmd: [
+      "bun",
+      "-e",
+      `
+import { expect } from "bun:test";
+const { rebuildDevRoute } = await import("./src/server/router/hmr.ts");
+
+function makeRuntimeRoute(overrides) {
   return { __type: "FURIN_ROUTE", ...overrides };
 }
 
-function makePage(routeOverrides: Partial<RuntimeRoute>, hasLoader: boolean): RuntimePage {
-  const _route = makeRuntimeRoute(routeOverrides);
-  const page: RuntimePage = {
+function makePage(routeOverrides, hasLoader) {
+  const page = {
     __type: "FURIN_PAGE",
-    _route,
+    _route: makeRuntimeRoute(routeOverrides),
     component: () => null,
   };
   if (hasLoader) {
@@ -19,7 +27,7 @@ function makePage(routeOverrides: Partial<RuntimeRoute>, hasLoader: boolean): Ru
   return page;
 }
 
-function makeBase(mode: "ssr" | "ssg" | "isr"): ResolvedRoute {
+function makeBase(mode) {
   return {
     mode,
     page: makePage({}, false),
@@ -30,73 +38,72 @@ function makeBase(mode: "ssr" | "ssg" | "isr"): ResolvedRoute {
   };
 }
 
-describe("rebuildDevRoute", () => {
-  test("recomputes mode from the fresh page, not from base.mode", () => {
-    const base = makeBase("ssr");
-    const freshPage = makePage({ revalidate: 60 }, true);
-    const freshChain: RuntimeRoute[] = [makeRuntimeRoute({})];
+let base = makeBase("ssr");
+let freshPage = makePage({ revalidate: 60 }, true);
+let freshChain = [makeRuntimeRoute({})];
+let result = rebuildDevRoute(base, freshPage, freshChain);
+expect(result.mode).toBe("isr");
 
-    const result = rebuildDevRoute(base, freshPage, freshChain);
+base = makeBase("isr");
+freshPage = makePage({}, true);
+freshChain = [makeRuntimeRoute({})];
+result = rebuildDevRoute(base, freshPage, freshChain);
+expect(result.mode).toBe("ssr");
 
-    expect(result.mode).toBe("isr");
+base = makeBase("ssr");
+freshPage = makePage({ revalidate: 30 }, true);
+freshChain = [makeRuntimeRoute({})];
+result = rebuildDevRoute(base, freshPage, freshChain);
+expect(result.mode).toBe("isr");
+
+base = makeBase("ssr");
+freshPage = makePage({}, false);
+freshChain = [makeRuntimeRoute({})];
+result = rebuildDevRoute(base, freshPage, freshChain);
+expect(result.mode).toBe("ssg");
+
+const baseSegmentBoundaries = [{ depth: 0, path: "/abs/pages" }];
+const baseError = () => null;
+const baseNotFound = () => null;
+base = {
+  error: baseError,
+  mode: "ssr",
+  notFound: baseNotFound,
+  page: makePage({}, true),
+  path: "/abs/pages/foo.tsx",
+  pattern: "/foo",
+  routeChain: [makeRuntimeRoute({}), makeRuntimeRoute({})],
+  segmentBoundaries: baseSegmentBoundaries,
+};
+freshPage = makePage({ revalidate: 10 }, true);
+freshChain = [makeRuntimeRoute({})];
+result = rebuildDevRoute(base, freshPage, freshChain);
+
+expect(result.pattern).toBe(base.pattern);
+expect(result.path).toBe(base.path);
+expect(result.segmentBoundaries).toBe(baseSegmentBoundaries);
+expect(result.error).toBe(baseError);
+expect(result.notFound).toBe(baseNotFound);
+expect(result.page).toBe(freshPage);
+expect(result.routeChain).toBe(freshChain);
+expect(result.mode).toBe("isr");
+process.exit(0);
+`,
+    ],
+    cwd: import.meta.dir.replace(ROUTER_TESTS_DIR_RE, ""),
+    stderr: "pipe",
+    stdout: "pipe",
   });
 
-  test("ISR → SSR: removing revalidate while keeping a loader downgrades the mode", () => {
-    const base = makeBase("isr");
-    const freshPage = makePage({}, true);
-    const freshChain: RuntimeRoute[] = [makeRuntimeRoute({})];
+  if (proc.exitCode !== 0) {
+    throw new Error(
+      [
+        `dev route rebuild subprocess exited with ${proc.exitCode}`,
+        new TextDecoder().decode(proc.stdout),
+        new TextDecoder().decode(proc.stderr),
+      ].join("\n")
+    );
+  }
 
-    const result = rebuildDevRoute(base, freshPage, freshChain);
-
-    expect(result.mode).toBe("ssr");
-  });
-
-  test("SSR → ISR: adding revalidate to a route with a loader upgrades the mode", () => {
-    const base = makeBase("ssr");
-    const freshPage = makePage({ revalidate: 30 }, true);
-    const freshChain: RuntimeRoute[] = [makeRuntimeRoute({})];
-
-    const result = rebuildDevRoute(base, freshPage, freshChain);
-
-    expect(result.mode).toBe("isr");
-  });
-
-  test("SSR → SSG: removing the loader (page + chain) flips the mode to SSG", () => {
-    const base = makeBase("ssr");
-    const freshPage = makePage({}, false);
-    const freshChain: RuntimeRoute[] = [makeRuntimeRoute({})];
-
-    const result = rebuildDevRoute(base, freshPage, freshChain);
-
-    expect(result.mode).toBe("ssg");
-  });
-
-  test("preserves structural fields and replaces page + routeChain with the args", () => {
-    const baseSegmentBoundaries = [{ depth: 0, path: "/abs/pages" }];
-    const baseError = () => null;
-    const baseNotFound = () => null;
-    const base: ResolvedRoute = {
-      error: baseError,
-      mode: "ssr",
-      notFound: baseNotFound,
-      page: makePage({}, true),
-      path: "/abs/pages/foo.tsx",
-      pattern: "/foo",
-      routeChain: [makeRuntimeRoute({}), makeRuntimeRoute({})],
-      segmentBoundaries: baseSegmentBoundaries,
-    };
-    const freshPage = makePage({ revalidate: 10 }, true);
-    const freshChain: RuntimeRoute[] = [makeRuntimeRoute({})];
-
-    const result = rebuildDevRoute(base, freshPage, freshChain);
-
-    expect(result.pattern).toBe(base.pattern);
-    expect(result.path).toBe(base.path);
-    expect(result.segmentBoundaries).toBe(baseSegmentBoundaries);
-    expect(result.error).toBe(baseError);
-    expect(result.notFound).toBe(baseNotFound);
-    expect(result.page).toBe(freshPage);
-    expect(result.routeChain).toBe(freshChain);
-    expect(result.mode).toBe("isr");
-  });
+  expect(proc.exitCode).toBe(0);
 });

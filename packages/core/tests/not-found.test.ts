@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { isNotFoundError, notFound } from "furin";
+import { isNotFoundError, notFound } from "../src/shared/not-found.ts";
 
 describe("notFound()", () => {
   test("throws an error identifiable via isNotFoundError", () => {

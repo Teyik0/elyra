@@ -1,7 +1,8 @@
 /// <reference lib="dom" />
 
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { shouldInterceptClick } from "../../src/client/link.tsx";
+import { installDom, resetDomState, uninstallDom } from "../helpers/dom.ts";
 
 function makeAnchor(
   href: string,
@@ -32,13 +33,20 @@ function makeMouseEvent(overrides: {
   });
 }
 
-const originalHref = window.location.href;
-
-afterAll(() => {
-  window.location.href = originalHref;
-});
+let originalHref: string;
 
 describe("shouldInterceptClick", () => {
+  beforeEach(() => {
+    installDom();
+    resetDomState();
+    originalHref = window.location.href;
+  });
+
+  afterEach(async () => {
+    window.location.href = originalHref;
+    await uninstallDom();
+  });
+
   test("returns logical href for same-origin internal link", () => {
     const a = makeAnchor("http://localhost:3000/docs/routing", {});
     const event = makeMouseEvent({});

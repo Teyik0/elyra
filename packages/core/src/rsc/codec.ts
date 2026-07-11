@@ -12,7 +12,7 @@ interface ServerCodec {
 let serverCodecPromise: Promise<ServerCodec> | undefined;
 
 export function resolveConfiguredCodecPath(configuredPath: string | undefined): string | undefined {
-  if (configuredPath === undefined) {
+  if (configuredPath === undefined || configuredPath.trim() === "") {
     return;
   }
   const codecPath = isAbsolute(configuredPath) ? configuredPath : resolve(configuredPath);

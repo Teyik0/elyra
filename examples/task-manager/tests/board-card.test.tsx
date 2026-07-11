@@ -1,11 +1,18 @@
 import { expect, mock, test } from "bun:test";
-import { createElement } from "react";
-import { flushSync } from "react-dom";
-import { createRoot } from "react-dom/client";
+import {
+  installDom,
+  resetDomState,
+  useDomTests as setupDomTests,
+} from "../../../packages/core/tests/helpers/dom.ts";
 
-if (typeof document === "undefined") {
-  await import("../../../tests/setup");
-}
+installDom();
+resetDomState();
+
+const { createElement } = await import("react");
+const { flushSync } = await import("react-dom");
+const { createRoot } = await import("react-dom/client");
+
+setupDomTests();
 
 const deleteCalls: unknown[][] = [];
 

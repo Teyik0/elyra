@@ -1,509 +1,278 @@
-/**
- * Tests for the static export adapter.
- *
- * All tests are inside a single describe.serial block because buildStaticTarget
- * calls setProductionTemplateContent() — a module-level singleton that is not
- * safe to mutate from concurrent describe blocks.
- */
-import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { buildStaticTarget } from "../src/adapter/static.ts";
-import type { BuildAppOptions } from "../src/build/types.ts";
-import { scanPages } from "../src/server/router/index.ts";
-import { __setDevMode } from "../src/server/runtime-env.ts";
-import { createTmpApp } from "./helpers/tmp-app.ts";
-import { withBuildStub } from "./helpers/with-build-stub.ts";
+import { test } from "bun:test";
+import { join as joinPath } from "node:path";
 
-(globalThis as typeof globalThis & { __FURIN_SKIP_DOM_RESET?: boolean }).__FURIN_SKIP_DOM_RESET =
-  true;
-
-// ── Constants ─────────────────────────────────────────────────────────────────
+const script = `
+const { existsSync, readFileSync } = await import("node:fs");
+const { join } = await import("node:path");
+const { buildStaticTarget } = await import("./packages/core/src/adapter/static.ts");
+const { __resetCacheState } = await import("./packages/core/src/server/cache/index.ts");
+const { __resetTemplateState } = await import("./packages/core/src/server/render/template.ts");
+const { scanPages } = await import("./packages/core/src/server/router/index.ts");
+const { __setDevMode } = await import("./packages/core/src/server/runtime-env.ts");
+const { createTmpApp } = await import("./packages/core/tests/helpers/tmp-app.ts");
+const { withBuildStub } = await import("./packages/core/tests/helpers/with-build-stub.ts");
 
 const SSR_STATIC_RE = /SSR.*static/i;
 const BASEPATH_RE = /basePath must start with/;
 const UNSAFE_DIR_RE = /unsafe to delete/;
-const PRERENDER_FAIL_RE = /route\(s\) failed to pre-render/;
+const PRERENDER_FAIL_RE = /route\\(s\\) failed to pre-render/;
 const UNSAFE_PATH_RE = /unsafe output path/;
 const REQUEST_LOADER_STATIC_RE = /requestLoader.*static/i;
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 __setDevMode(false);
 
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+async function assertRejects(fn, regex, message) {
+  try {
+    await fn();
+  } catch (error) {
+    assert(error instanceof Error, message + ": expected Error");
+    assert(regex.test(error.message), message + ": " + error.message);
+    return error;
+  }
+  throw new Error(message + ": expected rejection");
+}
+
 function makeApp(fixtureName = "cli-app") {
+  __resetCacheState();
+  __resetTemplateState();
   return createTmpApp(fixtureName);
 }
 
-async function runStaticBuild(fixtureName = "cli-app", extra?: Partial<BuildAppOptions>) {
-  const app = makeApp(fixtureName);
-  const { root, routes } = await scanPages(join(app.path, "src/pages"));
-  const distDir = join(app.path, "dist");
+async function scanApp(app) {
+  const scanned = await scanPages(join(app.path, "src/pages"));
+  return { ...scanned, distDir: join(app.path, "dist") };
+}
 
-  await withBuildStub(() =>
+async function runStaticBuild(fixtureName = "cli-app", extra = {}) {
+  const app = makeApp(fixtureName);
+  const { root, routes, distDir } = await scanApp(app);
+  const manifest = await withBuildStub(() =>
     buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
       staticConfig: { outDir: distDir },
       target: "static",
       ...extra,
     })
   );
-  return { app, distDir };
+  return { app, distDir, manifest, root, routes };
 }
 
-// ── All tests run serially to avoid singleton state races ─────────────────────
+const root = {
+  path: "/root.tsx",
+  route: { __type: "FURIN_ROUTE" },
+};
+const requestRoute = {
+  mode: "ssg",
+  page: { requestLoader: async () => ({ userId: "private" }) },
+  path: "/index.tsx",
+  pattern: "/",
+  routeChain: [],
+  segmentBoundaries: [],
+};
+await assertRejects(
+  () => buildStaticTarget([requestRoute], "/tmp/furin-static-test", "/tmp/furin-static-test/.build", root, { target: "static" }),
+  REQUEST_LOADER_STATIC_RE,
+  "requestLoader route is rejected"
+);
+await assertRejects(
+  () => buildStaticTarget([], "/tmp/furin-static-test", "/tmp/furin-static-test/.build", { ...root, route: { ...root.route, requestLoader: async () => ({ userId: "private" }) } }, { target: "static" }),
+  REQUEST_LOADER_STATIC_RE,
+  "root requestLoader is rejected"
+);
 
-describe("buildStaticTarget", () => {
-  test("rejects routes that depend on requestLoader", async () => {
-    const app = makeApp();
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-    const route = routes[0];
-    if (route === undefined) {
-      throw new Error("fixture has no route");
-    }
-    route.page.requestLoader = async () => ({ userId: "private" });
+let result = await runStaticBuild();
+assert(existsSync(join(result.distDir, "index.html")), "B1 index.html exists");
+assert(existsSync(join(result.distDir, "blog/hello-world/index.html")), "B2 dynamic static file exists");
+assert(existsSync(join(result.distDir, "404.html")), "B7 404 exists");
+let html = readFileSync(join(result.distDir, "blog/hello-world/index.html"), "utf8");
+assert(html.includes("<!DOCTYPE html>"), "B6 dynamic HTML is complete");
+assert(existsSync(join(result.distDir, "__furin_data.ndjson")), "root static data exists");
+assert(existsSync(join(result.distDir, "blog/hello-world/__furin_data.ndjson")), "dynamic static data exists");
 
-    await expect(
-      withBuildStub(() =>
-        buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-          target: "static",
-        })
-      )
-    ).rejects.toThrow(REQUEST_LOADER_STATIC_RE);
+const { parseDeferredNdjson } = await import("./packages/core/src/shared/deferred-ndjson.ts");
+const ndjsonText = readFileSync(join(result.distDir, "blog/hello-world/__furin_data.ndjson"), "utf8");
+const stream = new ReadableStream({
+  start(controller) {
+    controller.enqueue(new TextEncoder().encode(ndjsonText));
+    controller.close();
+  },
+});
+const parsed = await parseDeferredNdjson(stream, undefined);
+assert(parsed.syncData instanceof Object, "static NDJSON parses");
+
+let app = makeApp("cli-app-ssr");
+let scanned = await scanApp(app);
+await assertRejects(
+  () => withBuildStub(() => buildStaticTarget(scanned.routes, app.path, join(app.path, ".furin/build"), scanned.root, { staticConfig: { outDir: scanned.distDir }, target: "static" })),
+  SSR_STATIC_RE,
+  "B3 SSR route rejects by default"
+);
+
+app = makeApp("cli-app-ssr");
+scanned = await scanApp(app);
+let errorMessage = "";
+try {
+  await withBuildStub(() => buildStaticTarget(scanned.routes, app.path, join(app.path, ".furin/build"), scanned.root, { staticConfig: { outDir: scanned.distDir }, target: "static" }));
+} catch (error) {
+  errorMessage = String(error);
+}
+assert(errorMessage.includes("/dashboard"), "B9 error lists SSR dashboard");
+
+app = makeApp("cli-app-ssr");
+scanned = await scanApp(app);
+await withBuildStub(() =>
+  buildStaticTarget(scanned.routes, app.path, join(app.path, ".furin/build"), scanned.root, {
+    staticConfig: { onSSR: "skip", outDir: scanned.distDir },
+    target: "static",
+  })
+);
+assert(existsSync(join(scanned.distDir, "index.html")), "B4 SSG page rendered");
+assert(!existsSync(join(scanned.distDir, "dashboard/index.html")), "B4 SSR page skipped");
+
+app = makeApp("cli-app");
+scanned = await scanApp(app);
+let patchedRoutes = scanned.routes.map((route) =>
+  route.pattern.includes(":") ? { ...route, page: { ...route.page, staticParams: undefined } } : route
+);
+await withBuildStub(() =>
+  buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), scanned.root, {
+    staticConfig: { outDir: scanned.distDir },
+    target: "static",
+  })
+);
+assert(existsSync(join(scanned.distDir, "index.html")), "B5 static route rendered");
+assert(!existsSync(join(scanned.distDir, "blog/hello-world/index.html")), "B5 dynamic route skipped");
+
+result = await runStaticBuild("cli-app", {
+  staticConfig: { basePath: "/furin", outDir: "dist" },
+});
+html = readFileSync(join(result.distDir, "index.html"), "utf8");
+assert(html.includes("/furin/_client/"), "B8 basePath prefixes client assets");
+assert(!html.includes('"/_client/'), "B8 root client path absent");
+
+app = makeApp("cli-app");
+scanned = await scanApp(app);
+await assertRejects(
+  () => buildStaticTarget(scanned.routes, app.path, join(app.path, ".furin/build"), scanned.root, { staticConfig: { basePath: "sub-path", outDir: scanned.distDir }, target: "static" }),
+  BASEPATH_RE,
+  "B10 bad basePath rejects"
+);
+
+result = await runStaticBuild("cli-app", {
+  staticConfig: { basePath: "/furin/", outDir: "dist" },
+});
+html = readFileSync(join(result.distDir, "index.html"), "utf8");
+assert(html.includes("/furin/_client/"), "B11 trailing slash normalized");
+assert(!html.includes("/furin//_client/"), "B11 double slash absent");
+
+app = makeApp("cli-app");
+scanned = await scanApp(app);
+await assertRejects(
+  () => buildStaticTarget(scanned.routes, app.path, join(app.path, ".furin/build"), scanned.root, { staticConfig: { outDir: "/" }, target: "static" }),
+  UNSAFE_DIR_RE,
+  "B12 filesystem root rejected"
+);
+await assertRejects(
+  () => buildStaticTarget(scanned.routes, app.path, join(app.path, ".furin/build"), scanned.root, { staticConfig: { outDir: app.path }, target: "static" }),
+  UNSAFE_DIR_RE,
+  "B13 rootDir outDir rejected"
+);
+await assertRejects(
+  () => buildStaticTarget(scanned.routes, app.path, join(app.path, ".furin/build"), scanned.root, { staticConfig: { outDir: join(app.path, "..") }, target: "static" }),
+  UNSAFE_DIR_RE,
+  "B14 ancestor outDir rejected"
+);
+
+app = makeApp("cli-app");
+scanned = await scanApp(app);
+const baseRoute = scanned.routes.find((route) => route.mode === "ssg" && !route.pattern.includes(":"));
+assert(baseRoute, "static fixture route exists");
+let route = {
+  ...baseRoute,
+  page: {
+    ...baseRoute.page,
+    loader: () => Promise.reject(new Response(null, { headers: { Location: "/home" }, status: 302 })),
+  },
+  pattern: "/redirect-me",
+};
+let manifest = await withBuildStub(() =>
+  buildStaticTarget([route, ...scanned.routes.filter((item) => item.mode === "ssg")], app.path, join(app.path, ".furin/build"), scanned.root, {
+    staticConfig: { outDir: scanned.distDir },
+    target: "static",
+  })
+);
+assert(!manifest.renderedRoutes.includes("/redirect-me"), "B15 redirect route not rendered");
+assert(!manifest.skippedRoutes.includes("/redirect-me"), "B15 redirect route not skipped");
+assert(!existsSync(join(scanned.distDir, "redirect-me/index.html")), "B15 redirect file absent");
+
+route = {
+  ...baseRoute,
+  page: {
+    ...baseRoute.page,
+    loader: () => Promise.reject(new Error("prerender-boom")),
+  },
+  pattern: "/will-fail",
+};
+manifest = await withBuildStub(() =>
+  buildStaticTarget([route, ...scanned.routes.filter((item) => item.mode === "ssg")], app.path, join(app.path, ".furin/build"), scanned.root, {
+    staticConfig: { onSSR: "skip", outDir: scanned.distDir },
+    target: "static",
+  })
+);
+assert(manifest.skippedRoutes.includes("/will-fail"), "B16 failed route skipped");
+assert(!manifest.renderedRoutes.includes("/will-fail"), "B16 failed route not rendered");
+await assertRejects(
+  () => withBuildStub(() => buildStaticTarget([route, ...scanned.routes.filter((item) => item.mode === "ssg")], app.path, join(app.path, ".furin/build"), scanned.root, { staticConfig: { outDir: scanned.distDir }, target: "static" })),
+  PRERENDER_FAIL_RE,
+  "B17 prerender failure rejects"
+);
+
+const dynamicRoute = scanned.routes.find((item) => item.pattern.includes(":"));
+assert(dynamicRoute, "dynamic fixture route exists");
+patchedRoutes = scanned.routes.map((item) =>
+  item.pattern === dynamicRoute.pattern
+    ? { ...item, page: { ...item.page, staticParams: () => Promise.reject(new Error("staticParams-boom")) } }
+    : item
+);
+manifest = await withBuildStub(() =>
+  buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), scanned.root, {
+    staticConfig: { outDir: scanned.distDir },
+    target: "static",
+  })
+);
+assert(manifest.skippedRoutes.includes(dynamicRoute.pattern), "B18 staticParams failure skipped");
+
+patchedRoutes = scanned.routes.map((item) =>
+  item.pattern === dynamicRoute.pattern
+    ? { ...item, page: { ...item.page, staticParams: async () => [{ slug: "../../etc/passwd" }] } }
+    : item
+);
+await assertRejects(
+  () => withBuildStub(() => buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), scanned.root, { staticConfig: { outDir: scanned.distDir }, target: "static" })),
+  UNSAFE_PATH_RE,
+  "B19 path traversal rejected"
+);
+`;
+
+test("buildStaticTarget scenarios", () => {
+  const proc = Bun.spawnSync({
+    cmd: ["bun", "--preload", "./tests/setup.ts", "-e", script],
+    cwd: joinPath(import.meta.dir, "../../.."),
+    stderr: "pipe",
+    stdout: "pipe",
   });
-
-  test("rejects a root layout that depends on requestLoader", async () => {
-    const app = makeApp();
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-    root.route.requestLoader = async () => ({ userId: "private" });
-
-    await expect(
-      withBuildStub(() =>
-        buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-          target: "static",
-        })
-      )
-    ).rejects.toThrow(REQUEST_LOADER_STATIC_RE);
-  });
-
-  // ── B1: Tracer bullet ────────────────────────────────────────────────────────
-
-  test("B1: pre-renders SSG root route to dist/index.html", async () => {
-    const { distDir } = await runStaticBuild();
-    expect(existsSync(join(distDir, "index.html"))).toBe(true);
-  });
-
-  // ── B2: nested SSG route ─────────────────────────────────────────────────────
-
-  test("B2: pre-renders /blog/hello-world to dist/blog/hello-world/index.html", async () => {
-    const { distDir } = await runStaticBuild();
-    // cli-app has blog/[slug].tsx with staticParams: [{ slug: "hello-world" }]
-    expect(existsSync(join(distDir, "blog/hello-world/index.html"))).toBe(true);
-  });
-
-  // ── B7: 404.html ─────────────────────────────────────────────────────────────
-
-  test("B7: writes 404.html (SPA shell fallback for GitHub Pages)", async () => {
-    const { distDir } = await runStaticBuild();
-    expect(existsSync(join(distDir, "404.html"))).toBe(true);
-  });
-
-  // ── B6: dynamic SSG expands staticParams ─────────────────────────────────────
-
-  test("B6: dynamic SSG with staticParams writes one file per variant", async () => {
-    const { distDir } = await runStaticBuild();
-    const htmlPath = join(distDir, "blog/hello-world/index.html");
-    expect(existsSync(htmlPath)).toBe(true);
-    const html = readFileSync(htmlPath, "utf8");
-    expect(html).toContain("<!DOCTYPE html>");
-  });
-
-  // ── SPA-nav data files (so static deployments don't full-reload) ─────────────
-
-  test("writes __furin_data.ndjson next to every prerendered HTML", async () => {
-    // Without this file the client's SPA navigation falls back to fetching
-    // /_furin/data?path=... — an endpoint that does not exist on a static
-    // host (GitHub Pages, Vercel static, S3) and whose 404 HTML response is
-    // unparseable by `parseDeferredNdjson`. The router-provider then bails
-    // to a full reload on every link click. Pre-writing a parseable NDJSON
-    // payload at a static-friendly URL fixes that.
-    const { distDir } = await runStaticBuild();
-
-    expect(existsSync(join(distDir, "__furin_data.ndjson"))).toBe(true);
-    expect(existsSync(join(distDir, "blog/hello-world/__furin_data.ndjson"))).toBe(true);
-  });
-
-  test("__furin_data.ndjson is parseable by parseDeferredNdjson", async () => {
-    const { distDir } = await runStaticBuild();
-    const { parseDeferredNdjson } = await import("../src/shared/deferred-ndjson.ts");
-
-    const ndjsonText = readFileSync(join(distDir, "blog/hello-world/__furin_data.ndjson"), "utf8");
-    // Recreate a stream from the file content so we exercise the same
-    // `parseDeferredNdjson` API the SPA client uses on the live response body.
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(ndjsonText));
-        controller.close();
-      },
-    });
-    const { syncData } = await parseDeferredNdjson(stream, undefined);
-    // The fixture has no loader, so syncData is an empty object — not null,
-    // not undefined. The crucial assertion is that parsing succeeds at all.
-    expect(syncData).toBeInstanceOf(Object);
-  });
-
-  // ── B3: SSR + onSSR:"error" (default) → throw ────────────────────────────────
-
-  test("B3: throws when SSR route present and onSSR is 'error' (default)", async () => {
-    const app = makeApp("cli-app-ssr");
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-    const distDir = join(app.path, "dist");
-
-    await expect(
-      withBuildStub(() =>
-        buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-          staticConfig: { outDir: distDir },
-          target: "static",
-        })
-      )
-    ).rejects.toThrow(SSR_STATIC_RE);
-  });
-
-  // ── B9: multiple SSR routes → single error with full list ────────────────────
-
-  test("B9: error message lists ALL non-SSG routes, not just the first", async () => {
-    const app = makeApp("cli-app-ssr");
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-    const distDir = join(app.path, "dist");
-
-    let errorMsg = "";
-    try {
-      await withBuildStub(() =>
-        buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-          staticConfig: { outDir: distDir },
-          target: "static",
-        })
-      );
-    } catch (err) {
-      errorMsg = String(err);
-    }
-
-    // /dashboard is ssr — must appear in the error
-    expect(errorMsg).toContain("/dashboard");
-  });
-
-  // ── B4: onSSR:"skip" → no throw, SSR route absent from output ────────────────
-
-  test("B4: skips SSR routes without throwing when onSSR is 'skip'", async () => {
-    const app = makeApp("cli-app-ssr");
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-    const distDir = join(app.path, "dist");
-
-    // Must NOT throw
-    await withBuildStub(() =>
-      buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-        staticConfig: { onSSR: "skip", outDir: distDir },
-        target: "static",
-      })
+  if (proc.exitCode !== 0) {
+    throw new Error(
+      [
+        `buildStaticTarget subprocess exited with ${proc.exitCode}`,
+        new TextDecoder().decode(proc.stdout),
+        new TextDecoder().decode(proc.stderr),
+      ].join("\n")
     );
-
-    // SSG pages are rendered, SSR dashboard is absent
-    expect(existsSync(join(distDir, "index.html"))).toBe(true);
-    expect(existsSync(join(distDir, "dashboard/index.html"))).toBe(false);
-  });
-
-  // ── B5: dynamic SSG without staticParams → warn + skip ───────────────────────
-
-  test("B5: dynamic SSG route without staticParams is skipped without throwing", async () => {
-    const app = makeApp("cli-app");
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-    const distDir = join(app.path, "dist");
-
-    // Patch out staticParams on the dynamic route
-    const patchedRoutes = routes.map((r) =>
-      r.pattern.includes(":") ? { ...r, page: { ...r.page, staticParams: undefined } } : r
-    );
-
-    // Must NOT throw — just warn and skip
-    await withBuildStub(() =>
-      buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), root, {
-        staticConfig: { outDir: distDir },
-        target: "static",
-      })
-    );
-
-    expect(existsSync(join(distDir, "index.html"))).toBe(true);
-    expect(existsSync(join(distDir, "blog/hello-world/index.html"))).toBe(false);
-  });
-
-  // ── B8: basePath → asset paths use the prefixed value ────────────────────────
-
-  test("B8: index.html asset references use basePath prefix when basePath is set", async () => {
-    const app = makeApp("cli-app");
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-    const distDir = join(app.path, "dist");
-
-    await withBuildStub(() =>
-      buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-        staticConfig: { basePath: "/furin", outDir: distDir },
-        target: "static",
-      })
-    );
-
-    const html = readFileSync(join(distDir, "index.html"), "utf8");
-    // JS/CSS chunks must reference /furin/_client/ not /_client/
-    expect(html).toContain("/furin/_client/");
-    expect(html).not.toContain('"/_client/');
-  });
-
-  // ── B10: basePath without leading slash → throws ──────────────────────────────
-
-  test("B10: basePath without leading slash throws", async () => {
-    const app = makeApp("cli-app");
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-
-    await expect(
-      buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-        staticConfig: { basePath: "sub-path", outDir: join(app.path, "dist") },
-        target: "static",
-      })
-    ).rejects.toThrow(BASEPATH_RE);
-  });
-
-  // ── B11: basePath trailing slash is normalized ────────────────────────────────
-
-  test("B11: basePath trailing slash is stripped before use", async () => {
-    const app = makeApp("cli-app");
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-    const distDir = join(app.path, "dist");
-
-    await withBuildStub(() =>
-      buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-        staticConfig: { basePath: "/furin/", outDir: distDir },
-        target: "static",
-      })
-    );
-
-    const html = readFileSync(join(distDir, "index.html"), "utf8");
-    expect(html).toContain("/furin/_client/");
-    expect(html).not.toContain("/furin//_client/");
-  });
-
-  // ── B12: outDir === filesystem root → throws ──────────────────────────────────
-
-  test("B12: outDir equal to filesystem root is rejected as unsafe", async () => {
-    const app = makeApp("cli-app");
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-
-    await expect(
-      buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-        staticConfig: { outDir: "/" },
-        target: "static",
-      })
-    ).rejects.toThrow(UNSAFE_DIR_RE);
-  });
-
-  // ── B13: outDir === rootDir → throws ──────────────────────────────────────────
-
-  test("B13: outDir same as rootDir is rejected as unsafe", async () => {
-    const app = makeApp("cli-app");
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-
-    await expect(
-      buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-        staticConfig: { outDir: app.path },
-        target: "static",
-      })
-    ).rejects.toThrow(UNSAFE_DIR_RE);
-  });
-
-  // ── B14: outDir is an ancestor of rootDir → throws ───────────────────────────
-
-  test("B14: outDir that contains rootDir as a descendant is rejected as unsafe", async () => {
-    const app = makeApp("cli-app");
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-
-    // Parent directory contains the app root — deleting it would wipe the app
-    const parentDir = join(app.path, "..");
-
-    await expect(
-      buildStaticTarget(routes, app.path, join(app.path, ".furin/build"), root, {
-        staticConfig: { outDir: parentDir },
-        target: "static",
-      })
-    ).rejects.toThrow(UNSAFE_DIR_RE);
-  });
-
-  // ── B15: redirect from loader is silently skipped ────────────────────────────
-
-  test("B15: route whose loader redirects is silently skipped (absent from rendered and skipped lists)", async () => {
-    const app = makeApp("cli-app");
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-    const distDir = join(app.path, "dist");
-
-    const baseRoute = routes.find((r) => r.mode === "ssg" && !r.pattern.includes(":"));
-    if (!baseRoute) {
-      throw new Error("cli-app fixture needs a static SSG route");
-    }
-
-    const redirectingRoute = {
-      ...baseRoute,
-      page: {
-        ...baseRoute.page,
-        loader: (): Promise<never> =>
-          Promise.reject(new Response(null, { headers: { Location: "/home" }, status: 302 })),
-      },
-      pattern: "/redirect-me",
-    };
-
-    const manifest = await withBuildStub(() =>
-      buildStaticTarget(
-        [redirectingRoute, ...routes.filter((r) => r.mode === "ssg")],
-        app.path,
-        join(app.path, ".furin/build"),
-        root,
-        { staticConfig: { outDir: distDir }, target: "static" }
-      )
-    );
-
-    expect(manifest.renderedRoutes).not.toContain("/redirect-me");
-    expect(manifest.skippedRoutes).not.toContain("/redirect-me");
-    expect(existsSync(join(distDir, "redirect-me/index.html"))).toBe(false);
-  });
-
-  // ── B16: prerender error → in skippedRoutes when onSSR=skip ──────────────────
-
-  test("B16: prerender error records route in skippedRoutes when onSSR is skip", async () => {
-    const app = makeApp("cli-app");
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-    const distDir = join(app.path, "dist");
-
-    const baseRoute = routes.find((r) => r.mode === "ssg" && !r.pattern.includes(":"));
-    if (!baseRoute) {
-      throw new Error("cli-app fixture needs a static SSG route");
-    }
-
-    const failingRoute = {
-      ...baseRoute,
-      page: {
-        ...baseRoute.page,
-        loader: (): Promise<never> => Promise.reject(new Error("prerender-boom")),
-      },
-      pattern: "/will-fail",
-    };
-
-    const manifest = await withBuildStub(() =>
-      buildStaticTarget(
-        [failingRoute, ...routes.filter((r) => r.mode === "ssg")],
-        app.path,
-        join(app.path, ".furin/build"),
-        root,
-        { staticConfig: { onSSR: "skip", outDir: distDir }, target: "static" }
-      )
-    );
-
-    expect(manifest.skippedRoutes).toContain("/will-fail");
-    expect(manifest.renderedRoutes).not.toContain("/will-fail");
-  });
-
-  // ── B17: prerender error + onSSR=error → throws with failed route list ────────
-
-  test("B17: prerender failure causes build to throw when onSSR is error (default)", async () => {
-    const app = makeApp("cli-app");
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-    const distDir = join(app.path, "dist");
-
-    const baseRoute = routes.find((r) => r.mode === "ssg" && !r.pattern.includes(":"));
-    if (!baseRoute) {
-      throw new Error("cli-app fixture needs a static SSG route");
-    }
-
-    const failingRoute = {
-      ...baseRoute,
-      page: {
-        ...baseRoute.page,
-        loader: (): Promise<never> => Promise.reject(new Error("prerender-boom")),
-      },
-      pattern: "/will-fail",
-    };
-
-    await expect(
-      withBuildStub(() =>
-        buildStaticTarget(
-          [failingRoute, ...routes.filter((r) => r.mode === "ssg")],
-          app.path,
-          join(app.path, ".furin/build"),
-          root,
-          { staticConfig: { outDir: distDir }, target: "static" }
-        )
-      )
-    ).rejects.toThrow(PRERENDER_FAIL_RE);
-  });
-
-  // ── B18: staticParams() throws → route in skippedRoutes ──────────────────────
-
-  test("B18: staticParams() that throws records the route in skippedRoutes", async () => {
-    const app = makeApp("cli-app");
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-    const distDir = join(app.path, "dist");
-
-    const dynamicRoute = routes.find((r) => r.pattern.includes(":"));
-    if (!dynamicRoute) {
-      throw new Error("cli-app fixture needs a dynamic route");
-    }
-
-    const patchedRoutes = routes.map((r) =>
-      r.pattern === dynamicRoute.pattern
-        ? {
-            ...r,
-            page: {
-              ...r.page,
-              staticParams: (): Promise<never> => Promise.reject(new Error("staticParams-boom")),
-            },
-          }
-        : r
-    );
-
-    const manifest = await withBuildStub(() =>
-      buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), root, {
-        staticConfig: { outDir: distDir },
-        target: "static",
-      })
-    );
-
-    expect(manifest.skippedRoutes).toContain(dynamicRoute.pattern);
-  });
-
-  // ── B19: path traversal via staticParams → throws ────────────────────────────
-
-  test("B19: staticParams returning a path-traversal slug throws unsafe output path error", async () => {
-    const app = makeApp("cli-app");
-    const { root, routes } = await scanPages(join(app.path, "src/pages"));
-    const distDir = join(app.path, "dist");
-
-    const dynamicRoute = routes.find((r) => r.pattern.includes(":"));
-    if (!dynamicRoute) {
-      throw new Error("cli-app fixture needs a dynamic route");
-    }
-
-    const patchedRoutes = routes.map((r) =>
-      r.pattern === dynamicRoute.pattern
-        ? {
-            ...r,
-            page: {
-              ...r.page,
-              staticParams: async () => [{ slug: "../../etc/passwd" }],
-            },
-          }
-        : r
-    );
-
-    await expect(
-      withBuildStub(() =>
-        buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), root, {
-          staticConfig: { outDir: distDir },
-          target: "static",
-        })
-      )
-    ).rejects.toThrow(UNSAFE_PATH_RE);
-  });
+  }
 });

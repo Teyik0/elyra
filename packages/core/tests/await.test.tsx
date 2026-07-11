@@ -4,6 +4,7 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToReadableStream } from "react-dom/server";
 import { AsyncErrorContext, Await, useAsyncError } from "../src/shared/await.tsx";
+import { installDom, resetDomState, uninstallDom } from "./helpers/dom.ts";
 
 async function renderToString(element: React.ReactNode): Promise<string> {
   const stream = await renderToReadableStream(element);
@@ -107,6 +108,8 @@ describe("<Await>", () => {
   });
 
   test("keeps AbortError rejections suspended instead of rendering errorElement", async () => {
+    installDom();
+    resetDomState();
     const container = document.createElement("div");
     document.body.appendChild(container);
     let root: Root | undefined;
@@ -148,6 +151,7 @@ describe("<Await>", () => {
         root?.unmount();
       });
       container.remove();
+      await uninstallDom();
     }
   });
 });

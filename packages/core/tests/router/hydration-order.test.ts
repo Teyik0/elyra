@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { scanPages } from "../../src/server/router/index.ts";
+import { scanPages } from "../../src/server/router/discovery.ts";
 import { __setDevMode, IS_DEV } from "../../src/server/runtime-env.ts";
 import { collectRouteChainFromRoute } from "../../src/shared/utils/index.ts";
 import { expectDefined } from "../helpers/utils";

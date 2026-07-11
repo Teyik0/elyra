@@ -12,6 +12,14 @@ import { RSC_SOURCE, SLOT_MARKER } from "./rsc/symbols.ts";
 
 export * from "./rsc/shared.tsx";
 
+type CompositePropsWithSupportedChildren<TProps extends object> = TProps extends {
+  children?: infer TChildren;
+}
+  ? TChildren extends ReactNode | undefined
+    ? TProps
+    : never
+  : TProps;
+
 export async function renderServerComponent<TNode extends ReactNode>(
   node: TNode
 ): Promise<RenderableServerComponent<TNode>> {
@@ -44,9 +52,9 @@ function createSlotProxy<TProps extends object>(): TProps {
 }
 
 export async function createCompositeComponent<TProps extends object>(
-  component: (props: TProps) => ReactNode | Promise<ReactNode>
+  component: (props: CompositePropsWithSupportedChildren<TProps>) => ReactNode | Promise<ReactNode>
 ): Promise<CompositeComponentSource<TProps>> {
-  const proxy = createSlotProxy<TProps>();
+  const proxy = createSlotProxy<CompositePropsWithSupportedChildren<TProps>>();
   function CompositeServerTree(): ReactNode | Promise<ReactNode> {
     return component(proxy);
   }

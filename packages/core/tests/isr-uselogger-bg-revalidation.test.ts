@@ -32,26 +32,7 @@ mock.module("evlog/elysia", () => ({
 import { useLogger as evlogUseLogger } from "evlog/elysia";
 import { __resetCacheState } from "../src/server/cache/invalidation.ts";
 import { useLogger as furinUseLogger } from "../src/server/context-logger.ts";
-import { prerenderSSG } from "../src/server/render/ssg.ts";
-import { scanPages } from "../src/server/router/discovery.ts";
-import type { ResolvedRoute } from "../src/server/router/types.ts";
 import { __setDevMode } from "../src/server/runtime-env.ts";
-
-const FIXTURES_DIR = `${import.meta.dirname}/fixtures/pages`;
-
-async function getRoute(pattern: string): Promise<ResolvedRoute> {
-  const result = await scanPages(FIXTURES_DIR);
-  const route = result.routes.find((r) => r.pattern === pattern);
-  if (!route) {
-    throw new Error(`Route ${pattern} not found`);
-  }
-  return route;
-}
-
-async function getRoot() {
-  const result = await scanPages(FIXTURES_DIR);
-  return result.root;
-}
 
 beforeAll(async () => {
   __setDevMode(false);
@@ -76,28 +57,6 @@ describe("useLogger() in synthetic render contexts (no evlog ALS)", () => {
     await Promise.resolve();
   });
 
-  // ── Bug: evlog/elysia import crashes prerenderSSG ───────────────────────────
-
-  test("prerenderSSG crashes when loader imports useLogger from evlog/elysia", async () => {
-    const base = await getRoute("/isr-page");
-    const root = await getRoot();
-
-    const route: ResolvedRoute = {
-      ...base,
-      page: {
-        ...base.page,
-        loader: () => {
-          evlogUseLogger().set({ action: "test" });
-          return {};
-        },
-      },
-    };
-
-    await expect(prerenderSSG(route, {}, root, "http://localhost", undefined)).rejects.toThrow(
-      "[evlog] useLogger() was called outside of an evlog plugin context"
-    );
-  });
-
   // ── Fix: context-logger useLogger() works in all contexts ─────────────────
 
   test("furin useLogger() does not throw outside a request context", async () => {
@@ -116,27 +75,5 @@ describe("useLogger() in synthetic render contexts (no evlog ALS)", () => {
     // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op for test
     expect(() => log.fork?.("op", () => {})).not.toThrow();
     await Promise.resolve();
-  });
-
-  test("prerenderSSG succeeds when loader uses context-logger useLogger", async () => {
-    const base = await getRoute("/isr-page");
-    const root = await getRoot();
-
-    const route: ResolvedRoute = {
-      ...base,
-      page: {
-        ...base.page,
-        loader: () => {
-          furinUseLogger().set({ action: "test" });
-          return {};
-        },
-      },
-    };
-
-    await expect(
-      prerenderSSG(route, {}, root, "http://localhost", undefined)
-    ).resolves.toMatchObject({
-      html: expect.stringContaining("<html"),
-    });
   });
 });

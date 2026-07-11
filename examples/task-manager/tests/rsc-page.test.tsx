@@ -1,4 +1,4 @@
-import { expect, mock, test } from "bun:test";
+import { afterAll, expect, mock, test } from "bun:test";
 import { renderToReadableStream } from "react-dom/server";
 
 mock.module("../src/api/modules/boards/service", () => ({
@@ -10,6 +10,12 @@ mock.module("../src/api/modules/boards/service", () => ({
     },
   ],
 }));
+
+afterAll(() => {
+  const restorer = mock as typeof mock & { restoreModule?: (id?: string) => void };
+  restorer.restoreModule?.("../src/api/modules/boards/service");
+  mock.restore();
+});
 
 test("the RSC page renders server-owned boards with client interaction slots", async () => {
   const page = (await import("../src/pages/rsc")).default;

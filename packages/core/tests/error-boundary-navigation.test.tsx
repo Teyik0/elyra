@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { buildRouterTree, type RouterContextValue } from "../src/client/link.tsx";
+import { installDom, resetDomState, uninstallDom } from "./helpers/dom.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -40,6 +41,8 @@ describe("buildRouterTree — error boundary fallback navigation", () => {
   let locationSpy: { set: ReturnType<typeof mock> };
 
   beforeEach(() => {
+    installDom();
+    resetDomState();
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -74,6 +77,7 @@ describe("buildRouterTree — error boundary fallback navigation", () => {
       value: { href: originalHref },
       writable: true,
     });
+    await uninstallDom();
   });
 
   test("Link in default 500 fallback navigates via SPA (not full reload)", async () => {
