@@ -169,6 +169,16 @@ export const DOCS_NAV: DocNavSection[] = [
         openIn: DEFAULT_OPEN_IN,
       },
       {
+        label: "Multi-Instance",
+        title: "Multi-Instance & Micro-Frontends",
+        href: "/docs/multi-instance",
+        description:
+          "Mount several furin apps in one server under prefixes, and package apps as prebuilt Elysia plugins.",
+        sourcePath: "src/content/docs/multi-instance.mdx",
+        githubPath: "apps/docs/src/content/docs/multi-instance.mdx",
+        openIn: DEFAULT_OPEN_IN,
+      },
+      {
         label: "Caching",
         title: "Caching",
         href: "/docs/caching",

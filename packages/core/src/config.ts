@@ -1,7 +1,7 @@
 import type { BunPlugin } from "bun";
 import { t } from "elysia";
 
-export const BUILD_TARGETS = ["bun", "node", "vercel", "cloudflare", "static"] as const;
+export const BUILD_TARGETS = ["bun", "node", "vercel", "cloudflare", "static", "package"] as const;
 
 export type BuildTarget = (typeof BUILD_TARGETS)[number];
 
@@ -37,6 +37,19 @@ const compileTargetSchema = t.Union([t.Literal("server"), t.Literal("embed")]);
 export const configSchema = t.Object({
   rootDir: t.Optional(t.String()),
   pagesDir: t.Optional(t.String()),
+  /**
+   * Multi-instance builds: one entry per mounted furin app. Overrides
+   * `pagesDir` and server-entry auto-detection. `prefix` must match the
+   * `furin({ prefix })` the app is mounted with (`""`/absent = root).
+   */
+  apps: t.Optional(
+    t.Array(
+      t.Object({
+        pagesDir: t.String(),
+        prefix: t.Optional(t.String()),
+      })
+    )
+  ),
   serverEntry: t.Optional(t.String()),
   /**
    * Initialize the browser HTTP log drain in the hydration entry. Off by

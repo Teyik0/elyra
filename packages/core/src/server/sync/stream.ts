@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
 import type { SyncChange } from "./adapter.ts";
-import { getSyncStreamPath } from "./config.ts";
+import { syncPublishChannels } from "./config.ts";
 import { memorySyncAdapter } from "./memory-adapter.ts";
 
 export type { ChangePage as SyncChangePage, SyncChange } from "./adapter.ts";
@@ -72,25 +72,35 @@ export function publishSyncInvalidation(invalidations: readonly string[]): void 
   if (invalidations.length === 0) {
     return;
   }
-  memorySyncAdapter.appendChanges({
-    invalidations,
-    path: getSyncStreamPath() ?? defaultStreamPath,
-  });
+  for (const channel of syncPublishChannels()) {
+    memorySyncAdapter.appendChanges({
+      invalidations,
+      path: channel,
+    });
+  }
 }
 
-export function createSyncStreamPlugin(path?: string) {
+/**
+ * Builds the SSE plugin serving one instance's sync stream. Routes are
+ * registered at the logical `path` (the parent instance's Elysia prefix makes
+ * them physical); `channel` is the adapter key the stream reads from — pass
+ * the PHYSICAL path (`prefix + path`) so two mounted apps never share a
+ * cursor sequence.
+ */
+export function createSyncStreamPlugin(path?: string, channel?: string) {
   const streamPath = path ?? defaultStreamPath;
-  return new Elysia({ name: `furin-sync-stream-${streamPath}` })
+  const channelKey = channel ?? streamPath;
+  return new Elysia({ name: `furin-sync-stream-${channelKey}` })
     .get(`${streamPath}/changes`, ({ request, set }) => {
       set.headers["cache-control"] = "no-store";
       const query = parseChangeQuery(request);
       if ("error" in query) {
         return query.error;
       }
-      return memorySyncAdapter.readChanges({ ...query, path: streamPath });
+      return memorySyncAdapter.readChanges({ ...query, path: channelKey });
     })
     .get(streamPath, () => {
-      const state = getStreamState(streamPath);
+      const state = getStreamState(channelKey);
       let controllerRef: ReadableStreamDefaultController<Uint8Array> | undefined;
       let heartbeat: ReturnType<typeof setInterval> | undefined;
       const stream = new ReadableStream<Uint8Array>({

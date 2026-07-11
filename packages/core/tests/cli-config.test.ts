@@ -24,7 +24,9 @@ describe("CLI config resolution", () => {
 
     expect(result.configPath).toBeNull();
     expect(result.rootDir).toBe(app.path);
-    expect(result.pagesDir).toBe(join(app.path, "src/pages"));
+    // pagesDir stays undefined so buildApp can scan server.ts for
+    // furin({ pagesDir, prefix }) calls (multi-instance detection).
+    expect(result.pagesDir).toBeUndefined();
   });
 
   test("loadCliConfig loads values from furin.config.ts", async () => {

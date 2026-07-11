@@ -1,106 +1,112 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { buildEntrySource, type BuildEntryOptions } from "./entry-template";
+import { buildEntrySource, type BuildEntryOptions, type EntryAppContext } from "./entry-template";
 import { collectFilesRecursive, ensureDir, toPosixPath } from "./shared";
 
 /**
- * Generates a single `_compile-entry.ts` that:
- * 1. Statically imports every page module so Bun bundles them into the binary
- * 2. Optionally embeds client assets via `with { type: "file" }` (embed mode)
- * 3. Sets production mode and registers everything in a single CompileContext
- * 4. Dynamically imports server.ts to boot the app
+ * Builds one app's embedded-asset import lines + `embedded:` context block.
+ * Asset keys stay UNPREFIXED (`/_client/...`) — the instance's Elysia prefix
+ * strips the mount path before lookup at runtime.
  */
-export function generateCompileEntry(options: BuildEntryOptions): string {
-  const {
-    buildId,
-    outDir,
-    rootPath,
-    routes,
-    serverEntry,
-    embed,
-    publicDir,
-    rootConventions,
-    routeMetadata,
-    ssgCache,
-  } = options;
-  ensureDir(outDir);
-
-  // Build embedded asset imports if embed mode
-  const assetImports: string[] = [];
-  let embeddedBlock: string[] = [];
-  if (embed) {
-    if (!existsSync(embed.clientDir)) {
-      throw new Error(
-        `[furin] Client directory not found: ${embed.clientDir}. Run the client build first.`
-      );
-    }
-    const clientFiles = collectFilesRecursive(embed.clientDir).filter(
-      (file) => !file.endsWith(".map")
+function buildEmbeddedAssets(
+  outDir: string,
+  clientDir: string,
+  publicDir: string | undefined,
+  varPrefix: string
+): { extraContext: string[]; extraImports: string[] } {
+  if (!existsSync(clientDir)) {
+    throw new Error(
+      `[furin] Client directory not found: ${clientDir}. Run the client build first.`
     );
-    const assetEntries: string[] = [];
-    let templateVarName: string | null = null;
+  }
+  const clientFiles = collectFilesRecursive(clientDir).filter((file) => !file.endsWith(".map"));
+  const assetImports: string[] = [];
+  const assetEntries: string[] = [];
+  let templateVarName: string | null = null;
 
-    let assetIndex = 0;
-    for (const file of clientFiles) {
-      const varName = `_asset${assetIndex++}`;
-      const relPath = toPosixPath(relative(outDir, file));
-      const importPath = relPath.startsWith(".") ? relPath : `./${relPath}`;
+  let assetIndex = 0;
+  const importAsset = (file: string): string => {
+    const varName = `${varPrefix}asset${assetIndex++}`;
+    const relPath = toPosixPath(relative(outDir, file));
+    const importPath = relPath.startsWith(".") ? relPath : `./${relPath}`;
+    assetImports.push(
+      `import ${varName} from ${JSON.stringify(importPath)} with { type: "file" };`
+    );
+    return varName;
+  };
 
-      assetImports.push(
-        `import ${varName} from ${JSON.stringify(importPath)} with { type: "file" };`
-      );
-
-      const clientRelativePath = toPosixPath(relative(embed.clientDir, file));
-      if (clientRelativePath === "index.html") {
-        templateVarName = varName;
-      } else {
-        assetEntries.push(`      ${JSON.stringify(`/_client/${clientRelativePath}`)}: ${varName},`);
-      }
+  for (const file of clientFiles) {
+    const varName = importAsset(file);
+    const clientRelativePath = toPosixPath(relative(clientDir, file));
+    if (clientRelativePath === "index.html") {
+      templateVarName = varName;
+    } else {
+      assetEntries.push(`      ${JSON.stringify(`/_client/${clientRelativePath}`)}: ${varName},`);
     }
-
-    if (templateVarName === null) {
-      throw new Error(
-        `[furin] Embed mode requires a client index.html at ${join(embed.clientDir, "index.html")}. Run the client build first.`
-      );
-    }
-
-    if (publicDir && existsSync(publicDir)) {
-      const publicFiles = collectFilesRecursive(publicDir);
-      for (const file of publicFiles) {
-        const varName = `_asset${assetIndex++}`;
-        const relPath = toPosixPath(relative(outDir, file));
-        const importPath = relPath.startsWith(".") ? relPath : `./${relPath}`;
-
-        assetImports.push(
-          `import ${varName} from ${JSON.stringify(importPath)} with { type: "file" };`
-        );
-
-        const publicRelativePath = toPosixPath(relative(publicDir, file));
-        assetEntries.push(`      ${JSON.stringify(`/public/${publicRelativePath}`)}: ${varName},`);
-      }
-    }
-
-    embeddedBlock = [
-      "  embedded: {",
-      `    template: ${templateVarName},`,
-      "    assets: {",
-      ...assetEntries,
-      "    },",
-      "  },",
-    ];
   }
 
+  if (templateVarName === null) {
+    throw new Error(
+      `[furin] Embed mode requires a client index.html at ${join(clientDir, "index.html")}. Run the client build first.`
+    );
+  }
+
+  if (publicDir && existsSync(publicDir)) {
+    const publicFiles = collectFilesRecursive(publicDir);
+    for (const file of publicFiles) {
+      const varName = importAsset(file);
+      const publicRelativePath = toPosixPath(relative(publicDir, file));
+      assetEntries.push(`      ${JSON.stringify(`/public/${publicRelativePath}`)}: ${varName},`);
+    }
+  }
+
+  const extraContext = [
+    "  embedded: {",
+    `    template: ${templateVarName},`,
+    "    assets: {",
+    ...assetEntries,
+    "    },",
+    "  },",
+  ];
+
+  return { extraContext, extraImports: assetImports };
+}
+
+/**
+ * Generates a single `_compile-entry.ts` that:
+ * 1. Statically imports every page module of every app so Bun bundles them
+ * 2. Optionally embeds client assets via `with { type: "file" }` (embed mode)
+ * 3. Sets production mode and registers one CompileContext PER APP
+ * 4. Dynamically imports server.ts to boot the composed app
+ */
+export function generateCompileEntry(options: BuildEntryOptions): string {
+  const { apps, outDir, serverEntry, publicDir } = options;
+  ensureDir(outDir);
+
+  const preparedApps: EntryAppContext[] = apps.map((app, appIndex) => {
+    const { embed, ...context } = app;
+    if (!embed) {
+      return context;
+    }
+    const varPrefix = apps.length === 1 ? "_" : `_a${appIndex}_`;
+    // The project-level public/ dir is embedded once, on the first app.
+    const embedded = buildEmbeddedAssets(
+      outDir,
+      embed.clientDir,
+      appIndex === 0 ? publicDir : undefined,
+      varPrefix
+    );
+    return {
+      ...context,
+      extraContext: [...(context.extraContext ?? []), ...embedded.extraContext],
+      extraImports: [...(context.extraImports ?? []), ...embedded.extraImports],
+    };
+  });
+
   const source = buildEntrySource({
-    buildId,
-    headerComment: "// Auto-generated by furin compile — do not edit",
-    rootPath,
-    routes,
+    apps: preparedApps,
+    headerComment: options.headerComment ?? "// Auto-generated by furin compile — do not edit",
     serverEntry,
-    extraImports: assetImports,
-    extraContext: embeddedBlock,
-    rootConventions,
-    routeMetadata,
-    ssgCache,
   });
 
   const entryPath = join(outDir, "_compile-entry.ts");

@@ -1,47 +1,77 @@
-// ── Dev template ─────────────────────────────────────────────────────────────
+// ── HTML template state (per furin instance) ────────────────────────────────
 
 import { readFileSync } from "node:fs";
+import {
+  allStateBuckets,
+  currentInstance,
+  defaultInstanceBucket,
+  type FurinInstance,
+  instanceSlot,
+} from "../instance.ts";
 
-let _prodTemplatePath: string | null = null;
-let _prodTemplateContent: string | null = null;
+interface TemplateState {
+  devCache: { html: string; ts: number } | null;
+  prodContent: string | null;
+  prodPath: string | null;
+}
 
-/** Dev template cache — avoids a loopback HTTP fetch on every SSR request. */
-let _devTemplateCache: { html: string; ts: number } | null = null;
+const instanceTemplateState = instanceSlot(
+  (): TemplateState => ({ devCache: null, prodContent: null, prodPath: null })
+);
+
 const DEV_TEMPLATE_TTL_MS = 1000;
 
 export async function getDevTemplate(origin: string): Promise<string> {
-  if (_devTemplateCache && Date.now() - _devTemplateCache.ts < DEV_TEMPLATE_TTL_MS) {
-    return _devTemplateCache.html;
+  const instance = currentInstance();
+  const state = instanceTemplateState(instance);
+  if (state.devCache && Date.now() - state.devCache.ts < DEV_TEMPLATE_TTL_MS) {
+    return state.devCache.html;
   }
-  const r = await fetch(`${origin}/_bun_hmr_entry`);
+  // Each instance's HMR entry is mounted under its own prefix.
+  const entryPath = `${instance.prefix}/_bun_hmr_entry`;
+  const r = await fetch(`${origin}${entryPath}`);
   if (!r.ok) {
-    throw new Error(`/_bun_hmr_entry returned ${r.status}`);
+    throw new Error(`${entryPath} returned ${r.status}`);
   }
   const html = await r.text();
-  _devTemplateCache = { html, ts: Date.now() };
+  state.devCache = { html, ts: Date.now() };
   return html;
 }
 
-export function setProductionTemplatePath(path: string | null): void {
-  _prodTemplatePath = path;
-  _prodTemplateContent = null;
+export function setProductionTemplatePath(path: string | null, instance?: FurinInstance): void {
+  const state = instanceTemplateState(instance);
+  state.prodPath = path;
+  state.prodContent = null;
 }
 
-export function setProductionTemplateContent(content: string): void {
-  _prodTemplatePath = null;
-  _prodTemplateContent = content;
+export function setProductionTemplateContent(content: string, instance?: FurinInstance): void {
+  const state = instanceTemplateState(instance);
+  state.prodPath = null;
+  state.prodContent = content;
 }
 
 export function getProductionTemplate(): string | null {
-  if (_prodTemplateContent !== null) {
-    return _prodTemplateContent;
+  const own = readTemplate(instanceTemplateState());
+  if (own !== null) {
+    return own;
   }
-  if (!_prodTemplatePath) {
+  // Config-before-mount fallback: `setProductionTemplateContent()` called
+  // before any furin() registration lands on the default bucket — treat that
+  // as a process-wide default template.
+  const fallback = instanceTemplateState(defaultInstanceBucket());
+  return readTemplate(fallback);
+}
+
+function readTemplate(state: TemplateState): string | null {
+  if (state.prodContent !== null) {
+    return state.prodContent;
+  }
+  if (!state.prodPath) {
     return null;
   }
   try {
-    _prodTemplateContent = readFileSync(_prodTemplatePath, "utf8");
-    return _prodTemplateContent;
+    state.prodContent = readFileSync(state.prodPath, "utf8");
+    return state.prodContent;
   } catch {
     return null;
   }
@@ -49,7 +79,10 @@ export function getProductionTemplate(): string | null {
 
 /** @internal test-only — resets all template state */
 export function __resetTemplateState(): void {
-  _prodTemplatePath = null;
-  _prodTemplateContent = null;
-  _devTemplateCache = null;
+  for (const instance of allStateBuckets()) {
+    const state = instanceTemplateState(instance);
+    state.devCache = null;
+    state.prodContent = null;
+    state.prodPath = null;
+  }
 }

@@ -5,10 +5,10 @@ import {
   runInvalidationRules,
 } from "../auto-invalidate/runtime.ts";
 import type { InvalidationInput } from "../auto-invalidate/types.ts";
-import { getSyncStreamPath } from "./config.ts";
 import { createMutationFingerprint } from "./fingerprint.ts";
 import { memorySyncAdapter } from "./memory-adapter.ts";
 import { replayResponse, storeResponse } from "./response.ts";
+import { publishSyncInvalidation } from "./stream.ts";
 
 export type SyncRouteOption =
   | false
@@ -190,10 +190,9 @@ export function furinSync() {
       activeMutations.delete(ctx.request);
 
       if (pending.length > 0) {
-        await memorySyncAdapter.appendChanges({
-          invalidations: pending,
-          path: getSyncStreamPath() ?? "/_furin/sync",
-        });
+        // Notify every mounted app's sync stream — a mutation on a shared API
+        // may invalidate pages rendered by any of them.
+        publishSyncInvalidation(pending);
       }
     })
     .onError({ as: "global" }, ({ request }) => abortMutation(request));

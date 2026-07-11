@@ -3,14 +3,17 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildClient } from "../build/client.ts";
 import { generateCompileEntry } from "../build/compile-entry.ts";
+import type { BuildEntryOptions, EntryAppContext } from "../build/entry-template.ts";
 import { generateServerRoutesEntry } from "../build/server-routes-entry.ts";
 import { buildTargetManifest, copyDirRecursive, ensureDir, toPosixPath } from "../build/shared.ts";
 import { buildSSGCacheSnapshot } from "../build/ssg-cache.ts";
 import type { BuildAppOptions, TargetBuildManifest } from "../build/types.ts";
 import type { BuildTarget } from "../config.ts";
+import { ssgRouteCache } from "../server/cache/ssg.ts";
 import { generateProdIndexHtml } from "../server/render/shell.ts";
 import { setProductionTemplateContent } from "../server/render/template.ts";
 import type { ResolvedRoute, RootLayout } from "../server/router/index.ts";
+import { clientDirNameForPrefix } from "../shared/prefix.ts";
 
 // import.meta.resolve() runs at runtime (not inlined at bundle time), resolves
 // through package exports, and is the Web-standard API. The main entry is
@@ -99,8 +102,7 @@ function buildCompileMetadata(root: RootLayout, routes: ResolvedRoute[]) {
         }
       : undefined;
 
-  const routeMetadata: NonNullable<Parameters<typeof generateCompileEntry>[0]["routeMetadata"]> =
-    {};
+  const routeMetadata: NonNullable<EntryAppContext["routeMetadata"]> = {};
   for (const route of routes) {
     routeMetadata[toPosixPath(route.path)] = {
       segmentBoundaries: route.segmentBoundaries.map((b) => ({
@@ -115,11 +117,87 @@ function buildCompileMetadata(root: RootLayout, routes: ResolvedRoute[]) {
   return { rootConventions, routeMetadata };
 }
 
+/** One mounted app's build input (root + routes scanned from its pagesDir). */
+export interface BunTargetApp {
+  pagesDir: string;
+  prefix: string;
+  root: RootLayout;
+  routes: ResolvedRoute[];
+}
+
+/** Builds one app's client bundle + compile context payload for the entry. */
+async function buildOneApp(
+  app: BunTargetApp,
+  targetDir: string,
+  serverEntry: string | null,
+  options: BuildAppOptions
+): Promise<{
+  buildId: string;
+  entryApp: BuildEntryOptions["apps"][number];
+  hydrateIntermediate: string;
+}> {
+  const { prefix, root, routes } = app;
+  const clientDirName = clientDirNameForPrefix(prefix);
+  const label = prefix === "" ? "root app" : `app "${prefix}"`;
+
+  const { entryChunk, cssChunks } = await buildClient(routes, {
+    outDir: targetDir,
+    rootLayout: root.path,
+    plugins: options.plugins,
+    publicPath: `${prefix}/_client/`,
+    basePath: prefix,
+    clientLogging: options.clientLogging ?? false,
+    clientDirName,
+  });
+
+  const buildFingerprint = await createBuildFingerprint(
+    `${prefix}\n${entryChunk}`,
+    cssChunks,
+    routes,
+    root,
+    serverEntry
+  );
+  const buildId = Bun.hash(buildFingerprint).toString(16).slice(0, 12);
+
+  // Write index.html with the buildId meta tag injected so the client can
+  // detect stale deploys via X-Furin-Build-ID header comparison.
+  const clientDir = join(targetDir, clientDirName);
+  const indexHtml = generateProdIndexHtml(entryChunk, cssChunks, buildId, undefined, false);
+  writeFileSync(join(clientDir, "index.html"), indexHtml);
+
+  // The SSG snapshot renders through the (build-time) default state bucket:
+  // install this app's template, then clear the bucket's html caches so the
+  // previous app's prerenders can never leak into this snapshot.
+  setProductionTemplateContent(indexHtml);
+  ssgRouteCache().clear();
+  const ssgCache = serverEntry
+    ? await buildSSGCacheSnapshot(routes, root, "http://localhost")
+    : undefined;
+
+  const { rootConventions, routeMetadata } = buildCompileMetadata(root, routes);
+  console.log(`[furin] Built ${label} (buildId ${buildId})`);
+
+  return {
+    buildId,
+    entryApp: {
+      buildId,
+      prefix,
+      rootPath: root.path,
+      routes: routes.map((r) => ({ pattern: r.pattern, path: r.path, mode: r.mode })),
+      rootConventions,
+      routeMetadata,
+      ssgCache,
+      embed: options.compile === "embed" ? { clientDir } : undefined,
+    },
+    hydrateIntermediate:
+      clientDirName === "client" ? "_hydrate.tsx" : `_hydrate-${clientDirName}.tsx`,
+  };
+}
+
 export async function buildBunTarget(
-  routes: ResolvedRoute[],
+  apps: BunTargetApp[],
   rootDir: string,
   buildRoot: string,
-  root: RootLayout,
   serverEntry: string | null,
   options: BuildAppOptions
 ): Promise<TargetBuildManifest> {
@@ -129,6 +207,9 @@ export async function buildBunTarget(
         "Create src/server.ts or set `serverEntry` in your furin.config.ts."
     );
   }
+  if (apps.length === 0) {
+    throw new Error("[furin] buildBunTarget requires at least one app.");
+  }
 
   const target = "bun" satisfies BuildTarget;
   const targetManifest = buildTargetManifest(rootDir, buildRoot, target, serverEntry);
@@ -137,60 +218,33 @@ export async function buildBunTarget(
   rmSync(targetDir, { force: true, recursive: true });
   ensureDir(targetDir);
 
-  const { entryChunk, cssChunks } = await buildClient(routes, {
-    outDir: targetDir,
-    rootLayout: root.path,
-    plugins: options.plugins,
-    publicPath: "/_client/",
-    basePath: "",
-    clientLogging: options.clientLogging ?? false,
-  });
-
-  const buildFingerprint = await createBuildFingerprint(
-    entryChunk,
-    cssChunks,
-    routes,
-    root,
-    serverEntry
-  );
-  const buildId = Bun.hash(buildFingerprint).toString(16).slice(0, 12);
-  targetManifest.buildId = buildId;
-
-  // Write index.html with the buildId meta tag injected so the client can
-  // detect stale deploys via X-Furin-Build-ID header comparison.
-  const clientDir = join(targetDir, "client");
-  const indexHtml = generateProdIndexHtml(entryChunk, cssChunks, buildId, undefined, false);
-  writeFileSync(join(clientDir, "index.html"), indexHtml);
-  setProductionTemplateContent(indexHtml);
-
-  const routeManifest = routes.map((r) => ({ pattern: r.pattern, path: r.path, mode: r.mode }));
-  const ssgCache = serverEntry
-    ? await buildSSGCacheSnapshot(routes, root, "http://localhost")
-    : undefined;
   const publicDir = existsSync(join(rootDir, "public")) ? join(rootDir, "public") : undefined;
-  const targetPublicDir = publicDir ? join(targetDir, "public") : undefined;
+  const entryApps: BuildEntryOptions["apps"] = [];
+  const hydrateIntermediates: string[] = [];
 
+  for (const app of apps) {
+    const built = await buildOneApp(app, targetDir, serverEntry, options);
+    entryApps.push(built.entryApp);
+    hydrateIntermediates.push(built.hydrateIntermediate);
+    // The ROOT app's buildId is the manifest's headline id (back-compat).
+    if (app.prefix === "" || targetManifest.buildId === "") {
+      targetManifest.buildId = built.buildId;
+    }
+  }
+
+  const targetPublicDir = publicDir ? join(targetDir, "public") : undefined;
   if (publicDir && targetPublicDir && options.compile !== "embed") {
     copyDirRecursive(publicDir, targetPublicDir);
   }
 
-  const { rootConventions, routeMetadata } = buildCompileMetadata(root, routes);
-
   if (options.compile && serverEntry) {
-    const clientDir = join(targetDir, "client");
     const outfile = join(targetDir, "server");
 
     const entryPath = generateCompileEntry({
-      buildId,
-      rootPath: root.path,
-      routes: routeManifest,
+      apps: entryApps,
       serverEntry,
       outDir: targetDir,
-      embed: options.compile === "embed" ? { clientDir } : undefined,
       publicDir,
-      rootConventions,
-      routeMetadata,
-      ssgCache,
     });
 
     await Bun.build({
@@ -206,23 +260,23 @@ export async function buildBunTarget(
 
     targetManifest.serverPath = toPosixPath(join(targetManifest.targetDir, "server"));
 
-    // Embed mode: assets are in the binary — clean up client dir too.
+    // Embed mode: assets are in the binary — clean up client dirs too.
     if (options.compile === "embed") {
-      rmSync(clientDir, { force: true, recursive: true });
+      for (const app of apps) {
+        rmSync(join(targetDir, clientDirNameForPrefix(app.prefix)), {
+          force: true,
+          recursive: true,
+        });
+      }
       targetManifest.clientDir = null;
       targetManifest.templatePath = null;
     }
   } else if (serverEntry) {
     // Disk mode: generate server.ts then bundle it into self-contained server.js
     const entryPath = generateServerRoutesEntry({
-      buildId,
-      rootPath: root.path,
-      routes: routeManifest,
+      apps: entryApps,
       serverEntry,
       outDir: targetDir,
-      rootConventions,
-      routeMetadata,
-      ssgCache,
     });
 
     await Bun.build({
@@ -248,7 +302,7 @@ export async function buildBunTarget(
     "_compile-entry.ts",
     "_compile-entry.js.map",
     "server.ts", // disk mode intermediate
-    "_hydrate.tsx",
+    ...hydrateIntermediates,
   ]) {
     rmSync(join(targetDir, file), { force: true });
   }

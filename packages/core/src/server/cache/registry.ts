@@ -1,35 +1,32 @@
+import { type FurinInstance, instanceSlot } from "../instance.ts";
 import type { Cache } from "./route-cache";
 
 export type CacheInvalidator = Pick<Cache<unknown>, "invalidatePath" | "name">;
 
-const _cacheInvalidators = new Map<string, CacheInvalidator>();
+// One invalidator map per furin instance — each instance owns its SSG/ISR/dev
+// caches, so `revalidatePath` never reaches into a sibling app's entries by
+// accident (cross-instance invalidation is explicit, see invalidation.ts).
+const instanceInvalidators = instanceSlot(() => new Map<string, CacheInvalidator>());
 
-export function registerCacheInvalidator(invalidator: CacheInvalidator): () => void {
-  const existing = _cacheInvalidators.get(invalidator.name);
+export function registerCacheInvalidator(
+  invalidator: CacheInvalidator,
+  instance?: FurinInstance
+): () => void {
+  const invalidators = instanceInvalidators(instance);
+  const existing = invalidators.get(invalidator.name);
   if (existing !== undefined && existing !== invalidator) {
     throw new Error(
       `Cache invalidator "${invalidator.name}" is already registered with a different instance.`
     );
   }
-  if (existing === invalidator) {
-    return () => {
-      if (_cacheInvalidators.get(invalidator.name) === invalidator) {
-        _cacheInvalidators.delete(invalidator.name);
-      }
-    };
-  }
-  _cacheInvalidators.set(invalidator.name, invalidator);
+  invalidators.set(invalidator.name, invalidator);
   return () => {
-    if (_cacheInvalidators.get(invalidator.name) === invalidator) {
-      _cacheInvalidators.delete(invalidator.name);
+    if (invalidators.get(invalidator.name) === invalidator) {
+      invalidators.delete(invalidator.name);
     }
   };
 }
 
-export function getCacheInvalidators(): IterableIterator<CacheInvalidator> {
-  return _cacheInvalidators.values();
-}
-
-export function clearCacheInvalidators(): void {
-  _cacheInvalidators.clear();
+export function getCacheInvalidators(instance?: FurinInstance): IterableIterator<CacheInvalidator> {
+  return instanceInvalidators(instance).values();
 }

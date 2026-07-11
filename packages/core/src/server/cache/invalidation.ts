@@ -1,40 +1,42 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import { createLogger } from "../context-logger";
-import { devISRLoaderCache, devSSGLoaderCache } from "./dev-loader";
+import {
+  __clearInstanceRegistry,
+  allInstances,
+  allStateBuckets,
+  currentInstance,
+  requestPendingInvalidations,
+  runWithInstanceScope,
+  withInstance,
+} from "../instance.ts";
+import { clearDevLoaderCaches } from "./dev-loader";
 import { isrRouteCache } from "./isr";
-import { clearCacheInvalidators, getCacheInvalidators, registerCacheInvalidator } from "./registry";
+import { getCacheInvalidators } from "./registry";
 import type { RevalidateType } from "./route-cache";
 import { ssgRouteCache } from "./ssg";
 
-// Register core caches at module load time so revalidatePath works out of the box.
-registerCacheInvalidator(isrRouteCache);
-registerCacheInvalidator(ssgRouteCache);
-registerCacheInvalidator(devISRLoaderCache);
-registerCacheInvalidator(devSSGLoaderCache);
-
 // ── Build ID ─────────────────────────────────────────────────────────────────
-
-let _buildId = "";
+// Lives on the furin instance — each mounted app reports its own build ID.
 
 export function setBuildId(id: string): void {
-  _buildId = id;
+  currentInstance().buildId = id;
 }
 
 export function getBuildId(): string {
-  return _buildId;
+  return currentInstance().buildId;
 }
 
 // ── Pending invalidations (server → client bridge) ───────────────────────────
+// The per-request set lives in the instance request scope (see instance.ts);
+// outside a request scope invalidations accumulate in a process-global set.
 
-const _requestInvalidationScope = new AsyncLocalStorage<Set<string>>();
 const _globalPendingInvalidations = new Set<string>();
 
 function _activeInvalidationSet(): Set<string> {
-  return _requestInvalidationScope.getStore() ?? _globalPendingInvalidations;
+  return requestPendingInvalidations() ?? _globalPendingInvalidations;
 }
 
 export function _runWithRequestInvalidationScope<T>(fn: () => T): T {
-  return _requestInvalidationScope.run(new Set<string>(), fn);
+  return runWithInstanceScope(currentInstance(), fn);
 }
 
 export function consumePendingInvalidations(): string[] {
@@ -48,6 +50,7 @@ export function consumePendingInvalidations(): string[] {
 }
 
 // ── CDN purger hook ───────────────────────────────────────────────────────────
+// Process-global on purpose: the CDN sits in front of every mounted app.
 
 type CachePurger = (paths: string[]) => Promise<void>;
 let _cachePurger: CachePurger | null = null;
@@ -75,15 +78,26 @@ export function callCachePurger(paths: string[]): void {
 
 // ── revalidatePath ───────────────────────────────────────────────────────────
 
+/**
+ * Invalidates `path` across EVERY mounted furin instance — paths are logical
+ * (unprefixed), and with shared data two apps can legitimately render the same
+ * logical path. This mirrors the historical shared-cache behaviour. Each
+ * instance's invalidation runs inside its own scope so cache `onDelete` hooks
+ * (auto-invalidate unregistration) hit the owning instance's registry.
+ */
 export function revalidatePath(path: string, type: RevalidateType): boolean {
   _activeInvalidationSet().add(type === "layout" ? `${path}:layout` : path);
 
   let deleted = false;
   const purgedPaths: string[] = [];
-  for (const invalidator of getCacheInvalidators()) {
-    const result = invalidator.invalidatePath(path, type);
-    deleted = result.deleted || deleted;
-    purgedPaths.push(...result.purgedPaths);
+  for (const instance of allInstances()) {
+    withInstance(instance, () => {
+      for (const invalidator of getCacheInvalidators(instance)) {
+        const result = invalidator.invalidatePath(path, type);
+        deleted = result.deleted || deleted;
+        purgedPaths.push(...result.purgedPaths);
+      }
+    });
   }
 
   callCachePurger(dedupePaths([...purgedPaths, path]));
@@ -96,16 +110,16 @@ function dedupePaths(paths: string[]): string[] {
 
 /** @internal — resets all module state between tests */
 export function __resetCacheState(): void {
-  isrRouteCache.clear();
-  ssgRouteCache.clear();
-  devISRLoaderCache.clear();
-  devSSGLoaderCache.clear();
-  _buildId = "";
+  for (const instance of allStateBuckets()) {
+    isrRouteCache(instance).clear();
+    ssgRouteCache(instance).clear();
+    clearDevLoaderCaches(instance);
+    instance.buildId = "";
+  }
+  // Forget mounted instances (fresh furin() calls between tests must not hit
+  // prefix collisions) but keep the default bucket — cache slots above are
+  // cleared, while process-wide defaults like a beforeAll template survive.
+  __clearInstanceRegistry();
   _globalPendingInvalidations.clear();
   _cachePurger = null;
-  clearCacheInvalidators();
-  registerCacheInvalidator(isrRouteCache);
-  registerCacheInvalidator(ssgRouteCache);
-  registerCacheInvalidator(devISRLoaderCache);
-  registerCacheInvalidator(devSSGLoaderCache);
 }
