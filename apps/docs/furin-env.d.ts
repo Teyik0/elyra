@@ -21,6 +21,7 @@ declare module "@teyik0/furin/link" {
     "/docs/layouts": { search?: never; searchInput?: never };
     "/docs/link-navigation": { search?: never; searchInput?: never };
     "/docs/logging": { search?: never; searchInput?: never };
+    "/docs/multi-instance": { search?: never; searchInput?: never };
     "/docs/plugins": { search?: never; searchInput?: never };
     "/docs/rendering": { search?: never; searchInput?: never };
     "/docs/routing": { search?: never; searchInput?: never };

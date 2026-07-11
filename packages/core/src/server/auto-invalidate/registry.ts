@@ -1,3 +1,5 @@
+import { type FurinInstance, instanceSlot } from "../instance.ts";
+
 export class AutoInvalidateRegistry {
   private readonly pathToTags = new Map<string, Set<string>>();
   private readonly tagToPaths = new Map<string, Set<string>>();
@@ -57,4 +59,24 @@ export class AutoInvalidateRegistry {
   }
 }
 
-export const autoInvalidateRegistry = new AutoInvalidateRegistry();
+const instanceAutoInvalidateRegistry = instanceSlot(() => new AutoInvalidateRegistry());
+
+/** The current furin instance's registry (see server/instance.ts). */
+export function getAutoInvalidateRegistry(instance?: FurinInstance): AutoInvalidateRegistry {
+  return instanceAutoInvalidateRegistry(instance);
+}
+
+/**
+ * Instance-scoped facade kept under the historical singleton name so call
+ * sites read the same — every method resolves the current instance's registry.
+ */
+export const autoInvalidateRegistry: Pick<
+  AutoInvalidateRegistry,
+  "registerLoaderTags" | "pathsForTags" | "unregisterPath" | "reset"
+> = {
+  registerLoaderTags: (urlPath, tags) =>
+    instanceAutoInvalidateRegistry().registerLoaderTags(urlPath, tags),
+  pathsForTags: (tags) => instanceAutoInvalidateRegistry().pathsForTags(tags),
+  unregisterPath: (urlPath) => instanceAutoInvalidateRegistry().unregisterPath(urlPath),
+  reset: () => instanceAutoInvalidateRegistry().reset(),
+};

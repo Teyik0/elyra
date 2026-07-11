@@ -1,6 +1,7 @@
 import { existsSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { buildBunTarget } from "../adapter/bun";
+import { buildBunTarget, type BunTargetApp } from "../adapter/bun";
+import { buildPackageTarget } from "../adapter/package";
 import { buildStaticTarget } from "../adapter/static";
 import { BUILD_TARGETS, type BuildTarget, type FurinPlugin } from "../config";
 import { scanPages } from "../server/router/index.ts";
@@ -22,27 +23,50 @@ export type {
   TargetBuildManifest,
 } from "./types";
 
+// "package" is intentionally excluded from `--target all` — it is an
+// alternative packaging of ONE app, not an additional deploy target.
 const IMPLEMENTED_TARGETS = ["bun", "static"] as const satisfies BuildTarget[];
 export const BUILD_OUTPUT_DIR = ".furin/build";
 
-function resolvePagesDirFromServer(serverEntry: string | null, rootDir: string): string | null {
-  if (!serverEntry) {
-    return null;
+/**
+ * Resolves the list of apps to build, in priority order:
+ * 1. explicit `apps` config (furin.config.ts),
+ * 2. explicit single `pagesDir` option (mounted at root),
+ * 3. every `furin({ pagesDir, prefix })` call detected in the server entry,
+ * 4. the `src/pages` default.
+ */
+function resolveAppSpecs(
+  options: BuildAppOptions,
+  serverEntry: string | null,
+  rootDir: string
+): Array<{ pagesDir: string; prefix: string }> {
+  if (options.apps && options.apps.length > 0) {
+    return options.apps.map((app) => ({
+      pagesDir: resolve(rootDir, app.pagesDir),
+      prefix: app.prefix ?? "",
+    }));
   }
-  const detected = scanFurinInstances(serverEntry);
-  if (detected.length === 0) {
-    return null;
+  if (options.pagesDir) {
+    return [{ pagesDir: resolve(rootDir, options.pagesDir), prefix: "" }];
   }
-  // Use the first detected pagesDir relative to rootDir
-  return resolve(rootDir, detected[0] as string);
+  if (serverEntry) {
+    const detected = scanFurinInstances(serverEntry);
+    if (detected.length > 0) {
+      return detected.map((app) => ({
+        pagesDir: resolve(rootDir, app.pagesDir),
+        prefix: app.prefix,
+      }));
+    }
+  }
+  return [{ pagesDir: resolve(rootDir, "src/pages"), prefix: "" }];
 }
 
 export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult> {
   const rootDir = resolve(options.rootDir ?? process.cwd());
   const buildRoot = join(rootDir, BUILD_OUTPUT_DIR);
   const serverEntry = (() => {
-    // Static-only builds don't need a server entry point
-    if (options.target === "static") {
+    // Static and package builds don't need a server entry point
+    if (options.target === "static" || options.target === "package") {
       return null;
     }
     if (options.serverEntry) {
@@ -80,10 +104,15 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
     }
   }
 
-  // Priority: explicit config > auto-detected from server entry > default
-  const rawPagesDir =
-    options.pagesDir ?? resolvePagesDirFromServer(serverEntry, rootDir) ?? "src/pages";
-  const pagesDir = resolve(rootDir, rawPagesDir);
+  const appSpecs = resolveAppSpecs(options, serverEntry, rootDir);
+  const duplicatePrefix = appSpecs.find(
+    (spec, index) => appSpecs.findIndex((other) => other.prefix === spec.prefix) !== index
+  );
+  if (duplicatePrefix) {
+    throw new Error(
+      `[furin] Two apps are configured with the prefix "${duplicatePrefix.prefix || "/"}" — give each app a unique prefix.`
+    );
+  }
 
   const requestedTargets =
     options.target === "all"
@@ -95,8 +124,14 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
           return target as BuildTarget;
         });
 
-  // scanPages throws if root.tsx is missing, so root is always defined here.
-  const { root, routes } = await scanPages(pagesDir);
+  // scanPages throws if root.tsx is missing, so root is always defined per app.
+  const apps: BunTargetApp[] = [];
+  for (const spec of appSpecs) {
+    const { root, routes } = await scanPages(spec.pagesDir);
+    apps.push({ pagesDir: spec.pagesDir, prefix: spec.prefix, root, routes });
+  }
+  // The root-mounted app drives single-app manifest fields and the static target.
+  const primaryApp = (apps.find((app) => app.prefix === "") ?? apps[0]) as BunTargetApp;
 
   ensureDir(buildRoot);
 
@@ -104,31 +139,47 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
     version: 1,
     generatedAt: new Date().toISOString(),
     rootDir: toPosixPath(rootDir),
-    pagesDir: toPosixPath(relative(rootDir, pagesDir)),
-    rootPath: toPosixPath(relative(rootDir, root.path)),
+    pagesDir: toPosixPath(relative(rootDir, primaryApp.pagesDir)),
+    rootPath: toPosixPath(relative(rootDir, primaryApp.root.path)),
     serverEntry: serverEntry ? toPosixPath(relative(rootDir, serverEntry)) : null,
-    routes: routes.map((route) => toBuildRouteManifestEntry(route, rootDir)),
+    routes: primaryApp.routes.map((route) => toBuildRouteManifestEntry(route, rootDir)),
+    apps: apps.map((app) => ({
+      pagesDir: toPosixPath(relative(rootDir, app.pagesDir)),
+      prefix: app.prefix,
+      routes: app.routes.map((route) => toBuildRouteManifestEntry(route, rootDir)),
+    })),
     targets: {},
   };
 
   for (const target of requestedTargets) {
     switch (target) {
       case "bun":
-        manifest.targets.bun = await buildBunTarget(
-          routes,
+        manifest.targets.bun = await buildBunTarget(apps, rootDir, buildRoot, serverEntry, options);
+        break;
+      case "static":
+        if (apps.length > 1) {
+          console.warn(
+            "[furin] `--target static` exports the root-mounted app only — prefixed apps are skipped."
+          );
+        }
+        manifest.targets.static = await buildStaticTarget(
+          primaryApp.routes,
           rootDir,
           buildRoot,
-          root,
-          serverEntry,
+          primaryApp.root,
           options
         );
         break;
-      case "static":
-        manifest.targets.static = await buildStaticTarget(
-          routes,
+      case "package":
+        if (apps.length > 1) {
+          throw new Error(
+            "[furin] `--target package` builds exactly one app — configure a single pagesDir/prefix."
+          );
+        }
+        manifest.targets.package = await buildPackageTarget(
+          primaryApp,
           rootDir,
           buildRoot,
-          root,
           options
         );
         break;

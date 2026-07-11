@@ -8,6 +8,11 @@ export interface BuildClientOptions {
    * correct physical URLs. Pass "" for root deployments.
    */
   basePath: string;
+  /**
+   * On-disk client dir name under outDir (default "client"). Multi-instance
+   * builds pass "client-<slug>" per mounted app.
+   */
+  clientDirName?: string;
   /** Inject the evlog client logger into the hydrate entry. Off by default. */
   clientLogging: boolean;
   outDir: string;
@@ -20,6 +25,12 @@ export interface BuildClientOptions {
    */
   publicPath: string;
   rootLayout: string;
+  /**
+   * Skip furin-env.d.ts generation. Set for non-root instances in
+   * multi-instance dev — the file lives at the project root and only the root
+   * app owns it.
+   */
+  skipRouteTypes?: boolean;
 }
 
 export interface BuildRouteManifestEntry {
@@ -41,9 +52,29 @@ export interface TargetBuildManifest {
   templatePath: string | null;
 }
 
-export type AnyTargetManifest = TargetBuildManifest | StaticTargetBuildManifest;
+/** Build manifest entry produced by the `package` adapter. */
+export interface PackageTargetBuildManifest {
+  buildId: string;
+  generatedAt: string;
+  prefix: string;
+  targetDir: string;
+}
+
+export type AnyTargetManifest =
+  | TargetBuildManifest
+  | StaticTargetBuildManifest
+  | PackageTargetBuildManifest;
+
+/** One mounted app in a multi-instance build. */
+export interface BuildAppSpec {
+  pagesDir: string;
+  /** Mount prefix (`""` or absent = root). */
+  prefix?: string;
+}
 
 export interface BuildManifest {
+  /** Every mounted app built into this artifact (multi-instance). */
+  apps?: Array<{ pagesDir: string; prefix: string; routes: BuildRouteManifestEntry[] }>;
   generatedAt: string;
   pagesDir: string;
   rootDir: string;
@@ -55,6 +86,11 @@ export interface BuildManifest {
 }
 
 export interface BuildAppOptions {
+  /**
+   * Explicit multi-app build (furin.config.ts `apps`). Overrides `pagesDir`
+   * and server-entry auto-detection.
+   */
+  apps?: BuildAppSpec[];
   /** Inject the evlog client logger into the hydrate entry. Defaults to false. */
   clientLogging?: boolean;
   compile?: "server" | "embed";

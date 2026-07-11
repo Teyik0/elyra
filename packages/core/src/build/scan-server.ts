@@ -3,14 +3,21 @@ import { parse, type CallExpression, type ObjectExpression, type ObjectProperty 
 import { detectLangFromPath, unwrapTSExpression } from "../server/lang-detect.ts";
 import { walkAST } from "../shared/utils/ast-walk.ts";
 
+export interface ScannedFurinInstance {
+  pagesDir: string;
+  /** Normalized mount prefix (`""` when absent). */
+  prefix: string;
+}
+
 /**
- * Statically scans a server entry file and returns all `pagesDir` string
- * literal values found inside `furin({ pagesDir: "..." })` call expressions.
+ * Statically scans a server entry file and returns the `pagesDir` (and
+ * optional `prefix`) string literals found inside `furin({ pagesDir: "..." })`
+ * call expressions.
  *
- * Dynamic paths (template literals, variables) are silently ignored.
+ * Dynamic values (template literals, variables) are silently ignored.
  * Returns an empty array when nothing is detected.
  */
-export function scanFurinInstances(serverEntryPath: string): string[] {
+export function scanFurinInstances(serverEntryPath: string): ScannedFurinInstance[] {
   const code = readFileSync(serverEntryPath, "utf8");
   const lang = detectLangFromPath(serverEntryPath);
 
@@ -26,7 +33,7 @@ export function scanFurinInstances(serverEntryPath: string): string[] {
     return [];
   }
 
-  const results: string[] = [];
+  const results: ScannedFurinInstance[] = [];
   walkAST(program, (node) => {
     if (node.type === "CallExpression") {
       checkFurinCall(node as unknown as CallExpression, results);
@@ -36,7 +43,7 @@ export function scanFurinInstances(serverEntryPath: string): string[] {
 }
 
 /** Checks whether `node` is a `furin({ pagesDir: "..." })` call and, if so, pushes the value. */
-function checkFurinCall(node: CallExpression, out: string[]): void {
+function checkFurinCall(node: CallExpression, out: ScannedFurinInstance[]): void {
   const isFurinCall = node.callee.type === "Identifier" && node.callee.name === "furin";
 
   if (!isFurinCall || node.arguments.length === 0) {
@@ -56,8 +63,17 @@ function checkFurinCall(node: CallExpression, out: string[]): void {
 
   const pagesDir = extractStringProperty(firstArg, "pagesDir");
   if (pagesDir !== null) {
-    out.push(pagesDir);
+    const prefix = extractStringProperty(firstArg, "prefix");
+    out.push({ pagesDir, prefix: normalizeScannedPrefix(prefix) });
   }
+}
+
+function normalizeScannedPrefix(prefix: string | null): string {
+  if (prefix === null || prefix === "" || prefix === "/") {
+    return "";
+  }
+  const withSlash = prefix.startsWith("/") ? prefix : `/${prefix}`;
+  return withSlash.endsWith("/") ? withSlash.slice(0, -1) : withSlash;
 }
 
 function isObjectExpressionNode(node: { type: string }): node is ObjectExpression {

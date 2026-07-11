@@ -1,6 +1,7 @@
 import type { Context } from "elysia";
 import { consumePendingInvalidations, revalidatePath } from "../cache/invalidation.ts";
-import { autoInvalidateRegistry } from "./registry.ts";
+import { allInstances } from "../instance.ts";
+import { getAutoInvalidateRegistry } from "./registry.ts";
 import type { InvalidationInput, InvalidationRule } from "./types.ts";
 
 function toRules(input: InvalidationInput): readonly InvalidationRule[] {
@@ -113,8 +114,16 @@ export function appendPendingInvalidationHeader(set: Context["set"]): string[] {
 
 export function revalidateTag(tags: string | readonly string[]): boolean {
   const tagList = typeof tags === "string" ? [tags] : [...tags];
+  // Tags are cross-app by design: with several mounted furin instances a
+  // shared mutation must be able to invalidate pages rendered by any of them.
+  const paths = new Set<string>();
+  for (const instance of allInstances()) {
+    for (const path of getAutoInvalidateRegistry(instance).pathsForTags(tagList)) {
+      paths.add(path);
+    }
+  }
   let deleted = false;
-  for (const path of autoInvalidateRegistry.pathsForTags(tagList)) {
+  for (const path of paths) {
     deleted = revalidatePath(path, "page") || deleted;
   }
   return deleted;

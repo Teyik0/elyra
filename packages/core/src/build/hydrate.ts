@@ -311,7 +311,7 @@ const rootEl = document.getElementById("root") as HTMLElement;
  */
 export function writeDevFiles(
   routes: ResolvedRoute[],
-  { outDir, rootLayout, basePath, clientLogging }: BuildClientOptions,
+  { outDir, rootLayout, basePath, clientLogging, skipRouteTypes }: BuildClientOptions,
   projectRoot: string
 ): void {
   if (!existsSync(outDir)) {
@@ -332,7 +332,9 @@ export function writeDevFiles(
     writeFileSync(indexPath, indexHtml);
   }
 
-  writeRouteTypes(routes, projectRoot);
+  if (!skipRouteTypes) {
+    writeRouteTypes(routes, projectRoot);
+  }
 
   console.log(
     "[furin] Dev files written (.furin/_hydrate.tsx + .furin/index.html + furin-env.d.ts)"

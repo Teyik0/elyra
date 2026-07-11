@@ -14,7 +14,12 @@ const DEFAULT_CONFIG_FILENAMES = [
 
 interface ResolvedCliConfig extends FurinConfig {
   configPath: string | null;
-  pagesDir: string;
+  /**
+   * Only set when the config file declares one — leaving it undefined lets
+   * buildApp fall back to scanning server.ts for `furin({ pagesDir, prefix })`
+   * calls (multi-instance detection).
+   */
+  pagesDir?: string;
   plugins?: Bun.BunPlugin[];
   rootDir: string;
 }
@@ -34,7 +39,6 @@ export async function loadCliConfig(
     return {
       configPath: null,
       rootDir,
-      pagesDir: resolve(rootDir, "src/pages"),
     };
   }
 
@@ -63,6 +67,8 @@ export async function loadCliConfig(
     plugins,
     configPath,
     rootDir: resolvedRootDir,
-    pagesDir: resolve(resolvedRootDir, configToValidate.pagesDir ?? "src/pages"),
+    pagesDir: configToValidate.pagesDir
+      ? resolve(resolvedRootDir, configToValidate.pagesDir)
+      : undefined,
   };
 }

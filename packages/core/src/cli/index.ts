@@ -40,6 +40,7 @@ if (command === "build") {
     options: {
       target: { type: "string" },
       pagesDir: { type: "string" },
+      prefix: { type: "string" },
       config: { type: "string" },
     },
     strict: false,
@@ -48,6 +49,7 @@ if (command === "build") {
   const values = rawValues as {
     target?: string;
     pagesDir?: string;
+    prefix?: string;
     config?: string;
   };
 
@@ -70,9 +72,9 @@ if (command === "build") {
 
   const config = await loadCliConfig(process.cwd(), values.config);
 
-  const isStaticTarget = target === "static";
+  const isServerlessTarget = target === "static" || target === "package";
 
-  const resolvedServerEntry = isStaticTarget
+  const resolvedServerEntry = isServerlessTarget
     ? undefined
     : (() => {
         const entry = resolve(config.rootDir, config.serverEntry ?? "src/server.ts");
@@ -89,7 +91,13 @@ if (command === "build") {
     target: target as BuildTarget | "all",
     compile: resolveCompileMode(compileFlag, config.bun?.compile),
     rootDir: config.rootDir,
-    pagesDir: values.pagesDir ?? config.pagesDir,
+    // --pagesDir/--prefix build a single explicit app; otherwise fall back to
+    // the config's `apps` list (then to server.ts scanning inside buildApp).
+    apps:
+      (values.pagesDir ?? config.pagesDir)
+        ? [{ pagesDir: values.pagesDir ?? (config.pagesDir as string), prefix: values.prefix }]
+        : config.apps,
+    pagesDir: undefined,
     serverEntry: resolvedServerEntry,
     plugins: config.plugins,
     staticConfig: config.static,
@@ -106,7 +114,9 @@ USAGE  furin build [options]
 
 OPTIONS
   --target    ${BUILD_TARGETS.join(" | ")} | all  (default: bun)
+              "package" builds a publishable Elysia-plugin artifact (register.js + factory + client assets)
   --pagesDir  Pages directory
+  --prefix    Mount prefix for the built app (e.g. /admin) — pairs with --pagesDir
   --config    Config file path
   --compile   server | embed  Compile to binary: "server" keeps client on disk, "embed" is self-contained
 `

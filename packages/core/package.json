@@ -84,6 +84,11 @@
     "./env": {
       "types": "./dist/env.d.ts",
       "bun": "./src/env.d.ts"
+    },
+    "./internal": {
+      "types": "./dist/server/internal.d.ts",
+      "bun": "./src/server/internal.ts",
+      "import": "./dist/server/internal.js"
     }
   },
   "scripts": {

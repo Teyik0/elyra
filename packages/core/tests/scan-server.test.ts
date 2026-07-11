@@ -27,7 +27,7 @@ new Elysia().use(furin({ pagesDir: "./src/pages" })).listen(3000);
 `,
       (path) => {
         const result = scanFurinInstances(path);
-        expect(result).toEqual(["./src/pages"]);
+        expect(result).toEqual([{ pagesDir: "./src/pages", prefix: "" }]);
       }
     );
   });
@@ -44,7 +44,32 @@ new Elysia()
 `,
       (path) => {
         const result = scanFurinInstances(path);
-        expect(result).toEqual(["./src/pages/public", "./src/pages/admin"]);
+        expect(result).toEqual([
+          { pagesDir: "./src/pages/public", prefix: "" },
+          { pagesDir: "./src/pages/admin", prefix: "" },
+        ]);
+      }
+    );
+  });
+
+  test("extracts the prefix literal and normalizes it", async () => {
+    await withTmpFile(
+      `
+import { furin } from "furin";
+import Elysia from "elysia";
+new Elysia()
+  .use(furin({ pagesDir: "./src/pages" }))
+  .use(furin({ pagesDir: "./src/admin", prefix: "/admin" }))
+  .use(furin({ pagesDir: "./src/shop", prefix: "shop/" }))
+  .listen(3000);
+`,
+      (path) => {
+        const result = scanFurinInstances(path);
+        expect(result).toEqual([
+          { pagesDir: "./src/pages", prefix: "" },
+          { pagesDir: "./src/admin", prefix: "/admin" },
+          { pagesDir: "./src/shop", prefix: "/shop" },
+        ]);
       }
     );
   });
@@ -59,7 +84,7 @@ new Elysia().use(furin({ ...shared, pagesDir: "./src/pages" })).listen(3000);
 `,
       (path) => {
         const result = scanFurinInstances(path);
-        expect(result).toEqual(["./src/pages"]);
+        expect(result).toEqual([{ pagesDir: "./src/pages", prefix: "" }]);
       }
     );
   });
@@ -153,7 +178,7 @@ new Elysia().use(furin({ pagesDir: "./src/pages" } as FurinOptions)).listen(3000
 `,
       (path) => {
         const result = scanFurinInstances(path);
-        expect(result).toEqual(["./src/pages"]);
+        expect(result).toEqual([{ pagesDir: "./src/pages", prefix: "" }]);
       }
     );
   });
@@ -169,7 +194,7 @@ new Elysia()
 `,
       (path) => {
         const result = scanFurinInstances(path);
-        expect(result).toEqual(["./src/pages"]);
+        expect(result).toEqual([{ pagesDir: "./src/pages", prefix: "" }]);
       }
     );
   });
@@ -187,7 +212,7 @@ app.use(furin({ pagesDir: "./src/admin" })).listen(3001);
       (path) => {
         // First call uses a variable → ignored; second uses a literal → captured.
         const result = scanFurinInstances(path);
-        expect(result).toEqual(["./src/admin"]);
+        expect(result).toEqual([{ pagesDir: "./src/admin", prefix: "" }]);
       }
     );
   });

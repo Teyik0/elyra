@@ -33,9 +33,12 @@ export interface BuildClientResult {
  */
 export async function buildClient(
   routes: ResolvedRoute[],
-  { outDir, rootLayout, plugins, publicPath, basePath, clientLogging }: BuildClientOptions
+  { outDir, rootLayout, plugins, publicPath, basePath, clientLogging, clientDirName }: BuildClientOptions
 ): Promise<BuildClientResult> {
-  const clientDir = join(outDir, "client");
+  // Per-app client dir so several mounted apps build side by side
+  // ("client", "client-admin", …) without clobbering each other.
+  const dirName = clientDirName ?? "client";
+  const clientDir = join(outDir, dirName);
 
   if (!existsSync(outDir)) {
     mkdirSync(outDir, { recursive: true });
@@ -45,7 +48,10 @@ export async function buildClient(
   }
 
   const hydrateCode = generateHydrateEntry(routes, rootLayout, basePath, clientLogging);
-  const hydratePath = join(outDir, "_hydrate.tsx");
+  const hydratePath = join(
+    outDir,
+    dirName === "client" ? "_hydrate.tsx" : `_hydrate-${dirName}.tsx`
+  );
   writeFileSync(hydratePath, hydrateCode);
 
   console.log("[furin] Building production client bundle…");

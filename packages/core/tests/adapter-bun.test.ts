@@ -29,10 +29,16 @@ describe.serial("buildBunTarget compile branches", () => {
 
     await expect(
       buildBunTarget(
-        [],
+        [
+          {
+            pagesDir: join(app.path, "src/pages"),
+            prefix: "",
+            root: { path: join(app.path, "src/pages/root.tsx"), route: {} as never },
+            routes: [],
+          },
+        ],
         app.path,
         join(app.path, ".furin/build"),
-        { path: join(app.path, "src/pages/root.tsx"), route: {} as never },
         null,
         options
       )
@@ -45,10 +51,9 @@ describe.serial("buildBunTarget compile branches", () => {
 
     await withBuildStub(async () => {
       await buildBunTarget(
-        routes,
+        [{ pagesDir: join(app.path, "src/pages"), prefix: "", root, routes }],
         app.path,
         join(app.path, ".furin/build"),
-        root,
         join(app.path, "src/server.ts"),
         { target: "bun", compile: "server" }
       );
@@ -65,10 +70,9 @@ describe.serial("buildBunTarget compile branches", () => {
 
     await withBuildStub(async () => {
       await buildBunTarget(
-        routes,
+        [{ pagesDir: join(app.path, "src/pages"), prefix: "", root, routes }],
         app.path,
         join(app.path, ".furin/build"),
-        root,
         join(app.path, "src/server.ts"),
         { target: "bun", compile: "embed" }
       );
@@ -95,9 +99,13 @@ describe.serial("buildBunTarget compile branches", () => {
 
     await withBuildStub(async () => {
       await expect(
-        buildBunTarget(routes, app.path, join(app.path, ".furin/build"), root, null, {
-          target: "bun",
-        })
+        buildBunTarget(
+          [{ pagesDir: join(app.path, "src/pages"), prefix: "", root, routes }],
+          app.path,
+          join(app.path, ".furin/build"),
+          null,
+          { target: "bun" }
+        )
       ).resolves.toBeDefined();
     });
   });

@@ -5,13 +5,20 @@ import { staticPlugin } from "@elysiajs/static";
 import { type AnyElysia, Elysia, file } from "elysia";
 import { type DrainContext, initLogger } from "evlog";
 import { type EvlogElysiaOptions, evlog } from "evlog/elysia";
-import {
-  _runWithRequestInvalidationScope,
-  consumePendingInvalidations,
-  getBuildId,
-  setBuildId,
-} from "./server/cache/invalidation.ts";
+import { consumePendingInvalidations } from "./server/cache/invalidation.ts";
 import { setSSGCache } from "./server/cache/ssg.ts";
+import {
+  assertPrefixAvailable,
+  createInstance,
+  type FurinInstance,
+  hasRequestScope,
+  markTraffic,
+  normalizePrefix,
+  registerInstance,
+  resolveInstanceByPath,
+  runWithInstanceScope,
+  withInstance,
+} from "./server/instance.ts";
 import type { CompileContext, EmbeddedAppData } from "./server/internal.ts";
 import { getCompileContext } from "./server/internal.ts";
 import { renderRootNotFound, warmSSGCache } from "./server/render/index.ts";
@@ -30,7 +37,6 @@ import {
   createSyncStreamPlugin,
   type FurinSyncOption,
   resolveSyncStreamPath,
-  runWithSyncStreamPath,
 } from "./server/sync/index.ts";
 
 // biome-ignore lint/suspicious/noEmptyInterface: intentionally augmentable via furin-env.d.ts
@@ -38,24 +44,33 @@ export interface FurinCacheTags {}
 
 export type CacheTag = keyof FurinCacheTags extends never ? string : keyof FurinCacheTags;
 
-function resolveClientDirFromArgv(): string {
+import { clientDirNameForPrefix } from "./shared/prefix.ts";
+
+// biome-ignore lint/performance/noBarrelFile: furin.ts is the public package entry
+export { clientDirNameForPrefix } from "./shared/prefix.ts";
+
+function resolveClientDirFromArgv(prefix: string): string {
+  const dirName = clientDirNameForPrefix(prefix);
   return (
-    resolveClientDirFromEnv() ??
-    resolveClientDirFromModuleUrl() ??
-    resolveClientDirFromProcessArgs() ??
-    resolveFallbackClientDir()
+    resolveClientDirFromEnv(dirName) ??
+    resolveClientDirFromModuleUrl(dirName) ??
+    resolveClientDirFromProcessArgs(dirName) ??
+    resolveFallbackClientDir(dirName)
   );
 }
 
-function resolveClientDirFromEnv(): string | null {
+function resolveClientDirFromEnv(dirName: string): string | null {
   const envClientDir = process.env.FURIN_CLIENT_DIR;
   if (!envClientDir) {
     return null;
   }
-  return envClientDir.startsWith("/") ? envClientDir : resolve(process.cwd(), envClientDir);
+  const base = envClientDir.startsWith("/") ? envClientDir : resolve(process.cwd(), envClientDir);
+  // FURIN_CLIENT_DIR points at the ROOT instance's client dir; sibling
+  // instances live next to it under their own dir name.
+  return dirName === "client" ? base : join(dirname(base), dirName);
 }
 
-function resolveClientDirFromModuleUrl(): string | null {
+function resolveClientDirFromModuleUrl(dirName: string): string | null {
   try {
     const moduleUrl = new URL(import.meta.url);
     if (moduleUrl.protocol !== "file:") {
@@ -65,7 +80,7 @@ function resolveClientDirFromModuleUrl(): string | null {
     if (modulePath.includes("/$bunfs/")) {
       return null;
     }
-    const moduleClientDir = join(dirname(modulePath), "client");
+    const moduleClientDir = join(dirname(modulePath), dirName);
     if (existsSync(join(moduleClientDir, "index.html"))) {
       return moduleClientDir;
     }
@@ -75,7 +90,7 @@ function resolveClientDirFromModuleUrl(): string | null {
   return null;
 }
 
-function resolveClientDirFromProcessArgs(): string | null {
+function resolveClientDirFromProcessArgs(dirName: string): string | null {
   const candidates = [
     process.argv[1],
     process.argv[0],
@@ -84,7 +99,7 @@ function resolveClientDirFromProcessArgs(): string | null {
   ].filter((value): value is string => typeof value === "string" && value.length > 0);
 
   for (const candidate of candidates) {
-    const resolved = resolveClientDirFromCandidate(candidate);
+    const resolved = resolveClientDirFromCandidate(candidate, dirName);
     if (resolved) {
       return resolved;
     }
@@ -93,7 +108,7 @@ function resolveClientDirFromProcessArgs(): string | null {
   return null;
 }
 
-function resolveClientDirFromCandidate(candidate: string): string | null {
+function resolveClientDirFromCandidate(candidate: string, dirName: string): string | null {
   const name = basename(candidate);
   if (name === "bun" || name === "node") {
     return null;
@@ -104,46 +119,47 @@ function resolveClientDirFromCandidate(candidate: string): string | null {
 
   const absolute = candidate.startsWith("/") ? candidate : resolve(process.cwd(), candidate);
   if (existsSync(absolute)) {
-    return join(dirname(absolute), "client");
+    return join(dirname(absolute), dirName);
   }
 
   if (!candidate.includes("/")) {
-    return resolveClientDirFromPath(candidate);
+    return resolveClientDirFromPath(candidate, dirName);
   }
 
   return null;
 }
 
-function resolveClientDirFromPath(candidate: string): string | null {
+function resolveClientDirFromPath(candidate: string, dirName: string): string | null {
   const pathEntries = process.env.PATH?.split(":") ?? [];
   for (const dir of pathEntries) {
     const fullPath = join(dir, candidate);
     if (existsSync(fullPath)) {
-      return join(dirname(fullPath), "client");
+      return join(dirname(fullPath), dirName);
     }
   }
   return null;
 }
 
-function resolveFallbackClientDir(): string {
-  const defaultClientDir = resolve(process.cwd(), ".furin/build/bun/client");
+function resolveFallbackClientDir(dirName: string): string {
+  const defaultClientDir = resolve(process.cwd(), ".furin/build/bun", dirName);
   if (existsSync(join(defaultClientDir, "index.html"))) {
     return defaultClientDir;
   }
 
-  return join(process.cwd(), "client");
+  return join(process.cwd(), dirName);
 }
 
 async function setupProdTemplate(
   embedded: EmbeddedAppData | undefined,
-  clientDir: string
+  clientDir: string,
+  instance: FurinInstance
 ): Promise<void> {
   if (embedded) {
     if (!embedded.template) {
       throw new Error("[furin] Embedded app is missing its HTML template (index.html).");
     }
     const html = await Bun.file(embedded.template).text();
-    setProductionTemplateContent(html);
+    setProductionTemplateContent(html, instance);
     return;
   }
 
@@ -151,88 +167,27 @@ async function setupProdTemplate(
   if (!existsSync(templatePath)) {
     throw new Error("[furin] No pre-built assets found. Run `bun run build` first.");
   }
-  setProductionTemplatePath(templatePath);
+  setProductionTemplatePath(templatePath, instance);
 }
 
-/**
- * Registers a HigherOrderFunction on the Elysia instance so that every request
- * runs inside a fresh `AsyncLocalStorage` scope. This isolates
- * `pendingInvalidations` per request, preventing concurrent requests from
- * stealing each other's `revalidatePath()` calls.
- *
- * Uses `app.wrap()` (Elysia HigherOrderFunction) instead of mutating
- * `app.handle`, because handle mutations are lost when the Furin plugin is
- * `.use()`-d by a parent Elysia instance. HigherOrderFunctions survive the
- * plugin merge and wrap the entire composed `map` handler.
- */
-function wrapWithRequestScope(app: AnyElysia, syncStreamPath: string | undefined): Elysia {
-  return app.wrap(
-    (handler, _request) => (ctx: unknown) =>
-      runWithSyncStreamPath(syncStreamPath, () =>
-        _runWithRequestInvalidationScope(() => handler(ctx))
-      )
-  );
-}
-
-function hydrateSSGCacheFromCompileContext(ctx: CompileContext): void {
-  if (!ctx.ssgCache) {
-    return;
-  }
-  for (const [path, entry] of Object.entries(ctx.ssgCache)) {
-    setSSGCache(path, entry);
-  }
-}
-
-/**
- * Main Furin plugin.
- *
- * Returns a standalone Elysia instance (async function) so that routes are
- * properly registered in Elysia's router for SPA navigation to work.
- *
- * ## Usage
- *
- * ```ts
- * new Elysia()
- *   .use(await furin({ ... }))
- *   .listen(3000)
- * ```
- */
-export async function furin({
-  pagesDir,
-  logger,
-  clientLogging,
-  sync,
-}: {
-  pagesDir?: string;
-  logger?: EvlogElysiaOptions;
-  /**
-   * Initialize the browser HTTP log drain in the hydration entry. Off by
-   * default — enabling it adds `evlog/http` drain setup and points browser
-   * events at `/_furin/ingest`. Server-side logging is configured via `logger`
-   * and unaffected.
-   */
-  clientLogging?: boolean;
-  /**
-   * Enables Furin's built-in sync event stream. The opinionated default mounts
-   * Server-Sent Events at `/_furin/sync`; pass an object only for constrained
-   * reverse-proxy deployments that need a custom internal path.
-   */
-  sync?: FurinSyncOption;
-}) {
-  const syncStreamPath = resolveSyncStreamPath(sync);
+/** Evlog wide-event plugin + browser log ingest endpoint for one instance. */
+function createLoggerPlugin(
+  prefix: string,
+  syncStreamPath: string | undefined,
+  logger: EvlogElysiaOptions | undefined
+): Elysia {
   const { exclude: userExclude, ...evlogOptions } = logger ?? {};
-  initLogger({ env: { service: "furin" } });
-
-  const loggerPlugin = new Elysia()
+  return new Elysia()
     .use(
       evlog({
         ...evlogOptions,
+        // Exclude patterns match the PHYSICAL request path — prefix them.
         exclude: [
-          "/_client/**",
-          "/public/**",
-          "/favicon.ico",
-          "/_bun_hmr_entry/**",
-          ...(syncStreamPath ? [syncStreamPath] : []),
+          `${prefix}/_client/**`,
+          `${prefix}/public/**`,
+          `${prefix}/favicon.ico`,
+          `${prefix}/_bun_hmr_entry/**`,
+          ...(syncStreamPath ? [`${prefix}${syncStreamPath}`] : []),
           // Note: /_furin/data is logged with the *logical* path rewritten by
           // createDataEndpoint via useLogger().set({ path }), so SPA navigations
           // appear as "GET /board/123 200" — same shape as a normal SSR nav.
@@ -273,20 +228,133 @@ export async function furin({
         return status("No Content");
       },
       { parse: "json" }
-    );
+    ) as unknown as Elysia;
+}
+
+/**
+ * Registers a HigherOrderFunction on the Elysia instance so that every request
+ * runs inside a fresh instance-bound `AsyncLocalStorage` scope. This isolates
+ * `pendingInvalidations` per request AND binds the request to the furin
+ * instance that owns its path, so render/cache code resolves the right
+ * per-instance state (build ID, template, caches, sync path).
+ *
+ * Uses `app.wrap()` (Elysia HigherOrderFunction) instead of mutating
+ * `app.handle`, because handle mutations are lost when the Furin plugin is
+ * `.use()`-d by a parent Elysia instance. HigherOrderFunctions survive the
+ * plugin merge and wrap the entire composed `map` handler.
+ *
+ * IMPORTANT — multi-instance: HigherOrderFunctions apply to the WHOLE parent
+ * app, so with N mounted furin instances all N wraps run stacked on every
+ * request. The scope guard makes the wrap idempotent (first one wins) and the
+ * owning instance is resolved from the request PATH, never from this
+ * closure — which wrap executes first is therefore irrelevant.
+ */
+function wrapWithRequestScope(app: AnyElysia): Elysia {
+  return app.wrap((handler, request) => (ctx: unknown) => {
+    if (hasRequestScope()) {
+      return handler(ctx);
+    }
+    markTraffic();
+    const req = request ?? (ctx as { request?: Request } | undefined)?.request;
+    const pathname = req ? new URL(req.url).pathname : "/";
+    return runWithInstanceScope(resolveInstanceByPath(pathname), () => handler(ctx));
+  });
+}
+
+function hydrateSSGCacheFromCompileContext(ctx: CompileContext): void {
+  if (!ctx.ssgCache) {
+    return;
+  }
+  for (const [path, entry] of Object.entries(ctx.ssgCache)) {
+    setSSGCache(path, entry);
+  }
+}
+
+/**
+ * Main Furin plugin.
+ *
+ * Returns a standalone Elysia instance (async function) so that routes are
+ * properly registered in Elysia's router for SPA navigation to work.
+ *
+ * ## Usage
+ *
+ * ```ts
+ * new Elysia()
+ *   .use(await furin({ pagesDir: "./src/pages" }))
+ *   .use(await furin({ pagesDir: "./src/admin", prefix: "/admin" }))
+ *   .listen(3000)
+ * ```
+ */
+export async function furin({
+  pagesDir,
+  prefix: rawPrefix,
+  clientDir: explicitClientDir,
+  logger,
+  clientLogging,
+  sync,
+}: {
+  pagesDir?: string;
+  /**
+   * Mount prefix for this app, e.g. `"/admin"`. All pages, framework
+   * endpoints (`/_furin/*`) and client assets (`/_client/*`) are served under
+   * it, and the client bundle is built with the matching basePath. Defaults
+   * to `""` (root). Mounting two furin instances on the same prefix throws.
+   */
+  prefix?: string;
+  /**
+   * Production only: explicit directory holding this app's built client
+   * assets (chunks + index.html template). Packaged furin apps pass their own
+   * `dist/furin/client` here; when omitted the directory is auto-resolved
+   * next to the server artifact.
+   */
+  clientDir?: string;
+  logger?: EvlogElysiaOptions;
+  /**
+   * Initialize the browser HTTP log drain in the hydration entry. Off by
+   * default — enabling it adds `evlog/http` drain setup and points browser
+   * events at `/_furin/ingest`. Server-side logging is configured via `logger`
+   * and unaffected.
+   */
+  clientLogging?: boolean;
+  /**
+   * Enables Furin's built-in sync event stream. The opinionated default mounts
+   * Server-Sent Events at `/_furin/sync`; pass an object only for constrained
+   * reverse-proxy deployments that need a custom internal path.
+   */
+  sync?: FurinSyncOption;
+}) {
+  const prefix = normalizePrefix(rawPrefix);
+  const syncStreamPath = resolveSyncStreamPath(sync);
+  initLogger({ env: { service: "furin" } });
+  const loggerPlugin = createLoggerPlugin(prefix, syncStreamPath, logger);
 
   const cwd = process.cwd();
-  const ctx = getCompileContext();
-  const resolvedPagesDir = ctx?.rootPath
-    ? dirname(ctx.rootPath)
-    : resolve(cwd, pagesDir ?? "src/pages");
+  // The pagesDir param drives which compile context this instance loads. In a
+  // deployed binary the cwd-resolved path may miss the build-time key — the
+  // lookup then falls back to the (stable) prefix, then to the sole context.
+  const paramPagesDir = resolve(cwd, pagesDir ?? "src/pages");
+  const ctx = getCompileContext(paramPagesDir, prefix);
+  const resolvedPagesDir = ctx?.rootPath ? dirname(ctx.rootPath) : paramPagesDir;
 
   // Unique name per pagesDir to avoid Elysia's name-based plugin dedup.
-  const instanceName = `furin-${resolvedPagesDir.replaceAll("\\", "/")}`;
+  const instanceName = `furin-${prefix}-${resolvedPagesDir.replaceAll("\\", "/")}`;
+
+  // Same prefix + different pagesDir is a mount collision — fail fast, but
+  // only REGISTER right before returning so a failed mount leaves no stale
+  // registration behind. All per-app runtime state (build ID, caches,
+  // template, sync path) hangs off this object; requests are bound to it by
+  // path in wrapWithRequestScope.
+  const normalizedPagesDir = resolvedPagesDir.replaceAll("\\", "/");
+  assertPrefixAvailable(prefix, normalizedPagesDir);
+  const instance = createInstance(prefix, normalizedPagesDir);
+  instance.syncStreamPath = syncStreamPath;
 
   // ── Dev: Bun native HMR ────────────────────────────────────────────────
   if (IS_DEV) {
-    const furinDir = resolve(cwd, ".furin");
+    // Each instance gets its own generated-files dir so two mounted apps do
+    // not overwrite each other's hydrate entry (root keeps plain `.furin`).
+    const instanceSlug = prefix === "" ? "" : prefix.slice(1).replaceAll("/", "__");
+    const furinDir = resolve(cwd, ".furin", instanceSlug);
     // Lazy import — build pipeline has native deps not available in compiled binaries
     const { registerDevPagePlugin } = await import("./server/dev-page-plugin.ts");
     registerDevPagePlugin();
@@ -303,9 +371,12 @@ export async function furin({
       {
         outDir: furinDir,
         rootLayout: root.path,
-        basePath: "",
-        publicPath: "/_client/",
+        basePath: prefix,
+        publicPath: `${prefix}/_client/`,
         clientLogging: clientLogging ?? false,
+        // furin-env.d.ts is one file at the project root — only the root
+        // instance owns it, otherwise mounted apps clobber each other's types.
+        skipRouteTypes: prefix !== "",
       },
       cwd
     );
@@ -313,14 +384,23 @@ export async function furin({
     const publicDir = resolve(cwd, "public");
     const publicExists = existsSync(publicDir);
 
-    const devApp = new Elysia({ name: instanceName, seed: resolvedPagesDir })
+    // Routes registered below are LOGICAL — Elysia's `prefix` makes them
+    // physical when this plugin is merged into the parent app (child prefixes
+    // like staticPlugin's compose underneath).
+    const devApp = new Elysia({
+      name: instanceName,
+      seed: resolvedPagesDir,
+      prefix: prefix || undefined,
+    })
       .use(loggerPlugin)
-      .onError({ as: "global" }, async ({ code, request }) => {
+      // Local scope (default) — a global hook would leak onto sibling furin
+      // instances mounted on the same parent app.
+      .onError(async ({ code, request }) => {
         if (code === "NOT_FOUND") {
           return await renderRootNotFound(root, request);
         }
       })
-      .onAfterHandle({ as: "global" }, ({ set }) => {
+      .onAfterHandle(({ set }) => {
         // Forward pending revalidation paths so the client can bust its prefetch cache
         const pending = consumePendingInvalidations();
         if (pending.length > 0) {
@@ -338,15 +418,21 @@ export async function furin({
           : () => new Response(null, { status: 404 })
       )
       .use(createDevInspectorPlugin())
-      .use(syncStreamPath ? createSyncStreamPlugin(syncStreamPath) : new Elysia())
+      .use(
+        syncStreamPath
+          ? createSyncStreamPlugin(syncStreamPath, `${prefix}${syncStreamPath}`)
+          : new Elysia()
+      )
       .use(createDataEndpoint(routes))
       .use((app) => {
         for (const route of routes) {
           app.use(createRoutePlugin(route, root, undefined, searchRoutes));
         }
         return app;
-      });
-    return wrapWithRequestScope(devApp, syncStreamPath);
+      })
+      .use(createNotFoundHandling(prefix, routes, root));
+    registerInstance(instance);
+    return wrapWithRequestScope(devApp);
   }
 
   // ── Production ──────────────────────────────────────────────────────────
@@ -356,24 +442,35 @@ export async function furin({
   const { root, routes } = loadProdRoutes(ctx);
   const searchRoutes = createSearchRouteMetadata(routes);
   const prodBuildId = ctx.buildId ?? "";
-  setBuildId(prodBuildId);
-  hydrateSSGCacheFromCompileContext(ctx);
+  instance.buildId = prodBuildId;
+  // Init-time writes target THIS instance explicitly — with several mounted
+  // apps there is no ambient request scope to resolve it from.
+  withInstance(instance, () => {
+    hydrateSSGCacheFromCompileContext(ctx);
+  });
 
   const embedded = ctx?.embedded;
-  const clientDir = embedded ? "" : resolveClientDirFromArgv();
-  await setupProdTemplate(embedded, clientDir);
+  const clientDir = embedded ? "" : (explicitClientDir ?? resolveClientDirFromArgv(prefix));
+  await setupProdTemplate(embedded, clientDir, instance);
 
-  const prodApp = new Elysia({ name: instanceName, seed: resolvedPagesDir })
+  const clientAssetPrefix = `${prefix}/_client/`;
+  const prodApp = new Elysia({
+    name: instanceName,
+    seed: resolvedPagesDir,
+    prefix: prefix || undefined,
+  })
     .use(loggerPlugin)
-    .onError({ as: "global" }, async ({ code, request }) => {
+    // Local scope (default) — a global hook would leak onto sibling furin
+    // instances mounted on the same parent app.
+    .onError(async ({ code, request }) => {
       if (code === "NOT_FOUND") {
         return await renderRootNotFound(root, request);
       }
     })
-    .onAfterHandle({ as: "global" }, ({ path, set }) => {
+    .onAfterHandle(({ path, set }) => {
       // Content-hashed client assets are permanently cacheable — browsers never need to
       // revalidate them because any change produces a new filename.
-      if (path.startsWith("/_client/")) {
+      if (path.startsWith(clientAssetPrefix)) {
         set.headers["cache-control"] = "public, max-age=31536000, immutable";
       }
       // Forward pending revalidation paths so the client can bust its prefetch cache
@@ -382,9 +479,8 @@ export async function furin({
         set.headers["x-furin-revalidate"] = pending.join(",");
       }
       // Tell the client the current build ID so it can detect stale deploys
-      const buildId = getBuildId();
-      if (buildId) {
-        set.headers["x-furin-build-id"] = buildId;
+      if (instance.buildId) {
+        set.headers["x-furin-build-id"] = instance.buildId;
       }
     })
     .onStart(async ({ server }) => {
@@ -392,7 +488,9 @@ export async function furin({
         return;
       }
       const origin = server?.url?.origin ?? "http://localhost:3000";
-      await warmSSGCache(routes, root, origin, searchRoutes);
+      // Synthetic (non-request) renders — bind them to this instance so the
+      // render pipeline resolves its template/caches, not a sibling's.
+      await withInstance(instance, () => warmSSGCache(routes, root, origin, searchRoutes));
     })
     .use(
       await (async () => {
@@ -431,18 +529,58 @@ export async function furin({
         return app;
       })()
     )
-    .use(syncStreamPath ? createSyncStreamPlugin(syncStreamPath) : new Elysia())
+    .use(
+      syncStreamPath
+        ? createSyncStreamPlugin(syncStreamPath, `${prefix}${syncStreamPath}`)
+        : new Elysia()
+    )
     .use(createDataEndpoint(routes))
     .use((app) => {
       for (const route of routes) {
         app.use(createRoutePlugin(route, root, prodBuildId, searchRoutes));
       }
       return app;
-    });
-  return wrapWithRequestScope(prodApp, syncStreamPath);
+    })
+    .use(createNotFoundHandling(prefix, routes, root));
+  registerInstance(instance);
+  return wrapWithRequestScope(prodApp);
 }
 
-// biome-ignore lint/performance/noBarrelFile: furin.ts is the public package entry
+/**
+ * 404 handling per mount position:
+ *
+ * - ROOT instance (`prefix === ""`): the historical `{as:"global"}`
+ *   onError(NOT_FOUND) hook — it owns the root scope, and a parent `.onError`
+ *   registered BEFORE `.use(furin)` still wins (documented escape hatch for
+ *   JSON API 404s).
+ * - PREFIXED instance: a global hook would leak onto sibling apps, and a
+ *   local one never sees unmatched paths (they belong to no route). Instead
+ *   the instance registers a lowest-priority catch-all under its own prefix;
+ *   the router prefers every more-specific route, so this only fires for
+ *   paths no page matched. Skipped when the app defines its own `[...rest]`
+ *   catch-all page.
+ */
+function createNotFoundHandling(
+  prefix: string,
+  routes: Array<{ pattern: string }>,
+  root: Parameters<typeof renderRootNotFound>[0]
+): Elysia {
+  const app = new Elysia();
+  if (prefix === "") {
+    app.onError({ as: "global" }, async ({ code, request }) => {
+      if (code === "NOT_FOUND") {
+        return await renderRootNotFound(root, request);
+      }
+    });
+    return app;
+  }
+  if (routes.some((route) => route.pattern === "/*")) {
+    return app;
+  }
+  app.get("/*", ({ request }) => renderRootNotFound(root, request));
+  return app;
+}
+
 export { FurinErrorBoundary, FurinNotFoundBoundary } from "./client/boundaries.tsx";
 // ── Public API re-export ──────────────────────────────────────────────────────
 // biome-ignore-start lint/performance/noBarrelFile: intentional — furin.ts is the public package entry

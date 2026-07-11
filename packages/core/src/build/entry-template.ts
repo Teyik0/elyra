@@ -17,11 +17,15 @@ const _ext = _pkgSrcDir.endsWith("/src") ? ".ts" : ".js";
 const INTERNAL_MODULE_PATH = `${_pkgSrcDir}/server/internal${_ext}`;
 const RUNTIME_ENV_MODULE_PATH = `${_pkgSrcDir}/server/runtime-env${_ext}`;
 
-export interface EntryTemplateOptions {
+/** One app's compile context payload — the generated entry can carry several. */
+export interface EntryAppContext {
   buildId?: string;
+  /** Extra lines injected inside this app's `__setCompileContext({...})` call. */
   extraContext?: string[];
+  /** Extra import lines this app needs (embedded asset imports). */
   extraImports?: string[];
-  headerComment: string;
+  /** Mount prefix baked into the context for runtime lookup (`""` = root). */
+  prefix?: string;
   rootConventions?: { errorPath?: string; notFoundPath?: string };
   rootPath: string;
   routeMetadata?: Record<
@@ -36,22 +40,47 @@ export interface EntryTemplateOptions {
     }
   >;
   routes: Array<{ mode: "ssr" | "ssg" | "isr"; path: string; pattern: string }>;
-  serverEntry: string;
   ssgCache?: Record<string, SsgCacheEntry>;
 }
 
+export interface EntryTemplateOptions {
+  apps: EntryAppContext[];
+  headerComment: string;
+  /**
+   * - "boot" (default): forces production mode and dynamically imports the
+   *   server entry after registering contexts — the whole app's entrypoint.
+   * - "register": ONLY registers contexts. Emitted by `--target package` as a
+   *   side-effect module the HOST app imports; it must not touch dev mode or
+   *   NODE_ENV (the host decides), and it imports furin internals via the
+   *   package specifier so the host and the register module share ONE copy of
+   *   the context registry (`packages: "external"` keeps it unbundled).
+   */
+  mode?: "boot" | "register";
+  /**
+   * Server entry to boot after context registration. Omitted in package
+   * (register-module) mode where the entry only registers contexts.
+   */
+  serverEntry?: string;
+}
+
 /** Unified options for generating a build entry (compile or disk-based). */
-export interface BuildEntryOptions extends Omit<EntryTemplateOptions, "headerComment"> {
-  outDir: string;
+export interface BuildEntryOptions {
+  apps: Array<
+    EntryAppContext & {
+      /** Embed mode: bundles this app's client assets via `with { type: "file" }`. */
+      embed?: { clientDir: string };
+    }
+  >;
   headerComment?: string;
-  /** Embed mode: bundles client assets into the binary via `with { type: "file" }`. */
-  embed?: { clientDir: string };
+  outDir: string;
+  /** Project-level public/ dir — embedded into the FIRST app's assets only. */
   publicDir?: string;
+  serverEntry?: string;
 }
 
 function collectConventionPaths(
-  rootConventions: EntryTemplateOptions["rootConventions"],
-  routeMetadata: EntryTemplateOptions["routeMetadata"]
+  rootConventions: EntryAppContext["rootConventions"],
+  routeMetadata: EntryAppContext["routeMetadata"]
 ): string[] {
   const paths: string[] = [];
   if (rootConventions?.errorPath) {
@@ -75,67 +104,44 @@ function collectConventionPaths(
   return [...new Set(paths)];
 }
 
-export function buildEntrySource(options: EntryTemplateOptions): string {
-  const {
-    buildId,
-    headerComment,
-    rootPath,
-    routes,
-    serverEntry,
-    rootConventions,
-    routeMetadata,
-    ssgCache,
-  } = options;
-  let { extraImports, extraContext } = options;
-  if (extraImports === undefined) {
-    extraImports = [];
-  }
-  if (extraContext === undefined) {
-    extraContext = [];
-  }
-
+/** Emits one app's module imports + `__setCompileContext({...})` call. */
+function buildAppContextBlock(
+  app: EntryAppContext,
+  varPrefix: string
+): { contextLines: string[]; importLines: string[] } {
   const allModulePaths = [
-    rootPath,
-    ...routes.map((r) => r.path),
-    ...collectConventionPaths(rootConventions, routeMetadata),
+    app.rootPath,
+    ...app.routes.map((r) => r.path),
+    ...collectConventionPaths(app.rootConventions, app.routeMetadata),
   ];
-  const moduleImports: string[] = [];
+  const importLines: string[] = [];
   const moduleEntries: string[] = [];
 
   for (let i = 0; i < allModulePaths.length; i++) {
     const absPath = (allModulePaths[i] as string).replace(/\\/g, "/");
-    const varName = `_mod${i}`;
-    moduleImports.push(`import * as ${varName} from ${JSON.stringify(absPath)};`);
+    const varName = `${varPrefix}mod${i}`;
+    importLines.push(`import * as ${varName} from ${JSON.stringify(absPath)};`);
     moduleEntries.push(`  ${JSON.stringify(absPath)}: ${varName},`);
   }
 
-  const routeEntries = routes.map(
+  const routeEntries = app.routes.map(
     (r) =>
       `    { pattern: ${JSON.stringify(r.pattern)}, path: ${JSON.stringify(r.path.replace(/\\/g, "/"))}, mode: ${JSON.stringify(r.mode)} },`
   );
 
-  const rootConventionsLine = rootConventions
-    ? `  rootConventions: ${JSON.stringify(rootConventions)},`
+  const rootConventionsLine = app.rootConventions
+    ? `  rootConventions: ${JSON.stringify(app.rootConventions)},`
     : "";
-  const routeMetadataLine = routeMetadata
-    ? `  routeMetadata: ${JSON.stringify(routeMetadata)},`
+  const routeMetadataLine = app.routeMetadata
+    ? `  routeMetadata: ${JSON.stringify(app.routeMetadata)},`
     : "";
-  const ssgCacheLine = ssgCache ? `  ssgCache: ${JSON.stringify(ssgCache)},` : "";
+  const ssgCacheLine = app.ssgCache ? `  ssgCache: ${JSON.stringify(app.ssgCache)},` : "";
 
-  const lines = [
-    headerComment,
-    `import { __setCompileContext } from ${JSON.stringify(INTERNAL_MODULE_PATH)};`,
-    `import { __setDevMode } from ${JSON.stringify(RUNTIME_ENV_MODULE_PATH)};`,
-    ...moduleImports,
-    ...(extraImports.length > 0 ? ["", ...extraImports] : []),
-    "",
-    "// Force production mode — Bun may inline process.env.NODE_ENV at bundle time.",
-    "__setDevMode(false);",
-    'process.env.NODE_ENV = "production";',
-    "",
+  const contextLines = [
     "__setCompileContext({",
-    `  buildId: ${JSON.stringify(buildId ?? "")},`,
-    `  rootPath: ${JSON.stringify(rootPath.replace(/\\/g, "/"))},`,
+    `  buildId: ${JSON.stringify(app.buildId ?? "")},`,
+    `  prefix: ${JSON.stringify(app.prefix ?? "")},`,
+    `  rootPath: ${JSON.stringify(app.rootPath.replace(/\\/g, "/"))},`,
     rootConventionsLine,
     "  modules: {",
     ...moduleEntries,
@@ -145,11 +151,55 @@ export function buildEntrySource(options: EntryTemplateOptions): string {
     "  ],",
     routeMetadataLine,
     ssgCacheLine,
-    ...extraContext,
+    ...(app.extraContext ?? []),
     "});",
+  ];
+
+  return { contextLines, importLines };
+}
+
+export function buildEntrySource(options: EntryTemplateOptions): string {
+  const { apps, headerComment, serverEntry } = options;
+  const mode = options.mode ?? "boot";
+  const internalSpecifier =
+    mode === "register" ? "@teyik0/furin/internal" : INTERNAL_MODULE_PATH;
+
+  const importLines: string[] = [];
+  const contextBlocks: string[] = [];
+
+  for (let appIndex = 0; appIndex < apps.length; appIndex++) {
+    const app = apps[appIndex] as EntryAppContext;
+    // Per-app variable namespace so several apps' module/asset imports never
+    // collide inside the single generated entry.
+    const varPrefix = apps.length === 1 ? "_" : `_a${appIndex}_`;
+    const block = buildAppContextBlock(app, varPrefix);
+    importLines.push(...block.importLines);
+    if (app.extraImports && app.extraImports.length > 0) {
+      importLines.push("", ...app.extraImports);
+    }
+    contextBlocks.push("", ...block.contextLines);
+  }
+
+  const lines = [
+    headerComment,
+    `import { __setCompileContext } from ${JSON.stringify(internalSpecifier)};`,
+    ...(mode === "boot"
+      ? [`import { __setDevMode } from ${JSON.stringify(RUNTIME_ENV_MODULE_PATH)};`]
+      : []),
+    ...importLines,
+    ...(mode === "boot"
+      ? [
+          "",
+          "// Force production mode — Bun may inline process.env.NODE_ENV at bundle time.",
+          "__setDevMode(false);",
+          'process.env.NODE_ENV = "production";',
+        ]
+      : []),
+    ...contextBlocks,
     "",
-    `await import(${JSON.stringify(serverEntry.replace(/\\/g, "/"))});`,
-    "",
+    ...(serverEntry
+      ? [`await import(${JSON.stringify(serverEntry.replace(/\\/g, "/"))});`, ""]
+      : []),
   ];
 
   return lines.join("\n");
