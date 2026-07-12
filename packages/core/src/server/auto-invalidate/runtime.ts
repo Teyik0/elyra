@@ -127,17 +127,20 @@ export function revalidateTag(tags: string | readonly string[]): boolean {
   let deleted = false;
   const purgedPaths = new Set<string>();
   for (const instance of allInstances()) {
+    // Registry paths are LOGICAL (unprefixed); the CDN caches the PHYSICAL
+    // request URL, so prefix each with the instance's mount prefix before
+    // queueing it for purge — otherwise a mounted app's `/admin/x` stays stale.
     for (const path of getAutoInvalidateRegistry(instance).pathsForTags(tagList)) {
       const result = revalidatePathForInstance(instance, path, "page");
       deleted = result.deleted || deleted;
-      purgedPaths.add(path);
+      purgedPaths.add(`${instance.prefix}${path}`);
       for (const purged of result.purgedPaths) {
-        purgedPaths.add(purged);
+        purgedPaths.add(`${instance.prefix}${purged}`);
       }
     }
   }
   // One batched CDN purge — the CDN sits in front of every mounted app, so
-  // logical + purged paths from all instances go out together, deduped.
+  // physical paths from all instances go out together, deduped.
   callCachePurger([...purgedPaths]);
   return deleted;
 }

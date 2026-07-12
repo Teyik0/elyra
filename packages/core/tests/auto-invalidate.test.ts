@@ -39,6 +39,7 @@ import {
   getDevISRLoaderCache,
   getDevSSGLoaderCache,
   isrCache,
+  setCachePurger,
   setDevISRLoaderCache,
   setDevSSGLoaderCache,
   setISRCache,
@@ -122,6 +123,28 @@ describe("revalidateTag", () => {
     expect(deleted).toBe(true);
     expect(withInstance(a, () => isrCache.has("/x"))).toBe(false);
     expect(withInstance(b, () => isrCache.has("/x"))).toBe(true);
+  });
+
+  test("purges the mounted app's PHYSICAL (prefixed) URL, not the logical path", async () => {
+    // The CDN caches physical request URLs, so a `/admin`-mounted instance's
+    // logical "/x" must be purged as "/admin/x".
+    const admin = registerInstance(createInstance("/admin", "/apps/admin"));
+    const purged: string[][] = [];
+    setCachePurger((paths) => {
+      purged.push(paths);
+      return Promise.resolve();
+    });
+
+    withInstance(admin, () => {
+      setISRCache("/x", { generatedAt: Date.now(), html: "admin:x", revalidate: 60 });
+      autoInvalidateRegistry.registerLoaderTags("/x", ["shared"]);
+    });
+
+    revalidateTag("shared");
+    await Bun.sleep(10);
+
+    expect(purged.flat()).toContain("/admin/x");
+    expect(purged.flat()).not.toContain("/x");
   });
 
   test("cache reset unregisters auto-invalidate entries on the owning instance", () => {

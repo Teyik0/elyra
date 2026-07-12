@@ -104,7 +104,7 @@ describe.serial("CLI/build Bun feature", () => {
     expect(sourcemap).toBe("none");
   });
 
-  test("buildApp() rejects apps without a root.tsx layout", () => {
+  test("buildApp() rejects apps without a root.tsx layout", async () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
     removeAppPath(app.path, "src/pages/root.tsx");
     writeAppFile(
@@ -129,14 +129,14 @@ describe.serial("CLI/build Bun feature", () => {
       ].join("\n")
     );
 
-    expect(buildApp({ rootDir: app.path, target: "bun" })).rejects.toThrow();
+    await expect(buildApp({ rootDir: app.path, target: "bun" })).rejects.toThrow();
   });
 
-  test("buildApp() rejects two prefixes whose client-dir slugs collide", () => {
+  test("buildApp() rejects two prefixes whose client-dir slugs collide", async () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
 
     // /a-b and /a/b both slug to client-a-b — must fail before any output is written.
-    expect(
+    await expect(
       buildApp({
         rootDir: app.path,
         target: "bun",
@@ -148,10 +148,10 @@ describe.serial("CLI/build Bun feature", () => {
     ).rejects.toThrow('both map to the client directory "client-a-b"');
   });
 
-  test("buildApp() rejects an app prefix without a leading slash", () => {
+  test("buildApp() rejects an app prefix without a leading slash", async () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
 
-    expect(
+    await expect(
       buildApp({
         rootDir: app.path,
         target: "bun",
