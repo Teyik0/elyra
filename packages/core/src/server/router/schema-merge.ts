@@ -37,7 +37,7 @@ export function mergeRouteSchemas(
 
   const properties = Object.assign(
     {},
-    ...schemas.map((schema) => (schema.properties as SchemaObject) ?? {})
+    ...schemas.map((schema) => schema.properties as SchemaObject)
   );
   const options = Object.assign(
     {},

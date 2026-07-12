@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: HMR polling and invalidation are intentionally sequential
 import { existsSync } from "node:fs";
 import type { Context } from "elysia";
 import type { RuntimePage, RuntimeRoute } from "../../client.ts";
@@ -14,7 +15,8 @@ import {
 } from "../cache/dev-loader.ts";
 import { type CompileContext, getCompileContext } from "../internal.ts";
 import { resolvePath } from "../render/assemble.ts";
-import { type LoaderResult, renderSSR, runLoaders } from "../render/index.ts";
+import { type LoaderResult, runLoaders } from "../render/loaders.ts";
+import { renderSSR } from "../render/ssr.ts";
 import { collectRouteTags, getSourceModuleCandidates, isModuleNotFoundError } from "./discovery.ts";
 import { collectIntermediateLayoutDirs, resolveMode } from "./patterns.ts";
 import type { ResolvedRoute, RootLayout } from "./types.ts";
@@ -145,7 +147,7 @@ export async function refreshLayoutChain(
     // whether the export is currently a valid route (the chain entry was
     // populated by the initial import and should be revisited on the next
     // successful HMR cycle).
-    chainIdx++;
+    chainIdx += 1;
   }
 }
 

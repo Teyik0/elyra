@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noJsxPropsBind: delete button handler depends on board-specific mutation state
 import { useSync } from "@teyik0/furin/client";
 import { useState } from "react";
 import { apiClient } from "@/lib/api";

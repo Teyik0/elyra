@@ -8,7 +8,7 @@ import { normalizePrefix } from "../server/instance.ts";
 import { loadCliConfig } from "./config.ts";
 
 const argv = process.argv.slice(2);
-const command = argv[0];
+const [command] = argv;
 
 function log(msg: string): void {
   console.log(`\x1b[32m◆\x1b[0m ${msg}`);

@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: integration test polling must wait between retries
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { extractDevClientEntry, getFreePort } from "./helpers/hmr.ts";
@@ -106,7 +107,7 @@ describe.serial("dev HMR", () => {
 
     // Wait for server to be ready (poll with retries)
     let ready = false;
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 80; i += 1) {
       try {
         const r = await fetch(`http://localhost:${port}/`);
         if (r.ok) {
@@ -146,7 +147,7 @@ describe.serial("dev HMR", () => {
 
     // Poll until SSR returns updated content (or timeout after ~10s)
     let html = "";
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 40; i += 1) {
       html = await (await fetch(`http://localhost:${port}/`)).text();
       if (html.includes("Updated via HMR")) {
         break;
@@ -178,7 +179,7 @@ describe.serial("dev HMR", () => {
 
     // Poll until SSR reflects the second edit (or timeout after ~10s)
     let html = "";
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 40; i += 1) {
       html = await (await fetch(`http://localhost:${port}/`)).text();
       if (html.includes("Second edit works")) {
         break;
@@ -198,7 +199,7 @@ describe.serial("dev HMR", () => {
     let response: Response | null = null;
     let html = "";
 
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 40; i += 1) {
       response = await fetch(`http://localhost:${port}/docs`);
       html = await response.text();
       if (response.ok && html.includes("root-v1") && html.includes("Mobile nav")) {
@@ -226,7 +227,7 @@ describe.serial("dev HMR", () => {
 
     let updatedResponse: Response | null = null;
     let updatedHtml = "";
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 40; i += 1) {
       updatedResponse = await fetch(`http://localhost:${port}/docs`);
       updatedHtml = await updatedResponse.text();
       if (updatedResponse.ok && updatedHtml.includes("root-v2")) {
@@ -292,7 +293,7 @@ describe.serial("dev HMR", () => {
     // would keep `/` pinned on `initialBundle` indefinitely.
     let refreshedHomeChunk: string | null = null;
     let latestHmrShell: string | null = initialBundle;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 40; i += 1) {
       const hmrEntryHtml = await (await fetch(`http://localhost:${port}/_bun_hmr_entry`)).text();
       latestHmrShell = extractDevClientEntry(hmrEntryHtml);
       const homeHtml = await (await fetch(`http://localhost:${port}/`)).text();

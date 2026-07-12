@@ -5,6 +5,7 @@ import {
   isValidElement,
   type ReactElement,
   type ReactNode,
+  use,
 } from "react";
 import { decodeFlight } from "./client-codec.ts";
 import { RSC_SOURCE, SLOT_MARKER } from "./symbols.ts";
@@ -104,9 +105,9 @@ function resolveSlots(node: ReactNode, slots: object): ReactNode {
   });
 }
 
-export async function CompositeComponent<TProps extends object>(
+export function CompositeComponent<TProps extends object>(
   props: CompositeComponentProps<TProps>
-): Promise<ReactNode> {
+): ReactNode {
   const { src, ...slots } = props;
-  return resolveSlots((await src[RSC_SOURCE].tree) as ReactNode, slots);
+  return resolveSlots(use(src[RSC_SOURCE].tree) as ReactNode, slots);
 }

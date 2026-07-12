@@ -18,21 +18,24 @@ export async function stage5Generation(ctx: PipelineContext): Promise<void> {
     // Ensure the target directory exists
     await mkdir(ctx.targetDir, { recursive: true });
 
-    for (const file of ctx.fileTree) {
-      const destPath = resolve(ctx.targetDir, file.relativePath);
-      await mkdir(dirname(destPath), { recursive: true });
+    const writtenFiles = await Promise.all(
+      ctx.fileTree.map(async (file) => {
+        const destPath = resolve(ctx.targetDir, file.relativePath);
+        await mkdir(dirname(destPath), { recursive: true });
 
-      if (file.kind === "ejs") {
-        const content = await renderEjsFile(file.sourcePath, vars);
-        await Bun.write(destPath, content);
-        file.content = content;
-      } else {
-        const content = await Bun.file(file.sourcePath).bytes();
-        await Bun.write(destPath, content);
-      }
+        if (file.kind === "ejs") {
+          const content = await renderEjsFile(file.sourcePath, vars);
+          await Bun.write(destPath, content);
+          file.content = content;
+        } else {
+          const content = await Bun.file(file.sourcePath).bytes();
+          await Bun.write(destPath, content);
+        }
 
-      ctx.writtenFiles.push(destPath);
-    }
+        return destPath;
+      })
+    );
+    ctx.writtenFiles.push(...writtenFiles);
 
     s.stop(`Created ${ctx.writtenFiles.length} files.`);
   } catch (error) {

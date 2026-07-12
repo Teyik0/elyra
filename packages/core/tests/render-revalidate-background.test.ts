@@ -35,8 +35,15 @@ function createMockLoaderContext(overrides = {}) {
   };
 }
 
-async function waitForBackground() {
-  await new Promise((resolve) => setTimeout(resolve, 50));
+async function waitForBackground(predicate, message) {
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(message);
 }
 
 __setDevMode(false);
@@ -47,53 +54,60 @@ const root = result.root;
 
 __resetCacheState();
 let staleHtml = "<html>stale-redirect</html>";
-isrCache.set("/isr-page", { generatedAt: 0, html: staleHtml, revalidate: 60 });
+isrCache.set("/isr-page/redirect", { generatedAt: 0, html: staleHtml, revalidate: 60 });
+let revalidationAttempts = 0;
 let route = {
   ...isrRoute,
   page: {
     ...isrRoute.page,
     loader: () => {
+      revalidationAttempts += 1;
       throw new Response(null, { headers: { Location: "/foo" }, status: 302 });
     },
   },
+  pattern: "/isr-page/redirect",
 };
-let html = await handleISR(route, createMockLoaderContext({ path: "/isr-page" }), root, "");
+let html = await handleISR(route, createMockLoaderContext({ path: "/isr-page/redirect" }), root, "");
 assert(html === staleHtml, "redirect revalidation returns stale html");
-await waitForBackground();
-assert(isrCache.get("/isr-page")?.html === staleHtml, "redirect revalidation keeps cache");
+await waitForBackground(() => revalidationAttempts === 1, "redirect revalidation did not settle");
+assert(isrCache.get("/isr-page/redirect")?.html === staleHtml, "redirect revalidation keeps cache");
 
 __resetCacheState();
 staleHtml = "<html>stale-error</html>";
-isrCache.set("/isr-page", { generatedAt: 0, html: staleHtml, revalidate: 60 });
+isrCache.set("/isr-page/error", { generatedAt: 0, html: staleHtml, revalidate: 60 });
+revalidationAttempts = 0;
 route = {
   ...isrRoute,
   page: {
     ...isrRoute.page,
     loader: () => {
+      revalidationAttempts += 1;
       throw new Error("bg-revalidation-boom");
     },
   },
+  pattern: "/isr-page/error",
 };
-html = await handleISR(route, createMockLoaderContext({ path: "/isr-page" }), root, "");
+html = await handleISR(route, createMockLoaderContext({ path: "/isr-page/error" }), root, "");
 assert(html === staleHtml, "error revalidation returns stale html");
-await waitForBackground();
-assert(isrCache.get("/isr-page")?.html === staleHtml, "error revalidation keeps cache");
+await waitForBackground(() => revalidationAttempts === 1, "error revalidation did not settle");
+assert(isrCache.get("/isr-page/error")?.html === staleHtml, "error revalidation keeps cache");
 
 __resetCacheState();
 staleHtml = "<html>stale-not-found</html>";
-isrCache.set("/isr-page", { generatedAt: 0, html: staleHtml, revalidate: 60 });
+isrCache.set("/isr-page/not-found", { generatedAt: 0, html: staleHtml, revalidate: 60 });
 route = {
   ...isrRoute,
   page: {
     ...isrRoute.page,
     loader: () => notFound({ message: "gone" }),
   },
+  pattern: "/isr-page/not-found",
 };
-html = await handleISR(route, createMockLoaderContext({ path: "/isr-page" }), root, "");
+html = await handleISR(route, createMockLoaderContext({ path: "/isr-page/not-found" }), root, "");
 assert(html === staleHtml, "not-found revalidation returns stale html");
-await waitForBackground();
-assert(!isrCache.has("/isr-page"), "not-found revalidation invalidates cache");
-const missCtx = createMockLoaderContext({ path: "/isr-page" });
+await waitForBackground(() => !isrCache.has("/isr-page/not-found"), "not-found revalidation did not invalidate cache");
+assert(!isrCache.has("/isr-page/not-found"), "not-found revalidation invalidates cache");
+const missCtx = createMockLoaderContext({ path: "/isr-page/not-found" });
 await handleISR(route, missCtx, root, "");
 assert(missCtx.set.status === 404, "not-found miss sets status");
 `;

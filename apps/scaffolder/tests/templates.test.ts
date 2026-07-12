@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: template fixture checks are intentionally sequential for clearer assertion context
 import { beforeAll, describe, expect, it } from "bun:test";
 import { extname, relative, resolve } from "node:path";
 import { renderEjsFile } from "../src/engine/renderer";

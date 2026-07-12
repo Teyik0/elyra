@@ -80,7 +80,7 @@ describe("segmentBoundaries — chain population", () => {
   test("chain is ordered shallow → deep by depth", async () => {
     const { routes } = await scanPages(ERROR_NESTED_DIR);
     for (const r of routes) {
-      for (let i = 1; i < r.segmentBoundaries.length; i++) {
+      for (let i = 1; i < r.segmentBoundaries.length; i += 1) {
         const prev = r.segmentBoundaries[i - 1];
         const curr = r.segmentBoundaries[i];
         expect(curr?.depth).toBeGreaterThan(prev?.depth ?? -1);

@@ -18,13 +18,13 @@ function statusFromResponseValue(responseValue: unknown): number | undefined {
     return responseValue.status;
   }
   if (responseValue && typeof responseValue === "object" && "status" in responseValue) {
-    const status = (responseValue as { status?: unknown }).status;
+    const { status } = responseValue as { status?: unknown };
     if (typeof status === "number") {
       return status;
     }
   }
   if (responseValue && typeof responseValue === "object" && "code" in responseValue) {
-    const code = (responseValue as { code?: unknown }).code;
+    const { code } = responseValue as { code?: unknown };
     if (typeof code === "number") {
       return code;
     }

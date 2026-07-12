@@ -18,11 +18,23 @@ function encodeTemplate(payloads: readonly string[]): string {
   return buildRouteFrameTemplate(payloads.join("\n"));
 }
 
+function stringifyScriptJson(value: string): string {
+  return JSON.stringify(value).replace(/[<>&]/g, (char) => {
+    if (char === "<") {
+      return "\\u003C";
+    }
+    if (char === ">") {
+      return "\\u003E";
+    }
+    return "\\u0026";
+  });
+}
+
 function encodeScripts(payloads: readonly string[]): string {
   return payloads
     .map(
       (payload) =>
-        `<script>self.__FURIN_RSC__=self.__FURIN_RSC__||[];self.__FURIN_RSC__.push(${JSON.stringify(payload)})</script>`
+        `<script>self.__FURIN_RSC__=self.__FURIN_RSC__||[];self.__FURIN_RSC__.push(${stringifyScriptJson(payload)})</script>`
     )
     .join("");
 }

@@ -19,12 +19,12 @@ describe("createRouteCache", () => {
     const deleted: Array<{ key: string; html: string }> = [];
     const cache = createRouteCache<{ html: string }>({
       name: "dev",
-      onDelete: (key, entry) => {
-        deleted.push({ html: entry.html, key });
+      onDelete: (cacheKey, entry) => {
+        deleted.push({ html: entry.html, key: cacheKey });
       },
-      pathFromKey: (key) => {
-        const sep = key.lastIndexOf(":/");
-        return sep === -1 ? null : key.slice(sep + 1);
+      pathFromKey: (cacheKey) => {
+        const sep = cacheKey.lastIndexOf(":/");
+        return sep === -1 ? null : cacheKey.slice(sep + 1);
       },
     });
     const root = "C:/Users/me/app/src/pages";

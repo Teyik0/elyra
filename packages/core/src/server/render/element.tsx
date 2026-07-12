@@ -21,6 +21,7 @@ export function buildElement(
   const byDepth = new Map<number, SegmentBoundary>();
   // Defensive fallback: some legacy callers / tests construct a ResolvedRoute
   // without the segmentBoundaries field.
+  // biome-ignore lint/suspicious/noUnnecessaryConditions: legacy tests construct ResolvedRoute objects without segmentBoundaries
   for (const segment of route.segmentBoundaries ?? []) {
     byDepth.set(segment.depth, segment);
   }
@@ -28,7 +29,7 @@ export function buildElement(
   // Build inside-out. At each level we first wrap the accumulated subtree
   // with the boundary declared at this depth (so the boundary sits INSIDE
   // the layout at the same depth), THEN wrap with the layout itself.
-  for (let i = route.routeChain.length - 1; i >= 1; i--) {
+  for (let i = route.routeChain.length - 1; i >= 1; i -= 1) {
     element = wrapSegmentBoundaries(element, byDepth.get(i), undefined);
     const routeEntry = route.routeChain[i];
     if (routeEntry?.layout) {

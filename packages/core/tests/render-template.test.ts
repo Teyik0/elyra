@@ -61,7 +61,7 @@ describe.serial("render/template", () => {
     });
 
     try {
-      const origin = server.url.origin;
+      const { origin } = server.url;
 
       const first = await getDevTemplate(origin);
       const second = await getDevTemplate(origin);
@@ -84,7 +84,7 @@ describe.serial("render/template", () => {
     });
 
     try {
-      const origin = server.url.origin;
+      const { origin } = server.url;
       await expect(getDevTemplate(origin)).rejects.toThrow("/_bun_hmr_entry returned 500");
     } finally {
       server.stop(true);

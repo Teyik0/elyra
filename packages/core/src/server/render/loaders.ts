@@ -314,7 +314,7 @@ async function runLoadersInternal(
 
     // Page loader receives all route-chain fields as individual Promises.
     const pageCtx = createLoaderCtx(ctxRecord, accumulatedParentPromise);
-    const pagePromise: Promise<Record<string, unknown>> = route.page?.loader
+    const pagePromise: Promise<Record<string, unknown>> = route.page.loader
       ? Promise.resolve(route.page.loader(pageCtx)).then((r) => r ?? {})
       : Promise.resolve({});
 
@@ -381,7 +381,6 @@ async function runLoadersInternal(
 
 function createPublicLoaderContext(ctx: Context): { [key: string]: unknown } {
   const publicContext = {} as { [key: string]: unknown };
-  Object.defineProperties(publicContext, Object.getOwnPropertyDescriptors(ctx));
   const fail = (): never => {
     throw new Error(
       "[furin] Cached public loaders cannot access request, cookie, headers, or set. Move request-specific work to requestLoader."

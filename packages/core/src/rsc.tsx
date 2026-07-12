@@ -10,13 +10,14 @@ import {
 } from "./rsc/shared.tsx";
 import { RSC_SOURCE, SLOT_MARKER } from "./rsc/symbols.ts";
 
+// react-doctor-disable-next-line react-doctor/only-export-components
 export * from "./rsc/shared.tsx";
 
 type CompositePropsWithSupportedChildren<TProps extends object> = TProps extends {
   children?: infer TChildren;
 }
-  ? TChildren extends ReactNode | undefined
-    ? TProps
+  ? [TChildren] extends [ReactNode | undefined]
+    ? Omit<TProps, "children"> & { children?: ReactNode }
     : never
   : TProps;
 

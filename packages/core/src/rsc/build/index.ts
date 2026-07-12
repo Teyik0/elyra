@@ -3,13 +3,13 @@ import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runBunBuild } from "../../build/bun-build.ts";
 import type { ResolvedRoute, RootLayout } from "../../server/router/index.ts";
-import { environmentGuardPlugin } from "./environment.ts";
 import { assertInstalledRscVersions } from "../version.ts";
+import { environmentGuardPlugin } from "./environment.ts";
 
 export interface ClientReference {
+  chunks: readonly string[];
   id: string;
   name: string;
-  chunks: readonly string[];
 }
 
 export interface RscCssAsset {
@@ -52,11 +52,7 @@ export async function buildRscGraph(
     splitting: true,
     conditions: ["react-server"],
     naming: { entry: "[dir]/[name]-[hash].[ext]", chunk: "[name]-[hash].[ext]" },
-    plugins: [
-      ...(userPlugins ?? []),
-      environmentGuardPlugin("rsc"),
-      aliasPlugin,
-    ],
+    plugins: [...(userPlugins ?? []), environmentGuardPlugin("rsc"), aliasPlugin],
     define: { "process.env.NODE_ENV": JSON.stringify("production") },
   });
   if (!result.success) {

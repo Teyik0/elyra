@@ -8,7 +8,6 @@ test("furin() production runtime resolution scenarios", () => {
       "bun",
       "-e",
       `
-import { expect } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -31,6 +30,39 @@ const originalURL = globalThis.URL;
 function rememberTmpApp(app) {
   tmpApps.push(app);
   return app;
+}
+
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+function assertEqual(actual, expected, message) {
+  if (actual !== expected) {
+    throw new Error(message + ": expected " + String(expected) + ", got " + String(actual));
+  }
+}
+
+function assertIncludes(actual, expected, message) {
+  if (!actual.includes(expected)) {
+    throw new Error(message + ": expected " + JSON.stringify(actual) + " to include " + JSON.stringify(expected));
+  }
+}
+
+function assertInstanceOf(actual, expected, message) {
+  assert(actual instanceof expected, message);
+}
+
+async function assertRejectsToThrow(promise, expected, message) {
+  try {
+    await promise;
+  } catch (error) {
+    assert(error instanceof Error, message + ": rejected with a non-Error value");
+    assertIncludes(error.message, expected, message);
+    return;
+  }
+  throw new Error(message + ": expected rejection");
 }
 
 async function setCompileContext(appPath, embedded) {
@@ -91,8 +123,8 @@ try {
   await setCompileContext(app.path);
   let instance = await furin({ pagesDir: join(app.path, "src/pages") });
 
-  expect(instance).toBeInstanceOf(Elysia);
-  expect(getProductionTemplate()).toContain("custom");
+  assertInstanceOf(instance, Elysia, "custom client returns an Elysia instance");
+  assertIncludes(getProductionTemplate(), "custom", "custom client template should be loaded");
 
   resetState();
   app = rememberTmpApp(createTmpApp("cli-app"));
@@ -101,8 +133,10 @@ try {
   process.env.FURIN_CLIENT_DIR = "missing-client";
 
   await setCompileContext(app.path);
-  await expect(furin({ pagesDir: join(app.path, "src/pages") })).rejects.toThrow(
-    "No pre-built assets found"
+  await assertRejectsToThrow(
+    furin({ pagesDir: join(app.path, "src/pages") }),
+    "No pre-built assets found",
+    "missing client directory should reject"
   );
 
   resetState();
@@ -128,8 +162,8 @@ try {
 
   await setCompileContext(app.path);
   instance = await furin({ pagesDir: join(app.path, "src/pages") });
-  expect(instance).toBeInstanceOf(Elysia);
-  expect(getProductionTemplate()).toContain("module-client");
+  assertInstanceOf(instance, Elysia, "module client returns an Elysia instance");
+  assertIncludes(getProductionTemplate(), "module-client", "module client template should be loaded");
 
   resetState();
   app = rememberTmpApp(createTmpApp("cli-app"));
@@ -155,8 +189,8 @@ try {
 
   await setCompileContext(app.path);
   instance = await furin({ pagesDir: join(app.path, "src/pages") });
-  expect(instance).toBeInstanceOf(Elysia);
-  expect(getProductionTemplate()).toContain("argv-client");
+  assertInstanceOf(instance, Elysia, "argv client returns an Elysia instance");
+  assertIncludes(getProductionTemplate(), "argv-client", "argv client template should be loaded");
 
   resetState();
   app = rememberTmpApp(createTmpApp("cli-app"));
@@ -183,8 +217,8 @@ try {
 
   await setCompileContext(app.path);
   instance = await furin({ pagesDir: join(app.path, "src/pages") });
-  expect(instance).toBeInstanceOf(Elysia);
-  expect(getProductionTemplate()).toContain("path-client");
+  assertInstanceOf(instance, Elysia, "PATH client returns an Elysia instance");
+  assertIncludes(getProductionTemplate(), "path-client", "PATH client template should be loaded");
 
   resetState();
   app = rememberTmpApp(createTmpApp("cli-app"));
@@ -202,8 +236,8 @@ try {
 
   await setCompileContext(app.path);
   instance = await furin({ pagesDir: join(app.path, "src/pages") });
-  expect(instance).toBeInstanceOf(Elysia);
-  expect(getProductionTemplate()).toContain("fallback-client");
+  assertInstanceOf(instance, Elysia, "fallback client returns an Elysia instance");
+  assertIncludes(getProductionTemplate(), "fallback-client", "fallback client template should be loaded");
 
   resetState();
   app = rememberTmpApp(createTmpApp("cli-app"));
@@ -240,8 +274,8 @@ try {
   });
 
   instance = await furin({ pagesDir: join(app.path, "src/pages") });
-  expect(instance).toBeInstanceOf(Elysia);
-  expect(getSSGCache("/")?.html).toBe("<html>prebuilt</html>");
+  assertInstanceOf(instance, Elysia, "embedded SSG returns an Elysia instance");
+  assertEqual(getSSGCache("/")?.html, "<html>prebuilt</html>", "embedded SSG cache should load");
 
   resetState();
   app = rememberTmpApp(createTmpApp("cli-app"));
@@ -279,8 +313,8 @@ try {
   });
 
   await furin({ pagesDir: join(app.path, "src/pages") });
-  expect(revalidateTag("boards")).toBe(true);
-  expect(ssgCache.has("/")).toBe(false);
+  assertEqual(revalidateTag("boards"), true, "embedded tag should revalidate");
+  assertEqual(ssgCache.has("/"), false, "tag revalidation should clear SSG cache");
 
   resetState();
   app = rememberTmpApp(createTmpApp("cli-app"));
@@ -297,8 +331,8 @@ try {
 
   await setCompileContext(app.path);
   instance = await furin({ pagesDir: join(app.path, "src/pages") });
-  expect(instance).toBeInstanceOf(Elysia);
-  expect(getProductionTemplate()).toContain("cwd-client");
+  assertInstanceOf(instance, Elysia, "cwd client returns an Elysia instance");
+  assertIncludes(getProductionTemplate(), "cwd-client", "cwd client template should be loaded");
 
   resetState();
   app = rememberTmpApp(createTmpApp("cli-app"));
@@ -306,8 +340,10 @@ try {
   process.chdir(app.path);
 
   await setCompileContext(app.path, { assets: {}, template: "" });
-  await expect(furin({ pagesDir: join(app.path, "src/pages") })).rejects.toThrow(
-    "HTML template"
+  await assertRejectsToThrow(
+    furin({ pagesDir: join(app.path, "src/pages") }),
+    "HTML template",
+    "missing embedded HTML template should reject"
   );
 
   resetState();
@@ -336,10 +372,10 @@ try {
   const missClient = await instance.handle(new Request("http://furin/_client/missing.js"));
   const missPublic = await instance.handle(new Request("http://furin/public/missing.png"));
 
-  expect(okClient.status).toBe(200);
-  expect(okPublic.status).toBe(200);
-  expect(missClient.status).toBe(404);
-  expect(missPublic.status).toBe(404);
+  assertEqual(okClient.status, 200, "embedded client asset should be served");
+  assertEqual(okPublic.status, 200, "embedded public asset should be served");
+  assertEqual(missClient.status, 404, "missing embedded client asset should 404");
+  assertEqual(missPublic.status, 404, "missing embedded public asset should 404");
 } finally {
   resetState();
 }

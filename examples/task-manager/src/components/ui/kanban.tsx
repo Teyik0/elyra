@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noJsxPropsBind: drag/drop and edit handlers are intentionally scoped to card/column state
 import { useSync } from "@teyik0/furin/client";
 import { Link } from "@teyik0/furin/link";
 import { domAnimation, LazyMotion, m } from "framer-motion";
@@ -6,7 +7,6 @@ import {
   type DragEvent,
   type SetStateAction,
   type SyntheticEvent,
-  useEffect,
   useState,
 } from "react";
 import { FaFire } from "react-icons/fa";
@@ -105,20 +105,22 @@ function restoreDeletedCard(
 
 export const Kanban = ({ initialCards, boardId, onMutation }: KanbanProps) => {
   const [cards, setCards] = useState<KanbanCard[]>(initialCards);
+  const [previousInitialCards, setPreviousInitialCards] = useState(initialCards);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  useEffect(() => {
+  if (initialCards !== previousInitialCards) {
+    setPreviousInitialCards(initialCards);
     setCards(initialCards);
-  }, [initialCards]);
+  }
 
   return (
     <LazyMotion features={domAnimation}>
-      {errorMessage && (
+      {errorMessage ? (
         <div className="mx-6 mt-6 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-red-300 text-sm">
           {errorMessage}
         </div>
-      )}
+      ) : null}
 
       <div className="flex h-full w-full gap-4 overflow-x-auto p-6">
         <Column
@@ -232,8 +234,7 @@ const Column = ({
           if (!result) {
             return currentCards;
           }
-          previousColumn = result.previousColumn;
-          previousIndex = result.previousIndex;
+          ({ previousColumn, previousIndex } = result);
           return result.nextCards;
         });
         return () => {
@@ -318,6 +319,7 @@ const Column = ({
     el.element.style.opacity = "1";
   };
 
+  // react-doctor-disable-next-line react-doctor/prefer-module-scope-pure-function
   const getNearestIndicator = (e: DragEvent, indicators: HTMLElement[]) => {
     const lastIndicator = indicators.at(-1);
     if (!lastIndicator) {

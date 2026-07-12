@@ -73,7 +73,7 @@ function typeChain(node: ReactNode): string[] {
   const chain: string[] = [];
   let current: ReactNode = node;
   while (isValidElement(current)) {
-    const type = (current as ReactElement).type;
+    const { type } = current as ReactElement;
     const name =
       typeof type === "string"
         ? type
@@ -191,7 +191,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
       } else if (node.type === FurinNotFoundBoundary) {
         nf = node;
       }
-      const children = (node.props as { children?: ReactNode }).children;
+      const { children } = node.props as { children?: ReactNode };
       node = firstValidChild(children);
     }
     expect(err?.props).toMatchObject({ fallback: E });
@@ -224,7 +224,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
         err = node;
         break;
       }
-      const children = (node.props as { children?: ReactNode }).children;
+      const { children } = node.props as { children?: ReactNode };
       node = firstValidChild(children);
     }
     expect(err?.props).toMatchObject({ fallback: E, onReset });
@@ -248,7 +248,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
       } else if (node.type === FurinNotFoundBoundary) {
         nf = node;
       }
-      const children = (node.props as { children?: ReactNode }).children;
+      const { children } = node.props as { children?: ReactNode };
       node = firstValidChild(children);
     }
     expect(err?.props).toMatchObject({ resetKey: "/blog" });
@@ -270,7 +270,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
         err = node;
         break;
       }
-      const children = (node.props as { children?: ReactNode }).children;
+      const { children } = node.props as { children?: ReactNode };
       node = firstValidChild(children);
     }
     expect(err).not.toBeNull();
@@ -309,7 +309,7 @@ describe("buildPageElement — client-side boundary interleaving", () => {
     let deepest: ReactElement | null = null;
     while (isValidElement(node)) {
       deepest = node;
-      const children = (node.props as { children?: ReactNode }).children;
+      const { children } = node.props as { children?: ReactNode };
       const next = firstValidChild(children);
       if (!next) {
         break;

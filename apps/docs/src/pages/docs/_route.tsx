@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noJsxPropsBind: docs route active link props are computed from router active state
 import { createRoute } from "@teyik0/furin/client";
 import { Link } from "@teyik0/furin/link";
 import { DocsMobileNav } from "@/components/docs-mobile-nav";

@@ -12,17 +12,17 @@ import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { useLogger } from "../context-logger.ts";
 import { injectSyncRuntimeScript, resolvePath } from "../render/assemble.ts";
+import { handleISR } from "../render/isr.ts";
 import {
-  handleISR,
   hasRequestLoader,
   type LoaderResult,
-  prerenderSSG,
-  renderSSR,
   runLoaders,
   serializeDeferredRejection,
-} from "../render/index.ts";
+} from "../render/loaders.ts";
 import { renderPprRoute } from "../render/ppr-route.ts";
 import { extractTitle } from "../render/shell.ts";
+import { prerenderSSG } from "../render/ssg.ts";
+import { renderSSR } from "../render/ssr.ts";
 import { IS_DEV } from "../runtime-env.ts";
 import { handleDevRequest } from "./hmr.ts";
 import { buildRouteMatcher } from "./patterns.ts";
@@ -102,8 +102,8 @@ async function handleSSGRequest(
   buildId: string,
   searchRoutes: SearchRouteMetadata[] | undefined
 ): Promise<unknown> {
-  const origin = new URL(ctx.request.url).origin;
-  const entry = await prerenderSSG(route, ctx.params, root, origin, undefined, searchRoutes);
+  const { origin } = new URL(ctx.request.url);
+  const entry = await prerenderSSG(route, ctx.params ?? {}, root, origin, undefined, searchRoutes);
 
   // Loader issued a redirect — forward it directly to the client.
   if (entry instanceof Response) {
@@ -370,7 +370,7 @@ function withResolvedTitle(
   route: ResolvedRoute,
   syncData: Record<string, unknown>
 ): Record<string, unknown> {
-  const head = route.page.head;
+  const { head } = route.page;
   if (!head) {
     return syncData;
   }

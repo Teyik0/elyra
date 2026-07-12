@@ -32,6 +32,7 @@ export function DocsToc() {
     headings: [],
   });
 
+  // react-doctor-disable-next-line react-doctor/effect-needs-cleanup
   useEffect(() => {
     let observer: IntersectionObserver | null = null;
     let cancelled = false;

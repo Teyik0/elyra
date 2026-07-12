@@ -46,7 +46,9 @@ export function generateHydrateEntry(
   for (const route of routes) {
     const resolvedPage = route.path.replace(/\\/g, "/");
     const regexPattern = buildRouteRegex(route.pattern).regex.source;
-    const searchDefaults = collectSearchDefaults(mergeRouteSchemas(route.routeChain ?? [], "query"));
+    const searchDefaults = collectSearchDefaults(
+      mergeRouteSchemas(route.routeChain ?? [], "query")
+    );
     const boundaryIdents = new Map<string, string>();
 
     // Emit one boundary literal per segment that actually carries a convention
@@ -77,7 +79,9 @@ export function generateHydrateEntry(
       boundaryLiterals.length > 0
         ? `Promise.all([${lazyImports.join(", ")}]).then(([__furin_page, ${[
             ...boundaryIdents.values(),
-          ].join(", ")}]) => ({ default: __furin_page.default, segmentBoundaries: [${boundaryLiterals.join(", ")}] }))`
+          ].join(
+            ", "
+          )}]) => ({ default: __furin_page.default, segmentBoundaries: [${boundaryLiterals.join(", ")}] }))`
         : `import("${resolvedPage}")`;
 
     const searchDefaultsEntry = searchDefaults

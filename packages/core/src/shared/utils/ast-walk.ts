@@ -1,4 +1,4 @@
-import type { BaseNode, Node as YukuNode } from "@yuku-toolchain/types";
+import type { BaseNode, Node as YukuNode } from "yuku-parser";
 
 /**
  * Minimal ESTree node interface used by AST-walking utilities across the

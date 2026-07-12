@@ -7,6 +7,7 @@ import { t } from "elysia";
 import type { HTTPHeaders } from "elysia/types";
 import type { RequestLogger } from "evlog";
 import { expectTypeOf } from "expect-type";
+import type { ReactNode } from "react";
 import {
   type ComponentProps,
   createRoute,
@@ -15,11 +16,14 @@ import {
   type RouteContext,
 } from "../src/client";
 import type { CacheTag, InvalidationRule } from "../src/furin.ts";
+import type { createCompositeComponent as createCompositeComponentType } from "../src/rsc.tsx";
 import {
   collectRouteChainFromRoute,
   isFurinPage,
   isFurinRoute,
 } from "../src/shared/utils/index.ts";
+
+declare const createCompositeComponentForTypes: typeof createCompositeComponentType;
 
 describe("RouteContext types (for loaders)", () => {
   test("requestLoader exposes read-only request data and infers requestData", () => {
@@ -438,9 +442,9 @@ describe("nested layouts", () => {
     const childRoute = createRoute({
       loader: async ({ org, team }) => {
         // both ancestor fields are individual Promises
-        const [o, t] = await Promise.all([org, team]);
+        const [o, teamData] = await Promise.all([org, team]);
         expectTypeOf(o.id).toBeString();
-        expectTypeOf(t.orgId).toBeString();
+        expectTypeOf(teamData.orgId).toBeString();
         return { members: [{ name: "Bob" }] as Array<{ name: string }> };
       },
       parent: parentRoute,
@@ -803,5 +807,18 @@ describe("collectRouteChainFromRoute", () => {
     expect(chain[0]?.parent).toBeUndefined();
     expect(chain[1]?.parent).toBe(chain[0]);
     expect(chain[2]?.parent).toBe(chain[1]);
+  });
+});
+
+describe("RSC composite types", () => {
+  test("composite children reject non-renderable unions and narrow concrete child types", () => {
+    const typeOnly = process.env.NODE_ENV === "__furin_typecheck__";
+    if (typeOnly) {
+      createCompositeComponentForTypes((props: { children?: ReactNode }) => props.children);
+      // @ts-expect-error children unions must not include non-renderable values
+      createCompositeComponentForTypes((props: { children?: ReactNode | Date }) => props.children);
+      // @ts-expect-error the internal slot proxy passes a marker element, not a string
+      createCompositeComponentForTypes((props: { children?: string }) => props.children);
+    }
   });
 });

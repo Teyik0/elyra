@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: sync catch-up pages must be fetched sequentially by cursor
 export interface SyncChangePayload {
   cursor: string;
   invalidations: readonly string[];

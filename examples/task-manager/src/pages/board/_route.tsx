@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noJsxPropsBind: board nav active props depend on router active state
 import { createRoute } from "@teyik0/furin/client";
 import { Link } from "@teyik0/furin/link";
 import { t } from "elysia";

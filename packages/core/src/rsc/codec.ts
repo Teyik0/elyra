@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const MAX_FLIGHT_BYTES = 4 * 1024 * 1024;
@@ -19,6 +19,17 @@ export function resolveConfiguredCodecPath(configuredPath: string | undefined): 
   return existsSync(codecPath) ? codecPath : undefined;
 }
 
+export function resolveBuiltCodecPath(
+  moduleDir: string,
+  executablePath: string | undefined
+): string | undefined {
+  const candidates = [join(moduleDir, "server-codec.js")];
+  if (executablePath !== undefined && executablePath.trim() !== "") {
+    candidates.push(join(dirname(executablePath), "server-codec.js"));
+  }
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
 function loadServerCodec(): Promise<ServerCodec> {
   if (serverCodecPromise !== undefined) {
     return serverCodecPromise;
@@ -29,8 +40,8 @@ function loadServerCodec(): Promise<ServerCodec> {
     if (configuredCodecPath !== undefined) {
       return import(pathToFileURL(configuredCodecPath).href) as Promise<ServerCodec>;
     }
-    const builtCodecPath = join(import.meta.dir, "server-codec.js");
-    if (existsSync(builtCodecPath)) {
+    const builtCodecPath = resolveBuiltCodecPath(import.meta.dir, process.execPath);
+    if (builtCodecPath !== undefined) {
       return import(pathToFileURL(builtCodecPath).href) as Promise<ServerCodec>;
     }
     const outdir = join(tmpdir(), `furin-rsc-${process.pid}-${Bun.hash(import.meta.url)}`);
@@ -54,7 +65,7 @@ function loadServerCodec(): Promise<ServerCodec> {
       const details = result.logs.map((log) => log.message).join("\n");
       throw new Error(`[furin/rsc] Failed to build the isolated RSC codec graph.\n${details}`);
     }
-    const output = result.outputs[0];
+    const [output] = result.outputs;
     if (output === undefined) {
       throw new Error("[furin/rsc] Isolated RSC codec build produced no output.");
     }
@@ -71,6 +82,7 @@ async function readFlightBytes(stream: ReadableStream<Uint8Array>): Promise<Uint
 
   try {
     for (;;) {
+      // biome-ignore lint/performance/noAwaitInLoops: stream chunks must be read sequentially.
       const { done, value } = await reader.read();
       if (done) {
         break;

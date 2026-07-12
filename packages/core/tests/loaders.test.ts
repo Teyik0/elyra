@@ -60,7 +60,7 @@ describe("runLoaders requestLoader", () => {
     expect(calls).toBe(1);
   });
 
-  test("public loaders keep decorated context fields", async () => {
+  test("public loaders omit decorated context fields", async () => {
     const route = {
       mode: "ssr",
       page: {
@@ -79,7 +79,7 @@ describe("runLoaders requestLoader", () => {
 
     expect(result.type).toBe("data");
     if (result.type === "data") {
-      expect(result.syncData.service).toBe("decorated");
+      expect(await result.syncData.service).toBeUndefined();
     }
   });
 

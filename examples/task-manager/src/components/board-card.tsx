@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noJsxPropsBind: board card actions depend on per-board mutation state
 import { useSync } from "@teyik0/furin/client";
 import { Link } from "@teyik0/furin/link";
 import { useState } from "react";

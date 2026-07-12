@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: build phases run in sequence because later phases consume prior artifacts
 import { existsSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { buildBunTarget, type BunTargetApp } from "../adapter/bun";

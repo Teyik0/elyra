@@ -157,9 +157,9 @@ export function invalidateDevLoaderCacheByPath(
       handle.cache.delete(key);
       cleared.push(key);
       if (handle.kind === "isr") {
-        isr++;
+        isr += 1;
       } else {
-        ssg++;
+        ssg += 1;
       }
     }
   }
@@ -184,14 +184,14 @@ export function invalidateDevLoaderCacheBySource(filePath: string): InvalidateOu
     if (isrEntry) {
       state.isr.cache.delete(key);
       cleared.push(key);
-      isr++;
+      isr += 1;
       continue;
     }
     const ssgEntry = state.ssg.cache.get(key);
     if (ssgEntry) {
       state.ssg.cache.delete(key);
       cleared.push(key);
-      ssg++;
+      ssg += 1;
     }
   }
 
@@ -209,7 +209,7 @@ export function isDevLoaderCacheValid(entry: DevLoaderCacheEntry): boolean {
   for (const dep of entry.dependencies) {
     let mtimeMs: number;
     try {
-      mtimeMs = statSync(dep).mtimeMs;
+      ({ mtimeMs } = statSync(dep));
     } catch {
       return false;
     }

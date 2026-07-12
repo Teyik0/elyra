@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: integration test polling must wait between retries
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { getFreePort } from "./helpers/hmr.ts";
@@ -49,7 +50,7 @@ async function pollUntil(
   maxAttempts: number,
   delayMs: number
 ): Promise<boolean> {
-  for (let i = 0; i < maxAttempts; i++) {
+  for (let i = 0; i < maxAttempts; i += 1) {
     if (await fn()) {
       return true;
     }

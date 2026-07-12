@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noJsxPropsBind: tab controls depend on local active state and child indices
 import { useState } from "react";
 
 interface CodeTabProps {

@@ -87,7 +87,6 @@ export async function buildClient(
           };
         } catch (error) {
           console.error(`[furin] Transform error for ${path}:`, error);
-          return;
         }
       });
     },
@@ -116,11 +115,7 @@ export async function buildClient(
     // Overridable via the `publicPath` option (e.g. "/furin/_client/" for basePath builds).
     publicPath,
     // User plugins run before the internal transform so they pre-process files first
-    plugins: [
-      ...(plugins ?? []),
-      environmentGuardPlugin("client"),
-      transformPlugin,
-    ],
+    plugins: [...(plugins ?? []), environmentGuardPlugin("client"), transformPlugin],
     alias: {
       "@teyik0/furin/client": CLIENT_MODULE_PATH,
       "@teyik0/furin/link": LINK_MODULE_PATH,

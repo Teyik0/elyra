@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noJsxPropsBind: board content passes mutation callbacks tied to local refresh state
 import { Await } from "@teyik0/furin/client";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { BoardStats } from "@/api/modules/boards/service";

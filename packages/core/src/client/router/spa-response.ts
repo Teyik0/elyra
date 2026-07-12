@@ -59,7 +59,7 @@ export function pickDeepestNotFound(
   if (!boundaries) {
     return;
   }
-  for (let i = boundaries.length - 1; i >= 0; i--) {
+  for (let i = boundaries.length - 1; i >= 0; i -= 1) {
     const seg = boundaries[i];
     if (seg?.notFound) {
       return seg.notFound;

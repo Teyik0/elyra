@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noJsxPropsBind: composite component slot renderers are passed as component factories
 import { createRoute } from "@teyik0/furin/client";
 import { CompositeComponent, createCompositeComponent } from "@teyik0/furin/rsc";
 import type { ComponentType } from "react";

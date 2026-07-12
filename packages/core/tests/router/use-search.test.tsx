@@ -107,8 +107,8 @@ describe("useSearch", () => {
   test("selector subscribers do not rerender when the selected value is unchanged", () => {
     let renders = 0;
 
-    const PageSelector = memo(function PageSelector(): React.ReactElement {
-      renders++;
+    const PageSelector = memo(function PageSelectorComponent(): React.ReactElement {
+      renders += 1;
       const [page] = useSearch("/products", (search) => search.page);
       return createElement("output", null, String(page));
     });

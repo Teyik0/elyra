@@ -20,7 +20,6 @@ export {
   renderForPath,
   renderSSR,
   renderToHTML,
-  renderToStream,
   serializeLoaderDataNdjson,
   splitBeforeBodyClose,
   withSSRRouterContext,

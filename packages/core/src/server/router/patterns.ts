@@ -47,7 +47,7 @@ export function filePathToPattern(path: string): string {
   const segments: string[] = [];
   const lastIndex = parts.length - 1;
 
-  for (let idx = 0; idx < parts.length; idx++) {
+  for (let idx = 0; idx < parts.length; idx += 1) {
     const part = parts[idx];
     if (part === undefined || part.length === 0) {
       continue;
@@ -122,7 +122,7 @@ export function compareRouteSpecificity(a: string, b: string): number {
   const aSegments = a.split("/").filter((segment) => segment.length > 0);
   const bSegments = b.split("/").filter((segment) => segment.length > 0);
   const length = Math.max(aSegments.length, bSegments.length);
-  for (let i = 0; i < length; i++) {
+  for (let i = 0; i < length; i += 1) {
     const aSegment = aSegments[i];
     const bSegment = bSegments[i];
     // The pattern that still has a segment here constrains one more position.
@@ -153,22 +153,23 @@ export function buildRouteRegex(pattern: string): { regex: RegExp; paramNames: s
   let i = 0;
   while (i < pattern.length) {
     if (pattern[i] === ":") {
-      const start = ++i;
+      i += 1;
+      const start = i;
       while (i < pattern.length && pattern[i] !== "/") {
-        i++;
+        i += 1;
       }
       paramNames.push(pattern.slice(start, i));
       source += "([^/]+)";
     } else if (pattern[i] === "*") {
       paramNames.push("*");
       source += "(.*)";
-      i++;
+      i += 1;
     } else {
       const ch = pattern[i];
       if (ch !== undefined) {
         source += escapeRegExpChar(ch);
       }
-      i++;
+      i += 1;
     }
   }
   return { paramNames, regex: new RegExp(`^${source}$`) };
@@ -206,7 +207,7 @@ export function buildRouteMatcher<TRoute extends RoutePatternLike>(
         continue;
       }
       const params: Record<string, string> = {};
-      for (let i = 0; i < candidate.paramNames.length; i++) {
+      for (let i = 0; i < candidate.paramNames.length; i += 1) {
         const name = candidate.paramNames[i];
         if (name !== undefined) {
           params[name] = match[i + 1] ?? "";

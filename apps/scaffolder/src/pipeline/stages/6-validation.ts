@@ -3,15 +3,14 @@ import { getProjectRelativePath } from "../../utils/path.ts";
 import type { PipelineContext } from "../context.ts";
 
 export async function stage6Validation(ctx: PipelineContext): Promise<void> {
-  const missing: string[] = [];
-
   // ── Check every file actually exists on disk ───────────────────────────
-  for (const filePath of ctx.writtenFiles) {
-    const exists = await Bun.file(filePath).exists();
-    if (!exists) {
-      missing.push(filePath);
-    }
-  }
+  const existence = await Promise.all(
+    ctx.writtenFiles.map(async (filePath) => {
+      const exists = await Bun.file(filePath).exists();
+      return { exists, filePath };
+    })
+  );
+  const missing = existence.filter(({ exists }) => !exists).map(({ filePath }) => filePath);
 
   if (missing.length > 0) {
     throw new ScaffolderError(`${missing.length} file(s) were not written:\n${missing.join("\n")}`);
@@ -25,8 +24,10 @@ export async function stage6Validation(ctx: PipelineContext): Promise<void> {
     try {
       const raw = await Bun.file(pkgPath).text();
       JSON.parse(raw);
-    } catch {
-      throw new ScaffolderError(`Generated package.json is not valid JSON: ${pkgPath}`);
+    } catch (error) {
+      throw new ScaffolderError(`Generated package.json is not valid JSON: ${pkgPath}`, {
+        cause: error,
+      });
     }
   }
 

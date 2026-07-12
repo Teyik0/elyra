@@ -4,7 +4,6 @@ import {
   buildRouteRegex,
   compareRouteSpecificity,
   filePathToPattern,
-  compareRouteSpecificity as routeSpecificity,
 } from "../../src/server/router/patterns.ts";
 
 describe("filePathToPattern", () => {
@@ -70,7 +69,8 @@ describe("filePathToPattern", () => {
 describe("compareRouteSpecificity", () => {
   const moreSpecific = (a: string, b: string) => compareRouteSpecificity(a, b) > 0;
 
-  test("keeps the legacy routeSpecificity export as an alias", () => {
+  test("keeps the legacy routeSpecificity export as an alias", async () => {
+    const { routeSpecificity } = await import("../../src/server/router/index.ts");
     expect(routeSpecificity).toBe(compareRouteSpecificity);
   });
 

@@ -39,7 +39,7 @@ describe("hydration: SSR and client apply layouts in same order", () => {
     expect(chain).toHaveLength(2);
 
     const ssrProcessedIndices: number[] = [];
-    for (let i = chain.length - 1; i >= 1; i--) {
+    for (let i = chain.length - 1; i >= 1; i -= 1) {
       ssrProcessedIndices.push(i);
     }
 
@@ -62,14 +62,14 @@ describe("hydration: SSR and client apply layouts in same order", () => {
     expect(chain).toHaveLength(3);
 
     const ssrOrder: number[] = [];
-    for (let i = chain.length - 1; i >= 1; i--) {
+    for (let i = chain.length - 1; i >= 1; i -= 1) {
       ssrOrder.push(i);
     }
     expect(ssrOrder).toEqual([2, 1]);
 
     const clientLayouts = chain.slice(1);
     const clientOrder: number[] = [];
-    for (let i = clientLayouts.length - 1; i >= 0; i--) {
+    for (let i = clientLayouts.length - 1; i >= 0; i -= 1) {
       clientOrder.push(i + 1);
     }
 

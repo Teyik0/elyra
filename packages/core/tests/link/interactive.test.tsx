@@ -838,7 +838,7 @@ describe("LinkInteractive — client-side behaviour", () => {
     expect(calls.length).toBe(0);
     await new Promise((r) => setTimeout(r, 20));
     expect(calls.length).toBe(1);
-    const firstCall = calls[0];
+    const [firstCall] = calls;
     if (!firstCall) {
       throw new Error("Expected at least one prefetch call");
     }

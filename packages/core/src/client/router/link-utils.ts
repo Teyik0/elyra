@@ -90,7 +90,7 @@ export function stripHashFromHref(href: string): string {
  *  Query strings and hashes are preserved and re-attached after normalization. */
 export function normalizeHref(href: string): string {
   const url = new URL(href, "http://localhost");
-  let pathname = url.pathname;
+  let { pathname } = url;
   if (pathname !== "/") {
     pathname = pathname.replace(/\/+$/g, "");
   }
@@ -136,7 +136,7 @@ export function shouldInterceptClick(
     return null;
   }
 
-  const href = anchor.href;
+  const { href } = anchor;
   if (!href) {
     return null;
   }

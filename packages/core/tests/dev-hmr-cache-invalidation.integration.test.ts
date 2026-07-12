@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: integration test polling must wait between retries
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { extractDevClientEntry, getFreePort } from "./helpers/hmr.ts";
@@ -88,7 +89,7 @@ describe.serial("dev HMR cache invalidation on unrelated _route edit", () => {
 
     // Wait for server to come up.
     let ready = false;
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 80; i += 1) {
       try {
         const r = await fetch(`http://localhost:${port}/`);
         if (r.ok) {
@@ -133,7 +134,7 @@ describe.serial("dev HMR cache invalidation on unrelated _route edit", () => {
 
     // Step 3: wait for Bun to rebundle — `/_bun_hmr_entry` should flip to a new chunk URL.
     let latestShellChunk: string | null = initialChunk;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 40; i += 1) {
       const hmrHtml = await (await fetch(`http://localhost:${port}/_bun_hmr_entry`)).text();
       latestShellChunk = extractDevClientEntry(hmrHtml);
       if (latestShellChunk && latestShellChunk !== initialChunk) {
@@ -154,7 +155,7 @@ describe.serial("dev HMR cache invalidation on unrelated _route edit", () => {
     let homeHtmlAfter = "";
     let homeChunkAfter: string | null = null;
     let currentShellChunk: string | null = latestShellChunk;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 40; i += 1) {
       homeHtmlAfter = await (await fetch(`http://localhost:${port}/`)).text();
       homeChunkAfter = extractDevClientEntry(homeHtmlAfter);
       const hmrHtml = await (await fetch(`http://localhost:${port}/_bun_hmr_entry`)).text();

@@ -1,3 +1,4 @@
+import MagicString from "magic-string";
 import type {
   CallExpression,
   ImportDeclaration,
@@ -5,8 +6,7 @@ import type {
   ObjectProperty,
   Program,
   SourceLang,
-} from "@yuku-toolchain/types";
-import MagicString from "magic-string";
+} from "yuku-parser";
 import { detectLangFromPath, unwrapTSExpression } from "../server/lang-detect.ts";
 import { parseSource } from "../shared/parser.ts";
 import { type AstNode, walkAST } from "../shared/utils/ast-walk.ts";
@@ -98,10 +98,10 @@ function removeServerProperties(s: MagicString, source: string, obj: ObjectExpre
         source[removeEnd] === "\t")
     ) {
       if (source[removeEnd] === ",") {
-        removeEnd++;
+        removeEnd += 1;
         break;
       }
-      removeEnd++;
+      removeEnd += 1;
     }
 
     // Also remove leading whitespace (indentation before the property)
@@ -110,13 +110,13 @@ function removeServerProperties(s: MagicString, source: string, obj: ObjectExpre
       removeStart > 0 &&
       (source[removeStart - 1] === " " || source[removeStart - 1] === "\t")
     ) {
-      removeStart--;
+      removeStart -= 1;
     }
     // If there's a newline before the leading whitespace, consume it too
     if (removeStart > 0 && source[removeStart - 1] === "\n") {
-      removeStart--;
+      removeStart -= 1;
       if (removeStart > 0 && source[removeStart - 1] === "\r") {
-        removeStart--;
+        removeStart -= 1;
       }
     }
 
@@ -262,7 +262,7 @@ function collectReferencedNames(program: Program): Set<string> {
 function removeEntireImport(s: MagicString, code: string, decl: ImportDeclaration): void {
   let removeEnd = decl.end;
   while (removeEnd < code.length && (code[removeEnd] === "\n" || code[removeEnd] === "\r")) {
-    removeEnd++;
+    removeEnd += 1;
   }
   s.remove(decl.start, removeEnd);
 }
@@ -278,12 +278,12 @@ function removeUnusedSpecifiers(
     let removeStart = spec.start;
     let removeEnd = spec.end;
     while (removeEnd < code.length && (code[removeEnd] === "," || code[removeEnd] === " ")) {
-      removeEnd++;
+      removeEnd += 1;
     }
     // react-doctor-disable-next-line react-doctor/js-set-map-lookups
     if (!code.slice(spec.end, removeEnd).includes(",")) {
       while (removeStart > 0 && (code[removeStart - 1] === " " || code[removeStart - 1] === ",")) {
-        removeStart--;
+        removeStart -= 1;
       }
     }
     s.remove(removeStart, removeEnd);
@@ -312,8 +312,8 @@ export function deadCodeElimination(s: MagicString, lang: SourceLang): MagicStri
   const fresh = new MagicString(code);
   const refs = collectReferencedNames(program);
 
-  const body = program.body;
-  for (let i = body.length - 1; i >= 0; i--) {
+  const { body } = program;
+  for (let i = body.length - 1; i >= 0; i -= 1) {
     const stmt = body[i];
     if (!stmt) {
       continue;
@@ -322,7 +322,7 @@ export function deadCodeElimination(s: MagicString, lang: SourceLang): MagicStri
       continue;
     }
     const decl = stmt as unknown as ImportDeclaration;
-    if (!decl.specifiers || decl.specifiers.length === 0) {
+    if (decl.specifiers.length === 0) {
       continue;
     }
 
@@ -354,7 +354,7 @@ function removeServerExports(s: MagicString, source: string, program: Program): 
       return;
     }
     // Unwrap `createRoute({...} as Config)` / `page({...} satisfies Opts)` etc.
-    const firstArg = call.arguments[0];
+    const [firstArg] = call.arguments;
     if (!firstArg) {
       return;
     }

@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: static build emits routes in sequence to keep output deterministic
 import { cpSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { buildClient } from "../build/client.ts";
@@ -5,14 +6,11 @@ import { ensureDir, toPosixPath } from "../build/shared.ts";
 import type { BuildAppOptions, StaticTargetBuildManifest } from "../build/types.ts";
 import type { StaticExportConfig } from "../config.ts";
 import { resolvePath } from "../server/render/assemble.ts";
-import { prerenderSSG } from "../server/render/index.ts";
 import { generateProdIndexHtml } from "../server/render/shell.ts";
+import { prerenderSSG } from "../server/render/ssg.ts";
 import { setProductionTemplateContent } from "../server/render/template.ts";
-import {
-  createSearchRouteMetadata,
-  type ResolvedRoute,
-  type RootLayout,
-} from "../server/router/index.ts";
+import { createSearchRouteMetadata } from "../server/router/schemas.ts";
+import type { ResolvedRoute, RootLayout } from "../server/router/types.ts";
 import type { SearchRouteMetadata } from "../shared/search-params.ts";
 import { mapWithConcurrency } from "../shared/utils/index.ts";
 
@@ -184,12 +182,10 @@ async function buildTaskQueue(
   );
 
   for (const result of staticParamsResults) {
+    const { pattern } = result.route;
     if ("error" in result) {
-      console.error(
-        `[furin] static: staticParams() failed for "${result.route.pattern}":`,
-        result.error
-      );
-      skippedRoutes.push(result.route.pattern);
+      console.error(`[furin] static: staticParams() failed for "${pattern}":`, result.error);
+      skippedRoutes.push(pattern);
       continue;
     }
     if (result.paramSets === null) {

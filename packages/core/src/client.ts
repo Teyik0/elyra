@@ -269,39 +269,41 @@ export interface Route<
   // Two type params: TLoader is inferred solely from the `loader` position; TPageLoaderData
   // has no inference sites (all NoInfer) so TypeScript applies its default AFTER TLoader is
   // resolved — making declaration order of head/component irrelevant.
-  page<
-    TLoader extends (ctx: RouteContext<TParams, TQuery> & PromisifyData<TParentData>) => unknown,
-    TPageLoaderData extends object = ExtractLoaderReturn<TLoader>,
-  >(config: {
-    loader: TLoader;
-    mode?: "ssr" | "ssg" | "isr";
-    revalidate?: number;
-    staticParams?: () => Promise<NormalizeUnset<TParams>[]> | NormalizeUnset<TParams>[];
-    tags?: string[];
-    component: React.FC<
-      NoInfer<
-        TParentData &
-          TPageLoaderData &
-          RequestDataProp<TRequestData> &
-          ComponentProps<TParams, TQuery>
-      >
-    >;
-    head?: (
-      ctx: NoInfer<ComponentProps<TParams, TQuery> & TParentData & TPageLoaderData>
-    ) => HeadOptions;
-  }): PageResult<TParentData, TParams, TQuery, TPageLoaderData, TRequestData>;
+  page: {
+    <
+      TLoader extends (ctx: RouteContext<TParams, TQuery> & PromisifyData<TParentData>) => unknown,
+      TPageLoaderData extends object = ExtractLoaderReturn<TLoader>,
+    >(config: {
+      loader: TLoader;
+      mode?: "ssr" | "ssg" | "isr";
+      revalidate?: number;
+      staticParams?: () => Promise<NormalizeUnset<TParams>[]> | NormalizeUnset<TParams>[];
+      tags?: string[];
+      component: React.FC<
+        NoInfer<
+          TParentData &
+            TPageLoaderData &
+            RequestDataProp<TRequestData> &
+            ComponentProps<TParams, TQuery>
+        >
+      >;
+      head?: (
+        ctx: NoInfer<ComponentProps<TParams, TQuery> & TParentData & TPageLoaderData>
+      ) => HeadOptions;
+    }): PageResult<TParentData, TParams, TQuery, TPageLoaderData, TRequestData>;
 
-  // Overload 2 — no loader.
-  page(config: {
-    mode?: "ssr" | "ssg" | "isr";
-    revalidate?: number;
-    staticParams?: () => Promise<NormalizeUnset<TParams>[]> | NormalizeUnset<TParams>[];
-    tags?: string[];
-    component: React.FC<
-      TParentData & RequestDataProp<TRequestData> & ComponentProps<TParams, TQuery>
-    >;
-    head?: (ctx: ComponentProps<TParams, TQuery> & TParentData) => HeadOptions;
-  }): PageResult<TParentData, TParams, TQuery, {}, TRequestData>;
+    // Overload 2 — no loader.
+    (config: {
+      mode?: "ssr" | "ssg" | "isr";
+      revalidate?: number;
+      staticParams?: () => Promise<NormalizeUnset<TParams>[]> | NormalizeUnset<TParams>[];
+      tags?: string[];
+      component: React.FC<
+        TParentData & RequestDataProp<TRequestData> & ComponentProps<TParams, TQuery>
+      >;
+      head?: (ctx: ComponentProps<TParams, TQuery> & TParentData) => HeadOptions;
+    }): PageResult<TParentData, TParams, TQuery, {}, TRequestData>;
+  };
 
   params?: unknown;
   parent?: RuntimeRoute;

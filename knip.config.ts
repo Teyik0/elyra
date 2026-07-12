@@ -34,7 +34,7 @@ const config: KnipConfig = {
       project: ["src/**/*.{ts,tsx}"],
     },
     "packages/core": {
-      entry: ["tests/render-cases.ts"],
+      entry: ["tests/**/*.{ts,tsx}"],
       ignore: [
         "src/server/cache/dev-loader.ts",
         "src/server/internal.ts",

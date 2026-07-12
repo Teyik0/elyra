@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: process output stream must be read sequentially
 import { resolve } from "node:path";
 import { withBuildTestLock } from "./build-lock.ts";
 

@@ -92,8 +92,12 @@ describe("useSync", () => {
 
       expect(result).toEqual({ data: { ok: true }, error: null });
       expect(calls).toHaveLength(1);
-      expect(calls[0]?.input).toBeUndefined();
-      expect(calls[0]?.key.length).toBeGreaterThan(0);
+      const [call] = calls;
+      if (!call) {
+        throw new Error("Expected one mutation call");
+      }
+      expect(call.input).toBeUndefined();
+      expect(call.key.length).toBeGreaterThan(0);
     } finally {
       cleanup();
     }
@@ -122,8 +126,12 @@ describe("useSync", () => {
 
       expect(result).toEqual({ data: { ok: true }, error: null });
       expect(calls).toHaveLength(1);
-      expect(calls[0]?.input).toEqual({ title: "Renamed" });
-      expect(calls[0]?.key.length).toBeGreaterThan(0);
+      const [call] = calls;
+      if (!call) {
+        throw new Error("Expected one mutation call");
+      }
+      expect(call.input).toEqual({ title: "Renamed" });
+      expect(call.key.length).toBeGreaterThan(0);
       expect(optimisticInputs).toEqual([{ title: "Renamed" }]);
       expect(successResults).toEqual([{ data: { ok: true }, error: null }]);
     } finally {

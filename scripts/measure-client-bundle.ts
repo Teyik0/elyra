@@ -29,7 +29,7 @@ function getDirectory(filePath: string): string {
   return normalized.slice(0, slashIndex);
 }
 
-function joinPath(baseDir: string, assetPath: string): string {
+function joinPath(rootDir: string, assetPath: string): string {
   const cleanAssetPath = assetPath.split("?")[0]?.split("#")[0];
 
   if (!cleanAssetPath) {
@@ -37,14 +37,14 @@ function joinPath(baseDir: string, assetPath: string): string {
   }
 
   if (cleanAssetPath.startsWith("/_client/")) {
-    return `${baseDir}/${cleanAssetPath.slice("/_client/".length)}`;
+    return `${rootDir}/${cleanAssetPath.slice("/_client/".length)}`;
   }
 
   if (cleanAssetPath.startsWith("/")) {
-    return `${baseDir}${cleanAssetPath}`;
+    return `${rootDir}${cleanAssetPath}`;
   }
 
-  return `${baseDir}/${cleanAssetPath}`;
+  return `${rootDir}/${cleanAssetPath}`;
 }
 
 function isLocalAssetPath(assetPath: string): boolean {
@@ -52,20 +52,18 @@ function isLocalAssetPath(assetPath: string): boolean {
     return false;
   }
 
-  try {
-    new URL(assetPath);
+  if (URL.canParse(assetPath)) {
     return false;
-  } catch {
-    return true;
   }
+  return true;
 }
 
-function extractClientAssetPaths(html: string): string[] {
+function extractClientAssetPaths(sourceHtml: string): string[] {
   const assetPaths = new Set<string>();
   const attributePattern = /\b(?:src|href)=["']([^"']+\.(?:js|css)(?:[?#][^"']*)?)["']/g;
 
-  for (const match of html.matchAll(attributePattern)) {
-    const assetPath = match[1];
+  for (const match of sourceHtml.matchAll(attributePattern)) {
+    const [, assetPath] = match;
 
     if (assetPath !== undefined && isLocalAssetPath(assetPath)) {
       assetPaths.add(assetPath);
@@ -75,8 +73,8 @@ function extractClientAssetPaths(html: string): string[] {
   return [...assetPaths].toSorted();
 }
 
-async function measureAsset(baseDir: string, assetPath: string): Promise<ClientAsset> {
-  const filePath = joinPath(baseDir, assetPath);
+async function measureAsset(rootDir: string, assetPath: string): Promise<ClientAsset> {
+  const filePath = joinPath(rootDir, assetPath);
   const bytes = new Uint8Array(await Bun.file(filePath).arrayBuffer());
 
   return {
@@ -90,7 +88,7 @@ function printUsage(): void {
   console.error("Usage: bun scripts/measure-client-bundle.ts <path-to-client-index.html>");
 }
 
-const htmlPath = Bun.argv[2];
+const [, , htmlPath] = Bun.argv;
 
 if (htmlPath === undefined) {
   printUsage();
@@ -104,16 +102,18 @@ if (!(await htmlFile.exists())) {
   process.exit(1);
 }
 
-const html = decoder.decode(await htmlFile.arrayBuffer());
-const baseDir = getDirectory(htmlPath);
-const assetPaths = extractClientAssetPaths(html);
+const documentHtml = decoder.decode(await htmlFile.arrayBuffer());
+const htmlBaseDir = getDirectory(htmlPath);
+const assetPaths = extractClientAssetPaths(documentHtml);
 
 if (assetPaths.length === 0) {
   console.error(`No client JS or CSS assets found in: ${htmlPath}`);
   process.exit(1);
 }
 
-const assets = await Promise.all(assetPaths.map((assetPath) => measureAsset(baseDir, assetPath)));
+const assets = await Promise.all(
+  assetPaths.map((assetPath) => measureAsset(htmlBaseDir, assetPath))
+);
 const totals = assets.reduce(
   (current, asset) => ({
     gzipBytes: current.gzipBytes + asset.gzipBytes,

@@ -32,6 +32,7 @@ import { findSearchDefaults } from "../src/shared/search-params.ts";
 const PRODUCTS_RE = /^\/products$/;
 const PRODUCT_DETAIL_RE = /^\/products\/([^/]+)$/;
 const PRODUCT_NEW_RE = /^\/products\/new$/;
+const HREF_ATTRIBUTE_RE = /\shref="([^"]*)"/;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,14 @@ function makeRouterContext(overrides: Partial<RouterContextValue> | undefined): 
 
 function renderWithRouter(element: React.ReactElement, ctx: RouterContextValue): string {
   return renderToStaticMarkup(createElement(RouterContext.Provider, { value: ctx }, element));
+}
+
+function getHref(html: string): string {
+  const href = html.match(HREF_ATTRIBUTE_RE)?.[1];
+  if (href === undefined) {
+    throw new Error(`Rendered link is missing href: ${html}`);
+  }
+  return href;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -347,7 +356,7 @@ describe("Link", () => {
     );
 
     expect(html).toContain('data-furin-link="true"');
-    expect(html).toContain('href="/products"');
+    expect(getHref(html)).toBe("/products");
     expect(html).toContain(">Products</a>");
   });
 

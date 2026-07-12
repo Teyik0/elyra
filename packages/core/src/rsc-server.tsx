@@ -5,6 +5,7 @@ import type {
   RenderableServerComponent,
   RscSourceState,
 } from "./rsc/shared.tsx";
+import { decodeFlightBytes } from "./rsc/shared.tsx";
 import { RSC_SOURCE, SLOT_MARKER } from "./rsc/symbols.ts";
 
 async function renderBytes(node: ReactNode): Promise<Uint8Array> {
@@ -33,6 +34,7 @@ function createServerRenderableSource<TNode extends ReactNode>(
   }) as RenderableServerComponent<TNode>;
 }
 
+// react-doctor-disable-next-line react-doctor/only-export-components
 export async function renderServerComponent<TNode extends ReactNode>(
   node: TNode
 ): Promise<RenderableServerComponent<TNode>> {
@@ -40,7 +42,7 @@ export async function renderServerComponent<TNode extends ReactNode>(
   return createServerRenderableSource<TNode>({
     bytes,
     kind: "renderable",
-    tree: Promise.resolve(node),
+    tree: decodeFlightBytes(bytes),
   });
 }
 
@@ -61,11 +63,12 @@ function createSlotProxy<TProps extends object>(): TProps {
 type CompositePropsWithSupportedChildren<TProps extends object> = TProps extends {
   children?: infer TChildren;
 }
-  ? TChildren extends ReactNode | undefined
-    ? TProps
+  ? [TChildren] extends [ReactNode | undefined]
+    ? Omit<TProps, "children"> & { children?: ReactNode }
     : never
   : TProps;
 
+// react-doctor-disable-next-line react-doctor/only-export-components
 export async function createCompositeComponent<TProps extends object>(
   component: (props: CompositePropsWithSupportedChildren<TProps>) => ReactNode | Promise<ReactNode>
 ): Promise<CompositeComponentSource<TProps>> {

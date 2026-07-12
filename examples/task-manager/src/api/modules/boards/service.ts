@@ -234,7 +234,7 @@ export interface BoardStats {
 export function computeBoardStats(boardCards: Card[]): BoardStats {
   const byColumn = { backlog: 0, doing: 0, done: 0, todo: 0 };
   for (const card of boardCards) {
-    byColumn[card.column as keyof typeof byColumn]++;
+    byColumn[card.column as keyof typeof byColumn] += 1;
   }
 
   const total = boardCards.length;

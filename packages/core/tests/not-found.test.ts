@@ -20,7 +20,7 @@ describe("notFound()", () => {
       notFound({ data: { slug: "missing" }, message: "Post gone" });
     } catch (err) {
       if (!isNotFoundError(err)) {
-        throw new Error("expected a not-found error");
+        throw new Error("expected a not-found error", { cause: err });
       }
       expect(err.message).toBe("Post gone");
       expect(err.data).toEqual({ slug: "missing" });

@@ -23,7 +23,7 @@ export function generateFileTree(rootName: string, filePaths: string[]): string[
     const parts = filePath.split("/").filter(Boolean);
     let current = root;
 
-    for (let i = 0; i < parts.length; i++) {
+    for (let i = 0; i < parts.length; i += 1) {
       const part = parts[i];
       if (!part) {
         continue;
@@ -56,7 +56,7 @@ function renderNode(node: TreeNode, prefix: string, isRoot: boolean, lines: stri
 
   const children = [...node.children.values()];
 
-  for (let i = 0; i < children.length; i++) {
+  for (let i = 0; i < children.length; i += 1) {
     const child = children[i];
     if (!child) {
       continue;

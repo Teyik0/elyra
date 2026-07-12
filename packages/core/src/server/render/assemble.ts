@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: readable streams must be consumed sequentially
 import type { toCrossJSON } from "seroval";
 import { containsRscSource, serializeRouteFrames } from "../../shared/route-frame.ts";
 import { getSyncStreamPath } from "../sync/config.ts";
@@ -77,7 +78,7 @@ export interface LoaderContext {
 
 export function resolvePath(pattern: string, params: Record<string, string>): string {
   let path = pattern;
-  for (const [key, val] of Object.entries(params ?? {})) {
+  for (const [key, val] of Object.entries(params)) {
     path = path.replace(key === "*" ? "*" : `:${key}`, val);
   }
   return path;

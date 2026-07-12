@@ -18,7 +18,7 @@ export function computeErrorDigest(err: unknown): string {
   let stack = "";
 
   if (err instanceof Error) {
-    message = err.message;
+    ({ message } = err);
     stack = err.stack ?? "";
   } else if (typeof err === "string") {
     message = err;
@@ -53,7 +53,7 @@ function cyrb53(input: string): number {
   let h1 = 0xde_ad_be_ef;
   let h2 = 0x41_c6_ce_57;
 
-  for (let i = 0; i < input.length; i++) {
+  for (let i = 0; i < input.length; i += 1) {
     const ch = input.charCodeAt(i);
     // biome-ignore lint/suspicious/noBitwiseOperators: cyrb53 hash requires XOR
     h1 = Math.imul(h1 ^ ch, 2_654_435_761);

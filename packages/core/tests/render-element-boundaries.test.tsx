@@ -83,7 +83,7 @@ function typeChain(node: ReactNode): string[] {
   const chain: string[] = [];
   let current: ReactNode = node;
   while (isValidElement(current)) {
-    const type = (current as ReactElement).type;
+    const { type } = current as ReactElement;
     const name =
       typeof type === "string"
         ? type
@@ -91,8 +91,7 @@ function typeChain(node: ReactNode): string[] {
           (type as { name?: string }).name ??
           "Anonymous");
     chain.push(name);
-    const props = (current as ReactElement).props as { children?: ReactNode };
-    const children = props.children;
+    const { children } = (current as ReactElement).props as { children?: ReactNode };
     // Walk into the single child (or first if fragment-like), ignoring arrays
     // unless they contain exactly one valid element.
     if (Array.isArray(children)) {
@@ -227,7 +226,7 @@ describe("buildElement — boundary interleaving", () => {
       } else if (node.type === FurinNotFoundBoundary) {
         nf = node;
       }
-      const children = (node.props as { children?: ReactNode }).children;
+      const { children } = node.props as { children?: ReactNode };
       node = firstValidChild(children);
     }
     expect(err?.props).toMatchObject({ fallback: E });

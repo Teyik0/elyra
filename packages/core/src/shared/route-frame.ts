@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: route-frame parsing consumes ordered chunks and retries sequentially
 import type { SerovalNode } from "seroval";
 import { fromCrossJSON, toCrossJSON } from "seroval";
 import {
@@ -242,7 +243,7 @@ function hydrateRscDescriptors(
   }
   if (Array.isArray(value)) {
     seen.set(value, value);
-    for (let i = 0; i < value.length; i++) {
+    for (let i = 0; i < value.length; i += 1) {
       value[i] = hydrateRscDescriptors(value[i], sources, seen);
     }
     return value;
@@ -323,7 +324,7 @@ export async function parseRouteFrameLines(
     if (envelope.__furinRouteFrame !== FRAME_VERSION) {
       throw new Error("[furin] unsupported route frame version");
     }
-    const frame = envelope.frame;
+    const { frame } = envelope;
     if (frame.type === "data") {
       dataValue = fromCrossJSON(frame.value, {});
       for (const key of frame.deferredKeys) {
@@ -380,6 +381,7 @@ export async function parseRouteFrameLines(
   const expectedSources = new Set<string>();
   collectRscDescriptorIds(dataValue, expectedSources);
   while ([...expectedSources].some((id) => !sources.has(id))) {
+    // react-doctor-disable-next-line react-doctor/async-await-in-loop
     const line = await readLine();
     if (line === undefined) {
       throw new Error("[furin] route frame stream ended before an RSC source completed");

@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: test stream fixtures intentionally consume chunks in order
 import { describe, expect, test } from "bun:test";
 import { toCrossJSON, toCrossJSONAsync } from "seroval";
 import { parseDeferredNdjson } from "../src/shared/deferred-ndjson.ts";

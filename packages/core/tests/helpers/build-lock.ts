@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: build lock helper polls sequentially until the lock is released
 import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 

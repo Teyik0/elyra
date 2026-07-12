@@ -58,16 +58,17 @@ export function withBuildStub<T>(run: () => Promise<T>): Promise<T> {
   let buildCallCount = 0;
 
   const build = ((config) => {
-    runPluginSetups((config as Bun.BuildConfig).plugins);
-    const outdir = (config as Bun.BuildConfig).outdir;
-    const compile = (config as Bun.BuildConfig).compile;
+    const { compile, outdir, plugins } = config as Bun.BuildConfig;
+    runPluginSetups(plugins);
     const outfile = typeof compile === "object" ? compile.outfile : undefined;
     if (typeof outfile === "string") {
       mkdirSync(dirname(outfile), { recursive: true });
       writeFileSync(outfile, "#!/usr/bin/env bun\n");
     }
     const outputs: Array<{ kind: string; path: string; size: number }> = [];
-    if (buildCallCount++ === 0 && typeof outdir === "string") {
+    const isFirstBuild = buildCallCount === 0;
+    buildCallCount += 1;
+    if (isFirstBuild && typeof outdir === "string") {
       mkdirSync(outdir, { recursive: true });
       const jsPath = join(outdir, "_hydrate.js");
       const cssPath = join(outdir, "_hydrate.css");

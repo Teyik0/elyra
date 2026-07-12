@@ -48,6 +48,7 @@ export async function storeResponse(
   const headers = responseHeaders(set.headers);
   const statusResponse = unwrapStatusResponse(responseValue);
   const value = statusResponse?.value ?? responseValue;
+  const responseStatus = statusResponse ? statusResponse.status : statusCode(set.status);
   let body: Uint8Array;
   if (value === undefined || value === null) {
     body = new Uint8Array();
@@ -61,7 +62,7 @@ export async function storeResponse(
   return {
     body,
     headers: [...headers.entries()],
-    status: statusResponse?.status ?? statusCode(set.status),
+    status: responseStatus,
   };
 }
 

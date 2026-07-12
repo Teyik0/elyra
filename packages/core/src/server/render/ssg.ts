@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: SSG rendering writes route outputs in a deterministic sequence
 import type { SearchRouteMetadata } from "../../shared/search-params.ts";
 import { mapWithConcurrency } from "../../shared/utils/index.ts";
 import type { SsgCacheEntry } from "../cache/isr-ssg.ts";

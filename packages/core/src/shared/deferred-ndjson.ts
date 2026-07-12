@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: NDJSON stream chunks must be read sequentially
 import type { SerovalNode } from "seroval";
 import { fromCrossJSON } from "seroval";
 import { isRouteFrameLine, parseRouteFrameLines } from "./route-frame.ts";

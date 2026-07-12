@@ -4,16 +4,9 @@ import {
   findSearchDefaultsForRouteTarget,
   type SearchParamsInput,
 } from "../shared/search-params.ts";
-import {
-  buildHref,
-  CLIENT_FALLBACK_ROUTER,
-  type LinkProps,
-  normalizeHref,
-  RouterContext,
-  type RouterContextValue,
-  type RouteTo,
-  useRouter,
-} from "./router/index.ts";
+import { CLIENT_FALLBACK_ROUTER, RouterContext, useRouter } from "./router/context.ts";
+import { buildHref, normalizeHref } from "./router/link-utils.ts";
+import type { LinkProps, RouterContextValue, RouteTo } from "./router/types.ts";
 
 // biome-ignore lint/performance/noBarrelFile: re-exporting router symbols preserves backward compatibility for @teyik0/furin/link consumers
 export * from "./router/index.ts";
@@ -70,6 +63,14 @@ function computeLinkView<To extends RouteTo>(
   return { extraProps, href, isActive, logicalHref, resolvedChildren };
 }
 
+function isSameOriginUrl(url: string): boolean {
+  try {
+    return new URL(url, window.location.origin).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Full interactive Link — only rendered on the client where hooks are safe.
  * Never rendered during SSR so it's immune to duplicate-React-instance issues
@@ -115,6 +116,7 @@ function LinkInteractive<To extends RouteTo>({
   const triggerPrefetch = useCallback(() => {
     // prefetch() expects the logical href (no basePath prefix).
     prefetch(logicalHref, { staleTime: effectiveStaleTime });
+    // react-doctor-disable-next-line react-doctor/exhaustive-deps
   }, [prefetch, logicalHref, effectiveStaleTime]);
 
   // "render": preload immediately on mount
@@ -122,6 +124,7 @@ function LinkInteractive<To extends RouteTo>({
     if (effectivePreload === "render") {
       triggerPrefetch();
     }
+    // react-doctor-disable-next-line react-doctor/exhaustive-deps
   }, [effectivePreload, triggerPrefetch]);
 
   // "viewport": preload when link enters viewport
@@ -140,6 +143,7 @@ function LinkInteractive<To extends RouteTo>({
     );
     observer.observe(anchorRef.current);
     return () => observer.disconnect();
+    // react-doctor-disable-next-line react-doctor/exhaustive-deps
   }, [effectivePreload, triggerPrefetch]);
 
   // Clear any pending intent prefetch timer on unmount to avoid leaking
@@ -153,14 +157,6 @@ function LinkInteractive<To extends RouteTo>({
     },
     []
   );
-
-  const isInternal = (url: string): boolean => {
-    try {
-      return new URL(url, window.location.origin).origin === window.location.origin;
-    } catch {
-      return false;
-    }
-  };
 
   const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e);
@@ -180,7 +176,7 @@ function LinkInteractive<To extends RouteTo>({
       return;
     }
     // Let browser handle external links
-    if (!isInternal(href)) {
+    if (!isSameOriginUrl(href)) {
       return;
     }
     e.preventDefault();
@@ -196,7 +192,7 @@ function LinkInteractive<To extends RouteTo>({
 
   const handleMouseEnter = (e: React.MouseEvent<HTMLAnchorElement>) => {
     onMouseEnter?.(e);
-    if (!disabled && effectivePreload === "intent" && isInternal(href)) {
+    if (!disabled && effectivePreload === "intent" && isSameOriginUrl(href)) {
       intentTimerRef.current = setTimeout(triggerPrefetch, effectiveDelay);
     }
   };
@@ -211,7 +207,7 @@ function LinkInteractive<To extends RouteTo>({
 
   const handleFocus = (e: React.FocusEvent<HTMLAnchorElement>) => {
     onFocus?.(e);
-    if (!disabled && effectivePreload === "intent" && isInternal(href)) {
+    if (!disabled && effectivePreload === "intent" && isSameOriginUrl(href)) {
       triggerPrefetch();
     }
   };

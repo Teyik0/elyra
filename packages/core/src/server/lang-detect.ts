@@ -1,20 +1,19 @@
-import type { SourceLang } from "@yuku-toolchain/types";
+import type { SourceLang } from "yuku-parser";
 
 export function detectLangFromPath(filePath: string): SourceLang {
   if (filePath.endsWith(".d.ts")) {
     return "dts";
   }
-  const ext = filePath.split(".").pop()?.toLowerCase();
-  switch (ext) {
-    case "ts":
-      return "ts";
-    case "tsx":
-      return "tsx";
-    case "jsx":
-      return "jsx";
-    default:
-      return "js";
+  if (filePath.endsWith(".tsx")) {
+    return "tsx";
   }
+  if (filePath.endsWith(".ts")) {
+    return "ts";
+  }
+  if (filePath.endsWith(".jsx")) {
+    return "jsx";
+  }
+  return "js";
 }
 
 interface MaybeWrappedNode {

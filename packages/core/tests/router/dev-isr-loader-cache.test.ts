@@ -12,6 +12,7 @@ import {
   getDevSSGLoaderCache,
   invalidateDevLoaderCacheBySource,
 } from "./src/server/cache/index.ts";
+import { registerDevPagePlugin } from "./src/server/dev-page-plugin.ts";
 import { createDevInspectorPlugin } from "./src/server/dev-inspector.ts";
 import { setProductionTemplateContent } from "./src/server/render/template.ts";
 import { scanPages } from "./src/server/router/discovery.ts";
@@ -62,6 +63,7 @@ function timestampFrom(html) {
 
 __setDevMode(false);
 setProductionTemplateContent(template);
+registerDevPagePlugin();
 
 {
   prepareDevCacheTest();

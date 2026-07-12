@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: route discovery walks filesystem entries sequentially for deterministic ordering
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, parse } from "node:path";
@@ -328,7 +329,7 @@ async function collectSegmentBoundaries(
   }
 
   const boundaries: SegmentBoundary[] = [];
-  for (let depth = 0; depth < dirs.length; depth++) {
+  for (let depth = 0; depth < dirs.length; depth += 1) {
     const dir = dirs[depth] as string;
 
     const [errorEntry, notFoundEntry] = await Promise.all([

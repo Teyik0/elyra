@@ -145,7 +145,7 @@ export class MemorySyncAdapter implements SyncAdapter {
   }
 
   subscribe(path: string, listener: SyncChangeListener): () => void {
-    const listeners = this.getChangeState(path).listeners;
+    const { listeners } = this.getChangeState(path);
     listeners.add(listener);
     return () => listeners.delete(listener);
   }

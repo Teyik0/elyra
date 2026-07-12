@@ -223,7 +223,7 @@ describe("writeRouteTypes", () => {
   });
 
   test("route-chain query schemas are merged in generated search types", () => {
-    const routes = [
+    const chainRoutes = [
       {
         pattern: "/parent/child",
         routeChain: [
@@ -239,7 +239,7 @@ describe("writeRouteTypes", () => {
       },
     ] as ResolvedRoute[];
 
-    writeRouteTypes(routes, tmpDir);
+    writeRouteTypes(chainRoutes, tmpDir);
 
     const content = readFileSync(join(tmpDir, "furin-env.d.ts"), "utf8");
     expect(content).toContain(

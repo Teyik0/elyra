@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildRscGraph } from "../src/rsc/build";
 import { environmentGuardPlugin } from "../src/rsc/build/environment";
-import { resolveConfiguredCodecPath } from "../src/rsc/codec";
+import { resolveBuiltCodecPath, resolveConfiguredCodecPath } from "../src/rsc/codec";
 import { assertCompatibleRscVersions } from "../src/rsc/version";
 
 const paths: string[] = [];
@@ -53,6 +53,16 @@ describe("RSC graph environment guards", () => {
 
   test("treats a blank configured Flight codec path as unset", () => {
     expect(resolveConfiguredCodecPath("   ")).toBeUndefined();
+  });
+
+  test("resolves the Flight codec next to a compiled executable", () => {
+    const moduleDir = mkdtempSync(join(tmpdir(), "furin-rsc-module-"));
+    const executableDir = mkdtempSync(join(tmpdir(), "furin-rsc-executable-"));
+    paths.push(moduleDir, executableDir);
+    const codecPath = join(executableDir, "server-codec.js");
+    writeFileSync(codecPath, "export const renderFlight = () => null;");
+
+    expect(resolveBuiltCodecPath(moduleDir, join(executableDir, "server"))).toBe(codecPath);
   });
 
   test("rejects mismatched React and Flight codec versions", () => {

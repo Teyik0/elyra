@@ -51,7 +51,7 @@ export function createSearchStore(initialSnapshot: SearchStoreSnapshot): SearchS
         return;
       }
       snapshot = next;
-      version++;
+      version += 1;
     },
     subscribe: (listener) => {
       listeners.add(listener);
