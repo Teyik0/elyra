@@ -16,17 +16,6 @@ import { getCacheInvalidators } from "./registry";
 import type { RevalidateType } from "./route-cache";
 import { ssgRouteCache } from "./ssg";
 
-// ── Build ID ─────────────────────────────────────────────────────────────────
-// Lives on the furin instance — each mounted app reports its own build ID.
-
-export function setBuildId(id: string): void {
-  currentInstance().buildId = id;
-}
-
-export function getBuildId(): string {
-  return currentInstance().buildId;
-}
-
 // ── Pending invalidations (server → client bridge) ───────────────────────────
 // The per-request set lives in the instance request scope (see instance.ts);
 // outside a request scope invalidations accumulate in a process-global set.

@@ -117,6 +117,7 @@
   },
   "dependencies": {
     "@elysiajs/static": "^1.4.10",
+    "@yuku-toolchain/types": "0.5.43",
     "magic-string": "^0.30.21",
     "react-server-dom-webpack": "19.2.7",
     "seroval": "^1.5.5",

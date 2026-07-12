@@ -20,9 +20,7 @@ export {
   _runWithRequestInvalidationScope,
   callCachePurger,
   consumePendingInvalidations,
-  getBuildId,
   revalidatePath,
-  setBuildId,
   setCachePurger,
 } from "./invalidation";
 export { deleteISRCache, getISRCache, isrCache, setISRCache } from "./isr";

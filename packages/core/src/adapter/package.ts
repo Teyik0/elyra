@@ -1,6 +1,7 @@
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { type BunTargetApp, createBuildFingerprint } from "../adapter/bun.ts";
+import { runBunBuild } from "../build/bun-build.ts";
 import { buildClient } from "../build/client.ts";
 import { buildEntrySource } from "../build/entry-template.ts";
 import { copyDirRecursive, ensureDir, toPosixPath } from "../build/shared.ts";
@@ -134,7 +135,7 @@ export async function buildPackageTarget(
   const registerEntry = join(targetDir, "register.ts");
   writeFileSync(registerEntry, registerSource);
 
-  const result = await Bun.build({
+  const result = await runBunBuild({
     entrypoints: [registerEntry],
     outdir: targetDir,
     target: "bun",

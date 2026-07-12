@@ -207,7 +207,7 @@ function buildSuccessRender(
   throwOnFailure: boolean
 ): { element: ReactNode; headData: string; errorDigest: string | undefined; status: number } {
   try {
-    const headData = buildHeadInjection(route.page?.head?.(componentProps));
+    const headData = buildHeadInjection(route.page.head?.(componentProps));
     const element = buildElement(route, componentProps, root.route);
     return { element, headData, errorDigest: undefined, status: 200 };
   } catch (headError) {
@@ -265,7 +265,7 @@ export async function prepareRender(
     !isFallback && loaderResult.type === "data" ? loaderResult.deferredPromises : undefined;
   assertDeferredModeAllowed(route, deferredPromises);
 
-  const headers = loaderResult.headers;
+  const { headers } = loaderResult;
   const componentProps = {
     ...syncData,
     ...(deferredPromises ?? {}),
@@ -289,21 +289,23 @@ export async function prepareRender(
     status = 404;
     notFoundError = { message: loaderResult.error.message, data: loaderResult.error.data };
   } else if (loaderResult.type === "error") {
+    const { status: errorStatus } = loaderResult;
     errorDigest = computeErrorDigest(loaderResult.error);
     element = buildErrorElement(
       route.error ?? root.error,
       loaderResult.error,
       errorDigest,
       loaderResult.message,
-      loaderResult.status
+      errorStatus
     );
-    status = loaderResult.status;
+    status = errorStatus;
   } else {
-    const success = buildSuccessRender(route, root, componentProps, throwOnFailure);
-    element = success.element;
-    headData = success.headData;
-    errorDigest = success.errorDigest;
-    status = success.status;
+    ({ element, errorDigest, headData, status } = buildSuccessRender(
+      route,
+      root,
+      componentProps,
+      throwOnFailure
+    ));
   }
 
   // Explicit basePath (static export) wins; otherwise resolve the mount
@@ -366,8 +368,8 @@ export function renderForPath(
         request: new Request(`${origin}${resolvedPath}`),
         headers: {},
         cookie: {},
-        redirect: (url: string, status: number | undefined) =>
-          new Response(null, { status: status ?? 302, headers: { Location: url } }),
+        redirect: (url: string, redirectStatus: number | undefined) =>
+          new Response(null, { status: redirectStatus ?? 302, headers: { Location: url } }),
         set: { headers: {} },
         path: resolvedPath,
       } as Context;
@@ -479,18 +481,6 @@ export async function renderToHTML(
   };
 }
 
-export async function renderToStream(
-  route: ResolvedRoute,
-  ctx: Context,
-  root: RootLayout
-): Promise<ReadableStream | Response> {
-  const response = await renderSSR(route, ctx, root, undefined);
-  if (!response.ok) {
-    return response;
-  }
-  return response.body ?? new ReadableStream();
-}
-
 export async function renderSSR(
   route: ResolvedRoute,
   ctx: Context,
@@ -536,8 +526,7 @@ export async function renderSSR(
     prepared.ssrContext
   );
   const shellErrored = shellError !== undefined;
-  let status = prepared.status;
-  let finalDigest = prepared.errorDigest;
+  let { errorDigest: finalDigest, status } = prepared;
   if (shellError) {
     status = 500;
     finalDigest = shellError.digest;
@@ -572,7 +561,7 @@ export async function renderSSR(
   const deferredSetupScript = hasDeferred ? buildDeferredScript(deferredKeys) : "";
 
   const dataScript = Object.values(dataPayload).some((value) => isRscSource(value))
-    ? buildRouteFrameTemplate(serializeRouteFrames(dataPayload))
+    ? buildRouteFrameTemplate(serializeRouteFrames(dataPayload, undefined))
     : `<script id="__FURIN_DATA__" type="application/json">${safeJson(dataPayload)}</script>`;
   const runtimeScripts = `${buildSyncRuntimeScript()}${dataScript}`;
 
@@ -585,6 +574,7 @@ export async function renderSSR(
 
     const reader = reactStream.getReader();
     for (;;) {
+      // biome-ignore lint/performance/noAwaitInLoops: ReadableStream chunks must be consumed in order.
       const { done, value } = await reader.read();
       if (done) {
         break;

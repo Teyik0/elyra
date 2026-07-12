@@ -41,6 +41,9 @@ const config: KnipConfig = {
         "src/server/render/template.ts",
         "src/server/sync/stream.ts",
       ],
+      ignoreIssues: {
+        "src/server/sync/config.ts": ["exports"],
+      },
       ignoreDependencies: ["expect-type"],
       project: ["src/**/*.{ts,tsx}"],
     },

@@ -99,7 +99,7 @@ export async function createBuildFingerprint(
     .map((route) =>
       JSON.stringify({ mode: route.mode, path: toPosixPath(route.path), pattern: route.pattern })
     )
-    .sort();
+    .sort((a, b) => a.localeCompare(b));
 
   return [entryChunk, ...[...cssChunks].toSorted(), ...routeParts, ...fileParts].join("\n");
 }
@@ -209,6 +209,34 @@ async function buildOneApp(
   };
 }
 
+async function buildAppsSequentially(
+  apps: BunTargetApp[],
+  targetDir: string,
+  serverEntry: string | null,
+  options: BuildAppOptions
+): Promise<{
+  entryApps: BuildEntryOptions["apps"];
+  headlineBuildId: string;
+  hydrateIntermediates: string[];
+}> {
+  const entryApps: BuildEntryOptions["apps"] = [];
+  const hydrateIntermediates: string[] = [];
+  let headlineBuildId = "";
+
+  for (const app of apps) {
+    // biome-ignore lint/performance/noAwaitInLoops: each app installs a build-time template before SSG snapshotting, so this must remain ordered.
+    const built = await buildOneApp(app, targetDir, serverEntry, options);
+    entryApps.push(built.entryApp);
+    hydrateIntermediates.push(built.hydrateIntermediate);
+    // The ROOT app's buildId is the manifest's headline id (back-compat).
+    if (app.prefix === "" || headlineBuildId === "") {
+      headlineBuildId = built.buildId;
+    }
+  }
+
+  return { entryApps, headlineBuildId, hydrateIntermediates };
+}
+
 export async function buildBunTarget(
   apps: BunTargetApp[],
   rootDir: string,
@@ -234,18 +262,13 @@ export async function buildBunTarget(
   ensureDir(targetDir);
 
   const publicDir = existsSync(join(rootDir, "public")) ? join(rootDir, "public") : undefined;
-  const entryApps: BuildEntryOptions["apps"] = [];
-  const hydrateIntermediates: string[] = [];
-
-  for (const app of apps) {
-    const built = await buildOneApp(app, targetDir, serverEntry, options);
-    entryApps.push(built.entryApp);
-    hydrateIntermediates.push(built.hydrateIntermediate);
-    // The ROOT app's buildId is the manifest's headline id (back-compat).
-    if (app.prefix === "" || targetManifest.buildId === "") {
-      targetManifest.buildId = built.buildId;
-    }
-  }
+  const { entryApps, headlineBuildId, hydrateIntermediates } = await buildAppsSequentially(
+    apps,
+    targetDir,
+    serverEntry,
+    options
+  );
+  targetManifest.buildId = headlineBuildId;
   if (serverEntry) {
     targetManifest.rscManifestPath = toPosixPath(
       join(targetManifest.targetDir, "rsc", "manifest.json")

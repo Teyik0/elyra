@@ -108,12 +108,13 @@
     },
     "packages/core": {
       "name": "@teyik0/furin",
-      "version": "0.2.0-alpha.4",
+      "version": "0.2.0-alpha.5",
       "bin": {
         "furin": "./src/cli/index.ts",
       },
       "dependencies": {
         "@elysiajs/static": "^1.4.10",
+        "@yuku-toolchain/types": "0.5.43",
         "magic-string": "^0.30.21",
         "react-server-dom-webpack": "19.2.7",
         "seroval": "^1.5.5",

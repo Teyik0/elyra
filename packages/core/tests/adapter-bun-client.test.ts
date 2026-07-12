@@ -31,16 +31,39 @@ function createCompileTmpApp() {
   return app;
 }
 
+{
+  const app = createTmpApp("cli-app");
+  let message = "";
+  try {
+    await buildBunTarget(
+      [
+        {
+          pagesDir: join(app.path, "src/pages"),
+          prefix: "",
+          root: { path: join(app.path, "src/pages/root.tsx"), route: {} },
+          routes: [],
+        },
+      ],
+      app.path,
+      join(app.path, ".furin/build"),
+      null,
+      { compile: "server", target: "bun" }
+    );
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  assert(message.includes("server entry"), "compile without server entry should fail clearly");
+}
+
 for (const compile of ["server", "embed"]) {
   __resetTemplateState();
   const app = createCompileTmpApp();
   const { root, routes } = await scanPages(join(app.path, "src/pages"));
   await withBuildStub(async () => {
     await buildBunTarget(
-      routes,
+      [{ pagesDir: join(app.path, "src/pages"), prefix: "", root, routes }],
       app.path,
       join(app.path, ".furin/build"),
-      root,
       join(app.path, "src/server.ts"),
       { compile, target: "bun" }
     );
@@ -76,10 +99,9 @@ writeFileSync(
 const { root, routes } = await scanPages(join(app.path, "src/pages"));
 await withBuildStub(async () => {
   const manifest = await buildBunTarget(
-    routes,
+    [{ pagesDir: join(app.path, "src/pages"), prefix: "", root, routes }],
     app.path,
     join(app.path, ".furin/build"),
-    root,
     null,
     { target: "bun" }
   );

@@ -2,13 +2,13 @@
 // `ssgCache` / `isrCache` module exports working now that the real Map lives
 // on the current furin instance (see server/instance.ts).
 export interface StoreView<Entry> {
-  clear(): void;
-  delete(key: string): boolean;
-  entries(): IterableIterator<[string, Entry]>;
-  get(key: string): Entry | undefined;
-  has(key: string): boolean;
-  keys(): IterableIterator<string>;
-  set(key: string, entry: Entry): void;
+  clear: () => void;
+  delete: (key: string) => boolean;
+  entries: () => IterableIterator<[string, Entry]>;
+  get: (key: string) => Entry | undefined;
+  has: (key: string) => boolean;
+  keys: () => IterableIterator<string>;
+  set: (key: string, entry: Entry) => void;
   readonly size: number;
 }
 

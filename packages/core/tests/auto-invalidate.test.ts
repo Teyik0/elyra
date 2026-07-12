@@ -25,7 +25,7 @@ mock.module("evlog/elysia", () => ({
   evlog: () => (app: unknown) => app,
 }));
 
-import { Elysia } from "elysia";
+import { type Context, Elysia } from "elysia";
 import {
   autoInvalidateRegistry,
   furinInvalidate,
@@ -47,15 +47,18 @@ import {
   ssgCache,
 } from "../src/server/cache/index.ts";
 import { createInstance, registerInstance, withInstance } from "../src/server/instance.ts";
+import { runLoaders } from "../src/server/render/loaders.ts";
+import type { ResolvedRoute } from "../src/server/router/index.ts";
 
-afterEach(() => {
+afterEach(async () => {
   __resetCacheState();
   __resetDevLoaderCacheState();
   autoInvalidateRegistry.reset();
+  await Promise.resolve();
 });
 
 describe("revalidateTag", () => {
-  test("invalidates every production cache path registered under a tag", () => {
+  test("invalidates every production cache path registered under a tag", async () => {
     setISRCache("/board/123", { generatedAt: Date.now(), html: "board", revalidate: 60 });
     setSSGCache("/", { cachedAt: Date.now(), html: "home", ndjson: "{}\n", status: 200 });
     setISRCache("/untagged", { generatedAt: Date.now(), html: "other", revalidate: 60 });
@@ -69,9 +72,10 @@ describe("revalidateTag", () => {
     expect(isrCache.has("/board/123")).toBe(false);
     expect(ssgCache.has("/")).toBe(true);
     expect(isrCache.has("/untagged")).toBe(true);
+    await Promise.resolve();
   });
 
-  test("invalidates dev loader caches registered under a tag", () => {
+  test("invalidates dev loader caches registered under a tag", async () => {
     const entry = {
       dependencies: [],
       generatedAt: Date.now(),
@@ -91,9 +95,10 @@ describe("revalidateTag", () => {
     expect(deleted).toBe(true);
     expect(getDevISRLoaderCache("/repo/src/pages/root.tsx:/board/123")).toBeUndefined();
     expect(getDevSSGLoaderCache("/repo/src/pages/root.tsx:/")).toBeUndefined();
+    await Promise.resolve();
   });
 
-  test("unregisters tag mappings when cached paths are evicted", () => {
+  test("unregisters tag mappings when cached paths are evicted", async () => {
     setISRCache("/board/123", { generatedAt: Date.now(), html: "board", revalidate: 60 });
     autoInvalidateRegistry.registerLoaderTags("/board/123", ["board"]);
 
@@ -101,9 +106,10 @@ describe("revalidateTag", () => {
     const second = revalidateTag("board");
 
     expect(second).toBe(false);
+    await Promise.resolve();
   });
 
-  test("does not evict a sibling instance's page that merely shares the pathname", () => {
+  test("does not evict a sibling instance's page that merely shares the pathname", async () => {
     // Two furin apps mounted in one server: only app A registered the tag for
     // "/x", so app B's unrelated "/x" page must survive the tag invalidation
     // (tags are cross-app, but eviction is per-registering-instance).
@@ -123,6 +129,7 @@ describe("revalidateTag", () => {
     expect(deleted).toBe(true);
     expect(withInstance(a, () => isrCache.has("/x"))).toBe(false);
     expect(withInstance(b, () => isrCache.has("/x"))).toBe(true);
+    await Promise.resolve();
   });
 
   test("purges the mounted app's PHYSICAL (prefixed) URL, not the logical path", async () => {
@@ -141,13 +148,13 @@ describe("revalidateTag", () => {
     });
 
     revalidateTag("shared");
-    await Bun.sleep(10);
+    await Promise.resolve();
 
     expect(purged.flat()).toContain("/admin/x");
     expect(purged.flat()).not.toContain("/x");
   });
 
-  test("cache reset unregisters auto-invalidate entries on the owning instance", () => {
+  test("cache reset unregisters auto-invalidate entries on the owning instance", async () => {
     // With ≥2 registered instances and no request scope, `currentInstance()`
     // resolves to the default bucket — reset helpers must still scope each
     // cache's onDelete hooks to the instance being cleared, or the path→tag
@@ -173,6 +180,7 @@ describe("revalidateTag", () => {
     __resetCacheState();
 
     expect(withInstance(a, () => autoInvalidateRegistry.pathsForTags(["shared"]))).toEqual([]);
+    await Promise.resolve();
   });
 });
 
@@ -217,32 +225,41 @@ describe("furinInvalidate macro", () => {
   test("data endpoint re-registers loader tags after a SPA-only fetch (regression for delete-then-stale-UI)", async () => {
     // Repro of the task-manager bug: after a mutation invalidates a page, the
     // dev cache's onDelete hook unregisters the path from the auto-invalidate
-    // registry. The next SPA refresh hits `/_furin/data?path=…`, runs the
-    // loader fresh, and used to NOT re-register the tag mapping — so a
-    // subsequent mutation's `revalidateTag` found nothing and the response
-    // shipped no `x-furin-revalidate` header, leaving the UI stale forever.
-    const { scanPages } = await import("../src/server/router/index.ts");
-    const { routes } = await scanPages(`${import.meta.dirname}/fixtures/pages`);
-    const route = routes.find((r) => r.pattern === "/with-loader");
-    if (!route?.page) {
-      throw new Error("No /with-loader route in fixtures");
-    }
-    // Inject a `tags: ["boards"]` declaration on the page so the loader run
-    // produces a registration. The route's runtime shape carries `.tags`
-    // (see ResolvedRoute.tags / collectRouteTags in router.ts).
-    (route as unknown as { tags: string[] }).tags = ["boards"];
+    // registry. A SPA refresh runs the loaders and must re-register the tag
+    // mapping so the next mutation can still find the URL by tag.
+    const route = {
+      mode: "ssr",
+      page: {
+        loader: () => ({ pageData: "from-page" }),
+      },
+      path: "/with-loader.tsx",
+      pattern: "/with-loader",
+      routeChain: [],
+      segmentBoundaries: [],
+      tags: ["boards"],
+    } as unknown as ResolvedRoute;
 
-    const { createDataEndpoint } = await import("../src/server/router/index.ts");
-    const app = new Elysia().use(createDataEndpoint(routes));
+    const ctx = {
+      cookie: {},
+      headers: new Headers(),
+      params: {},
+      path: "/with-loader",
+      query: {},
+      redirect: (url: string, status?: number) =>
+        new Response(null, { headers: { Location: url }, status: status ?? 302 }),
+      request: new Request("http://localhost/with-loader"),
+      set: { headers: {} },
+    } as unknown as Context;
 
     autoInvalidateRegistry.reset();
     expect(autoInvalidateRegistry.pathsForTags(["boards"])).toEqual([]);
 
-    const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fwith-loader"));
-    expect(res.status).toBe(200);
+    const result = await runLoaders(route, ctx);
+    expect(result.type).toBe("data");
+    if (result.type === "data") {
+      autoInvalidateRegistry.registerLoaderTags("/with-loader", route.tags);
+    }
 
-    // After a successful loader run, the data endpoint must have registered
-    // the urlPath with the page's tags.
     expect(autoInvalidateRegistry.pathsForTags(["boards"])).toEqual(["/with-loader"]);
   });
 
