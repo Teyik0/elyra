@@ -8,7 +8,11 @@ export type SSGCacheSnapshot = Record<string, SsgCacheEntry>;
 export async function buildSSGCacheSnapshot(
   routes: ResolvedRoute[],
   root: RootLayout,
-  origin: string
+  origin: string,
+  // Build-time renders run OUTSIDE any instance scope (default bucket), so a
+  // prefixed app's mount prefix must be passed explicitly — otherwise the
+  // snapshot HTML bakes in basePath "" and prerendered <Link> hrefs lose it.
+  basePath?: string
 ): Promise<SSGCacheSnapshot> {
   const snapshot: SSGCacheSnapshot = {};
   const searchRoutes = createSearchRouteMetadata(routes);
@@ -20,7 +24,7 @@ export async function buildSSGCacheSnapshot(
 
     const paramSets = await route.page.staticParams();
     for (const params of paramSets) {
-      const entry = await prerenderSSG(route, params, root, origin, undefined, searchRoutes);
+      const entry = await prerenderSSG(route, params, root, origin, basePath, searchRoutes);
       if (entry instanceof Response) {
         continue;
       }

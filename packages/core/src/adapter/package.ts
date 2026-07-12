@@ -1,9 +1,9 @@
-import { rmSync, writeFileSync } from "node:fs";
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import type { BunTargetApp } from "../adapter/bun.ts";
+import { type BunTargetApp, createBuildFingerprint } from "../adapter/bun.ts";
 import { buildClient } from "../build/client.ts";
 import { buildEntrySource } from "../build/entry-template.ts";
-import { ensureDir, toPosixPath } from "../build/shared.ts";
+import { copyDirRecursive, ensureDir, toPosixPath } from "../build/shared.ts";
 import { buildSSGCacheSnapshot } from "../build/ssg-cache.ts";
 import type { BuildAppOptions, PackageTargetBuildManifest } from "../build/types.ts";
 import { ssgRouteCache } from "../server/cache/ssg.ts";
@@ -54,18 +54,37 @@ export async function buildPackageTarget(
     clientLogging: options.clientLogging ?? false,
   });
 
-  const buildId = Bun.hash(`${prefix}\n${entryChunk}\n${cssChunks.join("\n")}`)
-    .toString(16)
-    .slice(0, 12);
+  // Same fingerprint as the Bun target: hashing only the client chunks would
+  // keep the old build ID across SSR-only changes (page/loader code that never
+  // reaches the client bundle), defeating stale-deploy detection. The package
+  // target has no server entry, hence `null`.
+  const buildFingerprint = await createBuildFingerprint(
+    `${prefix}\n${entryChunk}`,
+    cssChunks,
+    routes,
+    root,
+    null
+  );
+  const buildId = Bun.hash(buildFingerprint).toString(16).slice(0, 12);
 
   const clientDir = join(targetDir, "client");
+
+  // At runtime furin() derives publicDir next to the baked clientDir
+  // (join(dirname(clientDir), "public")), so the project's public/ assets must
+  // ship inside the artifact or /public/* and /favicon.ico 404 in production.
+  const publicDir = join(rootDir, "public");
+  if (existsSync(publicDir)) {
+    copyDirRecursive(publicDir, join(targetDir, "public"));
+  }
+
   const indexHtml = generateProdIndexHtml(entryChunk, cssChunks, buildId, undefined, false);
   writeFileSync(join(clientDir, "index.html"), indexHtml);
 
-  // SSG snapshot renders through the build-time default state bucket.
+  // SSG snapshot renders through the build-time default state bucket. The
+  // mount prefix is passed explicitly — no instance scope exists at build time.
   setProductionTemplateContent(indexHtml);
   ssgRouteCache().clear();
-  const ssgCache = await buildSSGCacheSnapshot(routes, root, "http://localhost");
+  const ssgCache = await buildSSGCacheSnapshot(routes, root, "http://localhost", prefix);
 
   const rootConventions =
     root.errorPath || root.notFoundPath
@@ -149,15 +168,16 @@ const CLIENT_DIR = fileURLToPath(new URL("./client", import.meta.url));
 /**
  * Mounts this packaged furin app as an Elysia plugin.
  *
- * @param {object} [options] Extra furin() options (logger, sync, ...).
+ * @param {object} [options] Extra furin() options (logger, sync, ...) —
+ * pagesDir/prefix/clientDir are baked into the package and cannot be overridden.
  * @returns {Promise<import("elysia").Elysia>}
  */
 export function createFurinApp(options = {}) {
   return furin({
+    ...options,
     pagesDir: PAGES_DIR,
     prefix: ${JSON.stringify(prefix)},
     clientDir: CLIENT_DIR,
-    ...options,
   });
 }
 
@@ -166,9 +186,11 @@ export const prefix = ${JSON.stringify(prefix)};
   writeFileSync(join(targetDir, "index.js"), factorySource);
 
   const dtsSource = `import type { Elysia } from "elysia";
+import type { FurinOptions } from "@teyik0/furin";
 
-/** Mounts this packaged furin app as an Elysia plugin. */
-export declare function createFurinApp(options?: Record<string, unknown>): Promise<Elysia>;
+/** Extra furin() options — pagesDir/prefix/clientDir are baked into the package and cannot be overridden. */
+export type CreateFurinAppOptions = Omit<FurinOptions, "pagesDir" | "prefix" | "clientDir">;
+export declare function createFurinApp(options?: CreateFurinAppOptions): Promise<Elysia>;
 export declare const prefix: string;
 `;
   writeFileSync(join(targetDir, "index.d.ts"), dtsSource);

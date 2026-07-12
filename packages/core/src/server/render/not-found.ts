@@ -1,7 +1,8 @@
 import { renderToReadableStream } from "react-dom/server";
-import { normalizeHref, type RouterContextValue } from "../../client/router/index.ts";
+import { normalizeHref, type RouterContextValue, toLogical } from "../../client/router/index.ts";
 import { FurinNotFoundError } from "../../shared/not-found.ts";
 import { useLogger } from "../context-logger.ts";
+import { currentInstance } from "../instance.ts";
 import type { RootLayout } from "../router/index.ts";
 import { IS_DEV } from "../runtime-env.ts";
 import { assembleHTML, streamToString } from "./assemble.ts";
@@ -40,9 +41,14 @@ export async function renderRootNotFound(
   }
   const notFoundError = new FurinNotFoundError(undefined);
 
+  // The request-scope wrap binds the path-resolved instance before this
+  // handler runs, so its prefix is the basePath — SSR'd links on the 404
+  // page must be physical (prefixed), and currentHref logical, exactly like
+  // the regular render pipeline.
+  const basePath = currentInstance().prefix;
   const notFoundContext: RouterContextValue = {
-    basePath: "",
-    currentHref: request ? normalizeHref(new URL(request.url).pathname) : "/",
+    basePath,
+    currentHref: request ? normalizeHref(toLogical(new URL(request.url).pathname, basePath)) : "/",
     search: {},
     searchRoutes: [],
     navigate: (_href, _opts) => Promise.resolve(),

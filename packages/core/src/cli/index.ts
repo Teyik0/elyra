@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { buildApp } from "../build/index.ts";
 import { BUILD_TARGETS, type BuildTarget } from "../config.ts";
+import { normalizePrefix } from "../server/instance.ts";
 import { loadCliConfig } from "./config.ts";
 
 const argv = process.argv.slice(2);
@@ -93,9 +94,16 @@ if (command === "build") {
     rootDir: config.rootDir,
     // --pagesDir/--prefix build a single explicit app; otherwise fall back to
     // the config's `apps` list (then to server.ts scanning inside buildApp).
+    // normalizePrefix here so a bad --prefix fails before buildApp starts
+    // (resolveAppSpecs normalizes config-provided prefixes the same way).
     apps:
       (values.pagesDir ?? config.pagesDir)
-        ? [{ pagesDir: values.pagesDir ?? (config.pagesDir as string), prefix: values.prefix }]
+        ? [
+            {
+              pagesDir: values.pagesDir ?? (config.pagesDir as string),
+              prefix: normalizePrefix(values.prefix),
+            },
+          ]
         : config.apps,
     pagesDir: undefined,
     serverEntry: resolvedServerEntry,

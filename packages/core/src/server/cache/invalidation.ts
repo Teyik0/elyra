@@ -4,6 +4,7 @@ import {
   allInstances,
   allStateBuckets,
   currentInstance,
+  type FurinInstance,
   requestPendingInvalidations,
   runWithInstanceScope,
   withInstance,
@@ -86,22 +87,42 @@ export function callCachePurger(paths: string[]): void {
  * (auto-invalidate unregistration) hit the owning instance's registry.
  */
 export function revalidatePath(path: string, type: RevalidateType): boolean {
-  _activeInvalidationSet().add(type === "layout" ? `${path}:layout` : path);
-
   let deleted = false;
   const purgedPaths: string[] = [];
   for (const instance of allInstances()) {
-    withInstance(instance, () => {
-      for (const invalidator of getCacheInvalidators(instance)) {
-        const result = invalidator.invalidatePath(path, type);
-        deleted = result.deleted || deleted;
-        purgedPaths.push(...result.purgedPaths);
-      }
-    });
+    const result = revalidatePathForInstance(instance, path, type);
+    deleted = result.deleted || deleted;
+    purgedPaths.push(...result.purgedPaths);
   }
 
   callCachePurger(dedupePaths([...purgedPaths, path]));
   return deleted;
+}
+
+/**
+ * Invalidates `path` against a SINGLE instance's caches. `revalidateTag` uses
+ * this because it knows which instance registered each path — the cross-app
+ * fan-out of `revalidatePath` would also evict a sibling app's unrelated page
+ * that merely shares the pathname. Does NOT call the CDN purger; callers
+ * batch the returned `purgedPaths` themselves.
+ */
+export function revalidatePathForInstance(
+  instance: FurinInstance,
+  path: string,
+  type: RevalidateType
+): { deleted: boolean; purgedPaths: string[] } {
+  _activeInvalidationSet().add(type === "layout" ? `${path}:layout` : path);
+
+  let deleted = false;
+  const purgedPaths: string[] = [];
+  withInstance(instance, () => {
+    for (const invalidator of getCacheInvalidators(instance)) {
+      const result = invalidator.invalidatePath(path, type);
+      deleted = result.deleted || deleted;
+      purgedPaths.push(...result.purgedPaths);
+    }
+  });
+  return { deleted, purgedPaths };
 }
 
 function dedupePaths(paths: string[]): string[] {
@@ -111,9 +132,15 @@ function dedupePaths(paths: string[]): string[] {
 /** @internal — resets all module state between tests */
 export function __resetCacheState(): void {
   for (const instance of allStateBuckets()) {
-    isrRouteCache(instance).clear();
-    ssgRouteCache(instance).clear();
-    clearDevLoaderCaches(instance);
+    // `.clear()` fires each entry's onDelete hook, and those hooks resolve
+    // the auto-invalidate registry via `currentInstance()` — scope to the
+    // bucket being cleared so unregistrations hit ITS registry instead of
+    // the ambient (default) one.
+    withInstance(instance, () => {
+      isrRouteCache(instance).clear();
+      ssgRouteCache(instance).clear();
+      clearDevLoaderCaches(instance);
+    });
     instance.buildId = "";
   }
   // Forget mounted instances (fresh furin() calls between tests must not hit

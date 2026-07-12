@@ -4,7 +4,9 @@ import { buildBunTarget, type BunTargetApp } from "../adapter/bun";
 import { buildPackageTarget } from "../adapter/package";
 import { buildStaticTarget } from "../adapter/static";
 import { BUILD_TARGETS, type BuildTarget, type FurinPlugin } from "../config";
+import { normalizePrefix } from "../server/instance.ts";
 import { scanPages } from "../server/router/index.ts";
+import { assertNoPrefixSlugCollisions } from "../shared/prefix.ts";
 import { scanFurinInstances } from "./scan-server";
 import { ensureDir, toBuildRouteManifestEntry, toPosixPath } from "./shared";
 import type { BuildAppOptions, BuildAppResult, BuildManifest } from "./types";
@@ -41,9 +43,13 @@ function resolveAppSpecs(
   rootDir: string
 ): Array<{ pagesDir: string; prefix: string }> {
   if (options.apps && options.apps.length > 0) {
+    // normalizePrefix is the choke point for config/CLI-provided prefixes:
+    // `"/"` → `""` (otherwise the bun target derives `publicPath: "//_client/"`,
+    // a protocol-relative URL), trailing slashes are trimmed, and invalid
+    // prefixes throw before any build output is written.
     return options.apps.map((app) => ({
       pagesDir: resolve(rootDir, app.pagesDir),
-      prefix: app.prefix ?? "",
+      prefix: normalizePrefix(app.prefix),
     }));
   }
   if (options.pagesDir) {
@@ -113,6 +119,10 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
       `[furin] Two apps are configured with the prefix "${duplicatePrefix.prefix || "/"}" — give each app a unique prefix.`
     );
   }
+  // Distinct prefixes can still slug to the same client dir (`/a-b` vs `/a/b`
+  // → `client-a-b`), which would let a later app's assets overwrite an earlier
+  // one's — reject before any target writes output.
+  assertNoPrefixSlugCollisions(appSpecs.map((spec) => spec.prefix));
 
   const requestedTargets =
     options.target === "all"
@@ -160,6 +170,16 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
         if (apps.length > 1) {
           console.warn(
             "[furin] `--target static` exports the root-mounted app only — prefixed apps are skipped."
+          );
+        }
+        // The static adapter only knows about staticConfig.basePath — the mount
+        // prefix is a server-side concept it never sees. Exporting a prefixed
+        // app without a matching basePath produces root-relative asset URLs.
+        if (primaryApp.prefix !== "") {
+          console.warn(
+            `[furin] \`--target static\` exports an app mounted at "${primaryApp.prefix}", but the ` +
+              `static export ignores the mount prefix — set \`static.basePath\` to "${primaryApp.prefix}" ` +
+              "(or the sub-path the site is served from) so asset URLs resolve correctly."
           );
         }
         manifest.targets.static = await buildStaticTarget(

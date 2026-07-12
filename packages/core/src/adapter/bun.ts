@@ -38,7 +38,15 @@ const BUILD_ID_INPUT_PATHS = [
   `${_pkgSrcDir}/server/router/index${_ext}`,
 ];
 
-async function createBuildFingerprint(
+/**
+ * Deterministic build-ID input covering everything that can change rendered
+ * output: client chunks, route shape, route/root/error/not-found source
+ * contents and the framework's own render pipeline sources. Shared with the
+ * package target so packaged apps get the same stale-deploy detection —
+ * SSR-only changes (loader/page code that never reaches the client bundle)
+ * must still produce a new build ID.
+ */
+export async function createBuildFingerprint(
   entryChunk: string,
   cssChunks: string[],
   routes: ResolvedRoute[],
@@ -167,11 +175,12 @@ async function buildOneApp(
 
   // The SSG snapshot renders through the (build-time) default state bucket:
   // install this app's template, then clear the bucket's html caches so the
-  // previous app's prerenders can never leak into this snapshot.
+  // previous app's prerenders can never leak into this snapshot. The mount
+  // prefix is passed explicitly — no instance scope exists at build time.
   setProductionTemplateContent(indexHtml);
   ssgRouteCache().clear();
   const ssgCache = serverEntry
-    ? await buildSSGCacheSnapshot(routes, root, "http://localhost")
+    ? await buildSSGCacheSnapshot(routes, root, "http://localhost", prefix)
     : undefined;
 
   const { rootConventions, routeMetadata } = buildCompileMetadata(root, routes);

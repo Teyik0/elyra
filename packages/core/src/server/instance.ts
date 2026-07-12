@@ -93,11 +93,13 @@ export function normalizePrefix(prefix: string | undefined): string {
   if (!prefix.startsWith("/")) {
     throw new Error(`[furin] prefix must start with "/" (got "${prefix}").`);
   }
-  const trimmed = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
-  if (trimmed.includes("//") || WHITESPACE_RE.test(trimmed)) {
+  // Check the RAW value for "//" so "/admin//" is rejected instead of being
+  // trimmed to "/admin/" — a trailing slash never matches the path-boundary
+  // checks in resolveInstanceByPath, i.e. every route would be unreachable.
+  if (prefix.includes("//") || WHITESPACE_RE.test(prefix)) {
     throw new Error(`[furin] invalid prefix "${prefix}".`);
   }
-  return trimmed;
+  return prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
 }
 
 /**
@@ -129,7 +131,9 @@ export function registerInstance(instance: FurinInstance): FurinInstance {
 
 /**
  * Resolves the instance owning `pathname` by longest-prefix match on a path
- * boundary. Falls back to the root (`""`) instance, then the default bucket.
+ * boundary. Falls back to the root (`""`) instance when one is mounted, else
+ * the default bucket — never an arbitrary prefixed sibling, whose template/
+ * cache/build state would otherwise leak into parent-app routes.
  */
 export function resolveInstanceByPath(pathname: string): FurinInstance {
   let best: FurinInstance | null = null;
@@ -149,7 +153,7 @@ export function resolveInstanceByPath(pathname: string): FurinInstance {
   if (best) {
     return best;
   }
-  return _instances.values().next().value ?? defaultInstance();
+  return defaultInstance();
 }
 
 /**
@@ -236,12 +240,13 @@ export function instanceSlot<T>(
   init: (instance: FurinInstance) => T
 ): (instance?: FurinInstance) => T {
   const key = Symbol("furin-instance-slot");
-  return (instance = currentInstance()) => {
-    if (instance.state.has(key)) {
-      return instance.state.get(key) as T;
+  return (instance?: FurinInstance) => {
+    const target = instance ?? currentInstance();
+    if (target.state.has(key)) {
+      return target.state.get(key) as T;
     }
-    const value = init(instance);
-    instance.state.set(key, value);
+    const value = init(target);
+    target.state.set(key, value);
     return value;
   };
 }
