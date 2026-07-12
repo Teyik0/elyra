@@ -46,18 +46,25 @@ export class MemorySyncAdapter implements SyncAdapter {
   private readonly mutations = new Map<string, MutationEntry>();
 
   beginMutation(input: BeginMutationInput): BeginMutationResult {
-    this.evictMutations();
+    const now = Date.now();
     const mutationKey = `${input.principal}:${input.key}`;
     const existingId = this.mutationKeys.get(mutationKey);
     const existing = existingId ? this.mutations.get(existingId) : undefined;
     if (existing) {
-      if (existing.fingerprint !== input.fingerprint) {
-        return { kind: "conflict", reason: "payload-mismatch" };
+      if (this.isExpired(existing, now)) {
+        this.deleteMutation(existing.mutationId);
+      } else {
+        if (existing.fingerprint !== input.fingerprint) {
+          return { kind: "conflict", reason: "payload-mismatch" };
+        }
+        if (existing.state === "in-progress") {
+          return { kind: "conflict", reason: "in-progress" };
+        }
+        return { kind: "replay", response: existing.response };
       }
-      if (existing.state === "in-progress") {
-        return { kind: "conflict", reason: "in-progress" };
-      }
-      return { kind: "replay", response: existing.response };
+    }
+    if (this.mutations.size >= MAX_MUTATIONS) {
+      this.evictMutations(now);
     }
     if (this.mutations.size >= MAX_MUTATIONS) {
       return { kind: "unavailable" };
@@ -66,7 +73,7 @@ export class MemorySyncAdapter implements SyncAdapter {
     const mutationId = crypto.randomUUID();
     this.mutationKeys.set(mutationKey, mutationId);
     this.mutations.set(mutationId, {
-      createdAt: Date.now(),
+      createdAt: now,
       fingerprint: input.fingerprint,
       mutationId,
       state: "in-progress",
@@ -156,20 +163,28 @@ export class MemorySyncAdapter implements SyncAdapter {
     this.mutations.clear();
   }
 
-  private evictMutations(): void {
-    const expiredBefore = Date.now() - MUTATION_TTL_MS;
+  private evictMutations(now: number): void {
+    const expiredBefore = now - MUTATION_TTL_MS;
     for (const [mutationId, mutation] of this.mutations) {
       if (mutation.createdAt < expiredBefore) {
         this.deleteMutation(mutationId);
       }
     }
-    while (this.mutations.size >= MAX_MUTATIONS) {
-      const oldest = [...this.mutations.values()].find((entry) => entry.state === "succeeded");
-      if (!oldest) {
-        break;
-      }
-      this.deleteMutation(oldest.mutationId);
+    if (this.mutations.size < MAX_MUTATIONS) {
+      return;
     }
+    for (const mutation of this.mutations.values()) {
+      if (mutation.state === "succeeded") {
+        this.deleteMutation(mutation.mutationId);
+        if (this.mutations.size < MAX_MUTATIONS) {
+          return;
+        }
+      }
+    }
+  }
+
+  private isExpired(mutation: MutationEntry, now: number): boolean {
+    return mutation.createdAt < now - MUTATION_TTL_MS;
   }
 
   private deleteMutation(mutationId: string): void {

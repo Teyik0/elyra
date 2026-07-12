@@ -31,4 +31,30 @@ describe("MemorySyncAdapter", () => {
       adapter.beginMutation({ fingerprint: "body", key: "overflow", principal: "user" }).kind
     ).toBe("unavailable");
   });
+
+  test("evicts completed mutations when capacity is full", () => {
+    const adapter = new MemorySyncAdapter();
+    const first = adapter.beginMutation({
+      fingerprint: "body",
+      key: "mutation-0",
+      principal: "user",
+    });
+
+    expect(first.kind).toBe("execute");
+    if (first.kind !== "execute") {
+      throw new Error("expected first mutation to execute");
+    }
+    adapter.commitMutation({
+      mutationId: first.mutationId,
+      response: { body: new Uint8Array(), headers: [], status: 204 },
+    });
+
+    for (let index = 1; index < 10_000; index += 1) {
+      adapter.beginMutation({ fingerprint: "body", key: `mutation-${index}`, principal: "user" });
+    }
+
+    expect(
+      adapter.beginMutation({ fingerprint: "body", key: "overflow", principal: "user" }).kind
+    ).toBe("execute");
+  });
 });
