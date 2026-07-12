@@ -1,5 +1,6 @@
 import { renderToReadableStream } from "react-dom/server";
-import { normalizeHref, type RouterContextValue, toLogical } from "../../client/router/index.ts";
+import { normalizeHref, toLogical } from "../../client/router/link-utils.ts";
+import type { RouterContextValue } from "../../client/router/types.ts";
 import { FurinNotFoundError } from "../../shared/not-found.ts";
 import { useLogger } from "../context-logger.ts";
 import { currentInstance } from "../instance.ts";

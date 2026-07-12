@@ -41,6 +41,16 @@ const BUILD_ID_INPUT_PATHS = [
   `${_pkgSrcDir}/server/router/index${_ext}`,
 ];
 
+function compareCodeUnits(a: string, b: string): number {
+  if (a < b) {
+    return -1;
+  }
+  if (a > b) {
+    return 1;
+  }
+  return 0;
+}
+
 /**
  * Deterministic build-ID input covering everything that can change rendered
  * output: client chunks, route shape, route/root/error/not-found source
@@ -99,7 +109,7 @@ export async function createBuildFingerprint(
     .map((route) =>
       JSON.stringify({ mode: route.mode, path: toPosixPath(route.path), pattern: route.pattern })
     )
-    .sort((a, b) => a.localeCompare(b));
+    .sort(compareCodeUnits);
 
   return [entryChunk, ...[...cssChunks].toSorted(), ...routeParts, ...fileParts].join("\n");
 }

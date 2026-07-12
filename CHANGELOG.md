@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.0-alpha.6] — 2026-07-12
+
+### Added
+- **Composite React Server Components** — `furin/rsc` now exports explicit RSC primitives for loader-returned server markup. `renderServerComponent()` transports server-rendered React output through SSR and SPA data responses, while `createCompositeComponent()` and `<CompositeComponent>` let client-owned `children`, component slots, and render props compose into server-owned markup without turning the whole route into client JavaScript.
+- **Partial prerendering for personalized cached routes** — `createRoute({ requestLoader })` separates request-specific data from the public route loader. SSG/ISR routes can cache the public shell while streaming `requestData` per request under Suspense; pure static export rejects `requestLoader` because no request runtime exists.
+- **RSC build graph and runtime guards** — Bun builds now emit the isolated Flight codec graph, enforce matching React / React DOM / React Server DOM versions, and provide `furin/server-only` plus `furin/client-only` imports for build-time graph boundary assertions.
+- **RSC documentation and example route** — the rendering guide now documents composite RSC, request-scoped data, and the current tradeoffs against Next.js-style default Server Components. The task-manager example includes an `/rsc` route and production transfer-size comparison against the conventional ISR route.
+
+### Changed
+- **Route data transport now supports Flight payloads** — SSR and `/_furin/data` switch to the route-frame stream when loader data contains RSC sources, preserving nested/cyclic data, deferred values, and SPA navigation compatibility.
+- **Build IDs cover server-rendered output more completely** — Bun and package target fingerprints now include route metadata, source contents, framework render pipeline inputs, and mounted-app prefixes so SSR-only changes trigger stale-deploy detection.
+- **Core test execution uses Bun directly** — the root and core `test` scripts now run workspace Bun tests without the deleted shell harness, and DOM/browser test guidance documents when to opt into `happy-dom` or WebView.
+- **Yuku parser packages upgraded** — `yuku-parser` and `@yuku-toolchain/types` moved to `0.6.1`; the parser dependency architecture test now verifies the direct parser dependency without pinning the exact patch in the assertion.
+
+### Fixed
+- **Locale-independent build fingerprints** — route fingerprint sorting now uses code-unit ordering instead of locale-sensitive collation, preventing build-ID differences across host locales.
+- **Scaffolder duplicate outputs** — project generation now fails before writing files when a template contains duplicate destination paths.
+- **Docs table-of-contents cleanup** — pending hash-scroll animation frames are cancelled on unmount, satisfying React effect cleanup checks.
+
 ## [0.2.0-alpha.5] — 2026-07-12
 
 ### Added

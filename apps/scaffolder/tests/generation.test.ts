@@ -14,6 +14,35 @@ afterEach(() => {
 });
 
 describe("stage5Generation", () => {
+  it("rejects duplicate destination paths before writing files", async () => {
+    const targetDir = mkdtempSync(resolve(tmpdir(), "create-furin-generation-"));
+    tempDirs.push(targetDir);
+
+    const sourcePath = resolve(import.meta.dir, "../templates/simple/package.json.ejs");
+    const ctx = createContext({
+      fileTree: [
+        {
+          kind: "ejs",
+          relativePath: "package.json",
+          sourcePath,
+        },
+        {
+          kind: "ejs",
+          relativePath: "package.json",
+          sourcePath,
+        },
+      ],
+      projectName: "my-app",
+      projectNameKebab: "my-app",
+      projectNamePascal: "MyApp",
+      targetDir,
+    });
+
+    await expect(stage5Generation(ctx)).rejects.toThrow(
+      'Template contains duplicate destination "package.json" also used by "package.json".'
+    );
+  });
+
   it("copies static binary files without altering their bytes", async () => {
     const targetDir = mkdtempSync(resolve(tmpdir(), "create-furin-generation-"));
     tempDirs.push(targetDir);

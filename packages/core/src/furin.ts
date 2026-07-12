@@ -21,23 +21,18 @@ import {
 } from "./server/instance.ts";
 import type { CompileContext, EmbeddedAppData } from "./server/internal.ts";
 import { getCompileContext } from "./server/internal.ts";
-import { renderRootNotFound, warmSSGCache } from "./server/render/index.ts";
+import { renderRootNotFound } from "./server/render/not-found.ts";
+import { warmSSGCache } from "./server/render/ssg.ts";
 import {
   setProductionTemplateContent,
   setProductionTemplatePath,
 } from "./server/render/template.ts";
-import {
-  createDataEndpoint,
-  createRoutePlugin,
-  createSearchRouteMetadata,
-  loadProdRoutes,
-} from "./server/router/index.ts";
+import { loadProdRoutes } from "./server/router/discovery.ts";
+import { createDataEndpoint, createRoutePlugin } from "./server/router/plugin.ts";
+import { createSearchRouteMetadata } from "./server/router/schemas.ts";
 import { IS_DEV } from "./server/runtime-env.ts";
-import {
-  createSyncStreamPlugin,
-  type FurinSyncOption,
-  resolveSyncStreamPath,
-} from "./server/sync/index.ts";
+import { type FurinSyncOption, resolveSyncStreamPath } from "./server/sync/config.ts";
+import { createSyncStreamPlugin } from "./server/sync/stream.ts";
 
 // biome-ignore lint/suspicious/noEmptyInterface: intentionally augmentable via furin-env.d.ts
 export interface FurinCacheTags {}

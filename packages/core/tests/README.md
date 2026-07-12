@@ -67,16 +67,30 @@ Use subprocess tests for global module state, Bun `--hot`, or scenarios that
 cannot be isolated safely inside the current Bun test process. Mark those tests
 with `.integration.test.ts` when they are intentionally slow or process-heavy.
 
+## DOM And Browser Tests
+
+DOM tests should opt in through `support/dom.ts`. Do not register `happy-dom`
+from the global preload because most core tests should keep Bun's native Web
+APIs.
+
+Use `Bun.WebView` only for browser-level integration tests that need a real
+browser runtime, such as hydration, trusted click/input events, or client
+navigation. Put those tests under `browser/` with a `.webview.test.ts` suffix and
+gate them behind `FURIN_WEBVIEW_TESTS=1` until the tier is stable in CI. The
+`test:webview` script is a no-op until at least one `*.webview.test.*` file
+exists.
+
 ## Commands
 
 From `packages/core`:
 
 ```sh
+bun test
 bun test tests/routing
 bun test tests/rendering/deferred
 bun test tests/client/link
 bun test tests/contract
-bash scripts/test.sh
+bun run test:webview
 ```
 
 From the repository root:

@@ -5,6 +5,12 @@ export default {
   ignore: {
     overrides: [
       {
+        // `DocsToc` creates an IntersectionObserver from a nested registration
+        // helper, but the effect-level cleanup disconnects that observer.
+        files: ["src/components/docs-toc.tsx"],
+        rules: ["react-doctor/effect-needs-cleanup"],
+      },
+      {
         // Server router handlers call `useLogger()` (an Elysia, not React,
         // hook) and render elements host hooks the rule can't statically
         // prove. Patterns are package-relative; `src/pages/**` applies to each
@@ -25,6 +31,7 @@ export default {
           "src/shared/utils/index.ts",
           "src/server/render/**",
           "src/build/index.ts",
+          "src/adapter/bun.ts",
           "src/adapter/static.ts",
           "src/furin.ts",
         ],

@@ -1,5 +1,4 @@
 import { describe, expect, mock, test } from "bun:test";
-import { join } from "node:path";
 
 mock.module("evlog/elysia", () => ({
   evlog: () => (app: unknown) => app,
@@ -15,26 +14,214 @@ mock.module("evlog", () => ({
   useLogger: () => ({ error() {}, info() {}, set() {}, warn() {} }),
 }));
 
-import { Elysia } from "elysia";
-import { defer } from "../../../src/client";
-import { createDataEndpoint, scanPages } from "../../../src/server/router/index.ts";
+import { Elysia, t } from "elysia";
+import { createRoute, defer, type RuntimePage, type RuntimeRoute } from "../../../src/client";
+import type { ResolvedRoute } from "../../../src/server/router/index.ts";
+import { createDataEndpoint } from "../../../src/server/router/index.ts";
 import { __setDevMode } from "../../../src/server/runtime-env.ts";
 import { parseDeferredNdjson } from "../../../src/shared/deferred-ndjson.ts";
 
-const FIXTURES_DIR = join(import.meta.dirname, "../../fixtures/pages/default");
 const DIGEST_RE = /^[0-9a-f]{10}$/;
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function cloneResolvedRoute(route: ResolvedRoute): ResolvedRoute {
+  const cloned: ResolvedRoute = {
+    ...route,
+    page: { ...route.page },
+    routeChain: route.routeChain.map((entry) => ({ ...entry })),
+    segmentBoundaries: route.segmentBoundaries.map((boundary) => ({ ...boundary })),
+  };
+  if (route.isrCache !== undefined) {
+    cloned.isrCache = { ...route.isrCache };
+  }
+  if (route.tags !== undefined) {
+    cloned.tags = [...route.tags];
+  }
+  return cloned;
+}
+
+function runtimeRoute(route: unknown): RuntimeRoute {
+  return route as RuntimeRoute;
+}
+
+function runtimePage(page: unknown): RuntimePage {
+  return page as RuntimePage;
+}
+
+const rootRoute = createRoute({
+  layout: ({ children }) => children,
+});
+
+const queryDefaultRoute = createRoute({
+  parent: rootRoute,
+  query: t.Object({
+    city: t.Optional(t.String({ default: "Paris" })),
+  }),
+});
+
+const queryTypesRoute = createRoute({
+  parent: rootRoute,
+  query: t.Object({
+    active: t.Boolean(),
+    filter: t.Optional(t.Object({ category: t.String() })),
+    page: t.Number(),
+    tags: t.Optional(t.Array(t.String())),
+  }),
+});
+
+const withLoaderRouteDefinition = createRoute({
+  loader: ({ cookie, headers, path, request, set }) => {
+    set.headers["x-loader-ran"] = "true";
+    return {
+      cookieValue: cookie.test?.value as string | undefined,
+      currentPath: path,
+      hasHeaders: Boolean(headers),
+      layoutData: "from-layout",
+      requestUrl: request.url,
+    };
+  },
+  parent: rootRoute,
+});
+
+const deferRouteDefinition = createRoute({
+  mode: "ssr",
+  parent: rootRoute,
+});
+
+const ssrRouteDefinition = createRoute({
+  mode: "ssr",
+  parent: rootRoute,
+});
+
+const dynamicRoute = createRoute({
+  params: t.Object({ id: t.String() }),
+  parent: rootRoute,
+});
+
+const staticSpecificRoute = createRoute({
+  mode: "ssr",
+  parent: rootRoute,
+});
+
+const dynamicDeferRoute = createRoute({
+  params: t.Object({ slug: t.String() }),
+  parent: rootRoute,
+});
+
+const BASE_ROUTES: ResolvedRoute[] = [
+  {
+    mode: "ssr",
+    page: runtimePage(queryDefaultRoute.page({ component: () => null })),
+    path: "/query-default",
+    pattern: "/query-default",
+    routeChain: [runtimeRoute(rootRoute), runtimeRoute(queryDefaultRoute)],
+    segmentBoundaries: [],
+  },
+  {
+    mode: "ssr",
+    page: runtimePage(
+      queryTypesRoute.page({
+        component: () => null,
+        loader: ({ query }) => ({ queryFromLoader: query }),
+      })
+    ),
+    path: "/query-types",
+    pattern: "/query-types",
+    routeChain: [runtimeRoute(rootRoute), runtimeRoute(queryTypesRoute)],
+    segmentBoundaries: [],
+  },
+  {
+    mode: "ssr",
+    page: runtimePage(
+      withLoaderRouteDefinition.page({
+        component: () => null,
+        loader: async () => ({ pageData: "from-page" }),
+      })
+    ),
+    path: "/with-loader",
+    pattern: "/with-loader",
+    routeChain: [runtimeRoute(rootRoute), runtimeRoute(withLoaderRouteDefinition)],
+    segmentBoundaries: [],
+  },
+  {
+    mode: "ssr",
+    page: runtimePage(
+      deferRouteDefinition.page({
+        component: () => null,
+        loader: async () =>
+          defer({
+            stats: Promise.resolve(42),
+            title: "deferred page",
+          }),
+      })
+    ),
+    path: "/defer-page",
+    pattern: "/defer-page",
+    routeChain: [runtimeRoute(rootRoute), runtimeRoute(deferRouteDefinition)],
+    segmentBoundaries: [],
+  },
+  {
+    mode: "ssr",
+    page: runtimePage(ssrRouteDefinition.page({ component: () => null })),
+    path: "/ssr-page",
+    pattern: "/ssr-page",
+    routeChain: [runtimeRoute(rootRoute), runtimeRoute(ssrRouteDefinition)],
+    segmentBoundaries: [],
+  },
+  {
+    mode: "ssr",
+    page: runtimePage(
+      dynamicRoute.page({
+        component: () => null,
+        loader: () => ({ pageData: "from-dynamic" }),
+      })
+    ),
+    path: "/dynamic/[id]",
+    pattern: "/dynamic/:id",
+    routeChain: [runtimeRoute(rootRoute), runtimeRoute(dynamicRoute)],
+    segmentBoundaries: [],
+  },
+  {
+    mode: "ssr",
+    page: runtimePage(
+      staticSpecificRoute.page({
+        component: () => null,
+        loader: () => ({ pageData: "from-static-specific" }),
+      })
+    ),
+    path: "/dynamic/specific",
+    pattern: "/dynamic/specific",
+    routeChain: [runtimeRoute(rootRoute), runtimeRoute(staticSpecificRoute)],
+    segmentBoundaries: [],
+  },
+  {
+    mode: "ssr",
+    page: runtimePage(
+      dynamicDeferRoute.page({
+        component: () => null,
+        loader: ({ params }) =>
+          defer({
+            post: Promise.resolve({ title: `Post for ${String(params.slug)}` }),
+            slug: String(params.slug),
+          }),
+      })
+    ),
+    path: "/dynamic-defer/[slug]",
+    pattern: "/dynamic-defer/:slug",
+    routeChain: [runtimeRoute(rootRoute), runtimeRoute(dynamicDeferRoute)],
+    segmentBoundaries: [],
+  },
+];
+
+function createDataTestApp(): { app: Elysia; routes: ResolvedRoute[] } {
+  const routes = BASE_ROUTES.map(cloneResolvedRoute);
+  return { app: new Elysia().use(createDataEndpoint(routes)), routes };
 }
 
 __setDevMode(false);
 
 describe("GET /_furin/data", () => {
   test("returns 400 if the path parameter is missing", async () => {
-    await Promise.resolve();
-    const { routes } = await scanPages(FIXTURES_DIR);
-    const app = new Elysia().use(createDataEndpoint(routes));
+    const app = new Elysia().use(createDataEndpoint([]));
 
     const res = await app.handle(new Request("http://localhost/_furin/data"));
 
@@ -42,8 +229,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("rejects an absolute URL passed in ?path= (open-redirect prevention)", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
-    const app = new Elysia().use(createDataEndpoint(routes));
+    const app = new Elysia().use(createDataEndpoint([]));
 
     // Without the prefix/origin guard, `new URL("https://evil.com/foo", base)`
     // ignores the base and the attacker-controlled origin would propagate to
@@ -56,8 +242,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("rejects a protocol-relative path `//host/foo`", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
-    const app = new Elysia().use(createDataEndpoint(routes));
+    const app = new Elysia().use(createDataEndpoint([]));
 
     const res = await app.handle(
       new Request("http://localhost/_furin/data?path=%2F%2Fevil.com%2Ffoo")
@@ -67,8 +252,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("resolves query defaults without emitting a redirect sentinel", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
-    const app = new Elysia().use(createDataEndpoint(routes));
+    const { app } = await createDataTestApp();
 
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fquery-default"));
 
@@ -84,8 +268,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("passes schema-coerced query values to loaders during SPA navigation", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
-    const app = new Elysia().use(createDataEndpoint(routes));
+    const { app } = await createDataTestApp();
 
     const res = await app.handle(
       new Request(
@@ -109,8 +292,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("passes JSON object query values to loaders during SPA navigation", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
-    const app = new Elysia().use(createDataEndpoint(routes));
+    const { app } = await createDataTestApp();
 
     const res = await app.handle(
       new Request(
@@ -136,8 +318,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("rejects invalid schema query values before running loaders during SPA navigation", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
-    const app = new Elysia().use(createDataEndpoint(routes));
+    const { app } = await createDataTestApp();
 
     const res = await app.handle(
       new Request("http://localhost/_furin/data?path=%2Fquery-types%3Fpage%3Dnope%26active%3Dtrue")
@@ -151,8 +332,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("returns 404 if no route matches the path", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
-    const app = new Elysia().use(createDataEndpoint(routes));
+    const { app } = await createDataTestApp();
 
     const res = await app.handle(
       new Request("http://localhost/_furin/data?path=%2Froute-inexistante")
@@ -162,13 +342,11 @@ describe("GET /_furin/data", () => {
   });
 
   test("returns NDJSON for a route with a synchronous loader", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
+    const { app, routes } = await createDataTestApp();
     const withLoaderRoute = routes.find((r) => r.pattern === "/with-loader");
     if (!withLoaderRoute) {
       throw new Error("No /with-loader route in fixtures");
     }
-
-    const app = new Elysia().use(createDataEndpoint(routes));
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fwith-loader"));
 
     expect(res.status).toBe(200);
@@ -183,13 +361,11 @@ describe("GET /_furin/data", () => {
   });
 
   test("returns NDJSON with Promise for a route using defer()", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
+    const { app, routes } = await createDataTestApp();
     const deferRoute = routes.find((r) => r.pattern === "/defer-page");
     if (!deferRoute) {
       throw new Error("No /defer-page route in fixtures — add defer-page.tsx");
     }
-
-    const app = new Elysia().use(createDataEndpoint(routes));
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fdefer-page"));
 
     expect(res.status).toBe(200);
@@ -206,11 +382,15 @@ describe("GET /_furin/data", () => {
   });
 
   test("returns the response before deferred Promises have resolved", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
+    const { app, routes } = await createDataTestApp();
     const deferRoute = routes.find((r) => r.pattern === "/defer-page");
     if (!deferRoute?.page) {
       throw new Error("No /defer-page route in fixtures — add defer-page.tsx");
     }
+    let resolveStats: ((value: number) => void) | undefined;
+    const stats = new Promise<number>((resolve) => {
+      resolveStats = resolve;
+    });
 
     // Replace `.page` with a shallow copy instead of mutating the shared
     // module export — `scanPages` returns routes whose `.page` is the cached
@@ -219,25 +399,28 @@ describe("GET /_furin/data", () => {
       ...deferRoute.page,
       loader: () =>
         defer({
-          stats: new Promise((resolve) => setTimeout(() => resolve(42), 50)),
+          stats,
           title: "deferred page",
         }),
     };
-
-    const app = new Elysia().use(createDataEndpoint(routes));
     const responsePromise = app.handle(
       new Request("http://localhost/_furin/data?path=%2Fdefer-page")
     );
 
-    // The handler must resolve BEFORE the 50ms deferred Promise settles —
-    // racing against the delay is robust on slow CI, unlike a fixed sleep.
-    const winner = await Promise.race([
-      responsePromise.then(() => "handler" as const),
-      delay(50).then(() => "deferred" as const),
+    const res = await Promise.race([
+      responsePromise,
+      new Promise<"blocked">((resolve) => setTimeout(() => resolve("blocked"), 100)),
     ]);
-    expect(winner).toBe("handler");
+    if (res === "blocked") {
+      resolveStats?.(42);
+      throw new Error("Data endpoint waited for a deferred Promise before returning a Response.");
+    }
+    expect(res.status).toBe(200);
 
-    const res = await responsePromise;
+    if (resolveStats === undefined) {
+      throw new Error("Deferred stats resolver was not initialized.");
+    }
+    resolveStats(42);
     const { syncData, deferredPromises } = await parseDeferredNdjson(
       res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
       undefined
@@ -252,7 +435,7 @@ describe("GET /_furin/data", () => {
     // never runs in the browser, so the endpoint must resolve the page title
     // server-side and ship it as the reserved __furinTitle field. Without this,
     // the client has to rely on a loader returning a magic `title` field.
-    const { routes } = await scanPages(FIXTURES_DIR);
+    const { app, routes } = await createDataTestApp();
     const route = routes.find((r) => r.pattern === "/with-loader");
     if (!route) {
       throw new Error("No /with-loader route in fixtures");
@@ -267,8 +450,6 @@ describe("GET /_furin/data", () => {
         };
       },
     };
-
-    const app = new Elysia().use(createDataEndpoint(routes));
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fwith-loader"));
 
     const { syncData } = await parseDeferredNdjson(
@@ -281,13 +462,11 @@ describe("GET /_furin/data", () => {
   test("does not set __furinStatus for a route without a loader", async () => {
     // SSR route without loader doesn't trigger notFound.
     // We test the ssr-page which has no loader — data should be empty.
-    const { routes } = await scanPages(FIXTURES_DIR);
+    const { app, routes } = await createDataTestApp();
     const ssrRoute = routes.find((r) => r.pattern === "/ssr-page");
     if (!ssrRoute) {
       throw new Error("No /ssr-page route in fixtures");
     }
-
-    const app = new Elysia().use(createDataEndpoint(routes));
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fssr-page"));
 
     expect(res.status).toBe(200);
@@ -300,8 +479,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("returns params in NDJSON for dynamic routes", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
-    const app = new Elysia().use(createDataEndpoint(routes));
+    const { app } = await createDataTestApp();
 
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fdynamic%2F42"));
 
@@ -318,8 +496,7 @@ describe("GET /_furin/data", () => {
     // `/dynamic/specific` (static) and `/dynamic/:id` (dynamic) both match the
     // path `/dynamic/specific`. The endpoint must pick the static route — the
     // dynamic one would otherwise shadow it (its dir `[id]` is scanned first).
-    const { routes } = await scanPages(FIXTURES_DIR);
-    const app = new Elysia().use(createDataEndpoint(routes));
+    const { app } = await createDataTestApp();
 
     const res = await app.handle(
       new Request("http://localhost/_furin/data?path=%2Fdynamic%2Fspecific")
@@ -336,7 +513,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("layout loader returning defer() streams its deferred field through the NDJSON endpoint", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
+    const { app, routes } = await createDataTestApp();
     const route = routes.find((r) => r.pattern === "/with-loader");
     if (!route) {
       throw new Error("No /with-loader route in fixtures");
@@ -351,15 +528,11 @@ describe("GET /_furin/data", () => {
       ...layoutEntry,
       loader: () =>
         defer({
-          asyncWidget: new Promise((resolve) =>
-            setTimeout(() => resolve(["item-a", "item-b"]), 20)
-          ),
+          asyncWidget: Promise.resolve(["item-a", "item-b"]),
           layoutData: "from-layout-defer",
         }),
     };
     route.routeChain = route.routeChain.map((r) => (r === layoutEntry ? patched : r));
-
-    const app = new Elysia().use(createDataEndpoint(routes));
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fwith-loader"));
 
     expect(res.status).toBe(200);
@@ -373,7 +546,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("layout defer + page defer → both deferred Promises arrive as separate NDJSON chunks", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
+    const { app, routes } = await createDataTestApp();
     const route = routes.find((r) => r.pattern === "/with-loader");
     if (!route?.page) {
       throw new Error("No /with-loader route in fixtures");
@@ -386,7 +559,7 @@ describe("GET /_furin/data", () => {
       ...layoutEntry,
       loader: () =>
         defer({
-          asyncWidget: new Promise((resolve) => setTimeout(() => resolve("widget-ok"), 10)),
+          asyncWidget: Promise.resolve("widget-ok"),
           layoutData: "from-layout",
         }),
     };
@@ -395,12 +568,10 @@ describe("GET /_furin/data", () => {
       ...route.page,
       loader: () =>
         defer({
-          asyncStats: new Promise((resolve) => setTimeout(() => resolve(99), 15)),
+          asyncStats: Promise.resolve(99),
           pageData: "from-page",
         }),
     };
-
-    const app = new Elysia().use(createDataEndpoint(routes));
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fwith-loader"));
 
     expect(res.status).toBe(200);
@@ -417,26 +588,39 @@ describe("GET /_furin/data", () => {
     // SECOND but resolves FIRST. The on-the-wire stream MUST emit the fast key
     // first — otherwise streaming is cosmetic and a fast field is held hostage
     // by a slow sibling. This is the whole reason defer() exists.
-    const { routes } = await scanPages(FIXTURES_DIR);
+    const { app, routes } = await createDataTestApp();
     const deferRoute = routes.find((r) => r.pattern === "/defer-page");
     if (!deferRoute?.page) {
       throw new Error("No /defer-page route in fixtures");
     }
+    let resolveFast: ((value: string) => void) | undefined;
+    let resolveSlow: ((value: string) => void) | undefined;
+    const fast = new Promise<string>((resolve) => {
+      resolveFast = resolve;
+    });
+    const slow = new Promise<string>((resolve) => {
+      resolveSlow = resolve;
+    });
     // Shallow-copy `.page` rather than mutating the shared module export.
     deferRoute.page = {
       ...deferRoute.page,
       loader: () =>
         defer({
-          fast: new Promise((resolve) => setTimeout(() => resolve("fast-value"), 10)),
-          slow: new Promise((resolve) => setTimeout(() => resolve("slow-value"), 80)),
+          fast,
+          slow,
           title: "deferred page",
         }),
     };
-
-    const app = new Elysia().use(createDataEndpoint(routes));
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fdefer-page"));
 
-    const text = await new Response(res.body).text();
+    const textPromise = new Response(res.body).text();
+    if (resolveFast === undefined || resolveSlow === undefined) {
+      throw new Error("Deferred order resolvers were not initialized.");
+    }
+    resolveFast("fast-value");
+    await Promise.resolve();
+    resolveSlow("slow-value");
+    const text = await textPromise;
     const lines = text.split("\n").filter((l) => l.trim().length > 0);
     // Line 0 is the initial sync payload, lines 1+ are resolution chunks.
     const resolutionKeys = lines.slice(1).map((line) => (JSON.parse(line) as { key: string }).key);
@@ -445,8 +629,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("defer() on a dynamic route: params are in syncData and deferred Promises stream", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
-    const app = new Elysia().use(createDataEndpoint(routes));
+    const { app } = await createDataTestApp();
 
     const res = await app.handle(
       new Request("http://localhost/_furin/data?path=%2Fdynamic-defer%2Fhello-world")
@@ -470,7 +653,7 @@ describe("GET /_furin/data", () => {
 
   // ── Slice 3 — SPA error sentinel ───────────────────────────────────────────
   test("loader throwing Response(403) returns HTTP 403 with __furinError NDJSON sentinel", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
+    const { app, routes } = await createDataTestApp();
     const route = routes.find((r) => r.pattern === "/with-loader");
     if (!route) {
       throw new Error("No /with-loader route in fixtures");
@@ -482,8 +665,6 @@ describe("GET /_furin/data", () => {
         throw new Response("Forbidden", { status: 403 });
       },
     };
-
-    const app = new Elysia().use(createDataEndpoint(routes));
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fwith-loader"));
 
     // The HTTP status of the data response matches the loader's Response.status —
@@ -506,7 +687,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("loader throwing plain Error returns HTTP 500 with __furinError NDJSON sentinel", async () => {
-    const { routes } = await scanPages(FIXTURES_DIR);
+    const { app, routes } = await createDataTestApp();
     const route = routes.find((r) => r.pattern === "/with-loader");
     if (!route) {
       throw new Error("No /with-loader route in fixtures");
@@ -518,8 +699,6 @@ describe("GET /_furin/data", () => {
         throw new Error("kaboom");
       },
     };
-
-    const app = new Elysia().use(createDataEndpoint(routes));
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fwith-loader"));
 
     expect(res.status).toBe(500);

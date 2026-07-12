@@ -4,10 +4,26 @@ import { spinner } from "@clack/prompts";
 import { buildEjsVars, renderEjsFile } from "../../engine/renderer.ts";
 import type { PipelineContext } from "../context.ts";
 
+function assertUniqueDestinations(ctx: PipelineContext): void {
+  const seen = new Map<string, string>();
+
+  for (const file of ctx.fileTree) {
+    const destPath = resolve(ctx.targetDir, file.relativePath);
+    if (seen.has(destPath)) {
+      throw new Error(
+        `Template contains duplicate destination "${file.relativePath}" also used by "${seen.get(destPath)}".`
+      );
+    }
+    seen.set(destPath, file.relativePath);
+  }
+}
+
 export async function stage5Generation(ctx: PipelineContext): Promise<void> {
   if (ctx.fileTree.length === 0) {
     throw new Error("File tree is empty — stage3Design must run first.");
   }
+
+  assertUniqueDestinations(ctx);
 
   const s = spinner();
   s.start("Creating project files…");

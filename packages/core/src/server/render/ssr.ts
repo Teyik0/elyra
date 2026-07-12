@@ -4,17 +4,14 @@ import type { Context } from "elysia";
 import { createElement, type ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
 import { toCrossJSON, toCrossJSONAsync } from "seroval";
-import {
-  normalizeHref,
-  RouterContext,
-  type RouterContextValue,
-  SearchStoreContext,
-  toLogical,
-} from "../../client/router/index.ts";
+import { RouterContext } from "../../client/router/context.ts";
+import { normalizeHref, toLogical } from "../../client/router/link-utils.ts";
 import {
   createSearchStore,
+  SearchStoreContext,
   searchSnapshotFromRouterContext,
 } from "../../client/router/search-store.ts";
+import type { RouterContextValue } from "../../client/router/types.ts";
 import { isRscSource } from "../../rsc/shared.tsx";
 import { computeErrorDigest } from "../../shared/digest.ts";
 import {
