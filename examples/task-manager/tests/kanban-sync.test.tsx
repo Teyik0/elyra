@@ -3,7 +3,7 @@ import {
   installDom,
   resetDomState,
   useDomTests as setupDomTests,
-} from "../../../packages/core/tests/helpers/dom.ts";
+} from "../../../packages/core/tests/support/dom.ts";
 
 installDom();
 resetDomState();

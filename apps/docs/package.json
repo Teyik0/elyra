@@ -5,8 +5,8 @@
   "scripts": {
     "fix": "ultracite fix",
     "dev": "bun --hot src/server.ts",
-    "test": "bun test --parallel --isolate --bail --preload ../../tests/setup.ts",
-    "test:dev": "bun test --changed --parallel --isolate --bail --preload ../../tests/setup.ts",
+    "test": "bun test --parallel --isolate --bail --preload ../../packages/core/tests/setup/global.ts",
+    "test:dev": "bun test --changed --parallel --isolate --bail --preload ../../packages/core/tests/setup/global.ts",
     "tscheck": "tsc --noEmit",
     "generate:content": "bun run scripts/generate-docs-content.ts && bun run scripts/generate-llms-txt.ts",
     "build": "bun run generate:content && furin build --target bun",

@@ -1,8 +1,0 @@
-import { t } from "elysia";
-import { createRoute } from "../../../../../src/client";
-import { route as rootRoute } from "../../root";
-
-export const route = createRoute({
-  params: t.Object({ id: t.String() }),
-  parent: rootRoute,
-});

@@ -1,0 +1,126 @@
+import { describe, expect, test } from "bun:test";
+import { join as joinPath } from "node:path";
+
+const BUILD_BUN_TARGET_SCENARIOS = String.raw`
+import { existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { buildBunTarget } from "./src/adapter/bun.ts";
+import { __resetTemplateState } from "./src/server/render/template.ts";
+import { scanPages } from "./src/server/router/discovery.ts";
+import { createTmpApp } from "./tests/support/app-fixtures.ts";
+import { withBuildStub } from "./tests/support/with-build-stub.ts";
+
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(message);
+  }
+}
+
+function createCompileTmpApp() {
+  const app = createTmpApp("cli-app");
+  writeFileSync(
+    join(app.path, "src/pages/blog/[slug].tsx"),
+    [
+      'import { route as rootRoute } from "../root";',
+      "",
+      "export default rootRoute.page({",
+      "  component: () => <article>Blog post page</article>,",
+      "});",
+    ].join("\n")
+  );
+  return app;
+}
+
+{
+  const app = createTmpApp("cli-app");
+  let message = "";
+  try {
+    await buildBunTarget(
+      [
+        {
+          pagesDir: join(app.path, "src/pages"),
+          prefix: "",
+          root: { path: join(app.path, "src/pages/root.tsx"), route: {} },
+          routes: [],
+        },
+      ],
+      app.path,
+      join(app.path, ".furin/build"),
+      null,
+      { compile: "server", target: "bun" }
+    );
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  assert(message.includes("server entry"), "compile without server entry should fail clearly");
+}
+
+for (const compile of ["server", "embed"]) {
+  __resetTemplateState();
+  const app = createCompileTmpApp();
+  const { root, routes } = await scanPages(join(app.path, "src/pages"));
+  await withBuildStub(async () => {
+    await buildBunTarget(
+      [{ pagesDir: join(app.path, "src/pages"), prefix: "", root, routes }],
+      app.path,
+      join(app.path, ".furin/build"),
+      join(app.path, "src/server.ts"),
+      { compile, target: "bun" }
+    );
+  });
+  const clientDir = join(app.path, ".furin/build/bun/client");
+  assert(
+    existsSync(clientDir) === (compile === "server"),
+    compile === "server"
+      ? "compile server should keep client assets on disk"
+      : "compile embed should remove client assets"
+  );
+  if (compile === "server") {
+    assert(
+      existsSync(join(app.path, ".furin/build/bun/public/.gitkeep")),
+      "compile server should keep copied public assets"
+    );
+  }
+}
+
+__resetTemplateState();
+const app = createTmpApp("cli-app");
+writeFileSync(
+  join(app.path, "src/pages/index.tsx"),
+  [
+    'import { createRoute } from "@teyik0/furin/client";',
+    'const route = createRoute({ mode: "ssg" });',
+    "export default route.page({",
+    "  component: () => <main>Home</main>,",
+    '  staticParams: async () => { throw new Error("snapshot should not run"); },',
+    "});",
+  ].join("\n")
+);
+const { root, routes } = await scanPages(join(app.path, "src/pages"));
+await withBuildStub(async () => {
+  const manifest = await buildBunTarget(
+    [{ pagesDir: join(app.path, "src/pages"), prefix: "", root, routes }],
+    app.path,
+    join(app.path, ".furin/build"),
+    null,
+    { target: "bun" }
+  );
+  assert(manifest.rscManifestPath === undefined, "client-only build should not emit RSC manifest");
+});
+
+process.exit(0);
+`;
+
+describe("buildBunTarget Bun branches", () => {
+  test("handles server, embed, and client-only targets", () => {
+    const result = Bun.spawnSync({
+      cmd: ["bun", "-e", BUILD_BUN_TARGET_SCENARIOS],
+      cwd: joinPath(import.meta.dir, "../../.."),
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+
+    expect(new TextDecoder().decode(result.stderr)).toBe("");
+    expect(result.exitCode).toBe(0);
+  });
+});
