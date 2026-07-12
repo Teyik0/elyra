@@ -281,6 +281,8 @@ apps/docs/package.json
   s_df79bf61e1ba39::t_0e4d05969084ea 32
 examples/task-manager/package.json
   s_df79bf61e1ba39::t_0c44b554994025 27
+package.json
+  s_3d61c21275e7f4::t_69da2d50b2c25b 27-28,32-36
 ---
 {
   "schema_version": "authorship/3.0.0",
@@ -288,6 +290,14 @@ examples/task-manager/package.json
   "base_commit_sha": "c267c23e9e8d293e1b4234c8b2ce18bc006ecc70",
   "prompts": {},
   "sessions": {
+    "s_3d61c21275e7f4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f55b8-84a9-7333-85c5-6c19607e3196",
+        "model": "gpt-5.5"
+      },
+      "human_author": "teyik0 <teyik0.fr@icloud.com>"
+    },
     "s_b04e5656b2b888": {
       "agent_id": {
         "tool": "codex",
