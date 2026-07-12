@@ -16,7 +16,7 @@ export function registerCacheInvalidator(
   const existing = invalidators.get(invalidator.name);
   if (existing !== undefined && existing !== invalidator) {
     throw new Error(
-      `Cache invalidator "${invalidator.name}" is already registered with a different instance.`
+      `Cache invalidator "${invalidator.name}" is already registered for this furin instance with a different invalidator object.`
     );
   }
   invalidators.set(invalidator.name, invalidator);

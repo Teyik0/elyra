@@ -95,6 +95,48 @@ describe.serial("compile: embed", () => {
     expect(content).toContain("/public/sub/logo.png");
   });
 
+  test("generateCompileEntry embeds public assets into every app's context", () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+
+    // Two embedded apps sharing one project-level public/ dir — each instance
+    // serves only from its own embedded.assets, so both need the /public keys.
+    const clientDirs = [join(app.path, "fake-client-a"), join(app.path, "fake-client-b")];
+    for (const clientDir of clientDirs) {
+      mkdirSync(clientDir, { recursive: true });
+      writeFileSync(join(clientDir, "index.html"), "<html></html>");
+    }
+    writeFileSync(join(app.path, "public", "logo.png"), "fake");
+
+    const entryPath = generateCompileEntry({
+      apps: [
+        {
+          rootPath: join(app.path, "src/pages/root.tsx"),
+          routes: [],
+          embed: { clientDir: clientDirs[0] as string },
+        },
+        {
+          rootPath: join(app.path, "src/pages/root.tsx"),
+          routes: [],
+          prefix: "/admin",
+          embed: { clientDir: clientDirs[1] as string },
+        },
+      ],
+      serverEntry: join(app.path, "src/server.ts"),
+      outDir: app.path,
+      publicDir: join(app.path, "public"),
+    });
+
+    const content = readFileSync(entryPath, "utf8");
+
+    // Both apps' asset maps carry the /public key, each via its own var namespace…
+    const publicLines = content.split("\n").filter((line) => line.includes('"/public/logo.png"'));
+    expect(publicLines).toHaveLength(2);
+    expect(publicLines[0]).toContain("_a0_");
+    expect(publicLines[1]).toContain("_a1_");
+    // …but both import the SAME file path, which Bun dedupes into one embedded payload.
+    expect(content.split('"./public/logo.png"')).toHaveLength(3);
+  });
+
   test("generateCompileEntry with embed excludes client sourcemaps", () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
 

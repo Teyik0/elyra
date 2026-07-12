@@ -42,10 +42,13 @@ export interface CompileContext {
   ssgCache?: Record<string, SsgCacheEntry>;
 }
 
-// Contexts are keyed by their pagesDir (the directory containing root.tsx),
-// normalized to posix separators. Several packaged furin apps can each ship a
-// self-registering module calling `__setCompileContext()` — registration is
-// ADDITIVE, one context per app.
+// Contexts are keyed by (pagesDir, prefix) — pagesDir being the directory
+// containing root.tsx, normalized to posix separators. The SAME pagesDir may
+// legally be mounted under two different prefixes (assertPrefixAvailable only
+// rejects same-prefix collisions), so pagesDir alone would let the second
+// registration overwrite the first. Several packaged furin apps can each ship
+// a self-registering module calling `__setCompileContext()` — registration is
+// ADDITIVE, one context per (app, mount).
 const _compileContexts = new Map<string, CompileContext>();
 
 function normalizeContextKey(path: string): string {
@@ -58,29 +61,45 @@ function pagesDirOf(ctx: CompileContext): string {
   return lastSlash === -1 ? rootPath : rootPath.slice(0, lastSlash);
 }
 
+// "\u0000" cannot appear in a path or a prefix, so the composite key is
+// unambiguous even for pagesDirs containing spaces.
+function contextKey(pagesDir: string, prefix: string): string {
+  return `${pagesDir}\u0000${prefix}`;
+}
+
 export function __setCompileContext(ctx: CompileContext): void {
-  _compileContexts.set(pagesDirOf(ctx), ctx);
+  _compileContexts.set(contextKey(pagesDirOf(ctx), ctx.prefix ?? ""), ctx);
 }
 
 /**
- * Looks up the compile context for `pagesDir`. Without an argument — or when
- * the keyed lookup misses and exactly one context exists — returns the sole
- * registered context (single-app back-compat).
+ * Looks up the compile context for a (pagesDir, prefix) mount. Resolution
+ * order, from most to least specific:
+ * 1. exact (pagesDir, prefix) key — distinguishes the same app mounted twice;
+ * 2. sole context registered for `pagesDir` — callers that don't pass a
+ *    prefix, and contexts emitted before the prefix field existed;
+ * 3. sole context registered for `prefix` — deployed binaries run from a
+ *    different cwd than the build, so the absolute pagesDir key misses there,
+ *    but the mount prefix is stable across machines;
+ * 4. the sole registered context (single-app back-compat).
  */
 export function getCompileContext(pagesDir?: string, prefix?: string): CompileContext | null {
   if (pagesDir !== undefined) {
-    const keyed = _compileContexts.get(normalizeContextKey(pagesDir));
-    if (keyed) {
-      return keyed;
+    const dir = normalizeContextKey(pagesDir);
+    if (prefix !== undefined) {
+      const exact = _compileContexts.get(contextKey(dir, prefix));
+      if (exact) {
+        return exact;
+      }
+    }
+    const dirMatch = soleContextForPagesDir(dir);
+    if (dirMatch) {
+      return dirMatch;
     }
   }
-  // Deployed binaries run from a different cwd than the build — the absolute
-  // pagesDir key misses there, but the mount prefix is stable across machines.
   if (prefix !== undefined) {
-    for (const ctx of _compileContexts.values()) {
-      if ((ctx.prefix ?? "") === prefix) {
-        return ctx;
-      }
+    const prefixMatch = contextForPrefix(prefix);
+    if (prefixMatch) {
+      return prefixMatch;
     }
   }
   if (_compileContexts.size === 1) {
@@ -89,6 +108,35 @@ export function getCompileContext(pagesDir?: string, prefix?: string): CompileCo
   return null;
 }
 
+/**
+ * The sole context registered for `dir`, or null when none matches — or when
+ * SEVERAL do (the same pagesDir mounted at two prefixes): guessing there
+ * would hand one mount the other's assets/build ID.
+ */
+function soleContextForPagesDir(dir: string): CompileContext | null {
+  let match: CompileContext | null = null;
+  for (const ctx of _compileContexts.values()) {
+    if (pagesDirOf(ctx) !== dir) {
+      continue;
+    }
+    if (match) {
+      return null;
+    }
+    match = ctx;
+  }
+  return match;
+}
+
+function contextForPrefix(prefix: string): CompileContext | null {
+  for (const ctx of _compileContexts.values()) {
+    if ((ctx.prefix ?? "") === prefix) {
+      return ctx;
+    }
+  }
+  return null;
+}
+
+/** All registered contexts, keyed by the composite (pagesDir, prefix) key. */
 export function getAllCompileContexts(): ReadonlyMap<string, CompileContext> {
   return _compileContexts;
 }

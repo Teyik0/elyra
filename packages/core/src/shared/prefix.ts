@@ -14,3 +14,25 @@ export function clientDirNameForPrefix(prefix: string): string {
 export function prefixSlug(prefix: string): string {
   return prefix.slice(1).replaceAll("/", "-");
 }
+
+/**
+ * `prefixSlug` is NOT injective: `/a-b` and `/a/b` both slug to `a-b`, so two
+ * distinct prefixes can claim the same client dir and silently overwrite each
+ * other's build output. A readable injective encoding is ambiguous anyway
+ * (escaping `-` as `--` still confuses `/a-/b` with `/a/-b`), so we detect the
+ * collision and fail fast instead.
+ */
+export function assertNoPrefixSlugCollisions(prefixes: string[]): void {
+  const byDirName = new Map<string, string>();
+  for (const prefix of prefixes) {
+    const dirName = clientDirNameForPrefix(prefix);
+    const existing = byDirName.get(dirName);
+    if (existing !== undefined && existing !== prefix) {
+      throw new Error(
+        `[furin] prefixes "${existing}" and "${prefix}" both map to the client directory ` +
+          `"${dirName}" — rename one of them so their slugs (\`/\` → \`-\`) no longer collide.`
+      );
+    }
+    byDirName.set(dirName, prefix);
+  }
+}

@@ -60,7 +60,7 @@ import Elysia from "elysia";
 new Elysia()
   .use(furin({ pagesDir: "./src/pages" }))
   .use(furin({ pagesDir: "./src/admin", prefix: "/admin" }))
-  .use(furin({ pagesDir: "./src/shop", prefix: "shop/" }))
+  .use(furin({ pagesDir: "./src/shop", prefix: "/shop/" }))
   .listen(3000);
 `,
       (path) => {
@@ -70,6 +70,21 @@ new Elysia()
           { pagesDir: "./src/admin", prefix: "/admin" },
           { pagesDir: "./src/shop", prefix: "/shop" },
         ]);
+      }
+    );
+  });
+
+  test("throws on a literal prefix the runtime would reject", async () => {
+    // Same normalizePrefix as furin() — the runtime would throw on this exact
+    // code at startup, so the build must not silently "fix" it.
+    await withTmpFile(
+      `
+import { furin } from "furin";
+import Elysia from "elysia";
+new Elysia().use(furin({ pagesDir: "./src/shop", prefix: "shop" })).listen(3000);
+`,
+      (path) => {
+        expect(() => scanFurinInstances(path)).toThrow('prefix must start with "/"');
       }
     );
   });

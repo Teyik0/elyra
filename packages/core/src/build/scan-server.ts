@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { parse, type CallExpression, type ObjectExpression, type ObjectProperty } from "yuku-parser";
+import { normalizePrefix } from "../server/instance.ts";
 import { detectLangFromPath, unwrapTSExpression } from "../server/lang-detect.ts";
 import { walkAST } from "../shared/utils/ast-walk.ts";
 
@@ -68,12 +69,11 @@ function checkFurinCall(node: CallExpression, out: ScannedFurinInstance[]): void
   }
 }
 
+// Delegates to the runtime's normalizePrefix so a literal that would make
+// `furin()` throw at startup fails at build time too, with the same message —
+// silently "fixing" it here would build assets the runtime never serves.
 function normalizeScannedPrefix(prefix: string | null): string {
-  if (prefix === null || prefix === "" || prefix === "/") {
-    return "";
-  }
-  const withSlash = prefix.startsWith("/") ? prefix : `/${prefix}`;
-  return withSlash.endsWith("/") ? withSlash.slice(0, -1) : withSlash;
+  return normalizePrefix(prefix ?? undefined);
 }
 
 function isObjectExpressionNode(node: { type: string }): node is ObjectExpression {

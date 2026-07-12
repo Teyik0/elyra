@@ -89,13 +89,12 @@ export function generateCompileEntry(options: BuildEntryOptions): string {
       return context;
     }
     const varPrefix = apps.length === 1 ? "_" : `_a${appIndex}_`;
-    // The project-level public/ dir is embedded once, on the first app.
-    const embedded = buildEmbeddedAssets(
-      outDir,
-      embed.clientDir,
-      appIndex === 0 ? publicDir : undefined,
-      varPrefix
-    );
+    // Every app gets the project-level public/ dir: each instance serves only
+    // from its own `embedded.assets`, so `/public/*` (and `/favicon.ico`) would
+    // 404 on non-first apps otherwise. This only duplicates the string keys —
+    // each app imports the same file via the same relative path, and Bun
+    // dedupes identical `with { type: "file" }` modules into one embedded blob.
+    const embedded = buildEmbeddedAssets(outDir, embed.clientDir, publicDir, varPrefix);
     return {
       ...context,
       extraContext: [...(context.extraContext ?? []), ...embedded.extraContext],

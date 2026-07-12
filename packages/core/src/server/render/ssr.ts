@@ -9,6 +9,7 @@ import {
   RouterContext,
   type RouterContextValue,
   SearchStoreContext,
+  toLogical,
 } from "../../client/router/index.ts";
 import {
   createSearchStore,
@@ -18,6 +19,7 @@ import { computeErrorDigest } from "../../shared/digest.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { runInSyntheticRenderScope, useLogger } from "../context-logger.ts";
+import { currentInstance } from "../instance.ts";
 // FurinNotFoundError is used indirectly via buildNotFoundElement in element.tsx
 import type { ResolvedRoute, RootLayout } from "../router/index.ts";
 import { IS_DEV } from "../runtime-env.ts";
@@ -170,10 +172,16 @@ export function assertDeferredModeAllowed(
   }
 }
 
-function currentHrefFromContext(ctx: Context): string {
+function currentHrefFromContext(ctx: Context, basePath: string): string {
   const pathUrl = new URL(ctx.path, "http://furin.local");
   const requestUrl = new URL(ctx.request.url);
-  return normalizeHref(pathUrl.pathname) + (pathUrl.search || requestUrl.search);
+  // For a prefixed Elysia plugin `ctx.path` is PHYSICAL (includes the mount
+  // prefix). `RouterContextValue.currentHref` must be LOGICAL — the client
+  // provider strips basePath the same way — or Link active-state and SSR/CSR
+  // markup diverge. Synthetic renders pass logical paths; toLogical no-ops.
+  return (
+    normalizeHref(toLogical(pathUrl.pathname, basePath)) + (pathUrl.search || requestUrl.search)
+  );
 }
 
 /**
@@ -290,9 +298,13 @@ export async function prepareRender(
     status = success.status;
   }
 
+  // Explicit basePath (static export) wins; otherwise resolve the mount
+  // prefix of the instance serving this render so SSR'd <Link> hrefs match
+  // the prefix-aware client hydration entry (built with `basePath: prefix`).
+  const resolvedBasePath = basePath ?? currentInstance().prefix;
   const ssrContext: RouterContextValue = {
-    basePath: basePath ?? "",
-    currentHref: currentHrefFromContext(ctx),
+    basePath: resolvedBasePath,
+    currentHref: currentHrefFromContext(ctx, resolvedBasePath),
     search: (ctx.query as SearchParamsInput | undefined) ?? {},
     searchRoutes: searchRoutes ?? [],
     navigate: (_href, _opts) => Promise.resolve(),

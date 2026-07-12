@@ -1,5 +1,10 @@
 import type { Context } from "elysia";
-import { consumePendingInvalidations, revalidatePath } from "../cache/invalidation.ts";
+import {
+  callCachePurger,
+  consumePendingInvalidations,
+  revalidatePath,
+  revalidatePathForInstance,
+} from "../cache/invalidation.ts";
 import { allInstances } from "../instance.ts";
 import { getAutoInvalidateRegistry } from "./registry.ts";
 import type { InvalidationInput, InvalidationRule } from "./types.ts";
@@ -116,16 +121,24 @@ export function revalidateTag(tags: string | readonly string[]): boolean {
   const tagList = typeof tags === "string" ? [tags] : [...tags];
   // Tags are cross-app by design: with several mounted furin instances a
   // shared mutation must be able to invalidate pages rendered by any of them.
-  const paths = new Set<string>();
+  // But each instance's tag-registered paths are evicted from THAT instance's
+  // caches only — the cross-app fan-out of `revalidatePath` would also evict
+  // a sibling app's unrelated page that merely shares the pathname.
+  let deleted = false;
+  const purgedPaths = new Set<string>();
   for (const instance of allInstances()) {
     for (const path of getAutoInvalidateRegistry(instance).pathsForTags(tagList)) {
-      paths.add(path);
+      const result = revalidatePathForInstance(instance, path, "page");
+      deleted = result.deleted || deleted;
+      purgedPaths.add(path);
+      for (const purged of result.purgedPaths) {
+        purgedPaths.add(purged);
+      }
     }
   }
-  let deleted = false;
-  for (const path of paths) {
-    deleted = revalidatePath(path, "page") || deleted;
-  }
+  // One batched CDN purge — the CDN sits in front of every mounted app, so
+  // logical + purged paths from all instances go out together, deduped.
+  callCachePurger([...purgedPaths]);
   return deleted;
 }
 

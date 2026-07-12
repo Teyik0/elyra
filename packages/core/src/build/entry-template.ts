@@ -73,7 +73,7 @@ export interface BuildEntryOptions {
   >;
   headerComment?: string;
   outDir: string;
-  /** Project-level public/ dir — embedded into the FIRST app's assets only. */
+  /** Project-level public/ dir — embedded into EVERY app's assets (keys only; Bun dedupes the file payloads). */
   publicDir?: string;
   serverEntry?: string;
 }

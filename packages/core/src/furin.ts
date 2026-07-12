@@ -170,6 +170,19 @@ async function setupProdTemplate(
   setProductionTemplatePath(templatePath, instance);
 }
 
+/**
+ * Shape of one browser-submitted log event. The named keys are the dangerous
+ * ones stripped before `log.set` (prototype-pollution vectors, plus the
+ * browser `environment` which must not overwrite the server's); everything
+ * else is forwarded as-is.
+ */
+type FurinBrowserEvent = {
+  __proto__?: unknown;
+  constructor?: unknown;
+  prototype?: unknown;
+  environment?: unknown;
+} & Record<string, unknown>;
+
 /** Evlog wide-event plugin + browser log ingest endpoint for one instance. */
 function createLoggerPlugin(
   prefix: string,
@@ -212,7 +225,7 @@ function createLoggerPlugin(
             continue;
           }
           // Pick only safe, known fields from the event to prevent prototype pollution
-          const event = entry.event as Record<string, unknown> | undefined;
+          const event = entry.event as FurinBrowserEvent | undefined;
           if (!event || typeof event !== "object") {
             continue;
           }
@@ -222,7 +235,7 @@ function createLoggerPlugin(
             prototype,
             environment: _browserEnv,
             ...safeEvent
-          } = event as Record<string, unknown>;
+          } = event;
           log.set({ ...safeEvent, service: "furin:browser" });
         }
         return status("No Content");
@@ -270,6 +283,39 @@ function hydrateSSGCacheFromCompileContext(ctx: CompileContext): void {
   }
 }
 
+/** Options for the {@link furin} plugin. */
+export interface FurinOptions {
+  /**
+   * Production only: explicit directory holding this app's built client
+   * assets (chunks + index.html template). Packaged furin apps pass their own
+   * `dist/furin/client` here; when omitted the directory is auto-resolved
+   * next to the server artifact.
+   */
+  clientDir?: string;
+  /**
+   * Initialize the browser HTTP log drain in the hydration entry. Off by
+   * default — enabling it adds `evlog/http` drain setup and points browser
+   * events at `/_furin/ingest`. Server-side logging is configured via `logger`
+   * and unaffected.
+   */
+  clientLogging?: boolean;
+  logger?: EvlogElysiaOptions;
+  pagesDir?: string;
+  /**
+   * Mount prefix for this app, e.g. `"/admin"`. All pages, framework
+   * endpoints (`/_furin/*`) and client assets (`/_client/*`) are served under
+   * it, and the client bundle is built with the matching basePath. Defaults
+   * to `""` (root). Mounting two furin instances on the same prefix throws.
+   */
+  prefix?: string;
+  /**
+   * Enables Furin's built-in sync event stream. The opinionated default mounts
+   * Server-Sent Events at `/_furin/sync`; pass an object only for constrained
+   * reverse-proxy deployments that need a custom internal path.
+   */
+  sync?: FurinSyncOption;
+}
+
 /**
  * Main Furin plugin.
  *
@@ -292,37 +338,7 @@ export async function furin({
   logger,
   clientLogging,
   sync,
-}: {
-  pagesDir?: string;
-  /**
-   * Mount prefix for this app, e.g. `"/admin"`. All pages, framework
-   * endpoints (`/_furin/*`) and client assets (`/_client/*`) are served under
-   * it, and the client bundle is built with the matching basePath. Defaults
-   * to `""` (root). Mounting two furin instances on the same prefix throws.
-   */
-  prefix?: string;
-  /**
-   * Production only: explicit directory holding this app's built client
-   * assets (chunks + index.html template). Packaged furin apps pass their own
-   * `dist/furin/client` here; when omitted the directory is auto-resolved
-   * next to the server artifact.
-   */
-  clientDir?: string;
-  logger?: EvlogElysiaOptions;
-  /**
-   * Initialize the browser HTTP log drain in the hydration entry. Off by
-   * default — enabling it adds `evlog/http` drain setup and points browser
-   * events at `/_furin/ingest`. Server-side logging is configured via `logger`
-   * and unaffected.
-   */
-  clientLogging?: boolean;
-  /**
-   * Enables Furin's built-in sync event stream. The opinionated default mounts
-   * Server-Sent Events at `/_furin/sync`; pass an object only for constrained
-   * reverse-proxy deployments that need a custom internal path.
-   */
-  sync?: FurinSyncOption;
-}) {
+}: FurinOptions = {}) {
   const prefix = normalizePrefix(rawPrefix);
   const syncStreamPath = resolveSyncStreamPath(sync);
   initLogger({ env: { service: "furin" } });
@@ -424,12 +440,12 @@ export async function furin({
           : new Elysia()
       )
       .use(createDataEndpoint(routes))
-      .use((app) => {
-        for (const route of routes) {
-          app.use(createRoutePlugin(route, root, undefined, searchRoutes));
-        }
-        return app;
-      })
+      .use((app) =>
+        routes.reduce(
+          (chain, route) => chain.use(createRoutePlugin(route, root, undefined, searchRoutes)),
+          app
+        )
+      )
       .use(createNotFoundHandling(prefix, routes, root));
     registerInstance(instance);
     return wrapWithRequestScope(devApp);
@@ -535,12 +551,12 @@ export async function furin({
         : new Elysia()
     )
     .use(createDataEndpoint(routes))
-    .use((app) => {
-      for (const route of routes) {
-        app.use(createRoutePlugin(route, root, prodBuildId, searchRoutes));
-      }
-      return app;
-    })
+    .use((app) =>
+      routes.reduce(
+        (chain, route) => chain.use(createRoutePlugin(route, root, prodBuildId, searchRoutes)),
+        app
+      )
+    )
     .use(createNotFoundHandling(prefix, routes, root));
   registerInstance(instance);
   return wrapWithRequestScope(prodApp);

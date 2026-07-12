@@ -1,6 +1,12 @@
 import { statSync } from "node:fs";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry";
-import { allStateBuckets, type FurinInstance, instanceSlot } from "../instance.ts";
+import {
+  allStateBuckets,
+  currentInstance,
+  type FurinInstance,
+  instanceSlot,
+  withInstance,
+} from "../instance.ts";
 import { registerCacheInvalidator } from "./registry";
 import { createRouteCache, type RevalidateType } from "./route-cache";
 
@@ -224,9 +230,16 @@ export function getAllDevSSGLoaderEntries(): [string, DevLoaderCacheEntry][] {
 
 /** @internal — clears dev loader caches for `instance` (default: current). */
 export function clearDevLoaderCaches(instance?: FurinInstance): void {
-  const state = instanceDevLoaderState(instance);
-  state.isr.cache.clear();
-  state.ssg.cache.clear();
+  const target = instance ?? currentInstance();
+  const state = instanceDevLoaderState(target);
+  // `.clear()` fires onDelete per entry, which unregisters the path from the
+  // auto-invalidate registry via the `currentInstance()`-scoped facade — bind
+  // the scope here so the unregistration hits the cleared instance's registry
+  // (re-entering an already-active identical scope is harmless).
+  withInstance(target, () => {
+    state.isr.cache.clear();
+    state.ssg.cache.clear();
+  });
   state.sourceFileToCacheKeys.clear();
 }
 

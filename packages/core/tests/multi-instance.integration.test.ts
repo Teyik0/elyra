@@ -20,6 +20,9 @@ import { createTmpApp, writeAppFile } from "./helpers/tmp-app.ts";
 
 const TEST_TEMPLATE = "<html><body><!--ssr-outlet--></body></html>";
 
+/** Prefixed self-link rendered with SSR active state (logical currentHref). */
+const ACTIVE_ADMIN_NAV_LINK_RE = /href="\/admin\/nav"[^>]*data-status="active"/;
+
 const tmpApps: Array<{ cleanup: () => void }> = [];
 const originalCwd = process.cwd();
 
@@ -61,6 +64,27 @@ function writeAdminPages(appPath: string): string {
   );
   writeAppFile(
     appPath,
+    "src/admin/nav.tsx",
+    [
+      'import { Link } from "@teyik0/furin/link";',
+      'import { route as rootRoute } from "./root";',
+      "",
+      "export default rootRoute.page({",
+      // SSR mode: the render sees the real (PHYSICAL, prefix-included) Elysia
+      // ctx.path instead of a synthetic logical one — exercises the basePath
+      // strip in currentHrefFromContext, not just the href prefixing.
+      '  mode: "ssr",',
+      "  component: () => (",
+      "    <nav>",
+      '      <Link to="/users">Users link</Link>',
+      '      <Link to="/nav">Self link</Link>',
+      "    </nav>",
+      "  ),",
+      "});",
+    ].join("\n")
+  );
+  writeAppFile(
+    appPath,
     "src/admin/users.tsx",
     [
       'import { route as rootRoute } from "./root";',
@@ -97,6 +121,22 @@ async function mountBothApps(options?: { adminSync?: boolean }) {
       "    return {};",
       "  },",
       "  component: () => <main>Front revalidating</main>,",
+      "});",
+    ].join("\n")
+  );
+  writeAppFile(
+    app.path,
+    "src/pages/nav.tsx",
+    [
+      'import { Link } from "@teyik0/furin/link";',
+      'import { route as rootRoute } from "./root";',
+      "",
+      "export default rootRoute.page({",
+      "  component: () => (",
+      "    <nav>",
+      '      <Link to="/users">Users link</Link>',
+      "    </nav>",
+      "  ),",
       "});",
     ].join("\n")
   );
@@ -146,7 +186,7 @@ describe.serial("multi-instance furin composition", () => {
     setProductionTemplateContent(TEST_TEMPLATE);
 
     await furin({ pagesDir: join(app.path, "src/pages") });
-    expect(furin({ pagesDir: adminPagesDir })).rejects.toThrow("already mounted");
+    await expect(furin({ pagesDir: adminPagesDir })).rejects.toThrow("already mounted");
   });
 
   test("concurrent requests to different instances keep their own revalidation headers", async () => {
@@ -191,6 +231,26 @@ describe.serial("multi-instance furin composition", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("application/x-ndjson");
     expect(await res.text()).toContain("admin");
+  });
+
+  test("SSR link hrefs are physical (prefixed) and active state stays logical", async () => {
+    const { parent } = await mountBothApps();
+
+    // Prefixed instance: <Link to="/users"> must render the PHYSICAL href
+    // (basePath + logical) so the anchor works before hydration, and the
+    // self-link must be active — currentHref is LOGICAL (prefix stripped),
+    // matching the prefix-aware client hydration.
+    const adminNav = await parent.handle(new Request("http://furin/admin/nav"));
+    expect(adminNav.status).toBe(200);
+    const adminHtml = await adminNav.text();
+    expect(adminHtml).toContain('href="/admin/users"');
+    expect(adminHtml).not.toContain('href="/users"');
+    expect(adminHtml).toMatch(ACTIVE_ADMIN_NAV_LINK_RE);
+
+    // Root instance: links stay unprefixed.
+    const frontNav = await parent.handle(new Request("http://furin/nav"));
+    expect(frontNav.status).toBe(200);
+    expect(await frontNav.text()).toContain('href="/users"');
   });
 
   test("each instance serves its own 404", async () => {

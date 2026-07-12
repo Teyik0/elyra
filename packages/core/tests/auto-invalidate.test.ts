@@ -45,6 +45,7 @@ import {
   setSSGCache,
   ssgCache,
 } from "../src/server/cache/index.ts";
+import { createInstance, registerInstance, withInstance } from "../src/server/instance.ts";
 
 afterEach(() => {
   __resetCacheState();
@@ -99,6 +100,56 @@ describe("revalidateTag", () => {
     const second = revalidateTag("board");
 
     expect(second).toBe(false);
+  });
+
+  test("does not evict a sibling instance's page that merely shares the pathname", () => {
+    // Two furin apps mounted in one server: only app A registered the tag for
+    // "/x", so app B's unrelated "/x" page must survive the tag invalidation
+    // (tags are cross-app, but eviction is per-registering-instance).
+    const a = registerInstance(createInstance("/a", "/apps/a"));
+    const b = registerInstance(createInstance("/b", "/apps/b"));
+
+    withInstance(a, () => {
+      setISRCache("/x", { generatedAt: Date.now(), html: "a:x", revalidate: 60 });
+      autoInvalidateRegistry.registerLoaderTags("/x", ["shared"]);
+    });
+    withInstance(b, () => {
+      setISRCache("/x", { generatedAt: Date.now(), html: "b:x", revalidate: 60 });
+    });
+
+    const deleted = revalidateTag("shared");
+
+    expect(deleted).toBe(true);
+    expect(withInstance(a, () => isrCache.has("/x"))).toBe(false);
+    expect(withInstance(b, () => isrCache.has("/x"))).toBe(true);
+  });
+
+  test("cache reset unregisters auto-invalidate entries on the owning instance", () => {
+    // With ≥2 registered instances and no request scope, `currentInstance()`
+    // resolves to the default bucket — reset helpers must still scope each
+    // cache's onDelete hooks to the instance being cleared, or the path→tag
+    // mapping survives on the real instance while the default bucket gets a
+    // spurious unregistration.
+    const a = registerInstance(createInstance("/a", "/apps/a"));
+    registerInstance(createInstance("/b", "/apps/b"));
+
+    withInstance(a, () => {
+      setISRCache("/x", { generatedAt: Date.now(), html: "a:x", revalidate: 60 });
+      setDevISRLoaderCache("/apps/a/src/pages/root.tsx:/y", {
+        dependencies: [],
+        generatedAt: Date.now(),
+        headers: {},
+        loaderData: {},
+        mode: "isr",
+        revalidate: 60,
+      });
+      autoInvalidateRegistry.registerLoaderTags("/x", ["shared"]);
+      autoInvalidateRegistry.registerLoaderTags("/y", ["shared"]);
+    });
+
+    __resetCacheState();
+
+    expect(withInstance(a, () => autoInvalidateRegistry.pathsForTags(["shared"]))).toEqual([]);
   });
 });
 

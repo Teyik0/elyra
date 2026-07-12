@@ -132,6 +132,75 @@ describe.serial("CLI/build Bun feature", () => {
     expect(buildApp({ rootDir: app.path, target: "bun" })).rejects.toThrow();
   });
 
+  test("buildApp() rejects two prefixes whose client-dir slugs collide", () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+
+    // /a-b and /a/b both slug to client-a-b — must fail before any output is written.
+    expect(
+      buildApp({
+        rootDir: app.path,
+        target: "bun",
+        apps: [
+          { pagesDir: "src/pages", prefix: "/a-b" },
+          { pagesDir: "src/pages", prefix: "/a/b" },
+        ],
+      })
+    ).rejects.toThrow('both map to the client directory "client-a-b"');
+  });
+
+  test("buildApp() rejects an app prefix without a leading slash", () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+
+    expect(
+      buildApp({
+        rootDir: app.path,
+        target: "bun",
+        apps: [{ pagesDir: "src/pages", prefix: "admin" }],
+      })
+    ).rejects.toThrow('prefix must start with "/"');
+  });
+
+  test('buildApp() normalizes an app prefix of "/" to the root prefix', async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+
+    // Without normalization "/" leaks into the bun target as publicPath
+    // "//_client/" — a protocol-relative URL.
+    const result = await withBuildStub(() =>
+      buildApp({
+        rootDir: app.path,
+        target: "bun",
+        apps: [{ pagesDir: "src/pages", prefix: "/" }],
+      })
+    );
+
+    expect(result.manifest.apps?.[0]?.prefix).toBe("");
+  });
+
+  test("buildApp() trims trailing slashes from app prefixes", async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+
+    const result = await withBuildStub(() =>
+      buildApp({
+        rootDir: app.path,
+        target: "bun",
+        apps: [{ pagesDir: "src/pages", prefix: "/admin/" }],
+      })
+    );
+
+    expect(result.manifest.apps?.[0]?.prefix).toBe("/admin");
+  });
+
+  test("CLI build rejects a --prefix without a leading slash", () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+
+    const result = runCli(["build", "--pagesDir", "src/pages", "--prefix", "admin"], {
+      cwd: app.path,
+    });
+
+    expect(result.exitCode).toBeGreaterThan(0);
+    expect(result.stderr + result.stdout).toContain('prefix must start with "/"');
+  });
+
   test("CLI build rejects unsupported targets with a non-zero exit code", () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
 
