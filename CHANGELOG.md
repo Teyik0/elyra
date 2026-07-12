@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.0-alpha.5] — 2026-07-12
+
 ### Added
 - **Multi-instance mounting with `prefix`** — several `furin()` apps can now be composed into one Elysia server, each under its own mount prefix: `new Elysia().use(await furin({ pagesDir: "./src/pages" })).use(await furin({ pagesDir: "./src/admin", prefix: "/admin" }))`. Pages, framework endpoints (`/_furin/*`), client assets, and the client bundle's `basePath` all live under the prefix; mounting two different apps on the same prefix throws at startup.
 - **Per-instance runtime state** — build IDs, SSG/ISR/dev-loader caches, HTML templates, auto-invalidate registries, and sync streams are now scoped to the owning furin instance (requests are bound to their instance by path via the request-scope wrap). `revalidatePath`/`revalidateTag` intentionally stay cross-app so shared-data invalidation keeps working; sync publications notify every sync-enabled app.
