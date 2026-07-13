@@ -1,7 +1,9 @@
 import type { Context } from "elysia";
 import type { SearchRouteMetadata } from "../../shared/search-params.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
+import { registerCacheInvalidator } from "../cache/registry.ts";
 import { type Cache, createRouteCache, type RevalidateType } from "../cache/route-cache.ts";
+import { allStateBuckets, currentInstance, type FurinInstance } from "../instance.ts";
 import type { ResolvedRoute, RootLayout } from "../router/index.ts";
 import { resolvePath } from "./assemble.ts";
 import { type LoaderResult, runPublicLoaders, runRequestLoaderData } from "./loaders.ts";
@@ -13,9 +15,14 @@ interface CachedPprRoute {
   revalidate: number;
 }
 
+interface PprRouteState {
+  cache: Cache<CachedPprRoute>;
+  unregisterInvalidator: () => void;
+}
+
 const MAX_PPR_ROUTE_CACHE_SIZE = 1000;
 
-const pprRoutesByRoot = new Map<RootLayout, Cache<CachedPprRoute>>();
+const pprRouteStateKey = Symbol("furin-ppr-route-cache");
 
 function pathFromPprCacheKey(key: string): string | null {
   const separator = key.indexOf(":");
@@ -25,17 +32,49 @@ function pathFromPprCacheKey(key: string): string | null {
   return new URL(key.slice(separator + 1), "http://furin.local").pathname;
 }
 
-function getPprRoutes(root: RootLayout): Cache<CachedPprRoute> {
-  let routes = pprRoutesByRoot.get(root);
-  if (routes === undefined) {
-    routes = createRouteCache<CachedPprRoute>({
-      maxSize: MAX_PPR_ROUTE_CACHE_SIZE,
-      name: "render:ppr-public-shell",
-      pathFromKey: pathFromPprCacheKey,
-    });
-    pprRoutesByRoot.set(root, routes);
+function hasPprEntryForPath(cache: Cache<CachedPprRoute>, path: string): boolean {
+  for (const key of cache.keys()) {
+    if (pathFromPprCacheKey(key) === path) {
+      return true;
+    }
   }
-  return routes;
+  return false;
+}
+
+function createPprRouteState(instance: FurinInstance): PprRouteState {
+  let cache: Cache<CachedPprRoute>;
+  cache = createRouteCache<CachedPprRoute>({
+    maxSize: MAX_PPR_ROUTE_CACHE_SIZE,
+    name: "render:ppr-public-shell",
+    onDelete: (key) => {
+      const path = pathFromPprCacheKey(key);
+      if (path === null || hasPprEntryForPath(cache, path)) {
+        return;
+      }
+      autoInvalidateRegistry.unregisterPath(path);
+    },
+    pathFromKey: pathFromPprCacheKey,
+  });
+
+  return {
+    cache,
+    unregisterInvalidator: registerCacheInvalidator(cache, instance),
+  };
+}
+
+function getPprRouteState(instance: FurinInstance): PprRouteState {
+  const existing = instance.state.get(pprRouteStateKey) as PprRouteState | undefined;
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const state = createPprRouteState(instance);
+  instance.state.set(pprRouteStateKey, state);
+  return state;
+}
+
+function getPprRoutes(): Cache<CachedPprRoute> {
+  return getPprRouteState(currentInstance()).cache;
 }
 
 async function buildPublicEntry(route: ResolvedRoute, ctx: Context): Promise<CachedPprRoute> {
@@ -58,16 +97,14 @@ export async function renderPprRoute(
   searchRoutes: SearchRouteMetadata[] | undefined
 ): Promise<Response> {
   const requestUrl = new URL(ctx.request.url);
-  const cacheKey = `${route.mode}:${resolvePath(route.pattern, ctx.params ?? {})}${requestUrl.search}`;
-  const pprRoutes = getPprRoutes(root);
+  const resolvedPath = resolvePath(route.pattern, ctx.params ?? {});
+  const cacheKey = `${route.mode}:${resolvedPath}${requestUrl.search}`;
+  const pprRoutes = getPprRoutes();
   let cached = pprRoutes.get(cacheKey);
   if (cached === undefined) {
     cached = await buildPublicEntry(route, ctx);
     pprRoutes.set(cacheKey, cached);
-    autoInvalidateRegistry.registerLoaderTags(
-      resolvePath(route.pattern, ctx.params ?? {}),
-      route.tags
-    );
+    autoInvalidateRegistry.registerLoaderTags(resolvedPath, route.tags);
   } else if (route.mode === "isr" && Date.now() - cached.generatedAt >= cached.revalidate * 1000) {
     buildPublicEntry(route, ctx)
       .then((entry) => pprRoutes.set(cacheKey, entry))
@@ -92,14 +129,27 @@ export async function renderPprRoute(
   return response;
 }
 
-export function clearPprRouteCache(): void {
-  pprRoutesByRoot.clear();
+export function clearPprRouteCache(instance?: FurinInstance): void {
+  const instances = instance === undefined ? allStateBuckets() : [instance];
+  for (const target of instances) {
+    const state = target.state.get(pprRouteStateKey) as PprRouteState | undefined;
+    if (state === undefined) {
+      continue;
+    }
+    state.cache.clear();
+    state.unregisterInvalidator();
+    target.state.delete(pprRouteStateKey);
+  }
 }
 
 export function invalidatePprRoute(path: string, type: RevalidateType): boolean {
   let deleted = false;
-  for (const pprRoutes of pprRoutesByRoot.values()) {
-    deleted = pprRoutes.invalidatePath(path, type).deleted || deleted;
+  for (const instance of allStateBuckets()) {
+    const state = instance.state.get(pprRouteStateKey) as PprRouteState | undefined;
+    if (state === undefined) {
+      continue;
+    }
+    deleted = state.cache.invalidatePath(path, type).deleted || deleted;
   }
   return deleted;
 }

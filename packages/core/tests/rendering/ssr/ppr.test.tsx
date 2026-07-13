@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { Elysia } from "elysia";
 import { Suspense, use } from "react";
 import { createRoute, type RuntimePage, type RuntimeRoute } from "../../../src/client";
+import { revalidateTag } from "../../../src/server/auto-invalidate";
 import { clearPprRouteCache, invalidatePprRoute } from "../../../src/server/render/ppr-route";
 import { createRoutePlugin } from "../../../src/server/router/plugin.ts";
 import type { ResolvedRoute, RootLayout } from "../../../src/server/router/types.ts";
@@ -149,6 +150,75 @@ describe("partial prerendering", () => {
     expect(invalidatePprRoute("/account", "page")).toBe(true);
     await app.handle(new Request("http://localhost/account?view=alpha"));
     expect(publicCalls).toBe(3);
+  });
+
+  test("revalidateTag invalidates a PPR public shell", async () => {
+    let catalog = "Shoes";
+    let publicCalls = 0;
+    const route = createRoute({
+      loader: () => {
+        publicCalls += 1;
+        return { catalog };
+      },
+      mode: "isr",
+      requestLoader: () => ({ user: "alice" }),
+      revalidate: 60,
+      tags: ["catalog"],
+    });
+    function User({ data }: { data: Promise<{ user: string }> }) {
+      return <strong>{use(data).user}</strong>;
+    }
+    const page = route.page({
+      component: ({ catalog: pageCatalog, requestData }) => (
+        <main>
+          <h1>{pageCatalog}</h1>
+          <Suspense fallback={<span>Loading</span>}>
+            <User data={requestData} />
+          </Suspense>
+        </main>
+      ),
+    });
+    const resolved = {
+      mode: "isr",
+      page: page as unknown as RuntimePage,
+      path: "/account.tsx",
+      pattern: "/account",
+      routeChain: [route as unknown as RuntimeRoute],
+      segmentBoundaries: [],
+      tags: ["catalog"],
+    } satisfies ResolvedRoute;
+    const root = {
+      path: "/root.tsx",
+      route: {
+        __type: "FURIN_ROUTE",
+        layout: ({ children }) => (
+          <html lang="en">
+            <body>{children}</body>
+          </html>
+        ),
+      },
+    } satisfies RootLayout;
+    const app = new Elysia().use(createRoutePlugin(resolved, root, "build-1"));
+
+    const first = await app
+      .handle(new Request("http://localhost/account"))
+      .then((response) => response.text());
+    catalog = "Boots";
+    const stale = await app
+      .handle(new Request("http://localhost/account"))
+      .then((response) => response.text());
+
+    expect(first).toContain("Shoes");
+    expect(stale).toContain("Shoes");
+    expect(publicCalls).toBe(1);
+    expect(revalidateTag("catalog")).toBe(true);
+
+    const fresh = await app
+      .handle(new Request("http://localhost/account"))
+      .then((response) => response.text());
+
+    expect(fresh).toContain("Boots");
+    expect(publicCalls).toBe(2);
   });
 
   test("streams a rejected requestData chunk instead of aborting the PPR response", async () => {

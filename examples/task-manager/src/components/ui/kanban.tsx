@@ -7,6 +7,7 @@ import {
   type DragEvent,
   type SetStateAction,
   type SyntheticEvent,
+  useCallback,
   useState,
 } from "react";
 import { FaFire } from "react-icons/fa";
@@ -26,6 +27,11 @@ interface KanbanProps {
   boardId: string;
   initialCards: KanbanCard[];
   onMutation?: () => void;
+}
+
+interface CardsOverride {
+  cards: KanbanCard[];
+  source: KanbanCard[];
 }
 
 function moveCard(
@@ -104,15 +110,25 @@ function restoreDeletedCard(
 }
 
 export const Kanban = ({ initialCards, boardId, onMutation }: KanbanProps) => {
-  const [cards, setCards] = useState<KanbanCard[]>(initialCards);
-  const [previousInitialCards, setPreviousInitialCards] = useState(initialCards);
+  const [cardsOverride, setCardsOverride] = useState<CardsOverride | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const cards = cardsOverride?.source === initialCards ? cardsOverride.cards : initialCards;
 
-  if (initialCards !== previousInitialCards) {
-    setPreviousInitialCards(initialCards);
-    setCards(initialCards);
-  }
+  const setCards = useCallback<Dispatch<SetStateAction<KanbanCard[]>>>(
+    (nextCards) => {
+      setCardsOverride((currentOverride) => {
+        const currentCards =
+          currentOverride?.source === initialCards ? currentOverride.cards : initialCards;
+        const resolvedCards =
+          typeof nextCards === "function"
+            ? (nextCards as (currentCards: KanbanCard[]) => KanbanCard[])(currentCards)
+            : nextCards;
+        return { cards: resolvedCards, source: initialCards };
+      });
+    },
+    [initialCards]
+  );
 
   return (
     <LazyMotion features={domAnimation}>
