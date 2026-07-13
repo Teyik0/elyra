@@ -15,6 +15,7 @@ import type {
 
 const MAX_CHANGES = 1000;
 const MAX_MUTATIONS = 10_000;
+const MUTATION_EVICTION_INTERVAL_MS = 60 * 1000;
 const MUTATION_TTL_MS = 24 * 60 * 60 * 1000;
 
 interface PendingMutation {
@@ -44,6 +45,7 @@ export class MemorySyncAdapter implements SyncAdapter {
   private readonly changes = new Map<string, ChangeState>();
   private readonly mutationKeys = new Map<string, string>();
   private readonly mutations = new Map<string, MutationEntry>();
+  private lastMutationEvictionAt = 0;
 
   beginMutation(input: BeginMutationInput): BeginMutationResult {
     const now = Date.now();
@@ -63,7 +65,7 @@ export class MemorySyncAdapter implements SyncAdapter {
         return { kind: "replay", response: existing.response };
       }
     }
-    if (this.mutations.size >= MAX_MUTATIONS) {
+    if (this.shouldEvictMutations(now)) {
       this.evictMutations(now);
     }
     if (this.mutations.size >= MAX_MUTATIONS) {
@@ -164,6 +166,7 @@ export class MemorySyncAdapter implements SyncAdapter {
   }
 
   private evictMutations(now: number): void {
+    this.lastMutationEvictionAt = now;
     const expiredBefore = now - MUTATION_TTL_MS;
     for (const [mutationId, mutation] of this.mutations) {
       if (mutation.createdAt < expiredBefore) {
@@ -185,6 +188,13 @@ export class MemorySyncAdapter implements SyncAdapter {
 
   private isExpired(mutation: MutationEntry, now: number): boolean {
     return mutation.createdAt < now - MUTATION_TTL_MS;
+  }
+
+  private shouldEvictMutations(now: number): boolean {
+    return (
+      this.mutations.size >= MAX_MUTATIONS ||
+      now - this.lastMutationEvictionAt >= MUTATION_EVICTION_INTERVAL_MS
+    );
   }
 
   private deleteMutation(mutationId: string): void {
