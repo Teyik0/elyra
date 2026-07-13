@@ -39,6 +39,7 @@ import {
   getDevISRLoaderCache,
   getDevSSGLoaderCache,
   isrCache,
+  revalidatePath,
   setCachePurger,
   setDevISRLoaderCache,
   setDevSSGLoaderCache,
@@ -181,6 +182,29 @@ describe("revalidateTag", () => {
 
     expect(withInstance(a, () => autoInvalidateRegistry.pathsForTags(["shared"]))).toEqual([]);
     await Promise.resolve();
+  });
+});
+
+describe("revalidatePath", () => {
+  test("purges the mounted app's PHYSICAL (prefixed) URL, not the logical path", async () => {
+    const admin = registerInstance(createInstance("/admin", "/apps/admin"));
+    const purged: string[][] = [];
+    setCachePurger((paths) => {
+      purged.push(paths);
+      return Promise.resolve();
+    });
+
+    withInstance(admin, () => {
+      setISRCache("/x", { generatedAt: Date.now(), html: "admin:x", revalidate: 60 });
+    });
+
+    const deleted = revalidatePath("/x", "page");
+    await Promise.resolve();
+
+    expect(deleted).toBe(true);
+    expect(withInstance(admin, () => isrCache.has("/x"))).toBe(false);
+    expect(purged.flat()).toContain("/admin/x");
+    expect(purged.flat()).not.toContain("/x");
   });
 });
 

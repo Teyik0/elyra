@@ -82,10 +82,13 @@ export function revalidatePath(path: string, type: RevalidateType): boolean {
   for (const instance of allInstances()) {
     const result = revalidatePathForInstance(instance, path, type);
     deleted = result.deleted || deleted;
-    purgedPaths.push(...result.purgedPaths);
+    purgedPaths.push(`${instance.prefix}${path}`);
+    for (const purged of result.purgedPaths) {
+      purgedPaths.push(`${instance.prefix}${purged}`);
+    }
   }
 
-  callCachePurger(dedupePaths([...purgedPaths, path]));
+  callCachePurger(dedupePaths(purgedPaths));
   return deleted;
 }
 
