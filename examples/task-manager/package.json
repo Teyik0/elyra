@@ -6,7 +6,7 @@
   "scripts": {
     "fix": "ultracite fix",
     "dev": "bun --hot src/server.ts",
-    "test": "bun test $(find tests \\( -name '*.test.ts' -o -name '*.test.tsx' \\) ! -name 'boards-invalidation.test.ts') --parallel --isolate --bail",
+    "test": "bun test --parallel --isolate --bail",
     "test:dev": "bun test --changed --parallel --isolate --bail",
     "tscheck": "tsc --noEmit",
     "build": "furin build --target bun --compile embed",

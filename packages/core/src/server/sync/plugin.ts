@@ -5,7 +5,7 @@ import {
   runInvalidationRules,
 } from "../auto-invalidate/runtime.ts";
 import type { InvalidationInput } from "../auto-invalidate/types.ts";
-import { createMutationFingerprint } from "./fingerprint.ts";
+import { createMutationFingerprint, sha256Hex } from "./fingerprint.ts";
 import { memorySyncAdapter } from "./memory-adapter.ts";
 import { replayResponse, storeResponse } from "./response.ts";
 import { publishSyncInvalidation } from "./stream.ts";
@@ -60,13 +60,12 @@ function getIdempotencyKey(ctx: MutationContext): string | undefined {
   return fromRequest || undefined;
 }
 
-async function getPrincipalScope(request: Request): Promise<string> {
+function getPrincipalScope(request: Request): string {
   const authorization = request.headers.get("authorization");
   const credentials = authorization
     ? JSON.stringify(["authorization", authorization])
     : JSON.stringify(["cookie", request.headers.get("cookie") ?? ""]);
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(credentials));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return sha256Hex(credentials);
 }
 
 function supportsReplayBody(request: Request): boolean {
@@ -119,9 +118,9 @@ async function beginMutation(ctx: MutationContext): Promise<Response | undefined
   }
 
   const url = new URL(ctx.request.url);
-  const principal = await getPrincipalScope(ctx.request);
+  const principal = getPrincipalScope(ctx.request);
   const key = `${ctx.request.method}:${url.pathname}:${idempotencyKey}`;
-  const fingerprint = await createMutationFingerprint({ body: ctx.body, request: ctx.request });
+  const fingerprint = createMutationFingerprint({ body: ctx.body, request: ctx.request });
   const result = await memorySyncAdapter.beginMutation({ fingerprint, key, principal });
   if (result.kind === "replay") {
     return replayResponse(result.response);
