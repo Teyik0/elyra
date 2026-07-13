@@ -1,131 +1,210 @@
-import { test } from "bun:test";
-import { join as joinPath } from "node:path";
+import { expect, mock, test } from "bun:test";
+import { join } from "node:path";
+import type { Context } from "elysia";
+import type { HTTPHeaders } from "elysia/types";
 
-const script = `
-const { mock } = await import("bun:test");
-mock.module("evlog/elysia", () => ({
-  evlog: () => (app) => app,
-  useLogger: () => ({ set() {} }),
+mock.module("evlog", () => ({
+  createLogger: () => ({
+    emit: () => undefined,
+    error: () => undefined,
+    fork: (_label: string, fn: () => unknown) => fn(),
+    getContext: () => ({}),
+    info: () => undefined,
+    set: () => undefined,
+    setLevel: () => undefined,
+    warn: () => undefined,
+  }),
 }));
 
-const { join } = await import("node:path");
-const { notFound } = await import("./packages/core/src/shared/not-found.ts");
-const { __resetCacheState, isrCache } = await import("./packages/core/src/server/cache/index.ts");
-const { handleISR } = await import("./packages/core/src/server/render/index.ts");
-const { scanPages } = await import("./packages/core/src/server/router/index.ts");
-const { __setDevMode } = await import("./packages/core/src/server/runtime-env.ts");
+mock.module("evlog/elysia", () => ({
+  evlog: () => (app: unknown) => app,
+  useLogger: () => ({
+    set: () => undefined,
+  }),
+}));
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
-}
+import {
+  __resetCacheState,
+  isrCache,
+  revalidatePath,
+  waitForPendingISRRevalidations,
+} from "../../../src/server/cache/index.ts";
+import { handleISR } from "../../../src/server/render/index.ts";
+import { type ResolvedRoute, scanPages } from "../../../src/server/router/index.ts";
+import { __setDevMode } from "../../../src/server/runtime-env.ts";
+import { notFound } from "../../../src/shared/not-found.ts";
 
-function createMockLoaderContext(overrides = {}) {
+function createMockLoaderContext(overrides: Partial<Context>): Context {
   return {
     cookie: {},
     headers: {},
     params: {},
     path: "/test",
     query: {},
-    redirect: (url) => new Response(null, { headers: { Location: url }, status: 302 }),
+    redirect: (url: string) => new Response(null, { headers: { Location: url }, status: 302 }),
     request: new Request("http://localhost/test"),
-    set: { headers: {} },
+    set: { headers: {} as HTTPHeaders },
     ...overrides,
-  };
+  } as Context;
 }
 
-async function waitForBackground(predicate, message) {
+function waitForBackground(predicate: () => boolean, message: string): Promise<void> {
   const deadline = Date.now() + 2000;
-  while (Date.now() < deadline) {
+  async function poll(): Promise<void> {
     if (predicate()) {
       return;
     }
+    if (Date.now() >= deadline) {
+      throw new Error(message);
+    }
     await new Promise((resolve) => setTimeout(resolve, 10));
+    return poll();
   }
-  throw new Error(message);
+  return poll();
 }
 
-__setDevMode(false);
-const result = await scanPages(join(process.cwd(), "packages/core/tests/fixtures/pages/default"));
-const isrRoute = result.routes.find((route) => route.pattern === "/isr-page");
-assert(isrRoute, "Route /isr-page not found");
-const root = result.root;
+function createISRRoute(
+  baseRoute: ResolvedRoute,
+  options: {
+    loader: ResolvedRoute["page"]["loader"];
+    pattern: string;
+  }
+): ResolvedRoute {
+  return {
+    ...baseRoute,
+    page: {
+      ...baseRoute.page,
+      loader: options.loader,
+    },
+    pattern: options.pattern,
+  };
+}
 
-__resetCacheState();
-let staleHtml = "<html>stale-redirect</html>";
-isrCache.set("/isr-page/redirect", { generatedAt: 0, html: staleHtml, revalidate: 60 });
-let revalidationAttempts = 0;
-let route = {
-  ...isrRoute,
-  page: {
-    ...isrRoute.page,
+function createDeferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+// The scenario intentionally starts ISR fire-and-forget work from a stale hit;
+// Bun's parallel runner can keep that test scope open after the promise settles.
+test.serial(
+  "ISR background revalidation scenarios",
+  (done) => {
+    const scenario = runISRBackgroundRevalidationScenarios();
+    scenario.then(() => done(), done);
+  },
+  15_000
+);
+
+async function runISRBackgroundRevalidationScenarios(): Promise<void> {
+  __setDevMode(false);
+  __resetCacheState();
+
+  const result = await scanPages(join(import.meta.dir, "../../fixtures/pages/default"));
+  const matchedIsrRoute = result.routes.find((candidate) => candidate.pattern === "/isr-page");
+  if (!matchedIsrRoute) {
+    throw new Error("Route /isr-page not found");
+  }
+  const isrRoute: ResolvedRoute = { ...matchedIsrRoute, mode: "isr" };
+
+  let staleHtml = "<html>stale-redirect</html>";
+  isrCache.set("/isr-page/redirect", { generatedAt: 0, html: staleHtml, revalidate: 60 });
+  let revalidationAttempts = 0;
+  let route = createISRRoute(isrRoute, {
     loader: () => {
       revalidationAttempts += 1;
       throw new Response(null, { headers: { Location: "/foo" }, status: 302 });
     },
-  },
-  pattern: "/isr-page/redirect",
-};
-let html = await handleISR(route, createMockLoaderContext({ path: "/isr-page/redirect" }), root, "");
-assert(html === staleHtml, "redirect revalidation returns stale html");
-await waitForBackground(() => revalidationAttempts === 1, "redirect revalidation did not settle");
-assert(isrCache.get("/isr-page/redirect")?.html === staleHtml, "redirect revalidation keeps cache");
+    pattern: "/isr-page/redirect",
+  });
+  let html = await handleISR(
+    route,
+    createMockLoaderContext({ path: "/isr-page/redirect" }),
+    result.root,
+    ""
+  );
+  expect(html).toBe(staleHtml);
+  await waitForBackground(() => revalidationAttempts === 1, "redirect revalidation did not settle");
+  await waitForPendingISRRevalidations();
+  expect(isrCache.get("/isr-page/redirect")?.html).toBe(staleHtml);
 
-__resetCacheState();
-staleHtml = "<html>stale-error</html>";
-isrCache.set("/isr-page/error", { generatedAt: 0, html: staleHtml, revalidate: 60 });
-revalidationAttempts = 0;
-route = {
-  ...isrRoute,
-  page: {
-    ...isrRoute.page,
+  __resetCacheState();
+  staleHtml = "<html>stale-error</html>";
+  isrCache.set("/isr-page/error", { generatedAt: 0, html: staleHtml, revalidate: 60 });
+  revalidationAttempts = 0;
+  route = createISRRoute(isrRoute, {
     loader: () => {
       revalidationAttempts += 1;
       throw new Error("bg-revalidation-boom");
     },
-  },
-  pattern: "/isr-page/error",
-};
-html = await handleISR(route, createMockLoaderContext({ path: "/isr-page/error" }), root, "");
-assert(html === staleHtml, "error revalidation returns stale html");
-await waitForBackground(() => revalidationAttempts === 1, "error revalidation did not settle");
-assert(isrCache.get("/isr-page/error")?.html === staleHtml, "error revalidation keeps cache");
-
-__resetCacheState();
-staleHtml = "<html>stale-not-found</html>";
-isrCache.set("/isr-page/not-found", { generatedAt: 0, html: staleHtml, revalidate: 60 });
-route = {
-  ...isrRoute,
-  page: {
-    ...isrRoute.page,
-    loader: () => notFound({ message: "gone" }),
-  },
-  pattern: "/isr-page/not-found",
-};
-html = await handleISR(route, createMockLoaderContext({ path: "/isr-page/not-found" }), root, "");
-assert(html === staleHtml, "not-found revalidation returns stale html");
-await waitForBackground(() => !isrCache.has("/isr-page/not-found"), "not-found revalidation did not invalidate cache");
-assert(!isrCache.has("/isr-page/not-found"), "not-found revalidation invalidates cache");
-const missCtx = createMockLoaderContext({ path: "/isr-page/not-found" });
-await handleISR(route, missCtx, root, "");
-assert(missCtx.set.status === 404, "not-found miss sets status");
-`;
-
-test("ISR background revalidation scenarios", () => {
-  const proc = Bun.spawnSync({
-    cmd: ["bun", "--preload", "./packages/core/tests/setup/global.ts", "-e", script],
-    cwd: joinPath(import.meta.dir, "../../../../.."),
-    stderr: "pipe",
-    stdout: "pipe",
+    pattern: "/isr-page/error",
   });
-  if (proc.exitCode !== 0) {
-    throw new Error(
-      [
-        `ISR background revalidation subprocess exited with ${proc.exitCode}`,
-        new TextDecoder().decode(proc.stdout),
-        new TextDecoder().decode(proc.stderr),
-      ].join("\n")
-    );
+  html = await handleISR(
+    route,
+    createMockLoaderContext({ path: "/isr-page/error" }),
+    result.root,
+    ""
+  );
+  expect(html).toBe(staleHtml);
+  await waitForBackground(() => revalidationAttempts === 1, "error revalidation did not settle");
+  await waitForPendingISRRevalidations();
+  expect(isrCache.get("/isr-page/error")?.html).toBe(staleHtml);
+
+  __resetCacheState();
+  staleHtml = "<html>stale-not-found</html>";
+  isrCache.set("/isr-page/not-found", { generatedAt: 0, html: staleHtml, revalidate: 60 });
+  route = createISRRoute(isrRoute, {
+    loader: () => notFound({ message: "gone" }),
+    pattern: "/isr-page/not-found",
+  });
+  html = await handleISR(
+    route,
+    createMockLoaderContext({ path: "/isr-page/not-found" }),
+    result.root,
+    ""
+  );
+  expect(html).toBe(staleHtml);
+  await waitForBackground(
+    () => !isrCache.has("/isr-page/not-found"),
+    "not-found revalidation did not invalidate cache"
+  );
+  await waitForPendingISRRevalidations();
+  expect(isrCache.has("/isr-page/not-found")).toBe(false);
+  const missCtx = createMockLoaderContext({ path: "/isr-page/not-found" });
+  await handleISR(route, missCtx, result.root, "");
+  expect(missCtx.set.status).toBe(404);
+
+  __resetCacheState();
+  staleHtml = "<html>stale-race</html>";
+  const cacheKey = "/isr-page/race";
+  const gate = createDeferred();
+  let loaderReleased = false;
+  isrCache.set(cacheKey, { generatedAt: 0, html: staleHtml, revalidate: 60 });
+  revalidationAttempts = 0;
+  route = createISRRoute(isrRoute, {
+    loader: async () => {
+      revalidationAttempts += 1;
+      await gate.promise;
+      loaderReleased = true;
+      return { timestamp: Date.now() };
+    },
+    pattern: cacheKey,
+  });
+
+  try {
+    html = await handleISR(route, createMockLoaderContext({ path: cacheKey }), result.root, "");
+    expect(html).toBe(staleHtml);
+    await waitForBackground(() => revalidationAttempts === 1, "race revalidation did not start");
+    revalidatePath(cacheKey, "page");
+    expect(isrCache.has(cacheKey)).toBe(false);
+  } finally {
+    gate.resolve();
   }
-});
+
+  await waitForBackground(() => loaderReleased, "race revalidation did not complete");
+  await waitForPendingISRRevalidations();
+  expect(isrCache.has(cacheKey)).toBe(false);
+}

@@ -23,7 +23,13 @@ export {
   revalidatePath,
   setCachePurger,
 } from "./invalidation";
-export { deleteISRCache, getISRCache, isrCache, setISRCache } from "./isr";
+export {
+  deleteISRCache,
+  getISRCache,
+  isrCache,
+  setISRCache,
+  waitForPendingISRRevalidations,
+} from "./isr";
 export type { ISRCacheEntry, SsgCacheEntry } from "./isr-ssg";
 export type { CacheInvalidator } from "./registry";
 export { registerCacheInvalidator } from "./registry";

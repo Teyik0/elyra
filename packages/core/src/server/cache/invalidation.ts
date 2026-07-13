@@ -11,7 +11,7 @@ import {
 } from "../instance.ts";
 import { clearPprRouteCache } from "../render/ppr-route.ts";
 import { clearDevLoaderCaches } from "./dev-loader";
-import { isrRouteCache } from "./isr";
+import { clearPendingISRRevalidations, isrRouteCache } from "./isr";
 import { getCacheInvalidators } from "./registry";
 import type { RevalidateType } from "./route-cache";
 import { ssgRouteCache } from "./ssg";
@@ -131,6 +131,7 @@ export function __resetCacheState(): void {
       ssgRouteCache(instance).clear();
       clearDevLoaderCaches(instance);
       clearPprRouteCache(instance);
+      clearPendingISRRevalidations(instance);
     });
     instance.buildId = "";
   }

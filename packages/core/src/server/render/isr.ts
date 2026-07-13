@@ -1,11 +1,19 @@
+import { AsyncResource } from "node:async_hooks";
 import type { Context } from "elysia";
 import { renderToReadableStream } from "react-dom/server";
 import { isNotFoundError } from "../../shared/not-found.ts";
 import type { SearchRouteMetadata } from "../../shared/search-params.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
-import { deleteISRCache, getISRCache, setISRCache } from "../cache/isr.ts";
+import {
+  captureISRCacheGeneration,
+  deleteISRCache,
+  getISRCache,
+  pendingISRRevalidations,
+  setISRCacheIfGenerationUnchanged,
+} from "../cache/isr.ts";
 import type { ISRCacheEntry } from "../cache/isr-ssg.ts";
 import { createLogger, useLogger } from "../context-logger.ts";
+import { currentInstance, withInstance } from "../instance.ts";
 import type { ResolvedRoute, RootLayout } from "../router/index.ts";
 import {
   assembleHTML,
@@ -184,6 +192,7 @@ export async function handleISR(
     );
   }
 
+  const cacheGeneration = captureISRCacheGeneration(cacheKey);
   const renderStart = Date.now();
   const prepared = await prepareRender(route, ctx, root, undefined, false, undefined, searchRoutes);
 
@@ -212,8 +221,14 @@ export async function handleISR(
     },
   });
 
-  setISRCache(cacheKey, { generatedAt, html, revalidate });
-  autoInvalidateRegistry.registerLoaderTags(cacheKey, route.tags);
+  const cacheStored = setISRCacheIfGenerationUnchanged(
+    cacheKey,
+    { generatedAt, html, revalidate },
+    cacheGeneration
+  );
+  if (cacheStored) {
+    autoInvalidateRegistry.registerLoaderTags(cacheKey, route.tags);
+  }
 
   const etag = isrEtag(buildId, generatedAt);
   // Apply loader-set headers first so custom headers survive, then let the
@@ -229,9 +244,6 @@ export async function handleISR(
   return html;
 }
 
-/** Tracks in-flight ISR revalidations to prevent thundering herd. */
-const pendingRevalidations = new Set<string>();
-
 function revalidateInBackground(
   route: ResolvedRoute,
   params: Record<string, string>,
@@ -241,6 +253,7 @@ function revalidateInBackground(
   originalCtx: LoaderContext,
   searchRoutes?: SearchRouteMetadata[]
 ) {
+  const pendingRevalidations = pendingISRRevalidations();
   if (pendingRevalidations.has(cacheKey)) {
     const logger = createLogger({});
     logger.set({
@@ -254,70 +267,83 @@ function revalidateInBackground(
     logger.emit();
     return;
   }
-  pendingRevalidations.add(cacheKey);
+  const cacheGeneration = captureISRCacheGeneration(cacheKey);
+  const instance = currentInstance();
+  const { origin } = new URL(originalCtx.request.url);
 
-  renderForPath(
-    route,
-    params,
-    root,
-    new URL(originalCtx.request.url).origin,
-    "isr",
-    undefined,
-    searchRoutes
-  )
-    .then((result) => {
-      if (result instanceof Response) {
-        return;
-      }
-      // Only replace the cached entry with a healthy 200 render. The current
-      // ISR cache stores HTML only, so caching non-200 output would serve it
-      // back as a 200 on the next hit.
-      if (result.status !== 200) {
-        const logger = createLogger({});
-        logger.set({
-          furin: {
-            cache: "revalidation_skipped",
-            reason: "non_200_render",
-            render: "isr",
-            route: route.pattern,
-            status: result.status,
-          },
-        });
-        logger.emit();
-        return;
-      }
-      setISRCache(cacheKey, {
-        generatedAt: Date.now(),
-        html: result.html,
-        revalidate,
+  const revalidation = new Promise<void>((resolve) => {
+    const resource = new AsyncResource("furin:isr-revalidation", { triggerAsyncId: 0 });
+    resource.runInAsyncScope(() => {
+      queueMicrotask(() => {
+        withInstance(instance, () =>
+          renderForPath(route, params, root, origin, "isr", undefined, searchRoutes)
+            .then((result) => {
+              if (result instanceof Response) {
+                return;
+              }
+              // Only replace the cached entry with a healthy 200 render. The current
+              // ISR cache stores HTML only, so caching non-200 output would serve it
+              // back as a 200 on the next hit.
+              if (result.status !== 200) {
+                const logger = createLogger({});
+                logger.set({
+                  furin: {
+                    cache: "revalidation_skipped",
+                    reason: "non_200_render",
+                    render: "isr",
+                    route: route.pattern,
+                    status: result.status,
+                  },
+                });
+                logger.emit();
+                return;
+              }
+              setISRCacheIfGenerationUnchanged(
+                cacheKey,
+                {
+                  generatedAt: Date.now(),
+                  html: result.html,
+                  revalidate,
+                },
+                cacheGeneration
+              );
+            })
+            .catch((err: unknown) => {
+              const logger = createLogger({});
+              if (isNotFoundError(err)) {
+                deleteISRCache(cacheKey);
+                logger.set({
+                  furin: {
+                    cache: "revalidation_invalidated",
+                    reason: "not_found",
+                    render: "isr",
+                    route: route.pattern,
+                  },
+                });
+                logger.emit();
+                return;
+              }
+              logger.set({
+                furin: {
+                  cache: "revalidation_failed",
+                  render: "isr",
+                  route: route.pattern,
+                },
+              });
+              logger.error(err instanceof Error ? err : new Error(String(err)));
+              logger.emit();
+            })
+            .finally(() => {
+              resolve();
+              resource.emitDestroy();
+            })
+        );
       });
-    })
-    .catch((err: unknown) => {
-      const logger = createLogger({});
-      if (isNotFoundError(err)) {
-        deleteISRCache(cacheKey);
-        logger.set({
-          furin: {
-            cache: "revalidation_invalidated",
-            reason: "not_found",
-            render: "isr",
-            route: route.pattern,
-          },
-        });
-        logger.emit();
-        return;
-      }
-      logger.set({
-        furin: {
-          cache: "revalidation_failed",
-          render: "isr",
-          route: route.pattern,
-        },
-      });
-      logger.error(err instanceof Error ? err : new Error(String(err)));
-      logger.emit();
-    })
-    .finally(() => {
-      pendingRevalidations.delete(cacheKey);
     });
+  }).finally(() => {
+    if (pendingRevalidations.get(cacheKey) === revalidation) {
+      pendingRevalidations.delete(cacheKey);
+    }
+  });
+  pendingRevalidations.set(cacheKey, revalidation);
 }
