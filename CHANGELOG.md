@@ -6,7 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-## [0.2.0-alpha.6] — 2026-07-12
+### Breaking
+- Minimal version is bun v1.4.0 to avoid segfault with RSC update
 
 ### Added
 - **Composite React Server Components** — `furin/rsc` now exports explicit RSC primitives for loader-returned server markup. `renderServerComponent()` transports server-rendered React output through SSR and SPA data responses, while `createCompositeComponent()` and `<CompositeComponent>` let client-owned `children`, component slots, and render props compose into server-owned markup without turning the whole route into client JavaScript.

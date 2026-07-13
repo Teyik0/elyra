@@ -1,7 +1,6 @@
 /// <reference lib="dom" />
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { createElement } from "react";
-import { flushSync } from "react-dom";
+import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { toCrossJSON } from "seroval";
 import { Link, RouterProvider } from "../../../src/client/link.tsx";
@@ -34,6 +33,26 @@ function makeRoute(path: string, content: string, linkTo?: string): ClientRoute 
     pattern: path,
     regex: new RegExp(`^${path.replace(/\*/g, ".*")}$`),
   };
+}
+
+async function dispatchReactEvent(target: EventTarget, event: Event): Promise<void> {
+  await act(async () => {
+    target.dispatchEvent(event);
+    await Promise.resolve();
+  });
+}
+
+async function runHistoryUpdate(update: () => void): Promise<void> {
+  await act(async () => {
+    update();
+    await Promise.resolve();
+  });
+}
+
+async function flushReactUpdates(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+  });
 }
 
 /** Returns a single-line NDJSON response (CrossJSON-serialised) for the /_furin/data endpoint. */
@@ -78,7 +97,7 @@ async function renderRouter(
     };
   }
 
-  flushSync(() => {
+  act(() => {
     root.render(
       createElement(RouterProvider, {
         autoRefresh: true,
@@ -99,7 +118,7 @@ async function renderRouter(
 
   return {
     cleanup: () => {
-      flushSync(() => {
+      act(() => {
         root.unmount();
       });
       container.remove();
@@ -211,21 +230,23 @@ describe("scroll restoration on browser back", () => {
     const linkB = container.querySelector('a[href="/page-b"]') as HTMLAnchorElement;
     expect(linkB).not.toBeNull();
 
-    linkB.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await dispatchReactEvent(linkB, new MouseEvent("click", { bubbles: true, cancelable: true }));
 
     await waitForDom(
       () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B"),
       undefined
     );
+    await flushReactUpdates();
     expect(currentScrollY).toBe(0);
 
     // 4. Simulate browser back button
-    win.history.back();
+    await runHistoryUpdate(() => win.history.back());
 
     await waitForDom(
       () => win.location.pathname === "/page-a" && container.textContent?.includes("Page A"),
       undefined
     );
+    await flushReactUpdates();
 
     // 5. Verify we're back on Page A and scroll is restored
     expect(win.location.pathname).toBe("/page-a");
@@ -242,12 +263,13 @@ describe("scroll restoration on browser back", () => {
     currentScrollY = 300;
 
     const linkB = container.querySelector('a[href="/page-b"]') as HTMLAnchorElement;
-    linkB.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await dispatchReactEvent(linkB, new MouseEvent("click", { bubbles: true, cancelable: true }));
 
     await waitForDom(
       () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B"),
       undefined
     );
+    await flushReactUpdates();
 
     expect(win.location.pathname).toBe("/page-b");
     expect(currentScrollY).toBe(0);
@@ -267,39 +289,43 @@ describe("scroll restoration on browser back", () => {
     // Navigate A -> B (scroll 100)
     currentScrollY = 100;
     const linkB = container.querySelector('a[href="/page-b"]') as HTMLAnchorElement;
-    linkB.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await dispatchReactEvent(linkB, new MouseEvent("click", { bubbles: true, cancelable: true }));
     await waitForDom(
       () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B"),
       undefined
     );
+    await flushReactUpdates();
 
     // Scroll down on Page B to 200
     currentScrollY = 200;
 
     // Navigate B -> C
     const linkC = container.querySelector('a[href="/page-c"]') as HTMLAnchorElement;
-    linkC.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await dispatchReactEvent(linkC, new MouseEvent("click", { bubbles: true, cancelable: true }));
     await waitForDom(
       () => win.location.pathname === "/page-c" && container.textContent?.includes("Page C"),
       undefined
     );
+    await flushReactUpdates();
 
     expect(win.location.pathname).toBe("/page-c");
 
     // Back to B
-    win.history.back();
+    await runHistoryUpdate(() => win.history.back());
     await waitForDom(
       () => win.location.pathname === "/page-b" && container.textContent?.includes("Page B"),
       undefined
     );
+    await flushReactUpdates();
     expect(currentScrollY).toBe(200);
 
     // Back to A
-    win.history.back();
+    await runHistoryUpdate(() => win.history.back());
     await waitForDom(
       () => win.location.pathname === "/page-a" && container.textContent?.includes("Page A"),
       undefined
     );
+    await flushReactUpdates();
     expect(currentScrollY).toBe(100); // Position when we left A
 
     cleanup();

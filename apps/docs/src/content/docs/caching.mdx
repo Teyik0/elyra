@@ -152,7 +152,7 @@ export const postsApi = new Elysia()
 
 The `sync` route option is provided by the `furinSync()` macro. Install the macro on the same Elysia plugin that declares the routes. Mutations are synchronized by default; use `sync: false` only for non-replayable effects.
 
-`furinSync()` requires an `Idempotency-Key` header for every synced mutation, replays successful responses for duplicate requests, and appends successful invalidations to its change log. This makes idempotency and multi-tab refresh part of the default mutation contract instead of per-route boilerplate.
+`furinSync()` requires an `Idempotency-Key` header for every synced mutation, replays successful responses for duplicate requests, and appends successful invalidations to its change log. The built-in replay store only accepts small bounded responses: serialized bodies are capped at 1 MB, and returned `Response` objects must include a valid `Content-Length`. This makes idempotency and multi-tab refresh part of the default mutation contract instead of per-route boilerplate.
 
 If you only need response-header invalidation without live broadcast, the lower-level `furinInvalidate()` macro still provides the `invalidate` route option.
 

@@ -31,18 +31,18 @@ const MOCK_EJS_VARS: EjsTemplateVars = {
   projectName: "test-app",
   projectNameKebab: "test-app",
   projectNamePascal: "TestApp",
-  versions: new Proxy({} as Record<string, string>, {
-    get: () => "0.0.0",
-  }),
+  versions: {},
 };
 
 interface ManifestFile {
   dest: string;
-  kind: "ejs" | "static";
-  src: string;
+  kind: "ejs" | "package-json" | "static";
+  src?: string;
 }
 
 interface TemplateDefinition {
+  dependencies: Record<string, string>;
+  devDependencies: Record<string, string>;
   files: ManifestFile[];
   id: string;
   label: string;
@@ -79,6 +79,18 @@ describe("manifest.json integrity", () => {
       expect(template.files.some((file) => file.dest === "public/favicon.ico")).toBe(true);
     }
   });
+
+  it("generates package.json from manifest dependencies for each template", () => {
+    for (const template of registry.templates) {
+      expect(template.files).toContainEqual({
+        dest: "package.json",
+        kind: "package-json",
+      });
+      expect(template.dependencies["@sinclair/typebox"]).toBeDefined();
+      expect(template.devDependencies["@biomejs/biome"]).toBeDefined();
+      expect(template.devDependencies.ultracite).toBeDefined();
+    }
+  });
 });
 
 describe("template files — all src paths exist on disk and stay within roots", () => {
@@ -90,6 +102,17 @@ describe("template files — all src paths exist on disk and stay within roots",
     }
 
     for (const file of simpleTemplate.files) {
+      if (file.kind === "package-json") {
+        expect(file.src, `package-json files must be generated without src: ${file.dest}`).toBe(
+          undefined
+        );
+        continue;
+      }
+
+      if (!file.src) {
+        throw new Error(`Missing src for ${file.dest}`);
+      }
+
       // src itself must not be an absolute path before resolution
       expect(file.src, `src must not be absolute: ${file.src}`).not.toMatch(ABSOLUTE_PATH_RE);
 
@@ -118,6 +141,17 @@ describe("template files — all src paths exist on disk and stay within roots",
     }
 
     for (const file of fullTemplate.files) {
+      if (file.kind === "package-json") {
+        expect(file.src, `package-json files must be generated without src: ${file.dest}`).toBe(
+          undefined
+        );
+        continue;
+      }
+
+      if (!file.src) {
+        throw new Error(`Missing src for ${file.dest}`);
+      }
+
       // src itself must not be an absolute path before resolution
       expect(file.src, `src must not be absolute: ${file.src}`).not.toMatch(ABSOLUTE_PATH_RE);
 
@@ -144,6 +178,9 @@ describe("EJS files render without errors and leave no raw tags", () => {
         if (file.kind !== "ejs") {
           continue;
         }
+        if (!file.src) {
+          throw new Error(`Missing src for ${file.dest}`);
+        }
         const absolutePath = resolve(TEMPLATES_DIR, file.src);
         const rendered = await renderEjsFile(absolutePath, MOCK_EJS_VARS);
         expect(rendered, `Leftover EJS open-tag in ${file.src} after rendering`).not.toContain(
@@ -157,12 +194,50 @@ describe("EJS files render without errors and leave no raw tags", () => {
   });
 });
 
+describe("generated Biome config", () => {
+  it("keeps Furin route.page inference-safe object key order", async () => {
+    for (const template of registry.templates) {
+      const biomeFile = template.files.find((file) => file.dest === "biome.jsonc");
+      expect(biomeFile).toBeDefined();
+      if (!biomeFile?.src) {
+        throw new Error(`Missing biome.jsonc template for ${template.id}`);
+      }
+
+      const rendered = await renderEjsFile(resolve(TEMPLATES_DIR, biomeFile.src), MOCK_EJS_VARS);
+      const config = JSON.parse(rendered);
+
+      expect(config.assist?.actions?.source?.useSortedKeys).toBe("off");
+      expect(config.assist?.actions?.source?.useSortedProperties).toBe("off");
+    }
+  });
+});
+
+describe("generated Bun config", () => {
+  it("does not install peer dependencies that can shadow the global Bun binary", async () => {
+    for (const template of registry.templates) {
+      const bunfigFile = template.files.find((file) => file.dest === "bunfig.toml");
+      expect(bunfigFile).toBeDefined();
+      if (!bunfigFile?.src) {
+        throw new Error(`Missing bunfig.toml template for ${template.id}`);
+      }
+
+      const rendered = await renderEjsFile(resolve(TEMPLATES_DIR, bunfigFile.src), MOCK_EJS_VARS);
+
+      expect(rendered).toContain("[install]");
+      expect(rendered).toContain("peer = false");
+    }
+  });
+});
+
 describe("static files — no EJS-like tokens", () => {
   it("static files do not contain raw {{TOKEN}} strings", async () => {
     for (const template of registry.templates) {
       for (const file of template.files) {
         if (file.kind !== "static") {
           continue;
+        }
+        if (!file.src) {
+          throw new Error(`Missing src for ${file.dest}`);
         }
         // Skip binary files — decoding them as UTF-8 text is incorrect and
         // the TOKEN_RE pattern cannot meaningfully appear in binary data.
@@ -178,28 +253,29 @@ describe("static files — no EJS-like tokens", () => {
   });
 });
 
+describe("Furin page templates", () => {
+  it("declare loader before component so loader data remains inferred", async () => {
+    for (const template of registry.templates) {
+      const pageFile = template.files.find((file) => file.dest === "src/pages/index.tsx");
+      expect(pageFile).toBeDefined();
+      if (!pageFile?.src) {
+        throw new Error(`Missing index page template for ${template.id}`);
+      }
+
+      const page = await Bun.file(resolve(TEMPLATES_DIR, pageFile.src)).text();
+
+      expect(page.indexOf("  loader:")).toBeGreaterThanOrEqual(0);
+      expect(page.indexOf("  component:")).toBeGreaterThan(page.indexOf("  loader:"));
+      expect(page).not.toContain("component: ({ apiMessage, apiSource }:");
+      expect(page).not.toContain("component: ({ message, source }:");
+    }
+  });
+});
+
 describe("full template UI files", () => {
   it("sets a safe default button type", async () => {
     const src = resolve(TEMPLATES_DIR, "full/src/components/ui/button.tsx");
     const raw = await Bun.file(src).text();
     expect(raw).toContain('type: type ?? "button"');
-  });
-});
-
-describe("package.json.ejs files — valid JSON after actual EJS rendering", () => {
-  it("simple/package.json.ejs renders to valid JSON", async () => {
-    const src = resolve(TEMPLATES_DIR, "simple/package.json.ejs");
-    const rendered = await renderEjsFile(src, MOCK_EJS_VARS);
-    expect(() => JSON.parse(rendered)).not.toThrow();
-    const parsed = JSON.parse(rendered);
-    expect(typeof parsed.name).toBe("string");
-  });
-
-  it("full/package.json.ejs renders to valid JSON", async () => {
-    const src = resolve(TEMPLATES_DIR, "full/package.json.ejs");
-    const rendered = await renderEjsFile(src, MOCK_EJS_VARS);
-    expect(() => JSON.parse(rendered)).not.toThrow();
-    const parsed = JSON.parse(rendered);
-    expect(typeof parsed.name).toBe("string");
   });
 });

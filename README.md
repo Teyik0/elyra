@@ -6,9 +6,8 @@
   <a href="https://www.npmjs.com/package/@teyik0/furin"><img src="https://img.shields.io/npm/v/%40teyik0%2Ffurin?style=flat-square&logo=npm&color=orange" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/@teyik0/furin"><img src="https://img.shields.io/npm/dm/%40teyik0%2Ffurin?style=flat-square&color=orange" alt="npm downloads" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/teyik0/furin?style=flat-square" alt="License" /></a>
-  <a href="https://bun.sh"><img src="https://img.shields.io/badge/bun-%3E%3D1.3.0-f5d147?style=flat-square&logo=bun&logoColor=black" alt="Bun" /></a>
+  <a href="https://bun.sh"><img src="https://img.shields.io/badge/bun-%3E%3D1.4.0-f5d147?style=flat-square&logo=bun&logoColor=black" alt="Bun" /></a>
   <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
-  <a href="https://react.review/repo/Teyik0/furin"><img src="https://react.review/api/badge/Teyik0/furin" alt="React Review" /></a>
 </div>
 
 ---

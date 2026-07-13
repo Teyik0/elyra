@@ -27,6 +27,7 @@ async function fetchLatestVersion(packageName: string): Promise<string | null> {
 
 function buildTokenMap(catalog: PackageCatalog, furinVersion: string): TokenMap {
   return {
+    "{{BIOME_VERSION}}": catalog["@biomejs/biome"],
     "{{BUN_PLUGIN_TAILWIND_VERSION}}": catalog["bun-plugin-tailwind"],
     "{{CLSX_VERSION}}": catalog.clsx,
     "{{CVA_VERSION}}": catalog["class-variance-authority"],
@@ -37,6 +38,7 @@ function buildTokenMap(catalog: PackageCatalog, furinVersion: string): TokenMap 
     "{{RADIX_UI_SLOT_VERSION}}": catalog["@radix-ui/react-slot"],
     "{{REACT_DOM_VERSION}}": catalog["react-dom"],
     "{{REACT_VERSION}}": catalog.react,
+    "{{SINCLAIR_TYPEBOX_VERSION}}": catalog["@sinclair/typebox"],
     "{{TAILWIND_MERGE_VERSION}}": catalog["tailwind-merge"],
     "{{TAILWIND_VERSION}}": catalog.tailwindcss,
     "{{TW_ANIMATE_VERSION}}": catalog["tw-animate-css"],
@@ -44,6 +46,7 @@ function buildTokenMap(catalog: PackageCatalog, furinVersion: string): TokenMap 
     "{{TYPES_REACT_DOM_VERSION}}": catalog["@types/react-dom"],
     "{{TYPES_REACT_VERSION}}": catalog["@types/react"],
     "{{TYPESCRIPT_VERSION}}": catalog.typescript,
+    "{{ULTRACITE_VERSION}}": catalog.ultracite,
   };
 }
 

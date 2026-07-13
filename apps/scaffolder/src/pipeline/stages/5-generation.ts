@@ -18,6 +18,48 @@ function assertUniqueDestinations(ctx: PipelineContext): void {
   }
 }
 
+interface PackageJsonContent {
+  dependencies: Record<string, string>;
+  devDependencies: Record<string, string>;
+  engines: {
+    bun: string;
+  };
+  name: string;
+  private: boolean;
+  scripts: {
+    build: string;
+    dev: string;
+    fix: string;
+    start: string;
+    tscheck: string;
+  };
+  type: "module";
+  version: string;
+}
+
+function buildPackageJson(ctx: PipelineContext): string {
+  const packageJson: PackageJsonContent = {
+    name: ctx.projectNameKebab,
+    private: true,
+    version: "0.1.0",
+    type: "module",
+    engines: {
+      bun: ">=1.4.0",
+    },
+    scripts: {
+      fix: "ultracite fix",
+      tscheck: "tsc --noEmit",
+      dev: "bun --hot src/server.ts",
+      build: "furin build --target bun --compile embed",
+      start: "./.furin/build/bun/server",
+    },
+    dependencies: ctx.dependencies,
+    devDependencies: ctx.devDependencies,
+  };
+
+  return `${JSON.stringify(packageJson, null, 2)}\n`;
+}
+
 export async function stage5Generation(ctx: PipelineContext): Promise<void> {
   if (ctx.fileTree.length === 0) {
     throw new Error("File tree is empty — stage3Design must run first.");
@@ -39,7 +81,11 @@ export async function stage5Generation(ctx: PipelineContext): Promise<void> {
         const destPath = resolve(ctx.targetDir, file.relativePath);
         await mkdir(dirname(destPath), { recursive: true });
 
-        if (file.kind === "ejs") {
+        if (file.kind === "package-json") {
+          const content = buildPackageJson(ctx);
+          await Bun.write(destPath, content);
+          file.content = content;
+        } else if (file.kind === "ejs") {
           const content = await renderEjsFile(file.sourcePath, vars);
           await Bun.write(destPath, content);
           file.content = content;

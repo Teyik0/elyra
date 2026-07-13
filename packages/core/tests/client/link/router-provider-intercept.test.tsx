@@ -32,6 +32,19 @@ function makeRoute(path: string, linkTo: string): ClientRoute {
   };
 }
 
+async function dispatchReactEvent(target: EventTarget, event: Event): Promise<void> {
+  await act(async () => {
+    target.dispatchEvent(event);
+    await Promise.resolve();
+  });
+}
+
+async function flushReactUpdates(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
 /** Returns a single-line NDJSON response (CrossJSON-serialised) for the /_furin/data endpoint. */
 function makeNdjsonResponse(data: Record<string, unknown>): Response {
   const ndjson = JSON.stringify(toCrossJSON(data));
@@ -94,7 +107,9 @@ async function renderRouterWithLink(
 
   return {
     cleanup: () => {
-      root.unmount();
+      act(() => {
+        root.unmount();
+      });
       container.remove();
     },
     container,
@@ -181,9 +196,8 @@ describe("RouterProvider click interception", () => {
     const anchor = container.querySelector("a") as HTMLAnchorElement;
     expect(anchor).not.toBeNull();
 
-    anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await dispatchReactEvent(anchor, new MouseEvent("click", { bubbles: true, cancelable: true }));
 
-    // Wait deterministically for pushState to be called
     await new Promise<void>((resolve, reject) => {
       const start = Date.now();
       const interval = setInterval(() => {
@@ -196,6 +210,7 @@ describe("RouterProvider click interception", () => {
         }
       }, 10);
     });
+    await flushReactUpdates();
 
     expect(pushStateCalls.length).toBe(1);
     expect(pushStateCalls[0]?.url).toBe("/page-b");
@@ -224,10 +239,17 @@ describe("RouterProvider click interception", () => {
       currentCleanup = cleanup;
       const anchor = container.querySelector("a") as HTMLAnchorElement;
 
-      anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await dispatchReactEvent(
+        anchor,
+        new MouseEvent("click", { bubbles: true, cancelable: true })
+      );
       await waitFor(() => pageBRequests === 1);
-      anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await dispatchReactEvent(
+        anchor,
+        new MouseEvent("click", { bubbles: true, cancelable: true })
+      );
       await waitFor(() => pageBRequests === 2 && window.location.pathname === "/page-b");
+      await flushReactUpdates();
 
       expect(pageBRequests).toBe(2);
       expect(window.location.pathname).toBe("/page-b");

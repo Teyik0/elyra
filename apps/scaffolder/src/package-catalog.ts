@@ -1,7 +1,9 @@
 import catalog from "./generated/package-catalog.json";
 
 export interface PackageCatalog {
+  "@biomejs/biome": string;
   "@radix-ui/react-slot": string;
+  "@sinclair/typebox": string;
   "@teyik0/furin": string;
   "@types/bun": string;
   "@types/react": string;
@@ -18,6 +20,7 @@ export interface PackageCatalog {
   tailwindcss: string;
   "tw-animate-css": string;
   typescript: string;
+  ultracite: string;
 }
 
 export function getPackageCatalog(): PackageCatalog {

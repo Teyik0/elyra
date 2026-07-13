@@ -1,7 +1,6 @@
 /// <reference lib="dom" />
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { createElement } from "react";
-import { flushSync } from "react-dom";
+import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { toCrossJSON } from "seroval";
 import { Link, RouterProvider } from "../../../src/client/link.tsx";
@@ -30,6 +29,19 @@ function makeRoute(path: string, linkTo: string): ClientRoute {
     pattern: path,
     regex: new RegExp(`^${path}$`),
   };
+}
+
+async function dispatchReactEvent(target: EventTarget, event: Event): Promise<void> {
+  await act(async () => {
+    target.dispatchEvent(event);
+    await Promise.resolve();
+  });
+}
+
+async function flushReactUpdates(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+  });
 }
 
 /** Returns a single-line NDJSON response (CrossJSON-serialised) for the /_furin/data endpoint. */
@@ -73,7 +85,7 @@ async function renderRouterWithLink(
     };
   }
 
-  flushSync(() => {
+  act(() => {
     root.render(
       createElement(RouterProvider, {
         autoRefresh: true,
@@ -94,7 +106,7 @@ async function renderRouterWithLink(
 
   return {
     cleanup: () => {
-      flushSync(() => {
+      act(() => {
         root.unmount();
       });
       container.remove();
@@ -184,7 +196,10 @@ describe("RouterProvider server-side redirect follow", () => {
       // Clicking /page-b triggers a server redirect to /page-c.
       // Before the fix, the navigate callback reassigned a const variable
       // (newState), causing a ReferenceError that surfaced as a 500.
-      anchor.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await dispatchReactEvent(
+        anchor,
+        new MouseEvent("click", { bubbles: true, cancelable: true })
+      );
 
       await new Promise<void>((resolve, reject) => {
         const start = Date.now();
@@ -198,6 +213,7 @@ describe("RouterProvider server-side redirect follow", () => {
           }
         }, 10);
       });
+      await flushReactUpdates();
 
       expect(window.location.pathname).toBe("/page-c");
     },

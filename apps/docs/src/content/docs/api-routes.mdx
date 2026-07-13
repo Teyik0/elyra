@@ -101,7 +101,7 @@ await api.api.posts.post(
 )
 ```
 
-Repeating the same request with the same key returns the original response without executing the handler again. Reusing a key with a different payload returns `409`. Disable synchronization for payments, uploads, streams, or other non-replayable effects:
+Repeating the same request with the same key returns the original response without executing the handler again. Reusing a key with a different payload returns `409`. The built-in replay store only accepts small bounded responses: serialized bodies are capped at 1 MB, and returned `Response` objects must include a valid `Content-Length`. Disable synchronization for payments, uploads, streams, downloads, or other non-replayable effects:
 
 ```ts
 .post("/payments", createPayment, { sync: false })

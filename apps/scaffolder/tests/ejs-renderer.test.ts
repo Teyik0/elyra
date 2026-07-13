@@ -34,16 +34,6 @@ describe("renderEjsFile — simple template", () => {
     expect(output).not.toContain("<%=");
   });
 
-  it("renders package.json.ejs with correct name and deps", async () => {
-    const src = resolve(TEMPLATES_DIR, "simple/package.json.ejs");
-    const output = await renderEjsFile(src, mockVars);
-    const parsed = JSON.parse(output);
-    expect(parsed.name).toBe("my-test-app");
-    expect(parsed.dependencies["@teyik0/furin"]).toBe("0.1.0-alpha.4");
-    expect(parsed.dependencies.elysia).toBe("^1.4.28");
-    expect(parsed.devDependencies.typescript).toBe("^5.8.3");
-  });
-
   it("renders furin-env.d.ts.ejs without leftover EJS tags", async () => {
     const src = resolve(TEMPLATES_DIR, "simple/furin-env.d.ts.ejs");
     const output = await renderEjsFile(src, mockVars);
@@ -58,29 +48,5 @@ describe("renderEjsFile — full template", () => {
     const output = await renderEjsFile(src, mockVars);
     expect(output).toContain("My Test App running at");
     expect(output).not.toContain("<%=");
-  });
-
-  it("renders package.json.ejs with shadcn deps", async () => {
-    const fullVars: EjsTemplateVars = {
-      ...mockVars,
-      features: ["tailwind", "shadcn"],
-      furinVersion: "0.1.0-alpha.4",
-      versions: {
-        ...mockVars.versions,
-        "@radix-ui/react-slot": "^1.2.3",
-        "class-variance-authority": "^0.7.1",
-        clsx: "^2.1.1",
-        "lucide-react": "^0.503.0",
-        "tailwind-merge": "^3.3.0",
-        "tw-animate-css": "^1.2.5",
-      },
-    };
-    const src = resolve(TEMPLATES_DIR, "full/package.json.ejs");
-    const output = await renderEjsFile(src, fullVars);
-    const parsed = JSON.parse(output);
-    expect(parsed.name).toBe("my-test-app");
-    expect(parsed.dependencies["@radix-ui/react-slot"]).toBe("^1.2.3");
-    expect(parsed.dependencies["class-variance-authority"]).toBe("^0.7.1");
-    expect(parsed.dependencies.clsx).toBe("^2.1.1");
   });
 });
