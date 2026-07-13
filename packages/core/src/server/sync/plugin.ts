@@ -7,7 +7,7 @@ import {
 import type { InvalidationInput } from "../auto-invalidate/types.ts";
 import { createMutationFingerprint, sha256Hex } from "./fingerprint.ts";
 import { memorySyncAdapter } from "./memory-adapter.ts";
-import { replayResponse, storeResponse } from "./response.ts";
+import { mergeStoredResponseHeaders, replayResponse, storeResponse } from "./response.ts";
 import { publishSyncInvalidation } from "./stream.ts";
 
 export type SyncRouteOption =
@@ -176,6 +176,13 @@ export function furinSync() {
         return;
       }
 
+      const result = await storeResponse(ctx.responseValue, ctx.set);
+      if (result.kind === "unreplayable") {
+        await memorySyncAdapter.commitMutation({ ...active, response: result.response });
+        activeMutations.delete(ctx.request);
+        return replayResponse(result.response);
+      }
+
       const invalidate = routeMetadata.get(ctx.request)?.invalidate;
       if (invalidate) {
         runInvalidationRules(invalidate);
@@ -184,7 +191,7 @@ export function furinSync() {
       if (pending.length > 0) {
         ctx.set.headers["x-furin-sync"] = "1";
       }
-      const response = await storeResponse(ctx.responseValue, ctx.set);
+      const response = mergeStoredResponseHeaders(result.response, ctx.set.headers);
       await memorySyncAdapter.commitMutation({ ...active, response });
       activeMutations.delete(ctx.request);
 

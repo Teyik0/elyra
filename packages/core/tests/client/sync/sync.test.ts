@@ -5,6 +5,7 @@ import {
   _runWithRequestInvalidationScope,
 } from "../../../src/server/cache/index.ts";
 import { furinSync } from "../../../src/server/sync/plugin.ts";
+import { MAX_SYNC_REPLAY_RESPONSE_BYTES } from "../../../src/server/sync/response.ts";
 import { __resetSyncState, createSyncStreamPlugin } from "../../../src/server/sync/stream.ts";
 
 function resetSyncTestState() {
@@ -111,6 +112,108 @@ test("furinSync enforces idempotent mutation semantics directly", async () => {
     response = await retryRequest();
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ calls: 2 });
+  } finally {
+    resetSyncTestState();
+  }
+});
+
+test("furinSync refuses unbounded Response bodies without re-executing retries", async () => {
+  resetSyncTestState();
+  try {
+    let calls = 0;
+    const app = new Elysia().use(furinSync()).post("/download", () => {
+      calls += 1;
+      return new Response("ok");
+    });
+    const request = () =>
+      app.handle(
+        new Request("http://localhost/download", {
+          headers: { "Idempotency-Key": "unbounded-response" },
+          method: "POST",
+        })
+      );
+
+    let response = await request();
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({
+      code: "FURIN_UNREPLAYABLE_SYNC_RESPONSE",
+    });
+
+    response = await request();
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({
+      code: "FURIN_UNREPLAYABLE_SYNC_RESPONSE",
+    });
+    expect(calls).toBe(1);
+  } finally {
+    resetSyncTestState();
+  }
+});
+
+test("furinSync replays bounded Response bodies", async () => {
+  resetSyncTestState();
+  try {
+    let calls = 0;
+    const app = new Elysia().use(furinSync()).post("/created", () => {
+      calls += 1;
+      return new Response("created", {
+        headers: { "content-length": "7", "x-route": "created" },
+        status: 201,
+      });
+    });
+    const request = () =>
+      app.handle(
+        new Request("http://localhost/created", {
+          headers: { "Idempotency-Key": "bounded-response" },
+          method: "POST",
+        })
+      );
+
+    let response = await request();
+    expect(response.status).toBe(201);
+    expect(response.headers.get("x-route")).toBe("created");
+    expect(await response.text()).toBe("created");
+
+    response = await request();
+    expect(response.status).toBe(201);
+    expect(response.headers.get("x-route")).toBe("created");
+    expect(await response.text()).toBe("created");
+    expect(calls).toBe(1);
+  } finally {
+    resetSyncTestState();
+  }
+});
+
+test("furinSync refuses oversized Response bodies without re-executing retries", async () => {
+  resetSyncTestState();
+  try {
+    let calls = 0;
+    const app = new Elysia().use(furinSync()).post("/large", () => {
+      calls += 1;
+      return new Response("too large", {
+        headers: { "content-length": String(MAX_SYNC_REPLAY_RESPONSE_BYTES + 1) },
+      });
+    });
+    const request = () =>
+      app.handle(
+        new Request("http://localhost/large", {
+          headers: { "Idempotency-Key": "oversized-response" },
+          method: "POST",
+        })
+      );
+
+    let response = await request();
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({
+      code: "FURIN_UNREPLAYABLE_SYNC_RESPONSE",
+    });
+
+    response = await request();
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({
+      code: "FURIN_UNREPLAYABLE_SYNC_RESPONSE",
+    });
+    expect(calls).toBe(1);
   } finally {
     resetSyncTestState();
   }
