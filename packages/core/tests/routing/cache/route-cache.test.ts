@@ -40,6 +40,26 @@ describe("createRouteCache", () => {
     expect(deleted).toEqual([{ html: "post", key }]);
   });
 
+  test("invalidates all query variants for a resolved URL path", () => {
+    const cache = createRouteCache<{ html: string }>({
+      name: "query-variants",
+      pathFromKey: (cacheKey) => {
+        const url = new URL(`http://localhost${cacheKey}`);
+        return url.pathname;
+      },
+    });
+    cache.set("/search?tenant=a", { html: "a" });
+    cache.set("/search?tenant=b", { html: "b" });
+    cache.set("/profile?tenant=a", { html: "profile" });
+
+    const result = cache.invalidatePath("/search", "page");
+
+    expect(result).toEqual({ deleted: true, purgedPaths: ["/search"] });
+    expect(cache.get("/search?tenant=a")).toBeUndefined();
+    expect(cache.get("/search?tenant=b")).toBeUndefined();
+    expect(cache.get("/profile?tenant=a")).toEqual({ html: "profile" });
+  });
+
   test("applies LRU eviction and promotes entries on read", () => {
     const cache = createRouteCache<{ html: string }>({ maxSize: 2, name: "lru" });
     cache.set("/a", { html: "a" });

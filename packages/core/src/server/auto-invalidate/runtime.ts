@@ -5,6 +5,7 @@ import {
   revalidatePath,
   revalidatePathForInstance,
 } from "../cache/invalidation.ts";
+import { pathWithoutSearch } from "../cache/route-cache.ts";
 import { allInstances } from "../instance.ts";
 import { getAutoInvalidateRegistry } from "./registry.ts";
 import type { InvalidationInput, InvalidationRule } from "./types.ts";
@@ -130,9 +131,10 @@ export function revalidateTag(tags: string | readonly string[]): boolean {
     // request URL, so prefix each with the instance's mount prefix before
     // queueing it for purge — otherwise a mounted app's `/admin/x` stays stale.
     for (const path of getAutoInvalidateRegistry(instance).pathsForTags(tagList)) {
-      const result = revalidatePathForInstance(instance, path, "page");
+      const logicalPath = pathWithoutSearch(path);
+      const result = revalidatePathForInstance(instance, logicalPath, "page");
       deleted = result.deleted || deleted;
-      purgedPaths.add(`${instance.prefix}${path}`);
+      purgedPaths.add(`${instance.prefix}${logicalPath}`);
       for (const purged of result.purgedPaths) {
         purgedPaths.add(`${instance.prefix}${purged}`);
       }

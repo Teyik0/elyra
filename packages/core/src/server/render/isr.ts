@@ -12,6 +12,7 @@ import {
   setISRCacheIfGenerationUnchanged,
 } from "../cache/isr.ts";
 import type { ISRCacheEntry } from "../cache/isr-ssg.ts";
+import { pathWithRequestSearch } from "../cache/route-cache.ts";
 import { createLogger, useLogger } from "../context-logger.ts";
 import { currentInstance, withInstance } from "../instance.ts";
 import type { ResolvedRoute, RootLayout } from "../router/index.ts";
@@ -175,7 +176,8 @@ export async function handleISR(
 ) {
   const revalidate = route.page._route.revalidate ?? 60;
   const params = ctx.params ?? {};
-  const cacheKey = resolvePath(route.pattern, params);
+  const resolvedPath = resolvePath(route.pattern, params);
+  const cacheKey = pathWithRequestSearch(resolvedPath, ctx.request.url);
 
   const cached = getISRCache(cacheKey);
   if (cached) {
@@ -269,14 +271,14 @@ function revalidateInBackground(
   }
   const cacheGeneration = captureISRCacheGeneration(cacheKey);
   const instance = currentInstance();
-  const { origin } = new URL(originalCtx.request.url);
+  const { origin, search } = new URL(originalCtx.request.url);
 
   const revalidation = new Promise<void>((resolve) => {
     const resource = new AsyncResource("furin:isr-revalidation", { triggerAsyncId: 0 });
     resource.runInAsyncScope(() => {
       queueMicrotask(() => {
         withInstance(instance, () =>
-          renderForPath(route, params, root, origin, "isr", undefined, searchRoutes)
+          renderForPath(route, params, root, origin, "isr", undefined, searchRoutes, search)
             .then((result) => {
               if (result instanceof Response) {
                 return;

@@ -31,6 +31,19 @@ function defaultPathFromKey(key: string): string {
   return key;
 }
 
+export function pathWithoutSearch(path: string): string {
+  const searchStart = path.indexOf("?");
+  if (searchStart === -1) {
+    return path;
+  }
+  return path.slice(0, searchStart);
+}
+
+export function pathWithRequestSearch(path: string, requestUrl: string): string {
+  const { search } = new URL(requestUrl);
+  return `${path}${search}`;
+}
+
 function matchesPath(urlPath: string, path: string, type: RevalidateType): boolean {
   if (type === "page") {
     return urlPath === path;

@@ -1,5 +1,5 @@
 import { autoInvalidateRegistry } from "../auto-invalidate/registry";
-import { type Cache, createRouteCache } from "./route-cache";
+import { type Cache, createRouteCache, pathWithoutSearch } from "./route-cache";
 
 export interface ISRCacheEntry {
   generatedAt: number;
@@ -45,5 +45,6 @@ export function createHtmlRouteCache<Entry>(
       autoInvalidateRegistry.unregisterPath(key);
       options?.onDelete?.(key, entry);
     },
+    pathFromKey: pathWithoutSearch,
   });
 }

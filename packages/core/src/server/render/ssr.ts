@@ -354,15 +354,17 @@ export function renderForPath(
   origin: string,
   mode: "ssg" | "isr",
   basePath?: string,
-  searchRoutes?: SearchRouteMetadata[]
+  searchRoutes?: SearchRouteMetadata[],
+  search?: string
 ): Promise<RenderResult | Response> {
   return runInSyntheticRenderScope(
     async () => {
       const resolvedPath = resolvePath(route.pattern, params);
+      const requestUrl = new URL(`${resolvedPath}${search ?? ""}`, origin);
       const ctx: Context = {
         params,
-        query: {},
-        request: new Request(`${origin}${resolvedPath}`),
+        query: Object.fromEntries(requestUrl.searchParams),
+        request: new Request(requestUrl),
         headers: {},
         cookie: {},
         redirect: (url: string, redirectStatus: number | undefined) =>

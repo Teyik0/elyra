@@ -13,6 +13,7 @@ import {
   setDevISRLoaderCache,
   setDevSSGLoaderCache,
 } from "../cache/dev-loader.ts";
+import { pathWithRequestSearch } from "../cache/route-cache.ts";
 import { type CompileContext, getCompileContext } from "../internal.ts";
 import { resolvePath } from "../render/assemble.ts";
 import { type LoaderResult, runLoaders } from "../render/loaders.ts";
@@ -271,7 +272,8 @@ export async function renderDevISRWithLoaderCache(
   root: RootLayout,
   searchRoutes?: SearchRouteMetadata[]
 ): Promise<Response> {
-  const cacheKey = `${root.path}:${resolvePath(route.pattern, ctx.params ?? {})}`;
+  const resolvedPath = resolvePath(route.pattern, ctx.params ?? {});
+  const cacheKey = `${root.path}:${pathWithRequestSearch(resolvedPath, ctx.request.url)}`;
   const cached = getDevISRLoaderCache(cacheKey);
 
   if (cached && isDevLoaderCacheValid(cached)) {
@@ -297,7 +299,7 @@ export async function renderDevISRWithLoaderCache(
     };
     setDevISRLoaderCache(cacheKey, entry);
     autoInvalidateRegistry.registerLoaderTags(
-      resolvePath(route.pattern, ctx.params ?? {}),
+      pathWithRequestSearch(resolvedPath, ctx.request.url),
       route.tags
     );
   }

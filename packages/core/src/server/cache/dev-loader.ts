@@ -73,7 +73,7 @@ function createDevLoaderCache(name: string, index: Map<string, Set<string>>) {
     name,
     onDelete: (key, entry) => {
       unindexEntryDependencies(index, key, entry.dependencies);
-      const urlPath = urlPathFromCacheKey(key);
+      const urlPath = urlPathWithSearchFromCacheKey(key);
       if (urlPath) {
         autoInvalidateRegistry.unregisterPath(urlPath);
       }
@@ -120,11 +120,25 @@ export function setDevSSGLoaderCache(key: string, entry: DevLoaderCacheEntry): v
 }
 
 export function urlPathFromCacheKey(key: string): string | null {
-  const sep = key.lastIndexOf(":/");
+  const searchStart = key.indexOf("?");
+  const keyWithoutSearch = searchStart === -1 ? key : key.slice(0, searchStart);
+  const sep = keyWithoutSearch.lastIndexOf(":/");
   if (sep === -1) {
     return null;
   }
-  return key.slice(sep + 1);
+  return keyWithoutSearch.slice(sep + 1);
+}
+
+function urlPathWithSearchFromCacheKey(key: string): string | null {
+  const urlPath = urlPathFromCacheKey(key);
+  if (urlPath === null) {
+    return null;
+  }
+  const searchStart = key.indexOf("?");
+  if (searchStart === -1) {
+    return urlPath;
+  }
+  return `${urlPath}${key.slice(searchStart)}`;
 }
 
 export function invalidateDevLoaderCacheByPath(
