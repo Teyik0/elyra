@@ -111,12 +111,14 @@ The sync stream endpoint is internal and opinionated: `/_furin/sync`. SSE only a
 
 ### Production adapters
 
-Production requires an explicit distributed adapter. Install only the backend you use; the root package neither depends on nor re-exports either adapter:
+Production requires an explicit durable adapter. Install only the backend you use; the root package neither depends on nor re-exports any adapter:
 
 ```sh
 bun add @teyik0/furin-sync-postgres
 # or
 bun add @teyik0/furin-sync-redis
+# or, for a single host
+bun add @teyik0/furin-sync-sqlite
 ```
 
 PostgreSQL is the recommended source of truth for most multi-replica applications. Pass the same runtime to the mutation plugin and the Furin page plugin:
@@ -163,13 +165,14 @@ const sync = {
 | Deployment | Choice |
 |---|---|
 | Local development or one disposable process | built-in memory |
+| Durable deployment on one host | SQLite adapter |
 | Multi-replica with an application PostgreSQL database | PostgreSQL adapter (recommended) |
 | Redis is already the durable sync source | Redis adapter |
 | PostgreSQL durability with faster wake-ups | PostgreSQL adapter + Redis notifier |
 
 The notifier only sends a small cursor and is best-effort. The durable adapter owns response replay and ordered catch-up, so a Redis outage or missed SSE event delays refresh but does not lose changes. Completion atomically stores the replay response and its invalidations. This is not a claim of exactly-once execution for arbitrary domain writes: Furin cannot put an external API call or an application database transaction inside the adapter transaction.
 
-Both optional packages declare `sideEffects: false` and use type-only imports from Furin. PostgreSQL contains no Redis implementation, Redis contains no PostgreSQL migration, and neither backend is present in the browser bundle. IndexedDB outbox/offline replay is tracked separately and is not part of this server contract.
+All optional packages declare `sideEffects: false` and use type-only imports from Furin. SQLite, PostgreSQL, and Redis remain isolated from one another and no backend is present in the browser bundle. The task-manager example uses SQLite for its application data and sync journal. SQLite is `host-local`: use PostgreSQL or Redis instead when replicas run on separate hosts. IndexedDB outbox/offline replay is tracked separately and is not part of this server contract.
 
 For client-side mutations with a body, `useSync()` is the optional ergonomic layer. It keeps the Eden Treaty route as the source of truth, adds the mandatory `Idempotency-Key`, and gives you one place to attach optimistic updates:
 

@@ -61,7 +61,7 @@ export interface SyncAdapter {
   currentCursor: () => Promise<string>;
   readChanges: (input: ReadChangesInput) => Promise<ChangePage>;
   renewMutation: (lease: MutationLease) => Promise<"lost" | "renewed">;
-  readonly scope: "distributed" | "process-local";
+  readonly scope: "distributed" | "host-local" | "process-local";
 }
 
 export interface SyncSubscription {

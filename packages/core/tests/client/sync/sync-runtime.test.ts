@@ -12,9 +12,12 @@ afterEach(() => {
   __setDevMode(originalDevMode);
 });
 
-function distributedAdapter(currentCursor: () => Promise<string>): SyncAdapter {
+function durableAdapter(
+  scope: "distributed" | "host-local",
+  currentCursor: () => Promise<string>
+): SyncAdapter {
   return {
-    scope: "distributed",
+    scope,
     abortMutation: async () => undefined,
     beginMutation: async () => ({ kind: "unavailable" }),
     completeMutation: async () => ({ kind: "lost" }),
@@ -33,17 +36,23 @@ describe("sync runtime", () => {
 
   test("rejects implicit and process-local storage in production", () => {
     __setDevMode(false);
-    expect(() => resolveSyncRuntime(undefined)).toThrow("explicit distributed SyncAdapter");
+    expect(() => resolveSyncRuntime(undefined)).toThrow("explicit durable SyncAdapter");
     expect(() => resolveSyncRuntime({ adapter: new MemorySyncAdapter() })).toThrow(
       "process-local SyncAdapter"
     );
+  });
+
+  test("accepts an explicit host-local adapter in production", () => {
+    __setDevMode(false);
+    const adapter = durableAdapter("host-local", async () => "0");
+    expect(resolveSyncRuntime({ adapter }).adapter).toBe(adapter);
   });
 
   test("uses currentCursor polling when a distributed adapter has no notifier", async () => {
     __setDevMode(false);
     let cursor = "0";
     const runtime = resolveSyncRuntime({
-      adapter: distributedAdapter(async () => cursor),
+      adapter: durableAdapter("distributed", async () => cursor),
     });
     expect(runtime.notifier).toBeInstanceOf(PollingSyncNotifier);
     let receiveCursor: (nextCursor: string) => void = () => {

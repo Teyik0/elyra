@@ -180,6 +180,8 @@ FURIN_CLIENT_DIR=/absolute/path/to/client bun ./.furin/build/bun/server.js
 
 Do not deploy `sync: true` or `.use(furinSync())` without options in production: process-local memory is rejected at startup. Configure one durable namespace shared by every replica. PostgreSQL is the recommended default because mutation completion and the change journal commit in one transaction.
 
+For a durable single-host deployment, `@teyik0/furin-sync-sqlite` can share the application's `bun:sqlite` database. Enable WAL and a busy timeout, run `migrateSqliteSync(database)`, and pass the same adapter instance to `furinSync()` and `furin()`. Its `host-local` scope coordinates processes sharing one local file but does not support replicas on different hosts or a network filesystem. The task-manager example is the executable reference.
+
 ```sh
 bun add @teyik0/furin-sync-postgres
 bunx furin-sync-postgres-migrate

@@ -1,10 +1,11 @@
 import { furinSync } from "@teyik0/furin";
 import { Elysia, t } from "elysia";
+import { taskManagerSync } from "../../../sync";
 import { columnType } from "../shared";
 import { createCard, deleteCard, getCard, updateCard } from "./service";
 
 export const cardPlugin = new Elysia()
-  .use(furinSync())
+  .use(furinSync(taskManagerSync))
   .get("/cards/:id", ({ params, status }) => {
     const card = getCard(params.id);
     if (!card) {

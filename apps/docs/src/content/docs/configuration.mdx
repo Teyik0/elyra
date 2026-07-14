@@ -207,7 +207,7 @@ Enable Furin's built-in sync transport. Furin mounts SSE at `/_furin/sync`, expo
 
 Synced mutations stay regular API routes. There are no server actions, generated mutation names, collections, or React wrapper providers required.
 
-`sync: true` uses process-local memory in development. Production rejects implicit or process-local storage and requires a distributed adapter. Use the same runtime object with `furinSync(sync)` and `furin({ sync })`; this keeps mutation reservation, replay, SSE, and catch-up on one namespace.
+`sync: true` uses process-local memory in development. Production rejects implicit or process-local storage and requires an explicit durable adapter. A `host-local` SQLite adapter is valid for one machine; multi-host replicas require PostgreSQL or Redis. Use the same runtime object with `furinSync(sync)` and `furin({ sync })`; this keeps mutation reservation, replay, SSE, and catch-up on one namespace.
 
 The notifier is optional. When omitted, Furin polls the adapter cursor. Notifications are only wake-ups: ordered recovery always reads `adapter.readChanges()`, including after a disconnect or lost notification.
 
@@ -215,5 +215,6 @@ The adapters are separate, tree-shakable packages:
 
 - `@teyik0/furin-sync-postgres` — recommended durable adapter using `Bun.SQL` transactions and leases.
 - `@teyik0/furin-sync-redis` — durable Redis Streams adapter plus an independent Redis notifier using Bun's native `RedisClient`.
+- `@teyik0/furin-sync-sqlite` — host-local adapter using `bun:sqlite`, used by the task-manager example.
 
-Neither package is a dependency of `@teyik0/furin`; install only the backend you import.
+No adapter package is a dependency of `@teyik0/furin`; install only the backend you import.

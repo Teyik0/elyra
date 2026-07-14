@@ -13,6 +13,7 @@ const fixtures = new URL("../fixtures/sync-bundles/", import.meta.url);
 const postgresMarker = "pg_advisory_xact_lock";
 const redisMarker = "redis.call";
 const redisNotifierMarker = ":notify";
+const sqliteMarker = "furin_sync_mutations";
 const migrationMarker = "CREATE SCHEMA IF NOT EXISTS furin_sync";
 
 interface PackageManifest {
@@ -62,35 +63,49 @@ describe("sync adapter bundle isolation", () => {
     for (const output of [core, browser]) {
       expect(output).not.toContain(postgresMarker);
       expect(output).not.toContain(redisMarker);
+      expect(output).not.toContain(sqliteMarker);
       expect(output).not.toContain(migrationMarker);
     }
   });
 
-  test("bundles PostgreSQL and Redis independently", async () => {
-    const [postgres, redis, hybrid] = await Promise.all([
+  test("bundles PostgreSQL, Redis, and SQLite independently", async () => {
+    const [postgres, redis, sqlite, hybrid] = await Promise.all([
       bundle("postgres", "bun"),
       bundle("redis", "bun"),
+      bundle("sqlite", "bun"),
       bundle("hybrid", "bun"),
     ]);
     expect(postgres).toContain(postgresMarker);
     expect(postgres).not.toContain(redisMarker);
+    expect(postgres).not.toContain(sqliteMarker);
     expect(redis).toContain(redisMarker);
     expect(redis).not.toContain(postgresMarker);
+    expect(redis).not.toContain(sqliteMarker);
+    expect(sqlite).toContain(sqliteMarker);
+    expect(sqlite).not.toContain(postgresMarker);
+    expect(sqlite).not.toContain(redisMarker);
     expect(hybrid).toContain(postgresMarker);
     expect(hybrid).toContain(redisNotifierMarker);
     expect(hybrid).not.toContain(redisMarker);
+    expect(hybrid).not.toContain(sqliteMarker);
   });
 
   test("does not introduce adapter dependencies through package manifests", async () => {
-    const [core, postgres, redis] = await Promise.all([
+    const [core, postgres, redis, sqlite] = await Promise.all([
       manifest("../../package.json"),
       manifest("../../../sync-postgres/package.json"),
       manifest("../../../sync-redis/package.json"),
+      manifest("../../../sync-sqlite/package.json"),
     ]);
     expect(dependencyNames(core)).not.toContain("@teyik0/furin-sync-postgres");
     expect(dependencyNames(core)).not.toContain("@teyik0/furin-sync-redis");
+    expect(dependencyNames(core)).not.toContain("@teyik0/furin-sync-sqlite");
     expect(dependencyNames(postgres)).not.toContain("@teyik0/furin-sync-redis");
+    expect(dependencyNames(postgres)).not.toContain("@teyik0/furin-sync-sqlite");
     expect(dependencyNames(redis)).not.toContain("@teyik0/furin-sync-postgres");
+    expect(dependencyNames(redis)).not.toContain("@teyik0/furin-sync-sqlite");
+    expect(dependencyNames(sqlite)).not.toContain("@teyik0/furin-sync-postgres");
+    expect(dependencyNames(sqlite)).not.toContain("@teyik0/furin-sync-redis");
   });
 
   test("bundles packed public packages without resolving absent adapters", async () => {
@@ -102,6 +117,7 @@ describe("sync adapter bundle isolation", () => {
       const core = pack(join(root, "packages/core"), packed);
       const postgres = pack(join(root, "packages/sync-postgres"), packed);
       const redis = pack(join(root, "packages/sync-redis"), packed);
+      const sqlite = pack(join(root, "packages/sync-sqlite"), packed);
 
       const scenarios: Array<{
         absent: string[];
@@ -110,28 +126,34 @@ describe("sync adapter bundle isolation", () => {
         packages: PackedPackages;
       }> = [
         {
-          absent: [postgresMarker, redisMarker, migrationMarker],
+          absent: [postgresMarker, redisMarker, sqliteMarker, migrationMarker],
           entry: 'import { MemorySyncAdapter } from "./node_modules/@teyik0/furin/dist/server/sync/index.js"; console.log(MemorySyncAdapter);',
           markers: [],
           packages: { core },
         },
         {
-          absent: [redisMarker],
+          absent: [redisMarker, sqliteMarker],
           entry: 'import { postgresSyncAdapter } from "./node_modules/@teyik0/furin-sync-postgres/dist/index.js"; console.log(postgresSyncAdapter);',
           markers: [postgresMarker],
           packages: { core, postgres },
         },
         {
-          absent: [postgresMarker],
+          absent: [postgresMarker, sqliteMarker],
           entry: 'import { redisSyncAdapter } from "./node_modules/@teyik0/furin-sync-redis/dist/index.js"; console.log(redisSyncAdapter);',
           markers: [redisMarker],
           packages: { core, redis },
         },
         {
-          absent: [redisMarker],
+          absent: [redisMarker, sqliteMarker],
           entry: 'import { postgresSyncAdapter } from "./node_modules/@teyik0/furin-sync-postgres/dist/index.js"; import { RedisSyncNotifier } from "./node_modules/@teyik0/furin-sync-redis/dist/index.js"; console.log(postgresSyncAdapter, RedisSyncNotifier);',
           markers: [postgresMarker, redisNotifierMarker],
           packages: { core, postgres, redis },
+        },
+        {
+          absent: [postgresMarker, redisMarker],
+          entry: 'import { sqliteSyncAdapter } from "./node_modules/@teyik0/furin-sync-sqlite/dist/index.js"; console.log(sqliteSyncAdapter);',
+          markers: [sqliteMarker],
+          packages: { core, sqlite },
         },
       ];
 
@@ -161,11 +183,14 @@ describe("sync adapter bundle isolation", () => {
         for (const adapter of [
           "@teyik0/furin-sync-postgres",
           "@teyik0/furin-sync-redis",
+          "@teyik0/furin-sync-sqlite",
         ]) {
           const isInstalled =
             adapter === "@teyik0/furin-sync-postgres"
               ? scenario.packages.postgres !== undefined
-              : scenario.packages.redis !== undefined;
+              : adapter === "@teyik0/furin-sync-redis"
+                ? scenario.packages.redis !== undefined
+                : scenario.packages.sqlite !== undefined;
           expect(canResolvePackage(fixture, adapter)).toBe(isInstalled);
         }
       }
@@ -179,6 +204,7 @@ interface PackedPackages {
   core: string;
   postgres?: string;
   redis?: string;
+  sqlite?: string;
 }
 
 function pack(packageDirectory: string, destination: string): string {
@@ -207,6 +233,9 @@ function installFixture(directory: string, packages: PackedPackages): string {
   }
   if (packages.redis !== undefined) {
     installPackedPackage(directory, "@teyik0/furin-sync-redis", packages.redis);
+  }
+  if (packages.sqlite !== undefined) {
+    installPackedPackage(directory, "@teyik0/furin-sync-sqlite", packages.sqlite);
   }
   return directory;
 }

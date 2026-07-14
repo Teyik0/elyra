@@ -190,7 +190,7 @@ The client-side router (`RouterProvider`) intercepts **all** `window.fetch` call
 
 When `furin({ sync: true })` is enabled, Furin mounts `/_furin/sync` and injects the stream configuration into the page HTML. SSE emits lightweight `furin.sync` cursor notifications. The client reads missed changes from `/_furin/sync/changes`, invalidates prefetched HTML in order, and refreshes the active route when it depends on the changed path or tag.
 
-In development, the default journal and idempotency responses live in process memory. Production requires a distributed adapter. PostgreSQL stores mutation leases, replay responses, cursors, and invalidations in one transaction; Redis provides the same contract with Lua and Redis Streams. SSE and `SyncNotifier` remain best-effort wake-ups, while `/_furin/sync/changes` is the durable recovery path.
+In development, the default journal and idempotency responses live in process memory. Production requires an explicit durable adapter. SQLite provides the same atomic contract for one host, PostgreSQL provides it across replicas with transactions, and Redis provides it with Lua and Redis Streams. SSE and `SyncNotifier` remain best-effort wake-ups, while `/_furin/sync/changes` is the durable recovery path.
 
 This sync journal coordinates mutation replay and browser invalidation; it is not an ISR page-cache backend. Page caches remain process-local, so multi-replica deployments should still use CDN purging or another shared invalidation layer for cached HTML.
 

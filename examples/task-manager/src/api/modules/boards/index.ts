@@ -1,5 +1,6 @@
 import { furinSync } from "@teyik0/furin";
 import { Elysia, t } from "elysia";
+import { taskManagerSync } from "../../../sync";
 import { createBoard, deleteBoard, getBoardData, getBoardStats, getBoards } from "./service";
 
 // Shared invalidation rules for every board mutation (POST / DELETE).
@@ -15,7 +16,7 @@ const BOARD_MUTATION_INVALIDATIONS = [
 ];
 
 export const boardPlugin = new Elysia()
-  .use(furinSync())
+  .use(furinSync(taskManagerSync))
   .get("/boards", () => getBoards())
   .post("/boards", ({ body }) => createBoard(body.name), {
     body: t.Object({ name: t.String({ minLength: 1 }) }),

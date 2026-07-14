@@ -14,11 +14,11 @@ export interface ResolvedSyncRuntime {
 export function resolveSyncRuntime(options: SyncRuntimeOptions | undefined): ResolvedSyncRuntime {
   if (!options) {
     if (!IS_DEV) {
-      throw new Error("[furin] Production sync requires an explicit distributed SyncAdapter.");
+      throw new Error("[furin] Production sync requires an explicit durable SyncAdapter.");
     }
     return { adapter: memorySyncAdapter, notifier: memorySyncNotifier };
   }
-  if (!IS_DEV && options.adapter.scope !== "distributed") {
+  if (!IS_DEV && options.adapter.scope === "process-local") {
     throw new Error("[furin] Production sync cannot use a process-local SyncAdapter.");
   }
   if (options.notifier) {
