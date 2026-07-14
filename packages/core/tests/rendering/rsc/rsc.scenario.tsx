@@ -26,6 +26,25 @@ function responseBody(response: Response): ReadableStream<Uint8Array> {
   return response.body;
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(message));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
+}
+
 function renderFooter(label: string): ReactNode {
   return <button type="button">{label}</button>;
 }
@@ -223,12 +242,11 @@ try {
   response = await app.handle(new Request("http://localhost/_furin/data?path=%2Fnested-rsc"));
 
   expect(response.headers.get("content-type")).toBe("application/x-furin-route");
-  const parsedRace = await Promise.race([
+  const parsedRace = await withTimeout(
     parseDeferredNdjson(responseBody(response), undefined),
-    Bun.sleep(100).then(() => {
-      throw new Error("route frame parser waited for deferred data");
-    }),
-  ]);
+    2000,
+    "route frame parser waited for deferred data"
+  );
   const nestedContent = parsedRace.syncData.content as { article: ReactNode };
   expect(await renderHtml(nestedContent.article)).toBe("<h1>Nested Flight article</h1>");
   if (resolveSlow === undefined) {

@@ -25,6 +25,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Locale-independent build fingerprints** — route fingerprint sorting now uses code-unit ordering instead of locale-sensitive collation, preventing build-ID differences across host locales.
 - **Static export route coverage** — dynamic SSG routes without usable `staticParams()` now fail the default static build instead of being silently omitted, and static build manifests now list rendered and skipped routes deterministically.
 - **Scaffolder duplicate outputs** — project generation now fails before writing files when a template contains duplicate destination paths.
+- **Sync refresh test coverage** — RouterProvider sync tests now exercise the full `EventSource` notification, `/_furin/sync/changes` catch-up, and current-page refresh flow, while SSE/RSC stream assertions use explicit operation timeouts.
+- **Scaffolder path traversal guards** — template sources and generated destinations are now rejected when they escape the templates or target directory.
+- **Client transform reliability** — server-only route properties are stripped only from Furin `createRoute()` and `route.page()` calls, including aliased imports and imported route bindings, without touching unrelated `.page()` calls.
+- **Reserved loader metadata keys** — loader data fields starting with `__furin` now fail fast instead of colliding with framework transport metadata.
+- **Ambiguous route discovery** — duplicate normalized route patterns and page-file / same-name-directory collisions now throw deterministic startup errors.
+- **SPA data endpoint params validation** — `/_furin/data` now validates and coerces path params with the route `params` schema before running loaders, matching full SSR requests.
+- **RSC and deferred route-frame streaming** — SSR and SPA data responses now stream deferred values through the route-frame transport, including deferred RSC resolution and rejection during hydration.
+- **ISR cache query variants** — ISR and dev ISR caches now key entries by path and search params, preserve the search string during background revalidation, and clear every query variant during path revalidation.
+- **ISR invalidation races** — in-flight background revalidation can no longer repopulate an entry after explicit invalidation, and pending revalidations are scoped per Furin instance.
+- **Prefixed cache purges** — `revalidatePath()` now purges mounted apps by their physical prefixed URL instead of the logical app-local path.
+- **PPR tag invalidation** — partial-prerender public-shell caches are instance-scoped, registered with the cache invalidator, and cleared by `revalidateTag()`.
+- **Sync mutation replay bounds** — `furinSync()` now replays bounded `Response` bodies, rejects unbounded or oversized response bodies safely, and does not re-execute retries for unreplayable mutation responses.
+- **Memory sync adapter eviction** — completed mutation replay entries now expire and evict under normal mutation traffic and capacity pressure, avoiding stale replay storage growth.
 - **Docs table-of-contents cleanup** — pending hash-scroll animation frames are cancelled on unmount, satisfying React effect cleanup checks.
 
 ## [0.2.0-alpha.5] — 2026-07-12

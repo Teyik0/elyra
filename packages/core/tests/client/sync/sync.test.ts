@@ -8,6 +8,31 @@ import { furinSync } from "../../../src/server/sync/plugin.ts";
 import { MAX_SYNC_REPLAY_RESPONSE_BYTES } from "../../../src/server/sync/response.ts";
 import { __resetSyncState, createSyncStreamPlugin } from "../../../src/server/sync/stream.ts";
 
+type StreamReadResult = Awaited<ReturnType<ReadableStreamDefaultReader<Uint8Array>["read"]>>;
+
+function readStreamChunk(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  label: string,
+  timeoutMs: number
+): Promise<StreamReadResult> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`Timed out waiting for ${label}`));
+    }, timeoutMs);
+
+    reader.read().then(
+      (chunk) => {
+        clearTimeout(timeout);
+        resolve(chunk);
+      },
+      (error: unknown) => {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
+}
+
 function resetSyncTestState() {
   __resetCacheState();
   __resetSyncState();
@@ -235,7 +260,7 @@ test("furinSync SSE notification completes inside bun:test", async () => {
   }
 
   try {
-    const connected = await reader.read();
+    const connected = await readStreamChunk(reader, "SSE connection prelude", 1000);
     expect(new TextDecoder().decode(connected.value)).toContain(": connected");
     const response = await _runWithRequestInvalidationScope(() =>
       app.handle(
@@ -248,7 +273,7 @@ test("furinSync SSE notification completes inside bun:test", async () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("x-furin-revalidate")).toBe("/board:layout");
 
-    const event = await reader.read();
+    const event = await readStreamChunk(reader, "SSE invalidation event", 1000);
     expect(new TextDecoder().decode(event.value)).toContain("event: furin.sync");
   } finally {
     await reader.cancel();
