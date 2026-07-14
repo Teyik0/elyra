@@ -130,6 +130,10 @@ export type ParseRouteQueryResult =
   | { ok: true; query: SearchParamsInput }
   | { errors: unknown; ok: false };
 
+export type ParseRouteParamsResult =
+  | { ok: true; params: UnknownObject }
+  | { errors: unknown; ok: false };
+
 /**
  * Parses and validates a logical route URL's search string for the synthetic
  * `/_furin/data` request path. This keeps SPA navigations aligned with the
@@ -171,6 +175,45 @@ export async function parseRouteQuery(
   return {
     ok: true,
     query: (validator?.parse(queryWithDefaults) ?? queryWithDefaults) as SearchParamsInput,
+  };
+}
+
+/**
+ * Validates and coerces path params for the synthetic `/_furin/data` request
+ * path. This mirrors the params schema installed by createRoutePlugin's Elysia
+ * guard so SPA loaders receive the same values as full SSR loaders.
+ *
+ * @internal Exported for unit testing.
+ */
+export async function parseRouteParams(
+  params: UnknownObject,
+  schema: AnySchema | undefined
+): Promise<ParseRouteParamsResult> {
+  if (!schema) {
+    return { ok: true, params };
+  }
+
+  if (isStandardSchema(schema)) {
+    const validator = getSchemaValidator(schema, { dynamic: true });
+    const checked = await validator?.Check(params);
+    if (checked && typeof checked === "object" && "issues" in checked) {
+      return { errors: checked.issues, ok: false };
+    }
+    if (checked && typeof checked === "object" && "value" in checked) {
+      return { ok: true, params: checked.value as UnknownObject };
+    }
+    return { ok: true, params };
+  }
+
+  const paramsWithDefaults = applySchemaDefaults(schema as UnknownObject, params);
+  const validator = getSchemaValidator(schema, { coerce: true, dynamic: true });
+  if (validator?.Check(paramsWithDefaults) === false) {
+    return { errors: [...(validator?.Errors(paramsWithDefaults) ?? [])], ok: false };
+  }
+
+  return {
+    ok: true,
+    params: (validator?.parse(paramsWithDefaults) ?? paramsWithDefaults) as UnknownObject,
   };
 }
 

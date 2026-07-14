@@ -27,11 +27,15 @@ import { IS_DEV } from "../runtime-env.ts";
 import { handleDevRequest } from "./hmr.ts";
 import { buildRouteMatcher } from "./patterns.ts";
 import { mergeRouteSchemas } from "./schema-merge.ts";
-import { applySchemaDefaults, parseDataEndpointPath, parseRouteQuery } from "./schemas.ts";
+import { parseDataEndpointPath, parseRouteParams, parseRouteQuery } from "./schemas.ts";
 import type { ResolvedRoute, RootLayout } from "./types.ts";
 
+interface DataRouteParamsInput {
+  [key: string]: unknown;
+}
+
 type SyntheticDataContext = Omit<Context, "params" | "query"> & {
-  params: Record<string, string>;
+  params: DataRouteParamsInput;
   query: SearchParamsInput;
 };
 
@@ -274,6 +278,13 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       // createRoutePlugin so loaders see identical typed/defaulted inputs.
       const mergedParams = mergeRouteSchemas(matched.route.routeChain, "params");
       const mergedQuery = mergeRouteSchemas(matched.route.routeChain, "query");
+      const parsedParams = await parseRouteParams(matched.params, mergedParams);
+      if (!parsedParams.ok) {
+        return Response.json(
+          { errors: parsedParams.errors, message: "Invalid params", type: "validation" },
+          { status: 422 }
+        );
+      }
       const parsedQuery = await parseRouteQuery(url, mergedQuery);
       if (!parsedQuery.ok) {
         return Response.json(
@@ -281,10 +292,7 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
           { status: 422 }
         );
       }
-      syntheticCtx.params = applySchemaDefaults(
-        mergedParams as Record<string, unknown> | undefined,
-        syntheticCtx.params as Record<string, unknown>
-      ) as Record<string, string>;
+      syntheticCtx.params = parsedParams.params;
       syntheticCtx.query = parsedQuery.query as SearchParamsInput;
 
       const result = await runLoaders(matched.route, syntheticCtx as unknown as Context);

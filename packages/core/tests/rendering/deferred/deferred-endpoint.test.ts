@@ -97,6 +97,11 @@ const dynamicRoute = createRoute({
   parent: rootRoute,
 });
 
+const numericParamRoute = createRoute({
+  params: t.Object({ id: t.Number() }),
+  parent: rootRoute,
+});
+
 const staticSpecificRoute = createRoute({
   mode: "ssr",
   parent: rootRoute,
@@ -183,6 +188,19 @@ const BASE_ROUTES: ResolvedRoute[] = [
   {
     mode: "ssr",
     page: runtimePage(
+      numericParamRoute.page({
+        component: () => null,
+        loader: ({ params }) => ({ paramsFromLoader: params }),
+      })
+    ),
+    path: "/number/[id]",
+    pattern: "/number/:id",
+    routeChain: [runtimeRoute(rootRoute), runtimeRoute(numericParamRoute)],
+    segmentBoundaries: [],
+  },
+  {
+    mode: "ssr",
+    page: runtimePage(
       staticSpecificRoute.page({
         component: () => null,
         loader: () => ({ pageData: "from-static-specific" }),
@@ -252,7 +270,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("resolves query defaults without emitting a redirect sentinel", async () => {
-    const { app } = await createDataTestApp();
+    const { app } = createDataTestApp();
 
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fquery-default"));
 
@@ -268,7 +286,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("passes schema-coerced query values to loaders during SPA navigation", async () => {
-    const { app } = await createDataTestApp();
+    const { app } = createDataTestApp();
 
     const res = await app.handle(
       new Request(
@@ -292,7 +310,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("passes JSON object query values to loaders during SPA navigation", async () => {
-    const { app } = await createDataTestApp();
+    const { app } = createDataTestApp();
 
     const res = await app.handle(
       new Request(
@@ -318,7 +336,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("rejects invalid schema query values before running loaders during SPA navigation", async () => {
-    const { app } = await createDataTestApp();
+    const { app } = createDataTestApp();
 
     const res = await app.handle(
       new Request("http://localhost/_furin/data?path=%2Fquery-types%3Fpage%3Dnope%26active%3Dtrue")
@@ -332,7 +350,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("returns 404 if no route matches the path", async () => {
-    const { app } = await createDataTestApp();
+    const { app } = createDataTestApp();
 
     const res = await app.handle(
       new Request("http://localhost/_furin/data?path=%2Froute-inexistante")
@@ -342,7 +360,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("returns NDJSON for a route with a synchronous loader", async () => {
-    const { app, routes } = await createDataTestApp();
+    const { app, routes } = createDataTestApp();
     const withLoaderRoute = routes.find((r) => r.pattern === "/with-loader");
     if (!withLoaderRoute) {
       throw new Error("No /with-loader route in fixtures");
@@ -361,7 +379,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("returns NDJSON with Promise for a route using defer()", async () => {
-    const { app, routes } = await createDataTestApp();
+    const { app, routes } = createDataTestApp();
     const deferRoute = routes.find((r) => r.pattern === "/defer-page");
     if (!deferRoute) {
       throw new Error("No /defer-page route in fixtures — add defer-page.tsx");
@@ -382,7 +400,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("returns the response before deferred Promises have resolved", async () => {
-    const { app, routes } = await createDataTestApp();
+    const { app, routes } = createDataTestApp();
     const deferRoute = routes.find((r) => r.pattern === "/defer-page");
     if (!deferRoute?.page) {
       throw new Error("No /defer-page route in fixtures — add defer-page.tsx");
@@ -435,7 +453,7 @@ describe("GET /_furin/data", () => {
     // never runs in the browser, so the endpoint must resolve the page title
     // server-side and ship it as the reserved __furinTitle field. Without this,
     // the client has to rely on a loader returning a magic `title` field.
-    const { app, routes } = await createDataTestApp();
+    const { app, routes } = createDataTestApp();
     const route = routes.find((r) => r.pattern === "/with-loader");
     if (!route) {
       throw new Error("No /with-loader route in fixtures");
@@ -462,7 +480,7 @@ describe("GET /_furin/data", () => {
   test("does not set __furinStatus for a route without a loader", async () => {
     // SSR route without loader doesn't trigger notFound.
     // We test the ssr-page which has no loader — data should be empty.
-    const { app, routes } = await createDataTestApp();
+    const { app, routes } = createDataTestApp();
     const ssrRoute = routes.find((r) => r.pattern === "/ssr-page");
     if (!ssrRoute) {
       throw new Error("No /ssr-page route in fixtures");
@@ -479,7 +497,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("returns params in NDJSON for dynamic routes", async () => {
-    const { app } = await createDataTestApp();
+    const { app } = createDataTestApp();
 
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fdynamic%2F42"));
 
@@ -492,11 +510,50 @@ describe("GET /_furin/data", () => {
     expect(syncData.path).toBe("/dynamic/42");
   });
 
+  test("passes schema-coerced params to loaders during SPA navigation", async () => {
+    const { app } = createDataTestApp();
+
+    const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fnumber%2F42"));
+
+    expect(res.status).toBe(200);
+    const { syncData } = await parseDeferredNdjson(
+      res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      undefined
+    );
+    expect(syncData.params).toEqual({ id: 42 });
+    expect(syncData.paramsFromLoader).toEqual({ id: 42 });
+  });
+
+  test("rejects invalid schema params before running loaders during SPA navigation", async () => {
+    const { app, routes } = createDataTestApp();
+    const route = routes.find((r) => r.pattern === "/number/:id");
+    if (!route) {
+      throw new Error("No /number/:id route in fixtures");
+    }
+    let loaderRuns = 0;
+    route.page = {
+      ...route.page,
+      loader: () => {
+        loaderRuns += 1;
+        return { pageData: "should-not-run" };
+      },
+    };
+
+    const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fnumber%2Fnope"));
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({
+      message: "Invalid params",
+      type: "validation",
+    });
+    expect(loaderRuns).toBe(0);
+  });
+
   test("prefers a static route over a dynamic sibling that also matches", async () => {
     // `/dynamic/specific` (static) and `/dynamic/:id` (dynamic) both match the
     // path `/dynamic/specific`. The endpoint must pick the static route — the
     // dynamic one would otherwise shadow it (its dir `[id]` is scanned first).
-    const { app } = await createDataTestApp();
+    const { app } = createDataTestApp();
 
     const res = await app.handle(
       new Request("http://localhost/_furin/data?path=%2Fdynamic%2Fspecific")
@@ -513,7 +570,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("layout loader returning defer() streams its deferred field through the NDJSON endpoint", async () => {
-    const { app, routes } = await createDataTestApp();
+    const { app, routes } = createDataTestApp();
     const route = routes.find((r) => r.pattern === "/with-loader");
     if (!route) {
       throw new Error("No /with-loader route in fixtures");
@@ -546,7 +603,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("layout defer + page defer → both deferred Promises arrive as separate NDJSON chunks", async () => {
-    const { app, routes } = await createDataTestApp();
+    const { app, routes } = createDataTestApp();
     const route = routes.find((r) => r.pattern === "/with-loader");
     if (!route?.page) {
       throw new Error("No /with-loader route in fixtures");
@@ -588,7 +645,7 @@ describe("GET /_furin/data", () => {
     // SECOND but resolves FIRST. The on-the-wire stream MUST emit the fast key
     // first — otherwise streaming is cosmetic and a fast field is held hostage
     // by a slow sibling. This is the whole reason defer() exists.
-    const { app, routes } = await createDataTestApp();
+    const { app, routes } = createDataTestApp();
     const deferRoute = routes.find((r) => r.pattern === "/defer-page");
     if (!deferRoute?.page) {
       throw new Error("No /defer-page route in fixtures");
@@ -629,7 +686,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("defer() on a dynamic route: params are in syncData and deferred Promises stream", async () => {
-    const { app } = await createDataTestApp();
+    const { app } = createDataTestApp();
 
     const res = await app.handle(
       new Request("http://localhost/_furin/data?path=%2Fdynamic-defer%2Fhello-world")
@@ -653,7 +710,7 @@ describe("GET /_furin/data", () => {
 
   // ── Slice 3 — SPA error sentinel ───────────────────────────────────────────
   test("loader throwing Response(403) returns HTTP 403 with __furinError NDJSON sentinel", async () => {
-    const { app, routes } = await createDataTestApp();
+    const { app, routes } = createDataTestApp();
     const route = routes.find((r) => r.pattern === "/with-loader");
     if (!route) {
       throw new Error("No /with-loader route in fixtures");
@@ -687,7 +744,7 @@ describe("GET /_furin/data", () => {
   });
 
   test("loader throwing plain Error returns HTTP 500 with __furinError NDJSON sentinel", async () => {
-    const { app, routes } = await createDataTestApp();
+    const { app, routes } = createDataTestApp();
     const route = routes.find((r) => r.pattern === "/with-loader");
     if (!route) {
       throw new Error("No /with-loader route in fixtures");
