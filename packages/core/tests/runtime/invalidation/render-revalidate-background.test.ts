@@ -1,27 +1,8 @@
-import { expect, mock, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { join } from "node:path";
 import type { Context } from "elysia";
 import type { HTTPHeaders } from "elysia/types";
-
-mock.module("evlog", () => ({
-  createLogger: () => ({
-    emit: () => undefined,
-    error: () => undefined,
-    fork: (_label: string, fn: () => unknown) => fn(),
-    getContext: () => ({}),
-    info: () => undefined,
-    set: () => undefined,
-    setLevel: () => undefined,
-    warn: () => undefined,
-  }),
-}));
-
-mock.module("evlog/elysia", () => ({
-  evlog: () => (app: unknown) => app,
-  useLogger: () => ({
-    set: () => undefined,
-  }),
-}));
+import "../../setup/evlog-mock";
 
 import {
   __resetCacheState,

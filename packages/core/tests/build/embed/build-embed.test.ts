@@ -56,6 +56,30 @@ describe.serial("compile: embed", () => {
     }
   });
 
+  test("CLI build --compile=embed writes a single server binary", async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+
+    const result = await runCli(["build", "--compile=embed"], { cwd: app.path });
+
+    expect(result.exitCode).toBe(0);
+    const targetDir = join(app.path, ".furin/build/bun");
+    const serverBin = existsSync(join(targetDir, "server"))
+      ? join(targetDir, "server")
+      : join(targetDir, "server.exe");
+
+    expect(existsSync(serverBin)).toBe(true);
+    expect(existsSync(join(targetDir, "client"))).toBe(false);
+  });
+
+  test("CLI build rejects unknown flags", async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+
+    const result = await runCli(["build", "--targte", "bun"], { cwd: app.path });
+
+    expect(result.exitCode).toBeGreaterThan(0);
+    expect(result.stderr + result.stdout).toContain("Unknown option");
+  });
+
   test("generateCompileEntry with embed produces file imports and __setCompileContext", () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
 

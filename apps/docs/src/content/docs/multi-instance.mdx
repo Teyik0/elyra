@@ -31,7 +31,7 @@ src/
 ## Prefixes
 
 - `prefix` defaults to `""` (root). It must start with `/` and have no trailing slash (`/admin`, `/admin/v2`).
-- Everything the app serves lives under it: pages, `/_furin/data`, `/_furin/sync`, `/_furin/ingest`, `/_client/*` assets, `/public/*`.
+- Everything the app serves lives under it: pages, `/_furin/data`, `/_furin/sync`, optional `/_furin/ingest` browser-log intake, `/_client/*` assets, `/public/*`.
 - Mounting **two different apps on the same prefix throws** at startup — prefixes are the collision guard.
 
 ## Write pages as if you were at the root

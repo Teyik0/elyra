@@ -1,24 +1,13 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { Context } from "elysia";
-import { createElement, type ReactNode } from "react";
-
-const capturedLogs: Record<string, unknown>[] = [];
-
-mock.module("evlog/elysia", () => ({
-  evlog: () => (app: unknown) => app,
-  useLogger: () => ({
-    set: (entry: Record<string, unknown>) => {
-      capturedLogs.push(entry);
-    },
-  }),
-}));
-
 import type { HTTPHeaders } from "elysia/types";
+import { createElement, type ReactNode } from "react";
 import type { RuntimePage, RuntimeRoute } from "../../../src/client.ts";
 import { renderSSR, renderToHTML } from "../../../src/server/render/index.ts";
 import type { ResolvedRoute, RootLayout } from "../../../src/server/router/index.ts";
 import { __setDevMode } from "../../../src/server/runtime-env.ts";
 import type { ErrorComponent } from "../../../src/shared/error.ts";
+import { evlogSetMock } from "../../setup/evlog-mock";
 
 const ROOT_ROUTE: RuntimeRoute = {
   __type: "FURIN_ROUTE",
@@ -461,7 +450,7 @@ describe("renderSSR — digest", () => {
   });
 
   test("server logs the digest alongside the rendered error", async () => {
-    capturedLogs.length = 0;
+    evlogSetMock.mockClear();
     const routeWithError = createTestRoute({
       component: () => createElement("div", { "data-testid": "blog-index" }, "Blog"),
       error: BlogError,
@@ -479,8 +468,8 @@ describe("renderSSR — digest", () => {
     );
     await response.text(); // drain
 
-    const hasDigestLog = capturedLogs.some((entry) => {
-      const furin = entry.furin as Record<string, unknown> | undefined;
+    const hasDigestLog = evlogSetMock.mock.calls.some(([entry]) => {
+      const furin = entry.furin as { [key: string]: unknown } | undefined;
       return typeof furin?.digest === "string" && DIGEST_RE.test(furin.digest as string);
     });
     expect(hasDigestLog).toBe(true);

@@ -1,20 +1,6 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { fromCrossJSON, toCrossJSON } from "seroval";
-
-// Stub evlog so render/* can import without a live request scope.
-mock.module("evlog/elysia", () => ({
-  evlog: () => (app: unknown) => app,
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-  useLogger: () => ({ set() {} }),
-}));
-mock.module("evlog", () => ({
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
-  createLogger: () => ({ emit() {}, error() {}, info() {}, set() {}, warn() {} }),
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
-  log: { error: () => {}, info: () => {}, set: () => {}, warn: () => {} },
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-  useLogger: () => ({ set() {} }),
-}));
+import "../../setup/evlog-mock";
 
 import { serializeDeferredRejection } from "../../../src/server/render/loaders.ts";
 import { isNotFoundError, notFound } from "../../../src/shared/not-found.ts";

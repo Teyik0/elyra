@@ -1,10 +1,5 @@
-import { describe, expect, mock, test } from "bun:test";
-
-mock.module("evlog/elysia", () => ({
-  evlog: () => (app: unknown) => app,
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-  useLogger: () => ({ set() {} }),
-}));
+import { describe, expect, test } from "bun:test";
+import "../../setup/evlog-mock";
 
 import type { Context } from "elysia";
 import type { HTTPHeaders } from "elysia/types";

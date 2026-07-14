@@ -1,13 +1,7 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { Context } from "elysia";
 import { createElement, type ReactNode } from "react";
-
-// Render pipeline uses useLogger() under the hood; stub as in render.test.ts.
-mock.module("evlog/elysia", () => ({
-  evlog: () => (app: unknown) => app,
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-  useLogger: () => ({ set() {} }),
-}));
+import "../../setup/evlog-mock";
 
 import type { HTTPHeaders } from "elysia/types";
 import type { RuntimePage, RuntimeRoute } from "../../../src/client.ts";

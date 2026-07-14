@@ -8,13 +8,8 @@
  *   routeChain = [rootRoute, parentRoute (parentFilter default), childRoute (childFilter default)]
  */
 
-import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
-
-mock.module("evlog/elysia", () => ({
-  evlog: () => (app: unknown) => app,
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-  useLogger: () => ({ set() {} }),
-}));
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import "../../setup/evlog-mock";
 
 import { Elysia, t } from "elysia";
 import type { RuntimeRoute } from "../../../src/client.ts";
@@ -190,12 +185,9 @@ describe("schema merge — parent + child both declare query schemas", () => {
         "bun",
         "-e",
         `
-import { expect, mock } from "bun:test";
+import { expect } from "bun:test";
 
-mock.module("evlog/elysia", () => ({
-  evlog: () => (app) => app,
-  useLogger: () => ({ set() {} }),
-}));
+await import("./tests/setup/evlog-mock.ts");
 
 const { Elysia } = await import("elysia");
 const { join } = await import("node:path");

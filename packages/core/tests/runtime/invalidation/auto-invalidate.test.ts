@@ -1,29 +1,5 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
-
-mock.module("evlog", () => ({
-  createLogger: (ctx: Record<string, unknown>) => ({
-    set: (data: Record<string, unknown>) => {
-      Object.assign(ctx, data);
-    },
-    error: (err: Error) => {
-      ctx.error = err;
-    },
-    // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-    emit: () => {},
-    // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-    info: () => {},
-    // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-    warn: () => {},
-    getContext: () => ctx,
-    fork: (_label: string, fn: () => unknown) => fn(),
-  }),
-}));
-
-mock.module("evlog/elysia", () => ({
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-  useLogger: () => ({ set() {} }),
-  evlog: () => (app: unknown) => app,
-}));
+import { afterEach, describe, expect, test } from "bun:test";
+import "../../setup/evlog-mock";
 
 import { type Context, Elysia } from "elysia";
 import {
@@ -50,12 +26,13 @@ import {
 import { createInstance, registerInstance, withInstance } from "../../../src/server/instance.ts";
 import { runLoaders } from "../../../src/server/render/loaders.ts";
 import type { ResolvedRoute } from "../../../src/server/router/index.ts";
+import { flushMicrotasks } from "../../support/microtasks";
 
 afterEach(async () => {
   __resetCacheState();
   __resetDevLoaderCacheState();
   autoInvalidateRegistry.reset();
-  await Promise.resolve();
+  await flushMicrotasks();
 });
 
 describe("revalidateTag", () => {
@@ -73,7 +50,7 @@ describe("revalidateTag", () => {
     expect(isrCache.has("/board/123")).toBe(false);
     expect(ssgCache.has("/")).toBe(true);
     expect(isrCache.has("/untagged")).toBe(true);
-    await Promise.resolve();
+    await flushMicrotasks();
   });
 
   test("invalidates dev loader caches registered under a tag", async () => {
@@ -96,7 +73,7 @@ describe("revalidateTag", () => {
     expect(deleted).toBe(true);
     expect(getDevISRLoaderCache("/repo/src/pages/root.tsx:/board/123")).toBeUndefined();
     expect(getDevSSGLoaderCache("/repo/src/pages/root.tsx:/")).toBeUndefined();
-    await Promise.resolve();
+    await flushMicrotasks();
   });
 
   test("unregisters tag mappings when cached paths are evicted", async () => {
@@ -107,7 +84,7 @@ describe("revalidateTag", () => {
     const second = revalidateTag("board");
 
     expect(second).toBe(false);
-    await Promise.resolve();
+    await flushMicrotasks();
   });
 
   test("does not evict a sibling instance's page that merely shares the pathname", async () => {
@@ -130,7 +107,7 @@ describe("revalidateTag", () => {
     expect(deleted).toBe(true);
     expect(withInstance(a, () => isrCache.has("/x"))).toBe(false);
     expect(withInstance(b, () => isrCache.has("/x"))).toBe(true);
-    await Promise.resolve();
+    await flushMicrotasks();
   });
 
   test("purges the mounted app's PHYSICAL (prefixed) URL, not the logical path", async () => {
@@ -149,7 +126,7 @@ describe("revalidateTag", () => {
     });
 
     revalidateTag("shared");
-    await Promise.resolve();
+    await flushMicrotasks();
 
     expect(purged.flat()).toContain("/admin/x");
     expect(purged.flat()).not.toContain("/x");
@@ -181,7 +158,7 @@ describe("revalidateTag", () => {
     __resetCacheState();
 
     expect(withInstance(a, () => autoInvalidateRegistry.pathsForTags(["shared"]))).toEqual([]);
-    await Promise.resolve();
+    await flushMicrotasks();
   });
 });
 
@@ -199,7 +176,7 @@ describe("revalidatePath", () => {
     });
 
     const deleted = revalidatePath("/x", "page");
-    await Promise.resolve();
+    await flushMicrotasks();
 
     expect(deleted).toBe(true);
     expect(withInstance(admin, () => isrCache.has("/x"))).toBe(false);

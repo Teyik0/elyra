@@ -1,76 +1,41 @@
-import { expect, test } from "bun:test";
-
-const TESTS_DIR_SUFFIX_RE = /\/tests(?:\/.*)?$/;
-
-test("furin() production runtime resolution scenarios", () => {
-  const proc = Bun.spawnSync({
-    cmd: [
-      "bun",
-      "-e",
-      `
+import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Elysia } from "elysia";
-import { furin } from "./src/furin.ts";
-import { revalidateTag } from "./src/server/auto-invalidate/index.ts";
-import { __resetCacheState, getSSGCache, ssgCache } from "./src/server/cache/index.ts";
-import { __resetCompileContext, __setCompileContext } from "./src/server/internal.ts";
-import { getProductionTemplate, setProductionTemplatePath } from "./src/server/render/template.ts";
-import { __setDevMode } from "./src/server/runtime-env.ts";
-import { createTmpApp } from "./tests/support/app-fixtures.ts";
+import type { CompileContext, EmbeddedAppData } from "../../../src/server/internal";
+import { resetEvlogMock } from "../../setup/evlog-mock";
+import { createTmpApp, type TmpApp } from "../../support/app-fixtures";
 
-const tmpApps = [];
+const { furin } = await import("../../../src/furin");
+const { revalidateTag } = await import("../../../src/server/auto-invalidate/index");
+const { __resetCacheState, getSSGCache, ssgCache } = await import(
+  "../../../src/server/cache/index"
+);
+const { __resetCompileContext, __setCompileContext } = await import("../../../src/server/internal");
+const { getProductionTemplate, __resetTemplateState } = await import(
+  "../../../src/server/render/template"
+);
+const { __setDevMode } = await import("../../../src/server/runtime-env");
+
+const tmpApps: TmpApp[] = [];
 const originalCwd = process.cwd();
 const originalArgv = process.argv.slice();
 const originalPath = process.env.PATH;
 const originalClientDir = process.env.FURIN_CLIENT_DIR;
 const originalURL = globalThis.URL;
 
-function rememberTmpApp(app) {
+function rememberTmpApp(app: TmpApp): TmpApp {
   tmpApps.push(app);
   return app;
 }
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
-}
-
-function assertEqual(actual, expected, message) {
-  if (actual !== expected) {
-    throw new Error(message + ": expected " + String(expected) + ", got " + String(actual));
-  }
-}
-
-function assertIncludes(actual, expected, message) {
-  if (!actual.includes(expected)) {
-    throw new Error(message + ": expected " + JSON.stringify(actual) + " to include " + JSON.stringify(expected));
-  }
-}
-
-function assertInstanceOf(actual, expected, message) {
-  assert(actual instanceof expected, message);
-}
-
-async function assertRejectsToThrow(promise, expected, message) {
-  try {
-    await promise;
-  } catch (error) {
-    assert(error instanceof Error, message + ": rejected with a non-Error value");
-    assertIncludes(error.message, expected, message);
-    return;
-  }
-  throw new Error(message + ": expected rejection");
-}
-
-async function setCompileContext(appPath, embedded) {
+async function createCompileContext(appPath: string): Promise<CompileContext> {
   const rootPath = join(appPath, "src/pages/root.tsx");
   const indexPath = join(appPath, "src/pages/index.tsx");
   const [rootMod, indexMod] = await Promise.all([import(rootPath), import(indexPath)]);
 
-  __setCompileContext({
+  return {
     modules: {
       [rootPath]: rootMod,
       [indexPath]: indexMod,
@@ -81,13 +46,20 @@ async function setCompileContext(appPath, embedded) {
       [indexPath]: { segmentBoundaries: [] },
     },
     routes: [{ mode: "ssg", path: indexPath, pattern: "/" }],
+  };
+}
+
+async function setCompileContext(appPath: string, embedded?: EmbeddedAppData): Promise<void> {
+  __setCompileContext({
+    ...(await createCompileContext(appPath)),
     ...(embedded ? { embedded } : {}),
   });
 }
 
-function resetState() {
+function resetState(): void {
+  resetEvlogMock();
   __setDevMode(true);
-  setProductionTemplatePath(null);
+  __resetTemplateState();
   __resetCacheState();
   __resetCompileContext();
   process.chdir(originalCwd);
@@ -109,47 +81,50 @@ function resetState() {
   }
 }
 
-try {
-  resetState();
-  let app = rememberTmpApp(createTmpApp("cli-app"));
+beforeEach(resetState);
+afterEach(resetState);
+
+test.serial("furin() production loads client assets from FURIN_CLIENT_DIR", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
   __setDevMode(false);
   process.chdir(app.path);
 
-  let clientDir = join(app.path, "custom-client");
+  const clientDir = join(app.path, "custom-client");
   mkdirSync(clientDir, { recursive: true });
   writeFileSync(join(clientDir, "index.html"), "<html>custom</html>");
   process.env.FURIN_CLIENT_DIR = "custom-client";
 
   await setCompileContext(app.path);
-  let instance = await furin({ pagesDir: join(app.path, "src/pages") });
+  const instance = await furin({ pagesDir: join(app.path, "src/pages") });
 
-  assertInstanceOf(instance, Elysia, "custom client returns an Elysia instance");
-  assertIncludes(getProductionTemplate(), "custom", "custom client template should be loaded");
+  expect(instance).toBeInstanceOf(Elysia);
+  expect(getProductionTemplate()).toContain("custom");
+});
 
-  resetState();
-  app = rememberTmpApp(createTmpApp("cli-app"));
+test.serial("furin() production rejects missing FURIN_CLIENT_DIR assets", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
   __setDevMode(false);
   process.chdir(app.path);
   process.env.FURIN_CLIENT_DIR = "missing-client";
 
   await setCompileContext(app.path);
-  await assertRejectsToThrow(
-    furin({ pagesDir: join(app.path, "src/pages") }),
-    "No pre-built assets found",
-    "missing client directory should reject"
-  );
 
-  resetState();
-  app = rememberTmpApp(createTmpApp("cli-app"));
+  await expect(furin({ pagesDir: join(app.path, "src/pages") })).rejects.toThrow(
+    "No pre-built assets found"
+  );
+});
+
+test.serial("furin() production resolves client assets next to module URL", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
   __setDevMode(false);
   process.chdir(app.path);
 
-  let moduleRoot = join(app.path, "module-home");
-  let moduleClientDir = join(moduleRoot, "client");
+  const moduleRoot = join(app.path, "module-home");
+  const moduleClientDir = join(moduleRoot, "client");
   mkdirSync(moduleClientDir, { recursive: true });
   writeFileSync(join(moduleClientDir, "index.html"), "<html>module-client</html>");
 
-  let fakeModuleUrl = pathToFileURL(join(moduleRoot, "furin.ts")).href;
+  const fakeModuleUrl = pathToFileURL(join(moduleRoot, "furin.ts")).href;
   class FakeModuleURL extends originalURL {
     constructor() {
       super(fakeModuleUrl);
@@ -161,18 +136,20 @@ try {
   process.env.PATH = "";
 
   await setCompileContext(app.path);
-  instance = await furin({ pagesDir: join(app.path, "src/pages") });
-  assertInstanceOf(instance, Elysia, "module client returns an Elysia instance");
-  assertIncludes(getProductionTemplate(), "module-client", "module client template should be loaded");
+  const instance = await furin({ pagesDir: join(app.path, "src/pages") });
 
-  resetState();
-  app = rememberTmpApp(createTmpApp("cli-app"));
+  expect(instance).toBeInstanceOf(Elysia);
+  expect(getProductionTemplate()).toContain("module-client");
+});
+
+test.serial("furin() production resolves client assets next to argv server path", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
   __setDevMode(false);
   process.chdir(app.path);
 
-  let binDir = join(app.path, "bin");
-  let serverPath = join(binDir, "server");
-  clientDir = join(binDir, "client");
+  const binDir = join(app.path, "bin");
+  const serverPath = join(binDir, "server");
+  const clientDir = join(binDir, "client");
   mkdirSync(clientDir, { recursive: true });
   writeFileSync(serverPath, "");
   writeFileSync(join(clientDir, "index.html"), "<html>argv-client</html>");
@@ -188,19 +165,21 @@ try {
   process.env.PATH = "";
 
   await setCompileContext(app.path);
-  instance = await furin({ pagesDir: join(app.path, "src/pages") });
-  assertInstanceOf(instance, Elysia, "argv client returns an Elysia instance");
-  assertIncludes(getProductionTemplate(), "argv-client", "argv client template should be loaded");
+  const instance = await furin({ pagesDir: join(app.path, "src/pages") });
 
-  resetState();
-  app = rememberTmpApp(createTmpApp("cli-app"));
+  expect(instance).toBeInstanceOf(Elysia);
+  expect(getProductionTemplate()).toContain("argv-client");
+});
+
+test.serial("furin() production resolves client assets from PATH binary", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
   __setDevMode(false);
   process.chdir(app.path);
 
-  binDir = join(app.path, "bin");
+  const binDir = join(app.path, "bin");
   const binaryName = "furin-server";
   const binaryPath = join(binDir, binaryName);
-  clientDir = join(binDir, "client");
+  const clientDir = join(binDir, "client");
   mkdirSync(clientDir, { recursive: true });
   writeFileSync(binaryPath, "");
   writeFileSync(join(clientDir, "index.html"), "<html>path-client</html>");
@@ -216,12 +195,14 @@ try {
   process.env.PATH = binDir;
 
   await setCompileContext(app.path);
-  instance = await furin({ pagesDir: join(app.path, "src/pages") });
-  assertInstanceOf(instance, Elysia, "PATH client returns an Elysia instance");
-  assertIncludes(getProductionTemplate(), "path-client", "PATH client template should be loaded");
+  const instance = await furin({ pagesDir: join(app.path, "src/pages") });
 
-  resetState();
-  app = rememberTmpApp(createTmpApp("cli-app"));
+  expect(instance).toBeInstanceOf(Elysia);
+  expect(getProductionTemplate()).toContain("path-client");
+});
+
+test.serial("furin() production resolves fallback built client directory", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
   __setDevMode(false);
   process.chdir(app.path);
 
@@ -229,83 +210,68 @@ try {
   mkdirSync(fallbackDir, { recursive: true });
   writeFileSync(join(fallbackDir, "index.html"), "<html>fallback-client</html>");
 
+  class FakeHttpURL extends originalURL {
+    constructor() {
+      super("http://example.com");
+    }
+  }
   globalThis.URL = FakeHttpURL;
   process.argv.length = 0;
   process.argv.push("bun", "missing");
   process.env.PATH = "";
 
   await setCompileContext(app.path);
-  instance = await furin({ pagesDir: join(app.path, "src/pages") });
-  assertInstanceOf(instance, Elysia, "fallback client returns an Elysia instance");
-  assertIncludes(getProductionTemplate(), "fallback-client", "fallback client template should be loaded");
+  const instance = await furin({ pagesDir: join(app.path, "src/pages") });
 
-  resetState();
-  app = rememberTmpApp(createTmpApp("cli-app"));
+  expect(instance).toBeInstanceOf(Elysia);
+  expect(getProductionTemplate()).toContain("fallback-client");
+});
+
+test.serial("furin() production hydrates embedded SSG cache", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
   __setDevMode(false);
   process.chdir(app.path);
 
-  clientDir = join(app.path, "client");
+  const clientDir = join(app.path, "client");
   mkdirSync(clientDir, { recursive: true });
   writeFileSync(join(clientDir, "index.html"), "<html><!--ssr-outlet--></html>");
   process.env.FURIN_CLIENT_DIR = "client";
 
-  let rootPath = join(app.path, "src/pages/root.tsx");
-  let indexPath = join(app.path, "src/pages/index.tsx");
-  let [rootMod, indexMod] = await Promise.all([import(rootPath), import(indexPath)]);
   __setCompileContext({
-    modules: {
-      [rootPath]: rootMod,
-      [indexPath]: indexMod,
-    },
-    rootConventions: {},
-    rootPath,
-    routeMetadata: {
-      [indexPath]: { segmentBoundaries: [] },
-    },
-    routes: [{ mode: "ssg", path: indexPath, pattern: "/" }],
+    ...(await createCompileContext(app.path)),
     ssgCache: {
       "/": {
         cachedAt: 123,
         html: "<html>prebuilt</html>",
-        ndjson: "{}\\n",
+        ndjson: "{}\n",
         status: 200,
       },
     },
   });
 
-  instance = await furin({ pagesDir: join(app.path, "src/pages") });
-  assertInstanceOf(instance, Elysia, "embedded SSG returns an Elysia instance");
-  assertEqual(getSSGCache("/")?.html, "<html>prebuilt</html>", "embedded SSG cache should load");
+  const instance = await furin({ pagesDir: join(app.path, "src/pages") });
 
-  resetState();
-  app = rememberTmpApp(createTmpApp("cli-app"));
+  expect(instance).toBeInstanceOf(Elysia);
+  expect(getSSGCache("/")?.html).toBe("<html>prebuilt</html>");
+});
+
+test.serial("furin() production revalidates embedded SSG cache tags", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
   __setDevMode(false);
   process.chdir(app.path);
 
-  clientDir = join(app.path, "client");
+  const clientDir = join(app.path, "client");
   mkdirSync(clientDir, { recursive: true });
   writeFileSync(join(clientDir, "index.html"), "<html><!--ssr-outlet--></html>");
   process.env.FURIN_CLIENT_DIR = "client";
 
-  rootPath = join(app.path, "src/pages/root.tsx");
-  indexPath = join(app.path, "src/pages/index.tsx");
-  [rootMod, indexMod] = await Promise.all([import(rootPath), import(indexPath)]);
   __setCompileContext({
-    modules: {
-      [rootPath]: rootMod,
-      [indexPath]: indexMod,
-    },
-    rootConventions: {},
-    rootPath,
-    routeMetadata: {
-      [indexPath]: { segmentBoundaries: [] },
-    },
-    routes: [{ mode: "ssg", path: indexPath, pattern: "/" }],
+    ...(await createCompileContext(app.path)),
     ssgCache: {
       "/": {
         cachedAt: 123,
         html: "<html>prebuilt</html>",
-        ndjson: "{}\\n",
+        ndjson: "{}\n",
         status: 200,
         tags: ["boards"],
       },
@@ -313,41 +279,48 @@ try {
   });
 
   await furin({ pagesDir: join(app.path, "src/pages") });
-  assertEqual(revalidateTag("boards"), true, "embedded tag should revalidate");
-  assertEqual(ssgCache.has("/"), false, "tag revalidation should clear SSG cache");
 
-  resetState();
-  app = rememberTmpApp(createTmpApp("cli-app"));
+  expect(revalidateTag("boards")).toBe(true);
+  expect(ssgCache.has("/")).toBe(false);
+});
+
+test.serial("furin() production falls back to cwd client directory", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
   __setDevMode(false);
   process.chdir(app.path);
 
-  clientDir = join(app.path, "client");
+  const clientDir = join(app.path, "client");
   mkdirSync(clientDir, { recursive: true });
   writeFileSync(join(clientDir, "index.html"), "<html>cwd-client</html>");
+  class FakeHttpURL extends originalURL {
+    constructor() {
+      super("http://example.com");
+    }
+  }
   globalThis.URL = FakeHttpURL;
   process.argv.length = 0;
   process.argv.push("bun", "missing");
   process.env.PATH = "";
 
   await setCompileContext(app.path);
-  instance = await furin({ pagesDir: join(app.path, "src/pages") });
-  assertInstanceOf(instance, Elysia, "cwd client returns an Elysia instance");
-  assertIncludes(getProductionTemplate(), "cwd-client", "cwd client template should be loaded");
+  const instance = await furin({ pagesDir: join(app.path, "src/pages") });
 
-  resetState();
-  app = rememberTmpApp(createTmpApp("cli-app"));
+  expect(instance).toBeInstanceOf(Elysia);
+  expect(getProductionTemplate()).toContain("cwd-client");
+});
+
+test.serial("furin() production rejects embedded context without HTML template", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
   __setDevMode(false);
   process.chdir(app.path);
 
   await setCompileContext(app.path, { assets: {}, template: "" });
-  await assertRejectsToThrow(
-    furin({ pagesDir: join(app.path, "src/pages") }),
-    "HTML template",
-    "missing embedded HTML template should reject"
-  );
 
-  resetState();
-  app = rememberTmpApp(createTmpApp("cli-app"));
+  await expect(furin({ pagesDir: join(app.path, "src/pages") })).rejects.toThrow("HTML template");
+});
+
+test.serial("furin() production serves embedded client and public assets", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
   __setDevMode(false);
   process.chdir(app.path);
 
@@ -366,36 +339,14 @@ try {
     template: templatePath,
   });
 
-  instance = await furin({ pagesDir: join(app.path, "src/pages") });
+  const instance = await furin({ pagesDir: join(app.path, "src/pages") });
   const okClient = await instance.handle(new Request("http://furin/_client/app.js"));
   const okPublic = await instance.handle(new Request("http://furin/public/logo.png"));
   const missClient = await instance.handle(new Request("http://furin/_client/missing.js"));
   const missPublic = await instance.handle(new Request("http://furin/public/missing.png"));
 
-  assertEqual(okClient.status, 200, "embedded client asset should be served");
-  assertEqual(okPublic.status, 200, "embedded public asset should be served");
-  assertEqual(missClient.status, 404, "missing embedded client asset should 404");
-  assertEqual(missPublic.status, 404, "missing embedded public asset should 404");
-} finally {
-  resetState();
-}
-process.exit(0);
-`,
-    ],
-    cwd: import.meta.dir.replace(TESTS_DIR_SUFFIX_RE, ""),
-    stderr: "pipe",
-    stdout: "pipe",
-  });
-
-  if (proc.exitCode !== 0) {
-    throw new Error(
-      [
-        `furin runtime subprocess exited with ${proc.exitCode}`,
-        new TextDecoder().decode(proc.stdout),
-        new TextDecoder().decode(proc.stderr),
-      ].join("\n")
-    );
-  }
-
-  expect(proc.exitCode).toBe(0);
+  expect(okClient.status).toBe(200);
+  expect(okPublic.status).toBe(200);
+  expect(missClient.status).toBe(404);
+  expect(missPublic.status).toBe(404);
 });

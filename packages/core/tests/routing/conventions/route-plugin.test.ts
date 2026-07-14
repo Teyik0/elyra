@@ -8,13 +8,10 @@ test("createRoutePlugin scenarios", () => {
       "bun",
       "-e",
       `
-import { expect, mock } from "bun:test";
+import { expect } from "bun:test";
 import { join } from "node:path";
 
-mock.module("evlog/elysia", () => ({
-  evlog: () => (app) => app,
-  useLogger: () => ({ set() {} }),
-}));
+await import("./tests/setup/evlog-mock.ts");
 
 const { Elysia } = await import("elysia");
 const { scanPages } = await import("./src/server/router/discovery.ts");

@@ -5,63 +5,22 @@
  * Regression test for: "dispatcher is null" hook crash on HMR.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createElement, createContext as mainCreateContext, useState as mainUseState } from "react";
 import { renderToString } from "react-dom/server";
 import { registerDevPagePlugin } from "../../../src/server/dev-page-plugin.ts";
 import { buildElement } from "../../../src/server/render/element.tsx";
+import { requireTmpPath, withTmpFiles, withTmpPage } from "../../support/tmp-files";
 
 registerDevPagePlugin();
 
 const CORE_DIR = import.meta.dir.replace(/\/tests(?:\/.*)?$/, "");
 const TMP_DIR = join(CORE_DIR, ".tmp-tests", "react-singleton");
 
-function requirePath(paths: Record<string, string>, name: string): string {
-  const path = paths[name];
-  if (!path) {
-    throw new Error(`Missing temp path for ${name}`);
-  }
-  return path;
-}
-
-function withTmpFiles(
-  files: Record<string, string | ((paths: Record<string, string>) => string)>,
-  fn: (paths: Record<string, string>) => Promise<void>
-): Promise<void> {
-  mkdirSync(TMP_DIR, { recursive: true });
-  const prefix = `page-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const paths = Object.fromEntries(
-    Object.keys(files).map((name) => {
-      const path = join(TMP_DIR, `${prefix}-${name}`);
-      return [name, path];
-    })
-  );
-
-  for (const [name, source] of Object.entries(files)) {
-    writeFileSync(requirePath(paths, name), typeof source === "function" ? source(paths) : source);
-  }
-
-  // Remove only the files created by this invocation so concurrent test runs
-  // do not race against each other by deleting the shared TMP_DIR.
-  return fn(paths).finally(() => {
-    for (const filePath of Object.values(paths)) {
-      try {
-        rmSync(filePath, { force: true });
-      } catch {
-        /* cleanup failure is non-critical */
-      }
-    }
-  });
-}
-
-function withTmpPage(source: string, fn: (path: string) => Promise<void>): Promise<void> {
-  return withTmpFiles({ "page.tsx": source }, async (paths) => fn(requirePath(paths, "page.tsx")));
-}
-
 describe("furin-dev-page React singleton", () => {
   test("useState from virtual namespace is the same reference as the main process useState", () =>
     withTmpPage(
+      TMP_DIR,
       `import { useState } from "react";
        export function getUseState() { return useState; }
        export default function Page() { const [v] = useState(0); return <span>{v}</span>; }`,
@@ -74,6 +33,7 @@ describe("furin-dev-page React singleton", () => {
 
   test("createContext from virtual namespace is the same reference as the main process createContext", () =>
     withTmpPage(
+      TMP_DIR,
       `import { createContext } from "react";
        export function getCreateContext() { return createContext; }
        export default function Page() { return <div />; }`,
@@ -85,6 +45,7 @@ describe("furin-dev-page React singleton", () => {
 
   test("SSR rendering of a page with useState does not throw 'dispatcher is null'", () =>
     withTmpPage(
+      TMP_DIR,
       `import { useState } from "react";
        export default function Page() {
          const [count] = useState(42);
@@ -99,6 +60,7 @@ describe("furin-dev-page React singleton", () => {
 
   test("SSR rendering of a page with useContext does not throw 'dispatcher is null'", () =>
     withTmpPage(
+      TMP_DIR,
       `import { useContext, createContext } from "react";
        const Ctx = createContext("hello");
        export default function Page() {
@@ -113,6 +75,7 @@ describe("furin-dev-page React singleton", () => {
 
   test("a page that re-imports with a new timestamp (HMR simulation) still uses the correct instance", () =>
     withTmpPage(
+      TMP_DIR,
       `import { useState } from "react";
        export function getUseState() { return useState; }
        export default function Page() { const [v] = useState(0); return <span>{v}</span>; }`,
@@ -132,6 +95,7 @@ describe("furin-dev-page React singleton", () => {
 
   test("SSR rendering of a page with a transitive local component using useState does not throw", () =>
     withTmpFiles(
+      TMP_DIR,
       {
         "page.tsx": (paths) => `import { Widget } from ${JSON.stringify(paths["widget.tsx"])};
           export default function Page() {
@@ -151,6 +115,7 @@ describe("furin-dev-page React singleton", () => {
 
   test("SSR rendering of nested layouts after root reload keeps hook components on the shared React instance", () =>
     withTmpFiles(
+      TMP_DIR,
       {
         "_route.tsx": (paths) => `import { createRoute } from "@teyik0/furin/client";
           import { Nav } from ${JSON.stringify(paths["nav.tsx"])};
@@ -179,9 +144,9 @@ describe("furin-dev-page React singleton", () => {
           });`,
       },
       async (paths) => {
-        const rootPath = requirePath(paths, "root.tsx");
-        const routePath = requirePath(paths, "_route.tsx");
-        const pagePath = requirePath(paths, "page.tsx");
+        const rootPath = requireTmpPath(paths, "root.tsx");
+        const routePath = requireTmpPath(paths, "_route.tsx");
+        const pagePath = requireTmpPath(paths, "page.tsx");
         const rootMod = await import(rootPath);
         const routeMod = await import(routePath);
         const pageMod = await import(`${pagePath}?furin-server&t=${Date.now()}`);

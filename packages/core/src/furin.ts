@@ -44,6 +44,9 @@ import { clientDirNameForPrefix } from "./shared/prefix.ts";
 // biome-ignore lint/performance/noBarrelFile: furin.ts is the public package entry
 export { clientDirNameForPrefix } from "./shared/prefix.ts";
 
+const MAX_BROWSER_INGEST_BYTES = 64 * 1024;
+const MAX_BROWSER_INGEST_EVENTS = 100;
+
 function resolveClientDirFromArgv(prefix: string): string {
   const dirName = clientDirNameForPrefix(prefix);
   return (
@@ -171,72 +174,93 @@ async function setupProdTemplate(
  * browser `environment` which must not overwrite the server's); everything
  * else is forwarded as-is.
  */
-type FurinBrowserEvent = {
+interface FurinBrowserEvent {
   __proto__?: unknown;
   constructor?: unknown;
-  prototype?: unknown;
   environment?: unknown;
-} & Record<string, unknown>;
+  prototype?: unknown;
+  [key: string]: unknown;
+}
+
+function isOversizedBrowserIngest(body: unknown, request: Request): boolean {
+  const contentLength = request.headers.get("content-length");
+  if (contentLength) {
+    const declaredBytes = Number(contentLength);
+    if (Number.isFinite(declaredBytes) && declaredBytes > MAX_BROWSER_INGEST_BYTES) {
+      return true;
+    }
+  }
+
+  return new TextEncoder().encode(JSON.stringify(body)).byteLength > MAX_BROWSER_INGEST_BYTES;
+}
 
 /** Evlog wide-event plugin + browser log ingest endpoint for one instance. */
 function createLoggerPlugin(
   prefix: string,
   syncStreamPath: string | undefined,
-  logger: EvlogElysiaOptions | undefined
+  logger: EvlogElysiaOptions | undefined,
+  clientLogging: boolean
 ): Elysia {
   const { exclude: userExclude, ...evlogOptions } = logger ?? {};
-  return new Elysia()
-    .use(
-      evlog({
-        ...evlogOptions,
-        // Exclude patterns match the PHYSICAL request path — prefix them.
-        exclude: [
-          `${prefix}/_client/**`,
-          `${prefix}/public/**`,
-          `${prefix}/favicon.ico`,
-          `${prefix}/_bun_hmr_entry/**`,
-          ...(syncStreamPath ? [`${prefix}${syncStreamPath}`] : []),
-          // Note: /_furin/data is logged with the *logical* path rewritten by
-          // createDataEndpoint via useLogger().set({ path }), so SPA navigations
-          // appear as "GET /board/123 200" — same shape as a normal SSR nav.
-          // /_furin/ingest is kept loggable so browser-side events show up.
-          // evlog's `matchesPattern` only supports `*`, `**`, `?` — extglob
-          // like `!(...)` matches nothing, so don't add patterns relying on it.
-          ...(userExclude ?? []),
-        ],
-      })
-    )
-    .post(
-      "/_furin/ingest",
-      ({ body, log, status }) => {
-        if (!Array.isArray(body)) {
-          return status("Bad Request");
+  const app = new Elysia().use(
+    evlog({
+      ...evlogOptions,
+      // Exclude patterns match the PHYSICAL request path — prefix them.
+      exclude: [
+        `${prefix}/_client/**`,
+        `${prefix}/public/**`,
+        `${prefix}/favicon.ico`,
+        `${prefix}/_bun_hmr_entry/**`,
+        ...(syncStreamPath ? [`${prefix}${syncStreamPath}`] : []),
+        // Note: /_furin/data is logged with the *logical* path rewritten by
+        // createDataEndpoint via useLogger().set({ path }), so SPA navigations
+        // appear as "GET /board/123 200" — same shape as a normal SSR nav.
+        // /_furin/ingest remains loggable when browser logging is explicitly
+        // enabled so browser-side events show up.
+        // evlog's `matchesPattern` only supports `*`, `**`, `?` — extglob
+        // like `!(...)` matches nothing, so don't add patterns relying on it.
+        ...(userExclude ?? []),
+      ],
+    })
+  );
+
+  if (!clientLogging) {
+    return app as unknown as Elysia;
+  }
+
+  return app.post(
+    "/_furin/ingest",
+    ({ body, log, request, status }) => {
+      if (!Array.isArray(body)) {
+        return status("Bad Request");
+      }
+      if (isOversizedBrowserIngest(body, request)) {
+        return status(413);
+      }
+      const batch = (body as DrainContext[]).slice(0, MAX_BROWSER_INGEST_EVENTS);
+      for (const entry of batch) {
+        if (!entry || typeof entry !== "object" || !("event" in entry)) {
+          log.set({ msg: "[furin] ingest: skipping malformed entry" });
+          continue;
         }
-        // Cap batch size to prevent abuse
-        const batch = (body as DrainContext[]).slice(0, 100);
-        for (const entry of batch) {
-          if (!entry || typeof entry !== "object" || !("event" in entry)) {
-            log.set({ msg: "[furin] ingest: skipping malformed entry" });
-            continue;
-          }
-          // Pick only safe, known fields from the event to prevent prototype pollution
-          const event = entry.event as FurinBrowserEvent | undefined;
-          if (!event || typeof event !== "object") {
-            continue;
-          }
-          const {
-            __proto__,
-            constructor: _ctor,
-            prototype,
-            environment: _browserEnv,
-            ...safeEvent
-          } = event;
-          log.set({ ...safeEvent, service: "furin:browser" });
+        // Pick only safe, known fields from the event to prevent prototype pollution
+        const event = entry.event as FurinBrowserEvent | undefined;
+        if (!event || typeof event !== "object") {
+          continue;
         }
-        return status("No Content");
-      },
-      { parse: "json" }
-    ) as unknown as Elysia;
+        const {
+          __proto__,
+          constructor: _ctor,
+          prototype,
+          environment: _browserEnv,
+          ...safeEvent
+        } = event;
+        log.set({ ...safeEvent, service: "furin:browser" });
+      }
+      return status("No Content");
+    },
+    { parse: "json" }
+  ) as unknown as Elysia;
 }
 
 /**
@@ -337,7 +361,7 @@ export async function furin({
   const prefix = normalizePrefix(rawPrefix);
   const syncStreamPath = resolveSyncStreamPath(sync);
   initLogger({ env: { service: "furin" } });
-  const loggerPlugin = createLoggerPlugin(prefix, syncStreamPath, logger);
+  const loggerPlugin = createLoggerPlugin(prefix, syncStreamPath, logger, clientLogging === true);
 
   const cwd = process.cwd();
   // The pagesDir param drives which compile context this instance loads. In a

@@ -1,18 +1,5 @@
-import { describe, expect, mock, test } from "bun:test";
-
-mock.module("evlog/elysia", () => ({
-  evlog: () => (app: unknown) => app,
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-  useLogger: () => ({ set() {} }),
-}));
-mock.module("evlog", () => ({
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-  initLogger: () => {},
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
-  log: { debug: () => {}, error: () => {}, info: () => {}, warn: () => {} },
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
-  useLogger: () => ({ error() {}, info() {}, set() {}, warn() {} }),
-}));
+import { describe, expect, test } from "bun:test";
+import "../../setup/evlog-mock";
 
 import { Elysia, t } from "elysia";
 import { createRoute, defer, type RuntimePage, type RuntimeRoute } from "../../../src/client";

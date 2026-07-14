@@ -2,11 +2,7 @@ import { test } from "bun:test";
 import { join as joinPath } from "node:path";
 
 const script = `
-const { mock } = await import("bun:test");
-mock.module("evlog/elysia", () => ({
-  evlog: () => (app) => app,
-  useLogger: () => ({ set() {} }),
-}));
+await import("./packages/core/tests/setup/evlog-mock.ts");
 
 const { join } = await import("node:path");
 const { renderRootNotFound } = await import("./packages/core/src/server/render/index.ts");

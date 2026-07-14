@@ -1,83 +1,49 @@
-import { expect, test } from "bun:test";
-
-const TESTS_DIR_SUFFIX_RE = /\/tests(?:\/.*)?$/;
-
-test("GET /_furin/data wide event enrichment scenarios", () => {
-  const proc = Bun.spawnSync({
-    cmd: [
-      "bun",
-      "-e",
-      `
-import { expect, mock } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { join } from "node:path";
+import { Elysia } from "elysia";
+import { evlogSetMock, resetEvlogMock } from "../../setup/evlog-mock";
 
-const setSpy = mock();
+const { createDataEndpoint, scanPages } = await import("../../../src/server/router/index");
+const { __setDevMode } = await import("../../../src/server/runtime-env");
 
-mock.module("evlog/elysia", () => ({
-  evlog: () => (app) => app,
-  useLogger: () => ({ set: setSpy }),
-}));
-mock.module("evlog", () => ({
-  createLogger: () => ({
-    emit: () => null,
-    error: () => {},
-    fork: (_label, fn) => fn(),
-    getContext: () => ({}),
-    info: () => {},
-    set: () => {},
-    warn: () => {},
-  }),
-  initLogger: () => {},
-  log: { debug: () => {}, error: () => {}, info: () => {}, warn: () => {} },
-  useLogger: () => ({ error() {}, info() {}, set() {}, warn() {} }),
-}));
+const fixturesDir = join(import.meta.dir, "../../fixtures/pages/default");
 
-const { Elysia } = await import("elysia");
-const { createDataEndpoint, scanPages } = await import("./src/server/router/index.ts");
-const { __setDevMode } = await import("./src/server/runtime-env.ts");
+interface LogFields {
+  path?: string;
+  routePattern?: string;
+  [key: string]: unknown;
+}
 
-const fixturesDir = join(import.meta.dir, "tests/fixtures/pages/default");
+afterEach(() => {
+  __setDevMode(process.env.NODE_ENV !== "production");
+  resetEvlogMock();
+});
 
-__setDevMode(false);
+test("GET /_furin/data enriches matching route events", async () => {
+  __setDevMode(false);
 
-setSpy.mockClear();
-let scanned = await scanPages(fixturesDir);
-let app = new Elysia().use(createDataEndpoint(scanned.routes));
+  const scanned = await scanPages(fixturesDir);
+  const app = new Elysia().use(createDataEndpoint(scanned.routes));
 
-await app.handle(new Request("http://localhost/_furin/data?path=%2Fdynamic%2F42"));
+  await app.handle(new Request("http://localhost/_furin/data?path=%2Fdynamic%2F42"));
 
-const merged = setSpy.mock.calls.reduce(
-  (acc, [arg]) => Object.assign(acc, arg),
-  {}
-);
-expect(merged.path).toBe("/dynamic/42");
-expect(merged.routePattern).toBe("/dynamic/:id");
+  const merged = evlogSetMock.mock.calls.reduce<LogFields>(
+    (acc, [arg]) => Object.assign(acc, arg),
+    {}
+  );
+  expect(merged.path).toBe("/dynamic/42");
+  expect(merged.routePattern).toBe("/dynamic/:id");
+});
 
-setSpy.mockClear();
-scanned = await scanPages(fixturesDir);
-app = new Elysia().use(createDataEndpoint(scanned.routes));
+test("GET /_furin/data enriches not-found route events", async () => {
+  __setDevMode(false);
 
-const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fnope%2Fnowhere"));
+  const scanned = await scanPages(fixturesDir);
+  const app = new Elysia().use(createDataEndpoint(scanned.routes));
 
-expect(res.status).toBe(404);
-const enrichingCall = setSpy.mock.calls.find(([arg]) => arg.path === "/nope/nowhere");
-expect(enrichingCall).toBeDefined();
-`,
-    ],
-    cwd: import.meta.dir.replace(TESTS_DIR_SUFFIX_RE, ""),
-    stderr: "pipe",
-    stdout: "pipe",
-  });
+  const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fnope%2Fnowhere"));
 
-  if (proc.exitCode !== 0) {
-    throw new Error(
-      [
-        `data endpoint logging subprocess exited with ${proc.exitCode}`,
-        new TextDecoder().decode(proc.stdout),
-        new TextDecoder().decode(proc.stderr),
-      ].join("\n")
-    );
-  }
-
-  expect(proc.exitCode).toBe(0);
+  expect(res.status).toBe(404);
+  const enrichingCall = evlogSetMock.mock.calls.find(([arg]) => arg.path === "/nope/nowhere");
+  expect(enrichingCall).toBeDefined();
 });

@@ -1,14 +1,6 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { Context } from "elysia";
-
-mock.module("evlog/elysia", () => ({
-  evlog: () => (app: unknown) => app,
-  useLogger: () => ({
-    set() {
-      /* noop */
-    },
-  }),
-}));
+import "../../setup/evlog-mock";
 
 import { createElement, Suspense } from "react";
 import type { ResolvedRoute, RootLayout } from "../../../src/server/router/types.ts";

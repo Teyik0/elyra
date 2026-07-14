@@ -1,20 +1,5 @@
-import { describe, expect, mock, test } from "bun:test";
-
-// Stub evlog/elysia before importing render modules
-mock.module("evlog/elysia", () => ({
-  evlog: () => (app: unknown) => app,
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-  useLogger: () => ({ set() {} }),
-}));
-
-mock.module("evlog", () => ({
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
-  createLogger: () => ({ emit() {}, error() {}, info() {}, set() {}, warn() {} }),
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stubs
-  log: { error: () => {}, info: () => {}, set: () => {}, warn: () => {} },
-  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op stub
-  useLogger: () => ({ set() {} }),
-}));
+import { describe, expect, test } from "bun:test";
+import "../../setup/evlog-mock";
 
 import type { Context } from "elysia";
 import type { HTTPHeaders } from "elysia/types";
