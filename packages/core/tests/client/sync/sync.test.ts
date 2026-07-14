@@ -333,3 +333,28 @@ test("furinSync SSE notification completes inside bun:test", async () => {
     resetSyncTestState();
   }
 });
+
+test("sync stream opens when notifier subscription fails", async () => {
+  resetSyncTestState();
+  const cursor = "0";
+  const adapter: SyncAdapter = {
+    scope: "distributed",
+    abortMutation: () => Promise.resolve(),
+    beginMutation: () => Promise.resolve({ kind: "unavailable" }),
+    completeMutation: () => Promise.resolve({ kind: "lost" }),
+    currentCursor: () => Promise.resolve(cursor),
+    readChanges: () => Promise.resolve({ changes: [], cursor, hasMore: false, reset: false }),
+    renewMutation: () => Promise.resolve("lost"),
+  };
+  const notifier: SyncNotifier = {
+    publish: () => Promise.resolve(),
+    subscribe: () => Promise.reject(new Error("notifier unavailable")),
+  };
+  const app = new Elysia().use(createSyncStreamPlugin(undefined, { adapter, notifier }));
+  const response = await app.handle(new Request("http://localhost/_furin/sync"));
+  try {
+    expect(response.status).toBe(200);
+  } finally {
+    resetSyncTestState();
+  }
+});

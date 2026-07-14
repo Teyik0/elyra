@@ -56,7 +56,7 @@ Path to the server entrypoint that creates the Elysia instance. Required for `bu
 
 ## `clientLogging`
 
-**Type:** `boolean | { adapter: SyncAdapter; notifier?: SyncNotifier; streamPath?: string }`
+**Type:** `boolean`
 **Default:** `false`
 
 Inject the browser-side evlog logger into the generated hydration entry. Server-side request logging is unaffected by this option.
@@ -201,7 +201,7 @@ new Elysia()
 
 ### `sync`
 
-**Type:** `boolean`
+**Type:** `boolean | { adapter: SyncAdapter; notifier?: SyncNotifier; streamPath?: string }`
 
 Enable Furin's built-in sync transport. Furin mounts SSE at `/_furin/sync`, exposes cursor catch-up at `/_furin/sync/changes`, and injects the client runtime automatically. API mutations using `furinSync()` are synchronized by default and may opt out with `sync: false`.
 

@@ -1,4 +1,4 @@
-import { Elysia } from "elysia";
+import { type Context, Elysia } from "elysia";
 import {
   appendPendingInvalidationHeader,
   isSuccessfulMutationResponse,
@@ -27,7 +27,7 @@ interface RouteSyncMetadata {
 
 interface ActiveMutation {
   lease: MutationLease;
-  renewal: ReturnType<typeof setInterval>;
+  renewal: ReturnType<typeof setTimeout> | undefined;
 }
 
 interface MutationContext {
@@ -37,6 +37,12 @@ interface MutationContext {
   };
   request: Request;
 }
+
+type CompletionContext = MutationContext &
+  Pick<Context, "set"> & {
+    response?: unknown;
+    responseValue?: unknown;
+  };
 
 const routeMetadata = new WeakMap<Request, RouteSyncMetadata>();
 const activeMutations = new WeakMap<Request, ActiveMutation>();
@@ -176,13 +182,19 @@ export function furinSync(options?: SyncRuntimeOptions) {
         { headers: { "retry-after": "1" }, status: 503 }
       );
     }
-    const renewal = setInterval(
-      () => {
-        runtime.adapter.renewMutation(result.lease).catch(() => undefined);
-      },
-      Math.max(1000, Math.floor(result.lease.leaseMs / 3))
-    );
-    activeMutations.set(ctx.request, { lease: result.lease, renewal });
+    const active: ActiveMutation = { lease: result.lease, renewal: undefined };
+    const renewAfter = Math.max(1000, Math.floor(result.lease.leaseMs / 3));
+    const scheduleRenewal = () => {
+      active.renewal = setTimeout(async () => {
+        await runtime.adapter.renewMutation(result.lease).catch(() => undefined);
+        if (activeMutations.get(ctx.request) === active) {
+          scheduleRenewal();
+        }
+      }, renewAfter);
+      active.renewal.unref?.();
+    };
+    activeMutations.set(ctx.request, active);
+    scheduleRenewal();
   }
 
   async function abortMutation(request: Request): Promise<void> {
@@ -191,8 +203,71 @@ export function furinSync(options?: SyncRuntimeOptions) {
       return;
     }
     activeMutations.delete(request);
-    clearInterval(active.renewal);
+    if (active.renewal) {
+      clearTimeout(active.renewal);
+    }
     await runtime.adapter.abortMutation(active.lease);
+  }
+
+  async function persistMutation(
+    ctx: CompletionContext,
+    active: ActiveMutation
+  ): Promise<Response | undefined> {
+    const result = await storeResponse(ctx.responseValue, ctx.set);
+    if (result.kind === "unreplayable") {
+      const completion = await runtime.adapter.completeMutation({
+        invalidations: [],
+        lease: active.lease,
+        response: result.response,
+      });
+      return completion.kind === "lost" ? leaseLostResponse() : replayResponse(result.response);
+    }
+
+    const invalidate = routeMetadata.get(ctx.request)?.invalidate;
+    if (invalidate) {
+      runInvalidationRules(invalidate);
+    }
+    const pending = appendPendingInvalidationHeader(ctx.set);
+    if (pending.length > 0) {
+      ctx.set.headers["x-furin-sync"] = "1";
+    }
+    const response = mergeStoredResponseHeaders(result.response, ctx.set.headers);
+    const semanticInvalidations = normalizedInvalidations(invalidate);
+    const invalidations =
+      semanticInvalidations.length > 0 ? semanticInvalidations : pendingPathInvalidations(pending);
+    const completion = await runtime.adapter.completeMutation({
+      invalidations,
+      lease: active.lease,
+      response,
+    });
+    if (completion.kind === "lost") {
+      return leaseLostResponse();
+    }
+    if (completion.cursor !== undefined) {
+      runtime.notifier.publish(completion.cursor).catch(() => undefined);
+    }
+  }
+
+  async function finishMutation(ctx: CompletionContext): Promise<Response | undefined> {
+    const active = activeMutations.get(ctx.request);
+    if (!active) {
+      return;
+    }
+    try {
+      if (!isSuccessfulMutationResponse(ctx)) {
+        await runtime.adapter.abortMutation(active.lease);
+        return;
+      }
+      return await persistMutation(ctx, active);
+    } catch (error) {
+      await runtime.adapter.abortMutation(active.lease).catch(() => undefined);
+      throw error;
+    } finally {
+      activeMutations.delete(ctx.request);
+      if (active.renewal) {
+        clearTimeout(active.renewal);
+      }
+    }
   }
 
   return new Elysia({ name: "furin-sync" })
@@ -211,57 +286,6 @@ export function furinSync(options?: SyncRuntimeOptions) {
       },
     })
     .onBeforeHandle({ as: "global" }, beginMutation)
-    .onAfterHandle({ as: "global" }, async (ctx) => {
-      const active = activeMutations.get(ctx.request);
-      if (!active) {
-        return;
-      }
-      clearInterval(active.renewal);
-      if (!isSuccessfulMutationResponse(ctx)) {
-        await abortMutation(ctx.request);
-        return;
-      }
-
-      const result = await storeResponse(ctx.responseValue, ctx.set);
-      if (result.kind === "unreplayable") {
-        const completion = await runtime.adapter.completeMutation({
-          invalidations: [],
-          lease: active.lease,
-          response: result.response,
-        });
-        activeMutations.delete(ctx.request);
-        if (completion.kind === "lost") {
-          return leaseLostResponse();
-        }
-        return replayResponse(result.response);
-      }
-
-      const invalidate = routeMetadata.get(ctx.request)?.invalidate;
-      if (invalidate) {
-        runInvalidationRules(invalidate);
-      }
-      const pending = appendPendingInvalidationHeader(ctx.set);
-      if (pending.length > 0) {
-        ctx.set.headers["x-furin-sync"] = "1";
-      }
-      const response = mergeStoredResponseHeaders(result.response, ctx.set.headers);
-      const semanticInvalidations = normalizedInvalidations(invalidate);
-      const invalidations =
-        semanticInvalidations.length > 0
-          ? semanticInvalidations
-          : pendingPathInvalidations(pending);
-      const completion = await runtime.adapter.completeMutation({
-        invalidations,
-        lease: active.lease,
-        response,
-      });
-      activeMutations.delete(ctx.request);
-      if (completion.kind === "lost") {
-        return leaseLostResponse();
-      }
-      if (completion.cursor !== undefined) {
-        runtime.notifier.publish(completion.cursor).catch(() => undefined);
-      }
-    })
+    .onAfterHandle({ as: "global" }, finishMutation)
     .onError({ as: "global" }, ({ request }) => abortMutation(request));
 }

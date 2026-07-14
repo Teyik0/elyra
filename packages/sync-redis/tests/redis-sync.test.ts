@@ -96,6 +96,13 @@ describeWithRedis("Redis sync", () => {
     ]);
     expect(
       await adapter.beginMutation({
+        fingerprint: "other-fingerprint",
+        key: "mutation",
+        principal: "user",
+      })
+    ).toEqual({ kind: "conflict", reason: "payload-mismatch" });
+    expect(
+      await adapter.beginMutation({
         fingerprint: "fingerprint",
         key: "mutation",
         principal: "user",

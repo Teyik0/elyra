@@ -101,6 +101,13 @@ describeWithPostgres("PostgresSyncAdapter", () => {
       SET lease_expires_at = clock_timestamp() - interval '1 second'
       WHERE namespace = ${namespace}
     `;
+    expect(
+      await adapter.beginMutation({
+        fingerprint: "other-fingerprint",
+        key: "mutation",
+        principal: "user",
+      })
+    ).toEqual({ kind: "conflict", reason: "payload-mismatch" });
     const replacement = await adapter.beginMutation({
       fingerprint: "fingerprint",
       key: "mutation",

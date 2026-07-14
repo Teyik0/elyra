@@ -263,6 +263,15 @@ export class RedisSyncAdapter implements SyncAdapter {
         String(input.limit + 1),
       ])
     );
+    const latestTrimmed = await this.client.get(this.trimmedKey);
+    if (latestTrimmed !== null && compareStreamIds(input.after, latestTrimmed) <= 0) {
+      return {
+        changes: [],
+        cursor: await this.currentCursor(),
+        hasMore: false,
+        reset: true,
+      };
+    }
     const hasMore = entries.length > input.limit;
     const changes: SyncChange[] = entries.slice(0, input.limit).map(([cursor, raw]) => ({
       cursor,

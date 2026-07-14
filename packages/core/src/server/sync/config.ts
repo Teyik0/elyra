@@ -10,6 +10,9 @@ const requestSyncStreamPath = new AsyncLocalStorage<string | undefined>();
 
 export type FurinSyncOption =
   | boolean
+  | {
+      streamPath?: string;
+    }
   | (SyncRuntimeOptions & {
       streamPath?: string;
     });
@@ -43,7 +46,7 @@ export function runWithSyncStreamPath<T>(path: string | undefined, fn: () => T):
 export function syncRuntimeOptions(
   sync: FurinSyncOption | undefined
 ): SyncRuntimeOptions | undefined {
-  return sync && typeof sync === "object"
+  return sync && typeof sync === "object" && "adapter" in sync
     ? { adapter: sync.adapter, notifier: sync.notifier }
     : undefined;
 }

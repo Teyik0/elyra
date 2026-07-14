@@ -1,3 +1,3 @@
-import { useSync } from "@teyik0/furin/client";
+import { useSync } from "../../../dist/client.js";
 
 console.log(useSync);

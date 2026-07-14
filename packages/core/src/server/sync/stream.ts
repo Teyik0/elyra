@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { IS_DEV } from "../runtime-env.ts";
 import type { SyncAdapter, SyncChange, SyncRuntimeOptions, SyncSubscription } from "./adapter.ts";
 import { memorySyncAdapter } from "./memory-adapter.ts";
 import { memorySyncNotifier } from "./notifier.ts";
@@ -9,10 +10,13 @@ export type { ChangePage as SyncChangePage, SyncChange } from "./adapter.ts";
 const DEFAULT_CHANGE_LIMIT = 100;
 const MAX_CHANGE_LIMIT = 500;
 const MAX_CURSOR_LENGTH = 128;
-const SAFETY_POLL_INTERVAL_MS = 15_000;
+const SAFETY_POLL_INTERVAL_MS = IS_DEV ? 250 : 15_000;
 const UNSIGNED_INTEGER_PATTERN = /^\d+$/;
 const defaultStreamPath = "/_furin/sync";
 const encoder = new TextEncoder();
+const noOpSubscription: SyncSubscription = {
+  unsubscribe: () => Promise.resolve(),
+};
 
 interface StreamState {
   clients: Set<ReadableStreamDefaultController<Uint8Array>>;
@@ -52,13 +56,16 @@ async function createStreamState(options: SyncRuntimeOptions): Promise<StreamSta
   state.clients = new Set();
   state.cursor = await runtime.adapter.currentCursor();
   state.heartbeats = new Set();
-  state.subscription = await runtime.notifier.subscribe((cursor) => notifyState(state, cursor));
   state.safetyPoll = setInterval(() => {
     runtime.adapter
       .currentCursor()
       .then((cursor) => notifyState(state, cursor))
       .catch(() => undefined);
   }, SAFETY_POLL_INTERVAL_MS);
+  state.safetyPoll.unref?.();
+  state.subscription = await runtime.notifier
+    .subscribe((cursor) => notifyState(state, cursor))
+    .catch(() => noOpSubscription);
   resolvedStates.add(state);
   return state;
 }
@@ -70,6 +77,11 @@ function getStreamState(options: SyncRuntimeOptions): Promise<StreamState> {
   }
   const state = createStreamState(options);
   streams.set(options.adapter, state);
+  state.catch(() => {
+    if (streams.get(options.adapter) === state) {
+      streams.delete(options.adapter);
+    }
+  });
   return state;
 }
 
@@ -159,6 +171,7 @@ export function createSyncStreamPlugin(
               }
             }
           }, 15_000);
+          heartbeat.unref?.();
           state.heartbeats.add(heartbeat);
         },
       });

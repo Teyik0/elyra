@@ -26,7 +26,7 @@ import {
   setProductionTemplateContent,
 } from "./src/server/render/template.ts";
 import { __setDevMode } from "./src/server/runtime-env.ts";
-import { __resetSyncState } from "./src/server/sync/index.ts";
+import { __resetSyncState } from "./src/server/sync/stream.ts";
 import { createTmpApp, writeAppFile } from "./tests/support/app-fixtures.ts";
 
 const TEST_TEMPLATE = "<html><body><!--ssr-outlet--></body></html>";

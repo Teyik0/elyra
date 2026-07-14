@@ -48,6 +48,13 @@ describe("MemorySyncAdapter", () => {
     }
 
     setSystemTime(new Date(1000 + first.lease.leaseMs + 1));
+    expect(
+      await adapter.beginMutation({
+        fingerprint: "other",
+        key: "mutation",
+        principal: "user",
+      })
+    ).toEqual({ kind: "conflict", reason: "payload-mismatch" });
     const second = await adapter.beginMutation({
       fingerprint: "body",
       key: "mutation",

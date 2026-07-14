@@ -101,10 +101,10 @@ export class PostgresSyncAdapter implements SyncAdapter {
         FOR UPDATE
       `;
       const [existing] = rows;
+      if (existing && existing.fingerprint !== input.fingerprint) {
+        return { kind: "conflict", reason: "payload-mismatch" } as const;
+      }
       if (existing && !existing.expired) {
-        if (existing.fingerprint !== input.fingerprint) {
-          return { kind: "conflict", reason: "payload-mismatch" } as const;
-        }
         if (existing.state === "in-progress") {
           return { kind: "conflict", reason: "in-progress" } as const;
         }
@@ -266,6 +266,20 @@ export class PostgresSyncAdapter implements SyncAdapter {
       ORDER BY cursor ASC
       LIMIT ${input.limit + 1}
     `;
+    const latestCursorRows = await this.sql<CursorRow[]>`
+      SELECT current_cursor, oldest_cursor
+      FROM furin_sync.streams WHERE namespace = ${this.namespace}
+    `;
+    const latestCurrentCursor = String(latestCursorRows[0]?.current_cursor ?? 0);
+    const latestOldest = BigInt(latestCursorRows[0]?.oldest_cursor ?? 0);
+    if (BigInt(input.after) < latestOldest - 1n) {
+      return {
+        changes: [],
+        cursor: latestCurrentCursor,
+        hasMore: false,
+        reset: true,
+      };
+    }
     const hasMore = rows.length > input.limit;
     const changes: SyncChange[] = rows.slice(0, input.limit).map((row) => ({
       cursor: String(row.cursor),

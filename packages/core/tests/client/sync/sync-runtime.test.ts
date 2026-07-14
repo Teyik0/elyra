@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { __setDevMode, IS_DEV } from "../../../src/server/runtime-env";
 import type { SyncAdapter } from "../../../src/server/sync/adapter";
+import { resolveSyncStreamPath, syncRuntimeOptions } from "../../../src/server/sync/config";
 import { MemorySyncAdapter } from "../../../src/server/sync/memory-adapter";
 import { PollingSyncNotifier } from "../../../src/server/sync/notifier";
 import { resolveSyncRuntime } from "../../../src/server/sync/runtime";
@@ -24,6 +25,12 @@ function distributedAdapter(currentCursor: () => Promise<string>): SyncAdapter {
 }
 
 describe("sync runtime", () => {
+  test("keeps the legacy streamPath-only development configuration", () => {
+    const sync = { streamPath: "/events" };
+    expect(resolveSyncStreamPath(sync)).toBe("/events");
+    expect(syncRuntimeOptions(sync)).toBeUndefined();
+  });
+
   test("rejects implicit and process-local storage in production", () => {
     __setDevMode(false);
     expect(() => resolveSyncRuntime(undefined)).toThrow("explicit distributed SyncAdapter");

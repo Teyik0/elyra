@@ -47,14 +47,15 @@ export class MemorySyncAdapter implements SyncAdapter {
     const key = mutationKey(input);
     const existing = this.mutations.get(key);
     if (existing) {
+      if (existing.fingerprint !== input.fingerprint) {
+        return Promise.resolve({ kind: "conflict", reason: "payload-mismatch" });
+      }
       const expired =
         existing.state === "in-progress"
           ? existing.leaseExpiresAt <= now
           : existing.expiresAt <= now;
       if (expired) {
         this.mutations.delete(key);
-      } else if (existing.fingerprint !== input.fingerprint) {
-        return Promise.resolve({ kind: "conflict", reason: "payload-mismatch" });
       } else if (existing.state === "in-progress") {
         return Promise.resolve({ kind: "conflict", reason: "in-progress" });
       } else {

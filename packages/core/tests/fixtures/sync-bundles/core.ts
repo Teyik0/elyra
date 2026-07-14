@@ -1,3 +1,3 @@
-import { MemorySyncAdapter } from "@teyik0/furin/sync";
+import { MemorySyncAdapter } from "../../../dist/server/sync/index.js";
 
 console.log(new MemorySyncAdapter().scope);
