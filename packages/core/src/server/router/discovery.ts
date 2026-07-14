@@ -1,5 +1,5 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: route discovery walks filesystem entries sequentially for deterministic ordering
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, parse } from "node:path";
 import type { RuntimePage, RuntimeRoute } from "../../client.ts";
@@ -140,6 +140,30 @@ function routeRelativePath(pagesDir: string, absolutePath: string): string {
   return path.startsWith(`${dir}/`) ? path.slice(dir.length + 1) : path;
 }
 
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function assertNoPageFileDirectoryCollision(pagesDir: string, relativePath: string): void {
+  const parsed = parse(relativePath);
+  if (parsed.name === "index") {
+    return;
+  }
+
+  const segmentPath = parsed.dir ? `${parsed.dir}/${parsed.name}` : parsed.name;
+  if (!isDirectory(`${pagesDir}/${segmentPath}`)) {
+    return;
+  }
+
+  throw new Error(
+    `[furin] Ambiguous route segment "${segmentPath}": "${relativePath}" cannot coexist with directory "${segmentPath}/". Move the page to "${segmentPath}/index${parsed.ext}".`
+  );
+}
+
 export async function scanPages(pagesDir: string): Promise<{
   root: RootLayout;
   routes: ResolvedRoute[];
@@ -224,6 +248,7 @@ async function loadConventionComponent<T>(
 
 async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<ResolvedRoute[]> {
   const routes: ResolvedRoute[] = [];
+  const seenPatterns = new Map<string, string>();
   const notFoundCache = new Map<string, ConventionLookup<NotFoundComponent> | undefined>();
   const errorCache = new Map<string, ConventionLookup<ErrorComponent> | undefined>();
 
@@ -241,6 +266,17 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
     if (fileName.startsWith("_") || fileName === "root" || isConventionFileName(fileName)) {
       continue;
     }
+
+    assertNoPageFileDirectoryCollision(pagesDir, relativePath);
+
+    const pattern = filePathToPattern(relativePath);
+    const previousPath = seenPatterns.get(pattern);
+    if (previousPath !== undefined) {
+      throw new Error(
+        `[furin] Duplicate route pattern "${pattern}" from "${previousPath}" and "${relativePath}".`
+      );
+    }
+    seenPatterns.set(pattern, relativePath);
 
     const [notFound, errorComponent, segmentBoundaries] = await Promise.all([
       resolveNearestConvention<NotFoundComponent>(
@@ -261,7 +297,7 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
     ]);
 
     if (IS_DEV) {
-      const devRoute = await buildDevRoute(absolutePath, relativePath, root);
+      const devRoute = await buildDevRoute(absolutePath, relativePath, pattern, root);
       devRoute.notFound = notFound;
       devRoute.error = errorComponent;
       devRoute.segmentBoundaries = segmentBoundaries;
@@ -288,7 +324,7 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
       notFound,
       page,
       path: absolutePath,
-      pattern: filePathToPattern(relativePath),
+      pattern,
       routeChain,
       segmentBoundaries,
       tags: collectRouteTags(routeChain, page),
@@ -390,6 +426,7 @@ async function resolveNearestConvention<T>(
 async function buildDevRoute(
   absolutePath: string,
   relativePath: string,
+  pattern: string,
   root: RootLayout
 ): Promise<ResolvedRoute> {
   // Import via the virtual namespace (registerDevPagePlugin must be called first)
@@ -425,7 +462,7 @@ async function buildDevRoute(
     // Still lazily re-imported on each request in createRoutePlugin for fresh code
     page: page ?? devStubPage,
     path: absolutePath,
-    pattern: filePathToPattern(relativePath),
+    pattern,
     routeChain,
     // scanPageFiles() overwrites this with the real chain before the route
     // is pushed — present here to satisfy the ResolvedRoute required shape.

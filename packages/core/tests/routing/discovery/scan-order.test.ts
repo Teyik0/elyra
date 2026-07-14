@@ -94,4 +94,22 @@ describe("scanPages: route order is deterministic", () => {
     // (subdir 'blog/' sorts before 'index.tsx' because 'b' < 'i')
     expect(patterns).toEqual(["/blog/:slug", "/blog/about", "/"]);
   });
+
+  test("throws when two page files normalize to the same route pattern", async () => {
+    writePage(join(tempDir, "foo.ts"));
+    writePage(join(tempDir, "foo.tsx"));
+
+    await expect(scanPages(tempDir)).rejects.toThrow(
+      '[furin] Duplicate route pattern "/foo" from "foo.ts" and "foo.tsx".'
+    );
+  });
+
+  test("throws when a page file coexists with a same-name route directory", async () => {
+    mkdirSync(join(tempDir, "foo"));
+    writePage(join(tempDir, "foo.tsx"));
+
+    await expect(scanPages(tempDir)).rejects.toThrow(
+      '[furin] Ambiguous route segment "foo": "foo.tsx" cannot coexist with directory "foo/". Move the page to "foo/index.tsx".'
+    );
+  });
 });

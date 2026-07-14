@@ -50,6 +50,15 @@ export type LoaderResult =
  * must not be treated as one even when they carry a `Location` header.
  */
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const FURIN_RESERVED_KEY_PREFIX = "__furin";
+
+function assertPublicLoaderKey(key: string): void {
+  if (key.startsWith(FURIN_RESERVED_KEY_PREFIX)) {
+    throw new Error(
+      `[furin] Loader data key "${key}" is reserved for framework metadata. Rename this field to avoid conflicts.`
+    );
+  }
+}
 
 /**
  * `true` only for HTTP responses that are syntactically valid redirects:
@@ -141,6 +150,7 @@ function splitOneLoaderResult(result: Record<string, unknown>): {
     if (key === "__isDeferred") {
       continue;
     }
+    assertPublicLoaderKey(key);
     if (isDef && isPromiseLike(value)) {
       deferred[key] = Promise.resolve(value);
     } else {

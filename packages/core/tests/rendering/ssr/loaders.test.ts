@@ -29,6 +29,27 @@ function createMockLoaderContext(overrides: Partial<Context>): Context {
 }
 
 describe("runLoaders requestLoader", () => {
+  test("rejects loader data that uses framework-reserved keys", async () => {
+    const route = {
+      mode: "ssr",
+      page: {
+        loader: () => ({ __furinStatus: 404 }),
+      },
+      path: "/reserved.tsx",
+      pattern: "/reserved",
+      routeChain: [],
+      segmentBoundaries: [],
+    } as unknown as ResolvedRoute;
+
+    const result = await runLoaders(route, createMockLoaderContext({ path: "/reserved" }));
+
+    expect(result.type).toBe("error");
+    if (result.type === "error") {
+      expect(result.error).toBeInstanceOf(Error);
+      expect((result.error as Error).message).toContain('__furinStatus" is reserved');
+    }
+  });
+
   test("runs private data once with a read-only request context", async () => {
     let calls = 0;
     const route = {
