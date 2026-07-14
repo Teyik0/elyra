@@ -2,13 +2,31 @@ import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { spinner } from "@clack/prompts";
 import { buildEjsVars, renderEjsFile } from "../../engine/renderer.ts";
-import type { PipelineContext } from "../context.ts";
+import { assertPathInsideDirectory, type PipelineContext, TEMPLATES_DIR } from "../context.ts";
+
+function resolveDestinationPath(ctx: PipelineContext, relativePath: string): string {
+  const destPath = resolve(ctx.targetDir, relativePath);
+  assertPathInsideDirectory(
+    ctx.targetDir,
+    destPath,
+    `Template destination "${relativePath}" escapes the target directory.`
+  );
+  return destPath;
+}
+
+function assertTemplateSourceInsideTemplates(sourcePath: string): void {
+  assertPathInsideDirectory(
+    TEMPLATES_DIR,
+    sourcePath,
+    `Template source "${sourcePath}" escapes the templates directory.`
+  );
+}
 
 function assertUniqueDestinations(ctx: PipelineContext): void {
   const seen = new Map<string, string>();
 
   for (const file of ctx.fileTree) {
-    const destPath = resolve(ctx.targetDir, file.relativePath);
+    const destPath = resolveDestinationPath(ctx, file.relativePath);
     if (seen.has(destPath)) {
       throw new Error(
         `Template contains duplicate destination "${file.relativePath}" also used by "${seen.get(destPath)}".`
@@ -78,7 +96,7 @@ export async function stage5Generation(ctx: PipelineContext): Promise<void> {
 
     const writtenFiles = await Promise.all(
       ctx.fileTree.map(async (file) => {
-        const destPath = resolve(ctx.targetDir, file.relativePath);
+        const destPath = resolveDestinationPath(ctx, file.relativePath);
         await mkdir(dirname(destPath), { recursive: true });
 
         if (file.kind === "package-json") {
@@ -86,10 +104,12 @@ export async function stage5Generation(ctx: PipelineContext): Promise<void> {
           await Bun.write(destPath, content);
           file.content = content;
         } else if (file.kind === "ejs") {
+          assertTemplateSourceInsideTemplates(file.sourcePath);
           const content = await renderEjsFile(file.sourcePath, vars);
           await Bun.write(destPath, content);
           file.content = content;
         } else {
+          assertTemplateSourceInsideTemplates(file.sourcePath);
           const content = await Bun.file(file.sourcePath).bytes();
           await Bun.write(destPath, content);
         }

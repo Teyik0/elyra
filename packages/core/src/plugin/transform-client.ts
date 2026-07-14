@@ -20,6 +20,7 @@ const SERVER_ONLY_PROPERTIES = new Set([
   "params",
   "staticParams",
 ]);
+const FURIN_CLIENT_MODULES = new Set(["@teyik0/furin/client", "furin/client"]);
 
 interface TransformResult {
   code: string;
@@ -27,30 +28,150 @@ interface TransformResult {
   removedServerCode: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Check if a CallExpression is createRoute() or page() / route.page()
-// ---------------------------------------------------------------------------
-function isCreateRouteCall(node: CallExpression): boolean {
-  return node.callee.type === "Identifier" && node.callee.name === "createRoute";
+interface RouteTransformBindings {
+  createRouteNames: Set<string>;
+  routeNames: Set<string>;
 }
 
-function isRoutePageCall(node: CallExpression): boolean {
-  const { callee } = node;
-  if (callee.type === "Identifier" && callee.name === "page") {
-    return true;
+// ---------------------------------------------------------------------------
+// Check if a CallExpression is createRoute() or route.page()
+// ---------------------------------------------------------------------------
+function isFurinClientModule(source: unknown): boolean {
+  return typeof source === "string" && FURIN_CLIENT_MODULES.has(source);
+}
+
+function isRelativeModule(source: unknown): boolean {
+  return typeof source === "string" && source.startsWith(".");
+}
+
+function importedName(spec: AstNode): string | null {
+  const { imported } = spec;
+  if (!imported || typeof imported !== "object") {
+    return null;
   }
+  const node = imported as AstNode;
+  if (node.type === "Identifier" && typeof node.name === "string") {
+    return node.name;
+  }
+  if (node.type === "Literal" && typeof node.value === "string") {
+    return node.value;
+  }
+  return null;
+}
+
+function localName(spec: AstNode): string | null {
+  const { local } = spec;
+  if (!local || typeof local !== "object") {
+    return null;
+  }
+  const node = local as AstNode;
+  return node.type === "Identifier" && typeof node.name === "string" ? node.name : null;
+}
+
+function addImportedBinding(
+  source: unknown,
+  spec: AstNode,
+  bindings: RouteTransformBindings
+): void {
+  if (spec.type !== "ImportSpecifier" || spec.importKind === "type") {
+    return;
+  }
+  const imported = importedName(spec);
+  const local = localName(spec);
+  if (!local) {
+    return;
+  }
+  if (isFurinClientModule(source) && imported === "createRoute") {
+    bindings.createRouteNames.add(local);
+  }
+  if (isRelativeModule(source) && imported === "route") {
+    bindings.routeNames.add(local);
+  }
+}
+
+function collectImportedBindings(program: Program): RouteTransformBindings {
+  const bindings = {
+    createRouteNames: new Set<string>(),
+    routeNames: new Set<string>(),
+  };
+
+  for (const stmt of program.body) {
+    if (stmt.type !== "ImportDeclaration") {
+      continue;
+    }
+    const decl = stmt as unknown as ImportDeclaration;
+    if (decl.importKind === "type") {
+      continue;
+    }
+    const source = decl.source.value;
+
+    for (const spec of decl.specifiers as unknown as AstNode[]) {
+      addImportedBinding(source, spec, bindings);
+    }
+  }
+
+  return bindings;
+}
+
+function isCreateRouteCall(node: CallExpression, bindings: RouteTransformBindings): boolean {
+  return node.callee.type === "Identifier" && bindings.createRouteNames.has(node.callee.name);
+}
+
+function isCreateRouteExpression(node: unknown, bindings: RouteTransformBindings): boolean {
+  if (!node || typeof node !== "object") {
+    return false;
+  }
+  const expression = unwrapTSExpression(node as { type: string }) as AstNode;
+  return (
+    expression.type === "CallExpression" &&
+    isCreateRouteCall(expression as unknown as CallExpression, bindings)
+  );
+}
+
+function collectLocalRouteBindings(program: Program, bindings: RouteTransformBindings): void {
+  walkAST(program, (node) => {
+    if (node.type !== "VariableDeclarator") {
+      return;
+    }
+    const { id, init } = node;
+    if (!id || typeof id !== "object") {
+      return;
+    }
+    const identifier = id as AstNode;
+    if (identifier.type !== "Identifier" || typeof identifier.name !== "string") {
+      return;
+    }
+    if (isCreateRouteExpression(init, bindings)) {
+      bindings.routeNames.add(identifier.name);
+    }
+  });
+}
+
+function collectRouteTransformBindings(program: Program): RouteTransformBindings {
+  const bindings = collectImportedBindings(program);
+  collectLocalRouteBindings(program, bindings);
+  return bindings;
+}
+
+function isRoutePageCall(node: CallExpression, bindings: RouteTransformBindings): boolean {
+  const { callee } = node;
   if (
     callee.type === "MemberExpression" &&
+    !callee.computed &&
     callee.property.type === "Identifier" &&
     callee.property.name === "page"
   ) {
-    return true;
+    const object = unwrapTSExpression(callee.object);
+    if (object.type === "Identifier" && bindings.routeNames.has(object.name)) {
+      return true;
+    }
+    return isCreateRouteExpression(object, bindings);
   }
   return false;
 }
 
-function isTargetCall(node: CallExpression): boolean {
-  return isCreateRouteCall(node) || isRoutePageCall(node);
+function isTargetCall(node: CallExpression, bindings: RouteTransformBindings): boolean {
+  return isCreateRouteCall(node, bindings) || isRoutePageCall(node, bindings);
 }
 
 function isObjectExpressionNode(node: { type: string }): node is ObjectExpression {
@@ -339,21 +460,22 @@ export function deadCodeElimination(s: MagicString, lang: SourceLang): MagicStri
 }
 
 // ---------------------------------------------------------------------------
-// Remove server-only properties from createRoute() / page() / route.page()
+// Remove server-only properties from createRoute() / route.page()
 // calls found anywhere in the AST.
 // ---------------------------------------------------------------------------
 function removeServerExports(s: MagicString, source: string, program: Program): boolean {
   let removedServerCode = false;
+  const bindings = collectRouteTransformBindings(program);
 
   walkAST(program, (node) => {
     if (node.type !== "CallExpression") {
       return;
     }
     const call = node as unknown as CallExpression;
-    if (!isTargetCall(call)) {
+    if (!isTargetCall(call, bindings)) {
       return;
     }
-    // Unwrap `createRoute({...} as Config)` / `page({...} satisfies Opts)` etc.
+    // Unwrap `createRoute({...} as Config)` / `route.page({...} satisfies Opts)` etc.
     const [firstArg] = call.arguments;
     if (!firstArg) {
       return;

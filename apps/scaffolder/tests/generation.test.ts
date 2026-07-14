@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createContext } from "../src/pipeline/context.ts";
+import { createContext, resolveTemplateSrc } from "../src/pipeline/context.ts";
 import { stage5Generation } from "../src/pipeline/stages/5-generation.ts";
 
 const tempDirs: string[] = [];
@@ -40,6 +40,38 @@ describe("stage5Generation", () => {
 
     return expect(stage5Generation(ctx)).rejects.toThrow(
       'Template contains duplicate destination "package.json" also used by "package.json".'
+    );
+  });
+
+  it("rejects destination paths that escape the target directory", async () => {
+    const parentDir = mkdtempSync(resolve(tmpdir(), "create-furin-generation-parent-"));
+    tempDirs.push(parentDir);
+    const targetDir = resolve(parentDir, "app");
+
+    const sourcePath = resolve(import.meta.dir, "../templates/simple/src/server.ts.ejs");
+    const ctx = createContext({
+      fileTree: [
+        {
+          kind: "ejs",
+          relativePath: "../escaped.ts",
+          sourcePath,
+        },
+      ],
+      projectName: "my-app",
+      projectNameKebab: "my-app",
+      projectNamePascal: "MyApp",
+      targetDir,
+    });
+
+    await expect(stage5Generation(ctx)).rejects.toThrow(
+      'Template destination "../escaped.ts" escapes the target directory.'
+    );
+    expect(existsSync(resolve(parentDir, "escaped.ts"))).toBe(false);
+  });
+
+  it("rejects template source paths that escape the templates directory", () => {
+    expect(() => resolveTemplateSrc("../package.json")).toThrow(
+      'Template source "../package.json" escapes the templates directory.'
     );
   });
 

@@ -16,6 +16,7 @@ const QUOTED_LOADER_KEY_RE = /["']loader["']\s*:/;
 const BARE_UI_RE = /\bUI\b/;
 /** Matches `from "./styles"` or `from './styles'` — used for DCE assertions. */
 const IMPORT_STYLES_RE = /from\s+["']\.\/styles["']/;
+const FURIN_CLIENT_IMPORT = 'import { createRoute } from "@teyik0/furin/client";';
 
 // ---------------------------------------------------------------------------
 // Basic transformation
@@ -24,7 +25,8 @@ const IMPORT_STYLES_RE = /from\s+["']\.\/styles["']/;
 describe("transformForClient — basic", () => {
   test("removes requestLoader from the client graph", () => {
     const result = transformForClient(
-      `export default createRoute({ requestLoader: async ({ cookies }) => ({ user: cookies.get("session") }), layout: () => null })`,
+      `${FURIN_CLIENT_IMPORT}
+export default createRoute({ requestLoader: async ({ cookies }) => ({ user: cookies.get("session") }), layout: () => null })`,
       "route.tsx"
     );
 
@@ -47,13 +49,15 @@ describe("transformForClient — basic", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Server property removal — page()
+// Server property removal — route.page()
 // ---------------------------------------------------------------------------
 
-describe("transformForClient — page() loader removal", () => {
-  test("removes loader from page() call", () => {
+describe("transformForClient — route.page() loader removal", () => {
+  test("removes loader from assigned route.page() call", () => {
     const input = `
-      const result = page({
+      ${FURIN_CLIENT_IMPORT}
+      const route = createRoute();
+      const result = route.page({
         loader: async () => ({ data: 1 }),
         component: (props) => null,
       });
@@ -65,9 +69,11 @@ describe("transformForClient — page() loader removal", () => {
     expect(result.removedServerCode).toBe(true);
   });
 
-  test("removes loader from export default page()", () => {
+  test("removes loader from export default route.page()", () => {
     const input = `
-      export default page({
+      ${FURIN_CLIENT_IMPORT}
+      const route = createRoute();
+      export default route.page({
         loader: async () => ({ data: 1 }),
         component: (props) => null,
       });
@@ -87,6 +93,7 @@ describe("transformForClient — page() loader removal", () => {
 describe("transformForClient — createRoute() loader removal", () => {
   test("removes loader from createRoute()", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       const route = createRoute({
         loader: async () => ({ user: "test" }),
         mode: "ssr",
@@ -101,6 +108,7 @@ describe("transformForClient — createRoute() loader removal", () => {
 
   test("removes loader from export default createRoute()", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       export default createRoute({
         loader: async () => ({ user: "test" }),
         mode: "ssr",
@@ -121,6 +129,7 @@ describe("transformForClient — createRoute() loader removal", () => {
 describe("transformForClient — route.page() loader removal", () => {
   test("removes loader from route.page() member expression", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       const route = createRoute({ mode: "ssr" });
       export default route.page({
         loader: async ({ user }) => ({ posts: [] }),
@@ -129,6 +138,59 @@ describe("transformForClient — route.page() loader removal", () => {
     `;
     const result = transformForClient(input, "test.tsx");
 
+    expect(result.code).not.toMatch(LOADER_PROPERTY_RE);
+    expect(result.code).toContain("component");
+    expect(result.removedServerCode).toBe(true);
+  });
+
+  test("does not strip ordinary page member calls", () => {
+    const input = `
+      const analytics = {
+        page: (event) => event,
+      };
+      analytics.page({
+        query: { source: "newsletter" },
+        params: { campaign: "spring" },
+      });
+    `;
+    const result = transformForClient(input, "/app/src/components/analytics.ts");
+
+    expect(result.removedServerCode).toBe(false);
+    expect(result.code).toContain("query");
+    expect(result.code).toContain("params");
+    expect(result.code).toContain("newsletter");
+  });
+
+  test("strips imported Furin route.page() calls in page modules", () => {
+    const input = `
+      import { route as rootRoute } from "./root";
+      export default rootRoute.page({
+        loader: async () => ({ posts: [] }),
+        component: ({ posts }) => null,
+      });
+    `;
+    const result = transformForClient(input, "/app/src/pages/index.tsx");
+
+    expect(result.code).not.toMatch(LOADER_PROPERTY_RE);
+    expect(result.code).toContain("component");
+    expect(result.removedServerCode).toBe(true);
+  });
+
+  test("strips calls built from an aliased Furin createRoute import", () => {
+    const input = `
+      import { createRoute as defineRoute } from "@teyik0/furin/client";
+      const route = defineRoute({
+        query: { type: "object" },
+        mode: "ssr",
+      });
+      export default route.page({
+        loader: async () => ({ posts: [] }),
+        component: ({ posts }) => null,
+      });
+    `;
+    const result = transformForClient(input, "/app/src/pages/index.tsx");
+
+    expect(result.code).not.toContain("query");
     expect(result.code).not.toMatch(LOADER_PROPERTY_RE);
     expect(result.code).toContain("component");
     expect(result.removedServerCode).toBe(true);
@@ -142,6 +204,7 @@ describe("transformForClient — route.page() loader removal", () => {
 describe("transformForClient — dead code elimination", () => {
   test("import used only by loader is eliminated after loader removal", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       import { getUser } from "./db";
       const route = createRoute({
         loader: async () => ({ user: getUser() }),
@@ -157,6 +220,7 @@ describe("transformForClient — dead code elimination", () => {
 
   test("createRoute loader-only import removed when layout with JSX also exists", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       import { queries } from "../../db";
       import { route as rootRoute } from "../root";
       export const route = createRoute({
@@ -194,8 +258,10 @@ describe("transformForClient — dead code elimination", () => {
 
   test("import used by component is preserved after loader removal", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       import { formatDate } from "./utils";
-      export default page({
+      const route = createRoute();
+      export default route.page({
         loader: async () => ({ data: 1 }),
         component: (props) => formatDate(props.data),
       });
@@ -212,8 +278,10 @@ describe("transformForClient — dead code elimination", () => {
     // getUser only used in loader (removed) → should be stripped
     // formatDate used in component (kept) → must survive
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       import { getUser, formatDate } from "./db";
-      export default page({
+      const route = createRoute();
+      export default route.page({
         loader: async () => ({ user: getUser() }),
         component: (props) => formatDate(props.data),
       });
@@ -234,8 +302,10 @@ describe("transformForClient — dead code elimination", () => {
     // is silently dropped and the browser hits "Link is not defined" at
     // runtime as soon as a route both has a `loader` and renders the link.
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       import { Link } from "@teyik0/furin/link";
-      export default page({
+      const route = createRoute();
+      export default route.page({
         loader: async () => ({ items: [] }),
         component: () => <Link to="/foo">Hello</Link>,
       });
@@ -253,8 +323,10 @@ describe("transformForClient — dead code elimination", () => {
     // *root* of the JSXMemberExpression chain without falsely treating the
     // `.Component` part as a same-named identifier reference.
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       import { UI } from "./ui";
-      export default page({
+      const route = createRoute();
+      export default route.page({
         loader: async () => ({}),
         component: () => <UI.Button label="ok" />,
       });
@@ -272,8 +344,10 @@ describe("transformForClient — dead code elimination", () => {
     // existing `Property` / `MemberExpression.property` exclusions, but for
     // JSXAttribute.name positions.
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       import { className } from "./styles";
-      export default page({
+      const route = createRoute();
+      export default route.page({
         loader: async () => ({}),
         component: () => <div className="static" />,
       });
@@ -296,8 +370,10 @@ describe("transformForClient — property key variants", () => {
   test("does not remove computed property keys (computed: true)", () => {
     // `{ [serverOnlyKey]: fn }` — AST marks this as computed, must be preserved
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       const serverOnlyKey = "loader";
-      export default page({
+      const route = createRoute();
+      export default route.page({
         [serverOnlyKey]: async () => ({ data: 1 }),
         component: () => null,
       });
@@ -310,7 +386,9 @@ describe("transformForClient — property key variants", () => {
 
   test("removes quoted string key 'loader'", () => {
     const input = `
-      export default page({
+      ${FURIN_CLIENT_IMPORT}
+      const route = createRoute();
+      export default route.page({
         "loader": async () => ({ data: 1 }),
         component: () => null,
       });
@@ -329,6 +407,7 @@ describe("transformForClient — property key variants", () => {
 
   test("removes quoted string key 'query'", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       export const route = createRoute({
         "query": { type: "object" },
         layout: ({ children }) => children,
@@ -349,7 +428,7 @@ describe("transformForClient — property key variants", () => {
 describe("transformForClient — Windows CRLF", () => {
   test("removes loader from code with CRLF line endings", () => {
     const input =
-      "export default page({\r\n  loader: async () => ({ data: 1 }),\r\n  component: () => null,\r\n});";
+      `${FURIN_CLIENT_IMPORT}\r\nconst route = createRoute();\r\nexport default route.page({\r\n  loader: async () => ({ data: 1 }),\r\n  component: () => null,\r\n});`;
     const result = transformForClient(input, "test.tsx");
 
     expect(result.removedServerCode).toBe(true);
@@ -384,6 +463,7 @@ const ROUTECONFIG_TYPE_RE = /:\s*RouteConfig\b/;
 describe("transformForClient — TypeScript syntax", () => {
   test("strips loader when call argument is wrapped in `as Config`", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       const route = createRoute({
         loader: async () => ({ user: "test" }),
         mode: "ssr",
@@ -398,6 +478,7 @@ describe("transformForClient — TypeScript syntax", () => {
 
   test("strips loader when call argument is wrapped in `satisfies RouteConfig`", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       const route = createRoute({
         loader: async () => ({ user: "test" }),
         mode: "ssr",
@@ -412,6 +493,7 @@ describe("transformForClient — TypeScript syntax", () => {
 
   test("strips loader when call argument is wrapped in parentheses", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       const route = createRoute(({
         loader: async () => ({ user: "test" }),
         mode: "ssr",
@@ -425,6 +507,7 @@ describe("transformForClient — TypeScript syntax", () => {
 
   test("strips loader when surrounding code has type annotations", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       type Loader = () => Promise<{ x: number }>;
       const handler: Loader = async () => ({ x: 1 });
       const config: RouteConfig = createRoute({
@@ -442,6 +525,7 @@ describe("transformForClient — TypeScript syntax", () => {
 
   test("strips loader inside a generic call createRoute<T>({...})", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       const route = createRoute<{ user: string }>({
         loader: async () => ({ user: "x" }),
         mode: "ssr",
@@ -457,6 +541,7 @@ describe("transformForClient — TypeScript syntax", () => {
     // `import type` is value-erased by the bundler; our DCE must not crash on it.
     const input = `
       import type { RouteConfig } from "furin/client";
+      ${FURIN_CLIENT_IMPORT}
       import { queries } from "../../db";
       export const route = createRoute({
         loader: () => ({ posts: queries.getPosts.all() }),
@@ -486,8 +571,10 @@ describe("transformForClient — TypeScript syntax", () => {
     // into TSTypeAnnotation nodes. After loader removal the entire import from
     // "./db" had only type-position uses and should be DCE'd.
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       import { getUser, UserModel } from "./db";
-      export default page({
+      const route = createRoute();
+      export default route.page({
         loader: async () => ({ user: getUser() }),
         component: ({ user }: { user: UserModel }) => null,
       });
@@ -501,8 +588,10 @@ describe("transformForClient — TypeScript syntax", () => {
 
   test("import used at runtime survives even when also referenced in a type annotation", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       import { createUser, UserModel } from "./db";
-      export default page({
+      const route = createRoute();
+      export default route.page({
         loader: async () => ({}),
         component: (_: { model: UserModel }) => { createUser(); return null; },
       });
@@ -518,9 +607,11 @@ describe("transformForClient — TypeScript syntax", () => {
     // `interface Opts { … }` is type-level; the identifier `Opts` must not be
     // treated as a runtime reference that keeps same-named imports alive.
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       import { Opts } from "./db";
       interface LocalOpts { x: number }
-      export default page({
+      const route = createRoute();
+      export default route.page({
         loader: async () => ({}),
         component: (props: LocalOpts) => null,
       });
@@ -533,9 +624,11 @@ describe("transformForClient — TypeScript syntax", () => {
 
   test("preserves imports referenced after directive prologues and spread elements", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       import { makeConfig, renderWidget } from "./db";
       const shared = { component: () => renderWidget() };
-      export default page({
+      const route = createRoute();
+      export default route.page({
         loader: async () => ({ config: makeConfig() }),
         ...shared,
         component: () => {
@@ -555,9 +648,11 @@ describe("transformForClient — TypeScript syntax", () => {
 
   test("type alias declaration does not keep its referenced names as runtime references", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       import { DbUser } from "./db";
       type UserAlias = DbUser;
-      export default page({
+      const route = createRoute();
+      export default route.page({
         loader: async () => ({}),
         component: () => null,
       });
@@ -570,6 +665,7 @@ describe("transformForClient — TypeScript syntax", () => {
 
   test("generic type parameter instantiation does not keep type args as runtime refs", () => {
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       import { Config } from "./db";
       import { queries } from "../../db";
       export const route = createRoute<Config>({
@@ -589,10 +685,12 @@ describe("transformForClient — TypeScript syntax", () => {
     // `TSClassImplements` was missing from the type-scope node set, so `Shape`
     // was counted as a runtime reference and its import survived DCE.
     const input = `
+      ${FURIN_CLIENT_IMPORT}
       import { getData } from "./db";
       import { Shape } from "./shapes";
       class Widget implements Shape {}
-      export default page({
+      const route = createRoute();
+      export default route.page({
         loader: async () => ({ data: getData() }),
         component: () => null,
       });

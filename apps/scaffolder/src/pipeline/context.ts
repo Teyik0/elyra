@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 
 // ── Template manifest types ────────────────────────────────────────────────
 
@@ -160,6 +160,24 @@ function findTemplatesDir(): string {
 
 export const TEMPLATES_DIR = findTemplatesDir();
 
+export function assertPathInsideDirectory(
+  rootDir: string,
+  candidatePath: string,
+  errorMessage: string
+): void {
+  const relativePath = relative(rootDir, candidatePath);
+  if (relativePath === "" || !(relativePath.startsWith("..") || isAbsolute(relativePath))) {
+    return;
+  }
+  throw new Error(errorMessage);
+}
+
 export function resolveTemplateSrc(srcRelative: string): string {
-  return resolve(TEMPLATES_DIR, srcRelative);
+  const sourcePath = resolve(TEMPLATES_DIR, srcRelative);
+  assertPathInsideDirectory(
+    TEMPLATES_DIR,
+    sourcePath,
+    `Template source "${srcRelative}" escapes the templates directory.`
+  );
+  return sourcePath;
 }
