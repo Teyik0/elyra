@@ -170,6 +170,9 @@ interface FurinDeferredRegistry {
   reject: (key: string, chunk: SerovalNode) => void;
   resolve: (key: string, chunk: SerovalNode) => void;
 }
+interface FurinRouteFrameStream {
+  stream: (initial: string) => ReadableStream<Uint8Array>;
+}
 const __deferred = (window as unknown as { __FURIN_DEFERRED__?: FurinDeferredRegistry })
   .__FURIN_DEFERRED__;
 const deferredData: Record<string, Promise<unknown>> = {};
@@ -224,7 +227,12 @@ const rootEl = document.getElementById("root") as HTMLElement;
   const frameTemplate = document.getElementById("__FURIN_ROUTE_FRAMES__") as HTMLTemplateElement | null;
   if (frameTemplate) {
     const payload = frameTemplate.content.textContent || "";
-    const parsed = await parseDeferredNdjson(new Blob([payload]).stream(), undefined);
+    const routeFrameStream = (window as unknown as { __FURIN_ROUTE_FRAME_STREAM__?: FurinRouteFrameStream })
+      .__FURIN_ROUTE_FRAME_STREAM__;
+    const parsed = await parseDeferredNdjson(
+      routeFrameStream ? routeFrameStream.stream(payload) : new Blob([payload]).stream(),
+      undefined
+    );
     loaderData = { ...parsed.syncData, ...parsed.deferredPromises };
   }
   let app;

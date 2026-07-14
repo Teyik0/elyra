@@ -1,131 +1,126 @@
-import { test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
+import type { Context } from "elysia";
 
-const TESTS_DIR_SUFFIX_RE = /\/tests(?:\/.*)?$/;
-
-const script = `
-const { mock } = await import("bun:test");
 mock.module("evlog/elysia", () => ({
-  evlog: () => (app) => app,
-  useLogger: () => ({ set() {} }),
+  evlog: () => (app: unknown) => app,
+  useLogger: () => ({
+    set() {
+      /* noop */
+    },
+  }),
 }));
 
-const { join } = await import("node:path");
-const { createElement, Suspense } = await import("react");
-const { defer } = await import("./src/client.ts");
-const { renderSSR } = await import("./src/server/render/index.ts");
-const { setProductionTemplateContent } = await import("./src/server/render/template.ts");
-const { scanPages } = await import("./src/server/router/index.ts");
-const { __setDevMode } = await import("./src/server/runtime-env.ts");
-const { Await } = await import("./src/shared/await.tsx");
+import { createElement, Suspense } from "react";
+import type { ResolvedRoute, RootLayout } from "../../../src/server/router/types.ts";
 
-function assert(condition, message) {
-  if (!condition) {
-    throw new Error(message);
-  }
+const { join } = await import("node:path");
+const { defer } = await import("../../../src/client.ts");
+const { renderSSR } = await import("../../../src/server/render/index.ts");
+const { setProductionTemplateContent } = await import("../../../src/server/render/template.ts");
+const { scanPages } = await import("../../../src/server/router/index.ts");
+const { __setDevMode } = await import("../../../src/server/runtime-env.ts");
+const { Await } = await import("../../../src/shared/await.tsx");
+
+const TEST_TEMPLATE =
+  '<!DOCTYPE html><html><head><!--ssr-head--></head><body><div id="root"><!--ssr-outlet--></div><script type="module" src="/_hydrate.js"></script></body></html>';
+
+function asResolvedRoute(route: unknown): ResolvedRoute {
+  return route as ResolvedRoute;
 }
 
-function createMockLoaderContext(overrides = {}) {
+function createMockLoaderContext(overrides: Partial<Context>): Context {
   return {
     cookie: {},
     headers: {},
     params: {},
     path: "/test",
     query: {},
-    redirect: (url) => new Response(null, { headers: { Location: url }, status: 302 }),
+    redirect: (url: string) => new Response(null, { headers: { Location: url }, status: 302 }),
     request: new Request("http://localhost/test"),
     set: { headers: {} },
     ...overrides,
-  };
+  } as unknown as Context;
 }
 
-async function getSsrFixtureRoute() {
-  const result = await scanPages(join(process.cwd(), "tests/fixtures/pages/default"));
+async function getSsrFixtureRoute(): Promise<{ root: RootLayout; ssrRoute: ResolvedRoute }> {
+  const result = await scanPages(join(import.meta.dir, "../../fixtures/pages/default"));
   const ssrRoute = result.routes.find((route) => route.pattern === "/ssr-page");
-  assert(ssrRoute, "Route /ssr-page not found");
+  if (ssrRoute === undefined) {
+    throw new Error("Route /ssr-page not found");
+  }
   return { root: result.root, ssrRoute };
 }
 
-__setDevMode(false);
+describe.serial("renderSSR deferred Suspense scenarios", () => {
+  test.serial("renderSSR streams deferred chunks in settlement order", async () => {
+    __setDevMode(false);
+    setProductionTemplateContent(TEST_TEMPLATE);
+    const fixture = await getSsrFixtureRoute();
+    const customRoute = asResolvedRoute({
+      ...fixture.ssrRoute,
+      page: {
+        ...fixture.ssrRoute.page,
+        loader: () =>
+          defer({
+            slow: new Promise((resolve) => setTimeout(() => resolve("slow-value"), 80)),
+            fast: new Promise((resolve) => setTimeout(() => resolve("fast-value"), 10)),
+          }),
+      },
+    });
 
-let fixture = await getSsrFixtureRoute();
-let customRoute = {
-  ...fixture.ssrRoute,
-  page: {
-    ...fixture.ssrRoute.page,
-    loader: () =>
-      defer({
-        slow: new Promise((resolve) => setTimeout(() => resolve("slow-value"), 80)),
-        fast: new Promise((resolve) => setTimeout(() => resolve("fast-value"), 10)),
-      }),
-  },
-};
-let response = await renderSSR(
-  customRoute,
-  createMockLoaderContext({ path: "/ssr-page" }),
-  fixture.root,
-  undefined
-);
-let html = await response.text();
-let fastIdx = html.indexOf('window.__FURIN_DEFERRED__.resolve("fast"');
-let slowIdx = html.indexOf('window.__FURIN_DEFERRED__.resolve("slow"');
-assert(fastIdx > -1, "fast deferred chunk missing");
-assert(slowIdx > -1, "slow deferred chunk missing");
-assert(fastIdx < slowIdx, "deferred chunks must stream in settlement order");
-
-setProductionTemplateContent(
-  '<!DOCTYPE html><html><head><!--ssr-head--></head><body><div id="root"><!--ssr-outlet--></div><script type="module" src="/_hydrate.js"></script></body></html>'
-);
-fixture = await getSsrFixtureRoute();
-customRoute = {
-  ...fixture.ssrRoute,
-  page: {
-    ...fixture.ssrRoute.page,
-    component: (props) => {
-      const slow = props.slow;
-      return createElement(
-        Suspense,
-        { fallback: createElement("span", null, "loading") },
-        createElement(Await, {
-          children: (value) => createElement("span", null, String(value)),
-          resolve: slow,
-        })
-      );
-    },
-    loader: () =>
-      defer({
-        slow: new Promise((resolve) => setTimeout(() => resolve("done"), 50)),
-      }),
-  },
-};
-response = await renderSSR(
-  customRoute,
-  createMockLoaderContext({ path: "/ssr-page" }),
-  fixture.root,
-  undefined
-);
-html = await response.text();
-assert(html.includes("done"), "resolved Suspense content missing");
-assert(html.includes("window.__FURIN_DEFERRED__.resolve"), "deferred resolve script missing");
-assert(
-  !html.includes("Switched to client rendering because the server rendering aborted"),
-  "React abort message leaked into SSR HTML"
-);
-`;
-
-test("renderSSR deferred Suspense scenarios", () => {
-  const proc = Bun.spawnSync({
-    cmd: ["bun", "--preload", "./tests/setup/global.ts", "-e", script],
-    cwd: import.meta.dir.replace(TESTS_DIR_SUFFIX_RE, ""),
-    stderr: "pipe",
-    stdout: "pipe",
-  });
-  if (proc.exitCode !== 0) {
-    throw new Error(
-      [
-        `renderSSR deferred Suspense subprocess exited with ${proc.exitCode}`,
-        new TextDecoder().decode(proc.stdout),
-        new TextDecoder().decode(proc.stderr),
-      ].join("\n")
+    const response = await renderSSR(
+      customRoute,
+      createMockLoaderContext({ path: "/ssr-page" }),
+      fixture.root,
+      undefined
     );
-  }
+    const html = await response.text();
+    const firstPushIdx = html.indexOf("window.__FURIN_ROUTE_FRAME_STREAM__.push(");
+    const fastIdx = html.indexOf("fast", firstPushIdx);
+    const slowIdx = html.indexOf("slow", firstPushIdx);
+
+    expect(fastIdx).toBeGreaterThan(-1);
+    expect(slowIdx).toBeGreaterThan(-1);
+    expect(fastIdx).toBeLessThan(slowIdx);
+  });
+
+  test.serial("renderSSR resolves deferred Suspense content without aborting SSR", async () => {
+    __setDevMode(false);
+    setProductionTemplateContent(TEST_TEMPLATE);
+    const fixture = await getSsrFixtureRoute();
+    const customRoute = asResolvedRoute({
+      ...fixture.ssrRoute,
+      page: {
+        ...fixture.ssrRoute.page,
+        component: (props: { [key: string]: unknown }) => {
+          const slow = props.slow as Promise<unknown>;
+          return createElement(
+            Suspense,
+            { fallback: createElement("span", null, "loading") },
+            createElement(Await<unknown>, {
+              // biome-ignore lint/correctness/noChildrenProp: render-prop pattern — children is a function, not a ReactNode
+              children: (value: unknown) => createElement("span", null, String(value)),
+              resolve: slow,
+            })
+          );
+        },
+        loader: () =>
+          defer({
+            slow: new Promise((resolve) => setTimeout(() => resolve("done"), 50)),
+          }),
+      },
+    });
+
+    const response = await renderSSR(
+      customRoute,
+      createMockLoaderContext({ path: "/ssr-page" }),
+      fixture.root,
+      undefined
+    );
+    const html = await response.text();
+
+    expect(html).toContain("done");
+    expect(html).toContain("window.__FURIN_ROUTE_FRAME_STREAM__.push");
+    expect(html).not.toContain("Switched to client rendering because the server rendering aborted");
+  });
 });

@@ -149,6 +149,55 @@ export function buildRouteFrameTemplate(payload: string): string {
   return `<template id="__FURIN_ROUTE_FRAMES__">${escaped}</template>`;
 }
 
+export function buildRouteFrameStreamScript(): string {
+  return `<script id="__FURIN_ROUTE_FRAME_STREAM__">
+window.__FURIN_ROUTE_FRAME_STREAM__ = {
+  _chunks: [],
+  _closed: false,
+  _controller: undefined,
+  push(chunk) {
+    if (this._controller) {
+      this._controller.enqueue(new TextEncoder().encode(chunk));
+    } else {
+      this._chunks.push(chunk);
+    }
+  },
+  close() {
+    this._closed = true;
+    if (this._controller) {
+      this._controller.close();
+    }
+  },
+  stream(initial) {
+    var self = this;
+    return new ReadableStream({
+      start(controller) {
+        self._controller = controller;
+        if (initial) {
+          controller.enqueue(new TextEncoder().encode(initial));
+        }
+        for (var i = 0; i < self._chunks.length; i++) {
+          controller.enqueue(new TextEncoder().encode(self._chunks[i]));
+        }
+        self._chunks = [];
+        if (self._closed) {
+          controller.close();
+        }
+      }
+    });
+  }
+};
+</script>`;
+}
+
+export function buildRouteFramePushScript(payload: string): string {
+  return `<script>window.__FURIN_ROUTE_FRAME_STREAM__.push(${safeJson(payload)})</script>`;
+}
+
+export function buildRouteFrameCloseScript(): string {
+  return "<script>window.__FURIN_ROUTE_FRAME_STREAM__.close()</script>";
+}
+
 export function buildSyncRuntimeScript(): string {
   const syncStreamPath = getSyncStreamPath();
   if (!syncStreamPath) {

@@ -12,13 +12,8 @@ import {
   searchSnapshotFromRouterContext,
 } from "../../client/router/search-store.ts";
 import type { RouterContextValue } from "../../client/router/types.ts";
-import { isRscSource } from "../../rsc/shared.tsx";
 import { computeErrorDigest } from "../../shared/digest.ts";
-import {
-  containsRscSource,
-  serializeRouteFrame,
-  serializeRouteFrames,
-} from "../../shared/route-frame.ts";
+import { containsRscSource, serializeRouteFrames } from "../../shared/route-frame.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { runInSyntheticRenderScope, useLogger } from "../context-logger.ts";
@@ -30,6 +25,9 @@ import {
   assembleHTML,
   buildDeferredResolution,
   buildDeferredScript,
+  buildRouteFrameCloseScript,
+  buildRouteFramePushScript,
+  buildRouteFrameStreamScript,
   buildRouteFrameTemplate,
   buildSyncRuntimeScript,
   resolvePath,
@@ -38,6 +36,7 @@ import {
 } from "./assemble.ts";
 import { buildElement, buildErrorElement, buildNotFoundElement } from "./element.tsx";
 import { type LoaderResult, runLoaders, serializeDeferredRejection } from "./loaders.ts";
+import { serializeDeferredRouteFrame } from "./route-frame-transport.ts";
 import { buildHeadInjection, generateIndexHtml, safeJson } from "./shell.ts";
 import { getDevTemplate, getProductionTemplate } from "./template.ts";
 
@@ -411,6 +410,77 @@ export function renderForPath(
   );
 }
 
+interface SsrTransportScripts {
+  deferredSetupScript: string;
+  runtimeScripts: string;
+  usesRouteFrames: boolean;
+}
+
+function buildSsrTransportScripts(
+  dataPayload: Record<string, unknown>,
+  deferredKeys: string[],
+  hasDeferred: boolean,
+  shellErrored: boolean
+): SsrTransportScripts {
+  const usesRouteFrames = !shellErrored && (containsRscSource(dataPayload) || hasDeferred);
+  const deferredSetupScript =
+    hasDeferred && !usesRouteFrames ? buildDeferredScript(deferredKeys) : "";
+  const dataScript = usesRouteFrames
+    ? buildRouteFrameTemplate(
+        serializeRouteFrames(dataPayload, hasDeferred ? deferredKeys : undefined)
+      )
+    : `<script id="__FURIN_DATA__" type="application/json">${safeJson(dataPayload)}</script>`;
+  const routeFrameStreamScript =
+    hasDeferred && usesRouteFrames ? buildRouteFrameStreamScript() : "";
+
+  return {
+    deferredSetupScript,
+    runtimeScripts: `${buildSyncRuntimeScript()}${routeFrameStreamScript}${dataScript}`,
+    usesRouteFrames,
+  };
+}
+
+async function writeDeferredSsrChunk(
+  writer: WritableStreamDefaultWriter<Uint8Array>,
+  enc: TextEncoder,
+  key: string,
+  promise: Promise<unknown>,
+  index: number,
+  usesRouteFrames: boolean
+): Promise<void> {
+  if (usesRouteFrames) {
+    const frames = await serializeDeferredRouteFrame(key, promise, `defer-${index}`);
+    await writer.write(enc.encode(buildRouteFramePushScript(frames)));
+    return;
+  }
+
+  try {
+    const resolvedValue = await promise;
+    const chunk = toCrossJSON(resolvedValue);
+    await writer.write(enc.encode(buildDeferredResolution(key, chunk, "resolve")));
+  } catch (err) {
+    const normalized = await serializeDeferredRejection(err);
+    const chunk = toCrossJSON(normalized);
+    await writer.write(enc.encode(buildDeferredResolution(key, chunk, "reject")));
+  }
+}
+
+async function writeDeferredSsrChunks(
+  writer: WritableStreamDefaultWriter<Uint8Array>,
+  enc: TextEncoder,
+  deferredPromises: Record<string, Promise<unknown>>,
+  usesRouteFrames: boolean
+): Promise<void> {
+  await Promise.all(
+    Object.entries(deferredPromises).map(([key, promise], index) =>
+      writeDeferredSsrChunk(writer, enc, key, promise, index, usesRouteFrames)
+    )
+  );
+  if (usesRouteFrames) {
+    await writer.write(enc.encode(buildRouteFrameCloseScript()));
+  }
+}
+
 /**
  * Serialises a loader's `syncData` + `deferredPromises` into the same one-line
  * NDJSON shape the live `/_furin/data` endpoint emits.
@@ -423,27 +493,15 @@ export async function serializeLoaderDataNdjson(
     ...syncData,
     ...(deferredPromises ?? {}),
   };
-  if (containsRscSource(payload)) {
+  if (containsRscSource(payload) || deferredPromises !== undefined) {
     const deferredEntries = Object.entries(deferredPromises ?? {});
     let ndjson = serializeRouteFrames(
       syncData,
       deferredEntries.length > 0 ? deferredEntries.map(([key]) => key) : undefined
     );
     await Promise.all(
-      deferredEntries.map(async ([key, promise]) => {
-        try {
-          ndjson += serializeRouteFrame({
-            key,
-            type: "defer-resolve",
-            value: toCrossJSON(await promise),
-          });
-        } catch (error) {
-          ndjson += serializeRouteFrame({
-            key,
-            type: "defer-reject",
-            value: toCrossJSON(await serializeDeferredRejection(error)),
-          });
-        }
+      deferredEntries.map(async ([key, promise], index) => {
+        ndjson += await serializeDeferredRouteFrame(key, promise, `defer-${index}`);
       })
     );
     return ndjson;
@@ -557,12 +615,12 @@ export async function renderSSR(
   const hasDeferred = !shellErrored && deferredPromises !== undefined;
 
   const deferredKeys = hasDeferred ? Object.keys(deferredPromises) : [];
-  const deferredSetupScript = hasDeferred ? buildDeferredScript(deferredKeys) : "";
-
-  const dataScript = Object.values(dataPayload).some((value) => isRscSource(value))
-    ? buildRouteFrameTemplate(serializeRouteFrames(dataPayload, undefined))
-    : `<script id="__FURIN_DATA__" type="application/json">${safeJson(dataPayload)}</script>`;
-  const runtimeScripts = `${buildSyncRuntimeScript()}${dataScript}`;
+  const { deferredSetupScript, runtimeScripts, usesRouteFrames } = buildSsrTransportScripts(
+    dataPayload,
+    deferredKeys,
+    hasDeferred,
+    shellErrored
+  );
 
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const writer = writable.getWriter();
@@ -587,19 +645,7 @@ export async function renderSSR(
     await writer.write(enc.encode(runtimeScripts + earlyBodyPost));
 
     if (hasDeferred) {
-      await Promise.all(
-        Object.entries(deferredPromises).map(async ([key, promise]) => {
-          try {
-            const resolvedValue = await promise;
-            const chunk = toCrossJSON(resolvedValue);
-            await writer.write(enc.encode(buildDeferredResolution(key, chunk, "resolve")));
-          } catch (err) {
-            const normalized = await serializeDeferredRejection(err);
-            const chunk = toCrossJSON(normalized);
-            await writer.write(enc.encode(buildDeferredResolution(key, chunk, "reject")));
-          }
-        })
-      );
+      await writeDeferredSsrChunks(writer, enc, deferredPromises, usesRouteFrames);
     }
 
     await writer.write(enc.encode(finalBodyPost));

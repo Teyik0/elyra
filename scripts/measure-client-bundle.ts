@@ -131,3 +131,5 @@ for (const asset of assets) {
 console.log(
   `total  raw=${formatKilobytes(totals.rawBytes)}  gzip=${formatKilobytes(totals.gzipBytes)}`
 );
+
+export {};

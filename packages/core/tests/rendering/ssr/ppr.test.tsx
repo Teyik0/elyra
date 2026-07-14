@@ -269,7 +269,8 @@ describe("partial prerendering", () => {
       .then((response) => response.text());
 
     expect(html).toContain("Shoes");
-    expect(html).toContain("__FURIN_DEFERRED__");
-    expect(html).toContain('reject("requestData"');
+    expect(html).toContain("__FURIN_ROUTE_FRAME_STREAM__");
+    expect(html).toContain('\\"key\\":\\"requestData\\"');
+    expect(html).toContain('\\"type\\":\\"defer-reject\\"');
   });
 });

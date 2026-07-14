@@ -107,6 +107,11 @@ const staticSpecificRoute = createRoute({
   parent: rootRoute,
 });
 
+const accountRoute = createRoute({
+  mode: "ssr",
+  parent: rootRoute,
+});
+
 const dynamicDeferRoute = createRoute({
   params: t.Object({ slug: t.String() }),
   parent: rootRoute,
@@ -214,6 +219,21 @@ const BASE_ROUTES: ResolvedRoute[] = [
   {
     mode: "ssr",
     page: runtimePage(
+      accountRoute.page({
+        component: () => null,
+        loader: ({ redirect }) => {
+          throw redirect("?tab=billing");
+        },
+      })
+    ),
+    path: "/account",
+    pattern: "/account",
+    routeChain: [runtimeRoute(rootRoute), runtimeRoute(accountRoute)],
+    segmentBoundaries: [],
+  },
+  {
+    mode: "ssr",
+    page: runtimePage(
       dynamicDeferRoute.page({
         component: () => null,
         loader: ({ params }) =>
@@ -283,6 +303,21 @@ describe("GET /_furin/data", () => {
     );
     expect(syncData.__furinRedirect).toBeUndefined();
     expect(syncData.query).toEqual({ city: "Paris" });
+  });
+
+  test("resolves search-only redirects against the logical route URL", async () => {
+    const { app } = createDataTestApp();
+
+    const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Faccount"));
+
+    expect(res.status).toBe(200);
+
+    const { syncData } = await parseDeferredNdjson(
+      res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      undefined
+    );
+
+    expect(syncData.__furinRedirect).toBe("/account?tab=billing");
   });
 
   test("passes schema-coerced query values to loaders during SPA navigation", async () => {
@@ -378,7 +413,7 @@ describe("GET /_furin/data", () => {
     expect(Object.keys(deferredPromises)).toHaveLength(0);
   });
 
-  test("returns NDJSON with Promise for a route using defer()", async () => {
+  test("returns route frames with Promise for a route using defer()", async () => {
     const { app, routes } = createDataTestApp();
     const deferRoute = routes.find((r) => r.pattern === "/defer-page");
     if (!deferRoute) {
@@ -387,7 +422,7 @@ describe("GET /_furin/data", () => {
     const res = await app.handle(new Request("http://localhost/_furin/data?path=%2Fdefer-page"));
 
     expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("application/x-ndjson");
+    expect(res.headers.get("content-type")).toContain("application/x-furin-route");
 
     const { syncData, deferredPromises } = await parseDeferredNdjson(
       res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
@@ -602,7 +637,7 @@ describe("GET /_furin/data", () => {
     expect(await deferredPromises.asyncWidget).toEqual(["item-a", "item-b"]);
   });
 
-  test("layout defer + page defer → both deferred Promises arrive as separate NDJSON chunks", async () => {
+  test("layout defer + page defer → both deferred Promises arrive as separate route frames", async () => {
     const { app, routes } = createDataTestApp();
     const route = routes.find((r) => r.pattern === "/with-loader");
     if (!route?.page) {
@@ -634,9 +669,11 @@ describe("GET /_furin/data", () => {
     expect(res.status).toBe(200);
     const text = await new Response(res.body).text();
     const lines = text.split("\n").filter((l) => l.trim().length > 0);
-    // Line 0 is the initial sync payload. Subsequent lines are resolution chunks
+    // Line 0 is the initial sync payload. Subsequent lines are resolution frames
     // — one per deferred field, regardless of which loader produced it.
-    const resolutionKeys = lines.slice(1).map((line) => (JSON.parse(line) as { key: string }).key);
+    const resolutionKeys = lines
+      .slice(1)
+      .map((line) => (JSON.parse(line) as { frame: { key: string } }).frame.key);
     expect(resolutionKeys.sort()).toEqual(["asyncStats", "asyncWidget"]);
   });
 
@@ -679,8 +716,10 @@ describe("GET /_furin/data", () => {
     resolveSlow("slow-value");
     const text = await textPromise;
     const lines = text.split("\n").filter((l) => l.trim().length > 0);
-    // Line 0 is the initial sync payload, lines 1+ are resolution chunks.
-    const resolutionKeys = lines.slice(1).map((line) => (JSON.parse(line) as { key: string }).key);
+    // Line 0 is the initial sync payload, lines 1+ are resolution frames.
+    const resolutionKeys = lines
+      .slice(1)
+      .map((line) => (JSON.parse(line) as { frame: { key: string } }).frame.key);
 
     expect(resolutionKeys).toEqual(["fast", "slow"]);
   });

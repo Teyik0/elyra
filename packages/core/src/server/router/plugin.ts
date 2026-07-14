@@ -1,25 +1,16 @@
 import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import type { AnySchema } from "elysia/types";
-import { toCrossJSON, toCrossJSONAsync } from "seroval";
+import { toCrossJSONAsync } from "seroval";
 import { computeErrorDigest } from "../../shared/digest.ts";
-import {
-  containsRscSource,
-  serializeRouteFrame,
-  serializeRouteFrames,
-  serializeRouteFrameValue,
-} from "../../shared/route-frame.ts";
+import { serializeRouteFrames } from "../../shared/route-frame.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { useLogger } from "../context-logger.ts";
 import { injectSyncRuntimeScript, resolvePath } from "../render/assemble.ts";
 import { handleISR } from "../render/isr.ts";
-import {
-  hasRequestLoader,
-  type LoaderResult,
-  runLoaders,
-  serializeDeferredRejection,
-} from "../render/loaders.ts";
+import { hasRequestLoader, type LoaderResult, runLoaders } from "../render/loaders.ts";
 import { renderPprRoute } from "../render/ppr-route.ts";
+import { createDeferredRouteFrameStream } from "../render/route-frame-transport.ts";
 import { extractTitle } from "../render/shell.ts";
 import { prerenderSSG } from "../render/ssg.ts";
 import { renderSSR } from "../render/ssr.ts";
@@ -79,16 +70,15 @@ async function createLoaderDataResponse(
 
   const syncDataWithTitle = withResolvedTitle(route, result.syncData);
   if (result.deferredPromises !== undefined) {
-    const hasRsc = containsRscSource(syncDataWithTitle);
-    const body = hasRsc
-      ? createRscDeferredFrameStream(syncDataWithTitle, result.deferredPromises)
-      : createDeferredNdjsonStream(syncDataWithTitle, result.deferredPromises);
-    return new Response(body, {
-      headers: {
-        ...result.headers,
-        "content-type": hasRsc ? "application/x-furin-route" : "application/x-ndjson",
-      },
-    });
+    return new Response(
+      createDeferredRouteFrameStream(syncDataWithTitle, result.deferredPromises),
+      {
+        headers: {
+          ...result.headers,
+          "content-type": "application/x-furin-route",
+        },
+      }
+    );
   }
   return new Response(serializeRouteFrames(syncDataWithTitle, undefined), {
     headers: {
@@ -196,13 +186,10 @@ export function createRoutePlugin(
 /**
  * Elysia plugin that handles `GET /_furin/data?path=<logicalHref>`.
  *
- * Returns an NDJSON stream (one-line, v1) produced by `toCrossJSONAsync`:
- *   Line 0 — CrossJSON serialisation of `{ ...syncData, ...deferredPromises }`
- *
- * The `deferredPromises` values are awaited by `toCrossJSONAsync` before
- * serialising, so the client receives all data resolved in one round-trip.
- * SPA navigation calls this endpoint via `parseDeferredNdjson` in
- * `router-provider.tsx`.
+ * Returns route-frame loader data for successful routes. Deferred routes stream
+ * the initial sync frame first, then append one frame batch per settled Promise.
+ * SPA navigation calls this endpoint via `parseDeferredNdjson`, which supports
+ * both route frames and legacy NDJSON sentinels.
  *
  * Special fields emitted alongside data:
  *   - `__furinStatus: 404` — when the loader called `notFound()`
@@ -309,7 +296,7 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
         autoInvalidateRegistry.registerLoaderTags(pathname, matched.route.tags);
       }
 
-      return createLoaderDataResponse(result, matched.route, ctx.request.url);
+      return createLoaderDataResponse(result, matched.route, syntheticRequest.url);
     },
     {
       query: t.Object({ path: t.Optional(t.String()) }),
@@ -317,50 +304,6 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
   );
 
   return plugin;
-}
-
-function createRscDeferredFrameStream(
-  syncData: Record<string, unknown>,
-  deferredPromises: Record<string, Promise<unknown>>
-): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      controller.enqueue(
-        encoder.encode(serializeRouteFrames(syncData, Object.keys(deferredPromises)))
-      );
-      await Promise.all(
-        Object.entries(deferredPromises).map(async ([key, promise], index) => {
-          try {
-            const { rscFrames, value } = serializeRouteFrameValue(await promise, `defer-${index}`);
-            controller.enqueue(
-              encoder.encode(
-                serializeRouteFrame({
-                  key,
-                  type: "defer-resolve",
-                  value,
-                })
-              )
-            );
-            if (rscFrames) {
-              controller.enqueue(encoder.encode(rscFrames));
-            }
-          } catch (error) {
-            controller.enqueue(
-              encoder.encode(
-                serializeRouteFrame({
-                  key,
-                  type: "defer-reject",
-                  value: toCrossJSON(await serializeDeferredRejection(error)),
-                })
-              )
-            );
-          }
-        })
-      );
-      controller.close();
-    },
-  });
 }
 
 /**
@@ -392,40 +335,4 @@ function withResolvedTitle(
     return syncData;
   }
   return { ...syncData, __furinTitle: title };
-}
-
-function createDeferredNdjsonStream(
-  syncData: Record<string, unknown>,
-  deferredPromises: Record<string, Promise<unknown>>
-): ReadableStream<Uint8Array> {
-  const enc = new TextEncoder();
-  const entries = Object.entries(deferredPromises);
-
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const initial = toCrossJSON({
-        ...syncData,
-        __furinDeferredKeys: entries.map(([key]) => key),
-      });
-      controller.enqueue(enc.encode(`${JSON.stringify(initial)}\n`));
-
-      await Promise.all(
-        entries.map(async ([key, promise]) => {
-          try {
-            const value = await promise;
-            controller.enqueue(
-              enc.encode(
-                `${JSON.stringify({ action: "resolve", key, value: toCrossJSON(value) })}\n`
-              )
-            );
-          } catch (err) {
-            const normalized = await serializeDeferredRejection(err);
-            const value = toCrossJSON(normalized);
-            controller.enqueue(enc.encode(`${JSON.stringify({ action: "reject", key, value })}\n`));
-          }
-        })
-      );
-      controller.close();
-    },
-  });
 }
