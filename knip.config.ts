@@ -47,6 +47,10 @@ const config: KnipConfig = {
       ignoreDependencies: ["expect-type"],
       project: ["src/**/*.{ts,tsx}"],
     },
+    "packages/sync-postgres": {
+      entry: ["src/migrate.ts"],
+      project: ["src/**/*.ts"],
+    },
   },
 };
 

@@ -46,7 +46,7 @@ Elysia instance order matters. Mount Furin first so it can install the page runt
 
 ## Sync Mutations
 
-Use `furinSync()` in the same Elysia plugin that declares mutation routes. Every non-GET/HEAD/OPTIONS route is synchronized by default: Furin requires an idempotency key, stores successful responses for replay, and publishes any resulting cache invalidations.
+Use `furinSync()` in the same Elysia plugin that declares mutation routes. Every non-GET/HEAD/OPTIONS route is synchronized by default: Furin requires an idempotency key, stores successful responses for replay, and publishes any resulting cache invalidations. Calling `furinSync()` without options uses process-local memory in development only.
 
 ```ts
 import { furinSync } from "@teyik0/furin"
@@ -109,7 +109,67 @@ Repeating the same request with the same key returns the original response witho
 
 The sync stream endpoint is internal and opinionated: `/_furin/sync`. SSE only announces the latest cursor; the client recovers ordered invalidations through `/_furin/sync/changes`. Enabling `sync: true` in `furin()` injects this runtime automatically, so you do not need a React provider or application wrapper.
 
-The built-in implementation is process-local and intentionally non-durable. Responses and change history are lost when the process restarts, and replicas do not share state. Offline persistence and a distributed adapter are not included yet.
+### Production adapters
+
+Production requires an explicit distributed adapter. Install only the backend you use; the root package neither depends on nor re-exports either adapter:
+
+```sh
+bun add @teyik0/furin-sync-postgres
+# or
+bun add @teyik0/furin-sync-redis
+```
+
+PostgreSQL is the recommended source of truth for most multi-replica applications. Pass the same runtime to the mutation plugin and the Furin page plugin:
+
+```ts
+import { SQL } from "bun"
+import { Elysia } from "elysia"
+import { furin, furinSync } from "@teyik0/furin"
+import { postgresSyncAdapter } from "@teyik0/furin-sync-postgres"
+
+const sql = new SQL(databaseUrl) // read from server-only configuration
+const sync = {
+  adapter: postgresSyncAdapter({ namespace: "task-manager", sql }),
+}
+
+new Elysia()
+  .use(furinSync(sync))
+  .use(await furin({ pagesDir: "./src/pages", sync }))
+  .post("/api/cards", updateCard, {
+    sync: { invalidate: { tags: ["cards"] } },
+  })
+  .listen(3000)
+```
+
+Without a notifier, Furin polls `currentCursor()` as a correctness-preserving wake-up. Add the independent Redis notifier when lower cross-replica wake-up latency matters:
+
+```ts
+import { RedisClient, SQL } from "bun"
+import { postgresSyncAdapter } from "@teyik0/furin-sync-postgres"
+import { redisSyncNotifier } from "@teyik0/furin-sync-redis"
+
+const sync = {
+  adapter: postgresSyncAdapter({
+    namespace: "task-manager",
+    sql: new SQL(databaseUrl),
+  }),
+  notifier: redisSyncNotifier({
+    client: new RedisClient(redisUrl),
+    namespace: "task-manager",
+  }),
+}
+```
+
+| Deployment | Choice |
+|---|---|
+| Local development or one disposable process | built-in memory |
+| Multi-replica with an application PostgreSQL database | PostgreSQL adapter (recommended) |
+| Redis is already the durable sync source | Redis adapter |
+| PostgreSQL durability with faster wake-ups | PostgreSQL adapter + Redis notifier |
+
+The notifier only sends a small cursor and is best-effort. The durable adapter owns response replay and ordered catch-up, so a Redis outage or missed SSE event delays refresh but does not lose changes. Completion atomically stores the replay response and its invalidations. This is not a claim of exactly-once execution for arbitrary domain writes: Furin cannot put an external API call or an application database transaction inside the adapter transaction.
+
+Both optional packages declare `sideEffects: false` and use type-only imports from Furin. PostgreSQL contains no Redis implementation, Redis contains no PostgreSQL migration, and neither backend is present in the browser bundle. IndexedDB outbox/offline replay is tracked separately and is not part of this server contract.
 
 For client-side mutations with a body, `useSync()` is the optional ergonomic layer. It keeps the Eden Treaty route as the source of truth, adds the mandatory `Idempotency-Key`, and gives you one place to attach optimistic updates:
 
@@ -122,6 +182,8 @@ const updateCard = useSync(api.api.cards({ cardId }).patch, {
 
 await updateCard({ title: "Renamed" })
 ```
+
+`optimistic` runs synchronously before the mutation starts. The network confirms or rolls back the update in the background; it does not gate the initial UI response.
 
 ## Auto-Invalidate Only
 

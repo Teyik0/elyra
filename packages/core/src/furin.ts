@@ -31,7 +31,11 @@ import { loadProdRoutes } from "./server/router/discovery.ts";
 import { createDataEndpoint, createRoutePlugin } from "./server/router/plugin.ts";
 import { createSearchRouteMetadata } from "./server/router/schemas.ts";
 import { IS_DEV } from "./server/runtime-env.ts";
-import { type FurinSyncOption, resolveSyncStreamPath } from "./server/sync/config.ts";
+import {
+  type FurinSyncOption,
+  resolveSyncStreamPath,
+  syncRuntimeOptions,
+} from "./server/sync/config.ts";
 import { createSyncStreamPlugin } from "./server/sync/stream.ts";
 
 // biome-ignore lint/suspicious/noEmptyInterface: intentionally augmentable via furin-env.d.ts
@@ -360,6 +364,7 @@ export async function furin({
 }: FurinOptions = {}) {
   const prefix = normalizePrefix(rawPrefix);
   const syncStreamPath = resolveSyncStreamPath(sync);
+  const syncRuntime = syncRuntimeOptions(sync);
   initLogger({ env: { service: "furin" } });
   const loggerPlugin = createLoggerPlugin(prefix, syncStreamPath, logger, clientLogging === true);
 
@@ -453,11 +458,7 @@ export async function furin({
           : () => new Response(null, { status: 404 })
       )
       .use(createDevInspectorPlugin())
-      .use(
-        syncStreamPath
-          ? createSyncStreamPlugin(syncStreamPath, `${prefix}${syncStreamPath}`)
-          : new Elysia()
-      )
+      .use(syncStreamPath ? createSyncStreamPlugin(syncStreamPath, syncRuntime) : new Elysia())
       .use(createDataEndpoint(routes))
       .use((app) =>
         routes.reduce(
@@ -564,11 +565,7 @@ export async function furin({
         return app;
       })()
     )
-    .use(
-      syncStreamPath
-        ? createSyncStreamPlugin(syncStreamPath, `${prefix}${syncStreamPath}`)
-        : new Elysia()
-    )
+    .use(syncStreamPath ? createSyncStreamPlugin(syncStreamPath, syncRuntime) : new Elysia())
     .use(createDataEndpoint(routes))
     .use((app) =>
       routes.reduce(
@@ -626,7 +623,14 @@ export { furinInvalidate, revalidateTag } from "./server/auto-invalidate/index.t
 export { revalidatePath, setCachePurger } from "./server/cache/invalidation.ts";
 export { buildElement, buildErrorElement, renderRootNotFound } from "./server/render/index.ts";
 export type { ResolvedRoute, SegmentBoundary } from "./server/router/index.ts";
-export { furinSync, type SyncInput, type SyncRouteOption } from "./server/sync/index.ts";
+export {
+  furinSync,
+  type SyncAdapter,
+  type SyncInput,
+  type SyncNotifier,
+  type SyncRouteOption,
+  type SyncRuntimeOptions,
+} from "./server/sync/index.ts";
 export { Await, useAsyncError, useAsyncValue } from "./shared/await.tsx";
 export type { ErrorComponent, ErrorProps } from "./shared/error.ts";
 export type {

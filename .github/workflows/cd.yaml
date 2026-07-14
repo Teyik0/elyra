@@ -16,6 +16,30 @@ jobs:
   publish-npm:
     name: Workflow - CD
     runs-on: ubuntu-latest
+    env:
+      FURIN_SYNC_POSTGRES_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+      FURIN_SYNC_REDIS_URL: redis://127.0.0.1:6379
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: "Checkout"
@@ -54,13 +78,24 @@ jobs:
         run: bunx react-doctor --diff false
 
       - name: Setup auth for Bun
-        working-directory: packages/core
         run: |
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
           echo "registry=https://registry.npmjs.org/" >> .npmrc
 
-      - name: Publish
+      - name: Publish core
         working-directory: packages/core
+        run: bun publish --access public
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish PostgreSQL adapter
+        working-directory: packages/sync-postgres
+        run: bun publish --access public
+        env:
+          NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish Redis adapter
+        working-directory: packages/sync-redis
         run: bun publish --access public
         env:
           NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}

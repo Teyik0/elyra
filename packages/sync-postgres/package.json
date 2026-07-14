@@ -1,0 +1,42 @@
+{
+  "name": "@teyik0/furin-sync-postgres",
+  "version": "0.3.0-alpha.1",
+  "description": "PostgreSQL sync adapter for Furin",
+  "license": "MIT",
+  "sideEffects": false,
+  "type": "module",
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "README.md"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "furin-sync-postgres-migrate": "./dist/migrate.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./migration.sql": "./migrations/0001_sync.sql"
+  },
+  "scripts": {
+    "build": "bun build src/index.ts src/migrate.ts --target bun --packages external --outdir dist && tsc --project tsconfig.build.json",
+    "fix": "ultracite fix",
+    "test": "bun test --parallel --isolate --bail",
+    "test:dev": "bun test --changed --parallel --isolate --bail",
+    "tscheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@teyik0/furin": "workspace:*"
+  },
+  "devDependencies": {
+    "@teyik0/furin": "workspace:*"
+  }
+}

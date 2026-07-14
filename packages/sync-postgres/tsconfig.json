@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["bun"],
+    "paths": {
+      "@teyik0/furin/sync": ["../core/src/server/sync/adapter.ts"]
+    }
+  },
+  "include": ["src/**/*", "tests/**/*"]
+}

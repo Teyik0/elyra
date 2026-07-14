@@ -1,95 +1,133 @@
 import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { MemorySyncAdapter } from "../../../src/server/sync/memory-adapter.ts";
+import { testSyncAdapterConformance } from "../../helpers/sync-adapter-conformance";
 
-interface MemorySyncAdapterStoreView {
-  readonly mutations: ReadonlyMap<string, { readonly createdAt: number }>;
-}
-
-function mutationCount(adapter: MemorySyncAdapter): number {
-  return (adapter as unknown as MemorySyncAdapterStoreView).mutations.size;
-}
+const response = { body: new Uint8Array(), headers: [], status: 204 } as const;
 
 afterEach(() => {
   setSystemTime();
 });
 
 describe("MemorySyncAdapter", () => {
-  test("expires abandoned in-progress mutations", () => {
-    const now = 1000;
-    setSystemTime(new Date(now));
+  testSyncAdapterConformance(() => new MemorySyncAdapter());
+
+  test("replays a response only for the same fingerprint", async () => {
     const adapter = new MemorySyncAdapter();
-
-    expect(
-      adapter.beginMutation({ fingerprint: "body", key: "mutation", principal: "user" }).kind
-    ).toBe("execute");
-    setSystemTime(new Date(now + 24 * 60 * 60 * 1000 + 1));
-
-    expect(
-      adapter.beginMutation({ fingerprint: "body", key: "mutation", principal: "user" }).kind
-    ).toBe("execute");
-  });
-
-  test("expires old completed mutations during ordinary mutation traffic", () => {
-    const now = 1000;
-    setSystemTime(new Date(now));
-    const adapter = new MemorySyncAdapter();
-    const first = adapter.beginMutation({
+    const first = await adapter.beginMutation({
       fingerprint: "body",
-      key: "mutation-0",
+      key: "mutation",
       principal: "user",
     });
-
     expect(first.kind).toBe("execute");
     if (first.kind !== "execute") {
-      throw new Error("expected first mutation to execute");
-    }
-    adapter.commitMutation({
-      mutationId: first.mutationId,
-      response: { body: new Uint8Array(), headers: [], status: 204 },
-    });
-
-    setSystemTime(new Date(now + 24 * 60 * 60 * 1000 + 1));
-    expect(
-      adapter.beginMutation({ fingerprint: "body", key: "mutation-1", principal: "user" }).kind
-    ).toBe("execute");
-
-    expect(mutationCount(adapter)).toBe(1);
-  });
-
-  test("rejects new mutations when only active entries fill the capacity", () => {
-    const adapter = new MemorySyncAdapter();
-    for (let index = 0; index < 10_000; index += 1) {
-      adapter.beginMutation({ fingerprint: "body", key: `mutation-${index}`, principal: "user" });
+      throw new Error("expected mutation lease");
     }
 
     expect(
-      adapter.beginMutation({ fingerprint: "body", key: "overflow", principal: "user" }).kind
-    ).toBe("unavailable");
+      await adapter.completeMutation({ invalidations: [], lease: first.lease, response })
+    ).toEqual({ cursor: undefined, kind: "committed" });
+    expect(
+      await adapter.beginMutation({ fingerprint: "body", key: "mutation", principal: "user" })
+    ).toEqual({ kind: "replay", response });
+    expect(
+      await adapter.beginMutation({ fingerprint: "other", key: "mutation", principal: "user" })
+    ).toEqual({ kind: "conflict", reason: "payload-mismatch" });
   });
 
-  test("evicts completed mutations when capacity is full", () => {
+  test("allows lease takeover and rejects the previous owner", async () => {
+    setSystemTime(new Date(1000));
     const adapter = new MemorySyncAdapter();
-    const first = adapter.beginMutation({
+    const first = await adapter.beginMutation({
       fingerprint: "body",
-      key: "mutation-0",
+      key: "mutation",
       principal: "user",
     });
-
     expect(first.kind).toBe("execute");
     if (first.kind !== "execute") {
-      throw new Error("expected first mutation to execute");
+      throw new Error("expected first mutation lease");
     }
-    adapter.commitMutation({
-      mutationId: first.mutationId,
-      response: { body: new Uint8Array(), headers: [], status: 204 },
-    });
 
-    for (let index = 1; index < 10_000; index += 1) {
-      adapter.beginMutation({ fingerprint: "body", key: `mutation-${index}`, principal: "user" });
+    setSystemTime(new Date(1000 + first.lease.leaseMs + 1));
+    const second = await adapter.beginMutation({
+      fingerprint: "body",
+      key: "mutation",
+      principal: "user",
+    });
+    expect(second.kind).toBe("execute");
+    if (second.kind !== "execute") {
+      throw new Error("expected replacement mutation lease");
     }
 
     expect(
-      adapter.beginMutation({ fingerprint: "body", key: "overflow", principal: "user" }).kind
-    ).toBe("execute");
+      await adapter.completeMutation({ invalidations: [], lease: first.lease, response })
+    ).toEqual({ kind: "lost" });
+    expect(
+      await adapter.completeMutation({ invalidations: [], lease: second.lease, response })
+    ).toEqual({ cursor: undefined, kind: "committed" });
+  });
+
+  test("renews an active lease", async () => {
+    setSystemTime(new Date(1000));
+    const adapter = new MemorySyncAdapter();
+    const first = await adapter.beginMutation({
+      fingerprint: "body",
+      key: "mutation",
+      principal: "user",
+    });
+    if (first.kind !== "execute") {
+      throw new Error("expected mutation lease");
+    }
+
+    setSystemTime(new Date(1000 + first.lease.leaseMs - 1));
+    expect(await adapter.renewMutation(first.lease)).toBe("renewed");
+    setSystemTime(new Date(1000 + first.lease.leaseMs + 1));
+    expect(
+      await adapter.completeMutation({ invalidations: [], lease: first.lease, response })
+    ).toEqual({ cursor: undefined, kind: "committed" });
+  });
+
+  test("does not renew an expired lease", async () => {
+    setSystemTime(new Date(1000));
+    const adapter = new MemorySyncAdapter();
+    const first = await adapter.beginMutation({
+      fingerprint: "body",
+      key: "mutation",
+      principal: "user",
+    });
+    if (first.kind !== "execute") {
+      throw new Error("expected mutation lease");
+    }
+    setSystemTime(new Date(1000 + first.lease.leaseMs + 1));
+    expect(await adapter.renewMutation(first.lease)).toBe("lost");
+  });
+
+  test("returns a reset when retained history no longer covers the cursor", async () => {
+    const adapter = new MemorySyncAdapter();
+    const results = await Promise.all(
+      Array.from({ length: 1001 }, (_, index) =>
+        adapter.beginMutation({
+          fingerprint: `body-${index}`,
+          key: `mutation-${index}`,
+          principal: "user",
+        })
+      )
+    );
+    await Promise.all(
+      results.map((result, index) => {
+        if (result.kind !== "execute") {
+          throw new Error("expected mutation lease");
+        }
+        return adapter.completeMutation({
+          invalidations: [{ kind: "path", path: `/items/${index}`, type: "page" }],
+          lease: result.lease,
+          response,
+        });
+      })
+    );
+
+    expect(await adapter.readChanges({ after: "0", limit: 100 })).toMatchObject({
+      changes: [],
+      reset: true,
+    });
   });
 });

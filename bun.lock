@@ -132,6 +132,26 @@
         "react-dom": "catalog:",
       },
     },
+    "packages/sync-postgres": {
+      "name": "@teyik0/furin-sync-postgres",
+      "version": "0.3.0-alpha.1",
+      "devDependencies": {
+        "@teyik0/furin": "workspace:*",
+      },
+      "peerDependencies": {
+        "@teyik0/furin": "workspace:*",
+      },
+    },
+    "packages/sync-redis": {
+      "name": "@teyik0/furin-sync-redis",
+      "version": "0.3.0-alpha.1",
+      "devDependencies": {
+        "@teyik0/furin": "workspace:*",
+      },
+      "peerDependencies": {
+        "@teyik0/furin": "workspace:*",
+      },
+    },
   },
   "overrides": {
     "brace-expansion": "^5.0.6",
@@ -690,6 +710,10 @@
     "@teyik0/furin-example-task-manager": ["@teyik0/furin-example-task-manager@workspace:examples/task-manager"],
 
     "@teyik0/furin-example-weather": ["@teyik0/furin-example-weather@workspace:examples/weather"],
+
+    "@teyik0/furin-sync-postgres": ["@teyik0/furin-sync-postgres@workspace:packages/sync-postgres"],
+
+    "@teyik0/furin-sync-redis": ["@teyik0/furin-sync-redis@workspace:packages/sync-redis"],
 
     "@tokenizer/inflate": ["@tokenizer/inflate@0.4.1", "", { "dependencies": { "debug": "^4.4.3", "token-types": "^6.1.1" } }, "sha512-2mAv+8pkG6GIZiF1kNg1jAjh27IDxEPKwdGul3snfztFerfPGI1LjDezZp3i7BElXompqEtPmoPx6c2wgtWsOA=="],
 

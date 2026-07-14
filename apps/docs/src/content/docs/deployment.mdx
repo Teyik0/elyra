@@ -176,6 +176,21 @@ For disk-based builds:
 FURIN_CLIENT_DIR=/absolute/path/to/client bun ./.furin/build/bun/server.js
 ```
 
+### Multi-replica sync
+
+Do not deploy `sync: true` or `.use(furinSync())` without options in production: process-local memory is rejected at startup. Configure one durable namespace shared by every replica. PostgreSQL is the recommended default because mutation completion and the change journal commit in one transaction.
+
+```sh
+bun add @teyik0/furin-sync-postgres
+bunx furin-sync-postgres-migrate
+```
+
+Set `FURIN_SYNC_POSTGRES_URL` in the server environment before running the command. The migration is versioned at `@teyik0/furin-sync-postgres/migration.sql`, creates only the `furin_sync` schema, and is safe to run through your existing migration system. It is never applied implicitly at application startup.
+
+For low-latency cross-replica wake-ups, install `@teyik0/furin-sync-redis` and combine `redisSyncNotifier()` with the PostgreSQL adapter. Redis is not a correctness dependency in this hybrid: clients catch up from PostgreSQL after a missed notification, and the SSE coordinator also polls the current cursor as a safety net.
+
+Use a stable, application-specific `namespace` in every replica. Changing it creates a separate replay and change history. Keep database and Redis URLs in server-only environment variables; adapters are backend-only and never belong in route components or the browser entry.
+
 ---
 
 ## Planned Targets

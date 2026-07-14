@@ -4,6 +4,17 @@ import {
   __resetCacheState,
   _runWithRequestInvalidationScope,
 } from "../../../src/server/cache/index.ts";
+import type {
+  BeginMutationInput,
+  BeginMutationResult,
+  ChangePage,
+  CompleteMutationInput,
+  CompleteMutationResult,
+  MutationLease,
+  ReadChangesInput,
+  SyncAdapter,
+  SyncNotifier,
+} from "../../../src/server/sync/adapter.ts";
 import { furinSync } from "../../../src/server/sync/plugin.ts";
 import { MAX_SYNC_REPLAY_RESPONSE_BYTES } from "../../../src/server/sync/response.ts";
 import { __resetSyncState, createSyncStreamPlugin } from "../../../src/server/sync/stream.ts";
@@ -37,6 +48,48 @@ function resetSyncTestState() {
   __resetCacheState();
   __resetSyncState();
 }
+
+test("furinSync uses the injected adapter for reservation and atomic completion", async () => {
+  const completed: CompleteMutationInput[] = [];
+  const lease: MutationLease = {
+    id: "lease-1",
+    key: "POST:/cards:injected",
+    leaseMs: 30_000,
+    principal: "principal",
+  };
+  const adapter: SyncAdapter = {
+    scope: "distributed",
+    abortMutation: () => Promise.resolve(),
+    beginMutation: (_input: BeginMutationInput): Promise<BeginMutationResult> =>
+      Promise.resolve({ kind: "execute", lease }),
+    completeMutation: (input: CompleteMutationInput): Promise<CompleteMutationResult> => {
+      completed.push(input);
+      return Promise.resolve({ cursor: "1", kind: "committed" });
+    },
+    currentCursor: () => Promise.resolve("0"),
+    readChanges: (_input: ReadChangesInput): Promise<ChangePage> =>
+      Promise.resolve({ changes: [], cursor: "0", hasMore: false, reset: false }),
+    renewMutation: () => Promise.resolve("renewed"),
+  };
+  const notifier: SyncNotifier = {
+    publish: () => Promise.reject(new Error("notifier unavailable")),
+    subscribe: () => Promise.reject(new Error("notifier unavailable")),
+  };
+  const app = new Elysia()
+    .use(furinSync({ adapter, notifier }))
+    .post("/cards", () => ({ ok: true }));
+
+  const response = await app.handle(
+    new Request("http://localhost/cards", {
+      headers: { "Idempotency-Key": "injected" },
+      method: "POST",
+    })
+  );
+
+  expect(response.status).toBe(200);
+  expect(completed).toHaveLength(1);
+  expect(completed[0]?.lease).toEqual(lease);
+});
 
 test("furinSync direct handle completes inside bun:test", async () => {
   resetSyncTestState();

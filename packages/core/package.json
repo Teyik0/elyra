@@ -72,6 +72,11 @@
       "bun": "./src/server/router/index.ts",
       "import": "./dist/server/router/index.js"
     },
+    "./sync": {
+      "types": "./dist/server/sync/index.d.ts",
+      "bun": "./src/server/sync/index.ts",
+      "import": "./dist/server/sync/index.js"
+    },
     "./strip-plugin": {
       "types": "./dist/plugin/index.d.ts",
       "bun": "./src/plugin/index.ts",

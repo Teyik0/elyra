@@ -39,6 +39,7 @@ await Promise.all([
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/build/index.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/config.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/server/router/index.ts`] }),
+  Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/server/sync/index.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/plugin/index.ts`] }),
   Bun.build({ ...shared, entrypoints: [`${import.meta.dir}/src/client/link.tsx`] }),
   // Modules imported directly by the generated compile-entry (entry-template.ts).

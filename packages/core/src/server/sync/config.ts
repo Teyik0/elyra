@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { allInstances, currentInstance } from "../instance.ts";
+import { currentInstance } from "../instance.ts";
+import type { SyncRuntimeOptions } from "./adapter.ts";
 
 const SYNC_STREAM_DEFAULT_PATH = "/_furin/sync";
 
@@ -9,9 +10,9 @@ const requestSyncStreamPath = new AsyncLocalStorage<string | undefined>();
 
 export type FurinSyncOption =
   | boolean
-  | {
+  | (SyncRuntimeOptions & {
       streamPath?: string;
-    };
+    });
 
 export function resolveSyncStreamPath(sync: FurinSyncOption | undefined): string | undefined {
   if (!sync) {
@@ -39,22 +40,10 @@ export function runWithSyncStreamPath<T>(path: string | undefined, fn: () => T):
   return requestSyncStreamPath.run(path, fn);
 }
 
-/**
- * Physical adapter channels a sync publication must reach. An explicit
- * override wins (historical single-channel behaviour); otherwise every
- * sync-enabled instance gets notified — a mutation on a shared API must wake
- * the SSE clients of every mounted app.
- */
-export function syncPublishChannels(): string[] {
-  const override = requestSyncStreamPath.getStore();
-  if (override !== undefined) {
-    return [override];
-  }
-  const channels = allInstances()
-    .filter((instance) => instance.syncStreamPath !== undefined)
-    .map((instance) => `${instance.prefix}${instance.syncStreamPath}`);
-  if (channels.length > 0) {
-    return channels;
-  }
-  return [SYNC_STREAM_DEFAULT_PATH];
+export function syncRuntimeOptions(
+  sync: FurinSyncOption | undefined
+): SyncRuntimeOptions | undefined {
+  return sync && typeof sync === "object"
+    ? { adapter: sync.adapter, notifier: sync.notifier }
+    : undefined;
 }

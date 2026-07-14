@@ -5,10 +5,10 @@ import {
   runInvalidationRules,
 } from "../auto-invalidate/runtime.ts";
 import type { InvalidationInput } from "../auto-invalidate/types.ts";
+import type { MutationLease, SyncInvalidation, SyncRuntimeOptions } from "./adapter.ts";
 import { createMutationFingerprint, sha256Hex } from "./fingerprint.ts";
-import { memorySyncAdapter } from "./memory-adapter.ts";
 import { mergeStoredResponseHeaders, replayResponse, storeResponse } from "./response.ts";
-import { publishSyncInvalidation } from "./stream.ts";
+import { resolveSyncRuntime } from "./runtime.ts";
 
 export type SyncRouteOption =
   | false
@@ -26,7 +26,8 @@ interface RouteSyncMetadata {
 }
 
 interface ActiveMutation {
-  mutationId: string;
+  lease: MutationLease;
+  renewal: ReturnType<typeof setInterval>;
 }
 
 interface MutationContext {
@@ -96,60 +97,104 @@ function conflictResponse(reason: "in-progress" | "payload-mismatch"): Response 
   );
 }
 
-async function beginMutation(ctx: MutationContext): Promise<Response | undefined> {
-  if (!isMutationMethod(ctx.request.method) || routeMetadata.get(ctx.request)?.disabled) {
-    return;
-  }
-  const idempotencyKey = getIdempotencyKey(ctx);
-  if (!idempotencyKey) {
-    return new Response("Missing Idempotency-Key header", {
-      headers: { "content-type": "text/plain; charset=utf-8" },
-      status: 428,
-    });
-  }
-  if (!supportsReplayBody(ctx.request)) {
-    return Response.json(
-      {
-        code: "FURIN_UNSUPPORTED_SYNC_BODY",
-        message: "This request body cannot be replayed. Set sync: false on the route.",
-      },
-      { status: 415 }
-    );
-  }
-
-  const url = new URL(ctx.request.url);
-  const principal = getPrincipalScope(ctx.request);
-  const key = `${ctx.request.method}:${url.pathname}:${idempotencyKey}`;
-  const fingerprint = createMutationFingerprint({ body: ctx.body, request: ctx.request });
-  const result = await memorySyncAdapter.beginMutation({ fingerprint, key, principal });
-  if (result.kind === "replay") {
-    return replayResponse(result.response);
-  }
-  if (result.kind === "conflict") {
-    return conflictResponse(result.reason);
-  }
-  if (result.kind === "unavailable") {
-    return Response.json(
-      {
-        code: "FURIN_SYNC_CAPACITY_EXCEEDED",
-        message: "The mutation replay store is temporarily full.",
-      },
-      { headers: { "retry-after": "1" }, status: 503 }
-    );
-  }
-  activeMutations.set(ctx.request, { mutationId: result.mutationId });
+function leaseLostResponse(): Response {
+  return Response.json(
+    {
+      code: "FURIN_SYNC_LEASE_LOST",
+      message: "The mutation lease was lost before its response could be committed.",
+    },
+    { status: 503 }
+  );
 }
 
-async function abortMutation(request: Request): Promise<void> {
-  const active = activeMutations.get(request);
-  if (!active) {
-    return;
+function normalizedInvalidations(input: InvalidationInput | undefined): SyncInvalidation[] {
+  if (!input) {
+    return [];
   }
-  activeMutations.delete(request);
-  await memorySyncAdapter.abortMutation(active);
+  const rules = Array.isArray(input) ? input : [input];
+  const invalidations: SyncInvalidation[] = [];
+  for (const rule of rules) {
+    if ("path" in rule && rule.path) {
+      invalidations.push({ kind: "path", path: rule.path, type: rule.type });
+    }
+    if (rule.tags && rule.tags.length > 0) {
+      invalidations.push({ kind: "tags", tags: [...rule.tags] });
+    }
+  }
+  return invalidations;
 }
 
-export function furinSync() {
+function pendingPathInvalidations(entries: readonly string[]): SyncInvalidation[] {
+  return entries.map((entry) =>
+    entry.endsWith(":layout")
+      ? { kind: "path" as const, path: entry.slice(0, -":layout".length), type: "layout" }
+      : { kind: "path" as const, path: entry, type: "page" }
+  );
+}
+
+export function furinSync(options?: SyncRuntimeOptions) {
+  const runtime = resolveSyncRuntime(options);
+
+  async function beginMutation(ctx: MutationContext): Promise<Response | undefined> {
+    if (!isMutationMethod(ctx.request.method) || routeMetadata.get(ctx.request)?.disabled) {
+      return;
+    }
+    const idempotencyKey = getIdempotencyKey(ctx);
+    if (!idempotencyKey) {
+      return new Response("Missing Idempotency-Key header", {
+        headers: { "content-type": "text/plain; charset=utf-8" },
+        status: 428,
+      });
+    }
+    if (!supportsReplayBody(ctx.request)) {
+      return Response.json(
+        {
+          code: "FURIN_UNSUPPORTED_SYNC_BODY",
+          message: "This request body cannot be replayed. Set sync: false on the route.",
+        },
+        { status: 415 }
+      );
+    }
+
+    const url = new URL(ctx.request.url);
+    const principal = getPrincipalScope(ctx.request);
+    const key = `${ctx.request.method}:${url.pathname}:${idempotencyKey}`;
+    const fingerprint = createMutationFingerprint({ body: ctx.body, request: ctx.request });
+    const result = await runtime.adapter.beginMutation({ fingerprint, key, principal });
+    if (result.kind === "replay") {
+      return replayResponse(result.response);
+    }
+    if (result.kind === "conflict") {
+      return conflictResponse(result.reason);
+    }
+    if (result.kind === "unavailable") {
+      return Response.json(
+        {
+          code: "FURIN_SYNC_CAPACITY_EXCEEDED",
+          message: "The mutation replay store is temporarily full.",
+        },
+        { headers: { "retry-after": "1" }, status: 503 }
+      );
+    }
+    const renewal = setInterval(
+      () => {
+        runtime.adapter.renewMutation(result.lease).catch(() => undefined);
+      },
+      Math.max(1000, Math.floor(result.lease.leaseMs / 3))
+    );
+    activeMutations.set(ctx.request, { lease: result.lease, renewal });
+  }
+
+  async function abortMutation(request: Request): Promise<void> {
+    const active = activeMutations.get(request);
+    if (!active) {
+      return;
+    }
+    activeMutations.delete(request);
+    clearInterval(active.renewal);
+    await runtime.adapter.abortMutation(active.lease);
+  }
+
   return new Elysia({ name: "furin-sync" })
     .macro({
       sync(input: SyncRouteOption) {
@@ -171,6 +216,7 @@ export function furinSync() {
       if (!active) {
         return;
       }
+      clearInterval(active.renewal);
       if (!isSuccessfulMutationResponse(ctx)) {
         await abortMutation(ctx.request);
         return;
@@ -178,8 +224,15 @@ export function furinSync() {
 
       const result = await storeResponse(ctx.responseValue, ctx.set);
       if (result.kind === "unreplayable") {
-        await memorySyncAdapter.commitMutation({ ...active, response: result.response });
+        const completion = await runtime.adapter.completeMutation({
+          invalidations: [],
+          lease: active.lease,
+          response: result.response,
+        });
         activeMutations.delete(ctx.request);
+        if (completion.kind === "lost") {
+          return leaseLostResponse();
+        }
         return replayResponse(result.response);
       }
 
@@ -192,13 +245,22 @@ export function furinSync() {
         ctx.set.headers["x-furin-sync"] = "1";
       }
       const response = mergeStoredResponseHeaders(result.response, ctx.set.headers);
-      await memorySyncAdapter.commitMutation({ ...active, response });
+      const semanticInvalidations = normalizedInvalidations(invalidate);
+      const invalidations =
+        semanticInvalidations.length > 0
+          ? semanticInvalidations
+          : pendingPathInvalidations(pending);
+      const completion = await runtime.adapter.completeMutation({
+        invalidations,
+        lease: active.lease,
+        response,
+      });
       activeMutations.delete(ctx.request);
-
-      if (pending.length > 0) {
-        // Notify every mounted app's sync stream — a mutation on a shared API
-        // may invalidate pages rendered by any of them.
-        publishSyncInvalidation(pending);
+      if (completion.kind === "lost") {
+        return leaseLostResponse();
+      }
+      if (completion.cursor !== undefined) {
+        runtime.notifier.publish(completion.cursor).catch(() => undefined);
       }
     })
     .onError({ as: "global" }, ({ request }) => abortMutation(request));

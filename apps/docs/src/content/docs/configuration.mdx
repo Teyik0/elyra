@@ -56,7 +56,7 @@ Path to the server entrypoint that creates the Elysia instance. Required for `bu
 
 ## `clientLogging`
 
-**Type:** `boolean`
+**Type:** `boolean | { adapter: SyncAdapter; notifier?: SyncNotifier; streamPath?: string }`
 **Default:** `false`
 
 Inject the browser-side evlog logger into the generated hydration entry. Server-side request logging is unaffected by this option.
@@ -207,4 +207,13 @@ Enable Furin's built-in sync transport. Furin mounts SSE at `/_furin/sync`, expo
 
 Synced mutations stay regular API routes. There are no server actions, generated mutation names, collections, or React wrapper providers required.
 
-The current adapter is process-local memory: idempotency responses and changes are lost on restart and are not shared across replicas.
+`sync: true` uses process-local memory in development. Production rejects implicit or process-local storage and requires a distributed adapter. Use the same runtime object with `furinSync(sync)` and `furin({ sync })`; this keeps mutation reservation, replay, SSE, and catch-up on one namespace.
+
+The notifier is optional. When omitted, Furin polls the adapter cursor. Notifications are only wake-ups: ordered recovery always reads `adapter.readChanges()`, including after a disconnect or lost notification.
+
+The adapters are separate, tree-shakable packages:
+
+- `@teyik0/furin-sync-postgres` — recommended durable adapter using `Bun.SQL` transactions and leases.
+- `@teyik0/furin-sync-redis` — durable Redis Streams adapter plus an independent Redis notifier using Bun's native `RedisClient`.
+
+Neither package is a dependency of `@teyik0/furin`; install only the backend you import.
