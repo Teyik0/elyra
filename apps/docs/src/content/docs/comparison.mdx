@@ -147,7 +147,7 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 | Dimension | Next.js | TanStack Start | Furin |
 |---|---|---|---|
 | **Mutation contract** | Server Actions or route handlers | Server Functions or server routes | Elysia HTTP routes + Eden Treaty |
-| **On-demand cache invalidation** | `revalidatePath`, `revalidateTag`, `updateTag` | Coordinate router/query cache in application code | `revalidatePath`, `revalidateTag`, typed route invalidations |
+| **On-demand cache invalidation** | `revalidatePath`, `revalidateTag`, `updateTag` | Coordinate router/query cache in application code | `revalidatePath`, `revalidateTag`, path/tag invalidation rules |
 | **Durable idempotency journal** | Application responsibility | Application responsibility | SQLite, PostgreSQL, or Redis adapter |
 | **Missed-event catch-up** | Application responsibility | Application/query-library responsibility | Ordered cursor journal + SSE wake-up |
 | **Optional backend isolation** | Deployment/runtime dependent | Environment code is build-time separated | Separate side-effect-free adapter packages |

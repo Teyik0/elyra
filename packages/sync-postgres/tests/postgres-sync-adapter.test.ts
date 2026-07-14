@@ -30,6 +30,20 @@ describeWithPostgres("PostgresSyncAdapter", () => {
 
   testSyncAdapterConformance(() => adapter);
 
+  test("rejects succeeded mutations without replay data", async () => {
+    await expect(
+      sql`
+        INSERT INTO furin_sync.mutations (
+          namespace, mutation_key, mutation_id, fingerprint, state,
+          lease_expires_at, expires_at
+        ) VALUES (
+          ${namespace}, 'invalid-succeeded', ${crypto.randomUUID()}, 'fingerprint', 'succeeded',
+          clock_timestamp(), clock_timestamp() + interval '1 day'
+        )
+      `
+    ).rejects.toThrow();
+  });
+
   test("atomically persists replay response and invalidations", async () => {
     const mutation = await adapter.beginMutation({
       fingerprint: "fingerprint",

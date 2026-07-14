@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
+import type { SyncInvalidation } from "../../../src/server/sync/adapter.ts";
 import { MemorySyncAdapter } from "../../../src/server/sync/memory-adapter.ts";
 import { testSyncAdapterConformance } from "../../helpers/sync-adapter-conformance";
 
@@ -32,6 +33,30 @@ describe("MemorySyncAdapter", () => {
     expect(
       await adapter.beginMutation({ fingerprint: "other", key: "mutation", principal: "user" })
     ).toEqual({ kind: "conflict", reason: "payload-mismatch" });
+  });
+
+  test("reuses an idempotency key with a new payload after completed retention expires", async () => {
+    setSystemTime(new Date(1000));
+    const adapter = new MemorySyncAdapter();
+    const first = await adapter.beginMutation({
+      fingerprint: "first-body",
+      key: "mutation",
+      principal: "user",
+    });
+    if (first.kind !== "execute") {
+      throw new Error("expected mutation lease");
+    }
+    await adapter.completeMutation({ invalidations: [], lease: first.lease, response });
+
+    setSystemTime(new Date(1000 + 24 * 60 * 60 * 1000 + 1));
+
+    expect(
+      await adapter.beginMutation({
+        fingerprint: "second-body",
+        key: "mutation",
+        principal: "user",
+      })
+    ).toMatchObject({ kind: "execute" });
   });
 
   test("allows lease takeover and rejects the previous owner", async () => {
@@ -106,6 +131,65 @@ describe("MemorySyncAdapter", () => {
     }
     setSystemTime(new Date(1000 + first.lease.leaseMs + 1));
     expect(await adapter.renewMutation(first.lease)).toBe("lost");
+  });
+
+  test("snapshots invalidations when completing a mutation", async () => {
+    const adapter = new MemorySyncAdapter();
+    const tags = ["cards"];
+    const invalidations: SyncInvalidation[] = [{ kind: "tags", tags }];
+    const first = await adapter.beginMutation({
+      fingerprint: "body",
+      key: "mutation",
+      principal: "user",
+    });
+    if (first.kind !== "execute") {
+      throw new Error("expected mutation lease");
+    }
+    await adapter.completeMutation({ invalidations, lease: first.lease, response });
+
+    tags.push("changed");
+    invalidations.length = 0;
+
+    expect((await adapter.readChanges({ after: "0", limit: 10 })).changes).toEqual([
+      { cursor: "1", invalidations: [{ kind: "tags", tags: ["cards"] }] },
+    ]);
+  });
+
+  test("does not expose stored invalidations through change reads", async () => {
+    const adapter = new MemorySyncAdapter();
+    const first = await adapter.beginMutation({
+      fingerprint: "body",
+      key: "mutation",
+      principal: "user",
+    });
+    if (first.kind !== "execute") {
+      throw new Error("expected mutation lease");
+    }
+    await adapter.completeMutation({
+      invalidations: [{ kind: "tags", tags: ["cards"] }],
+      lease: first.lease,
+      response,
+    });
+
+    const firstRead = await adapter.readChanges({ after: "0", limit: 10 });
+    const exposed = firstRead.changes[0]?.invalidations[0];
+    if (exposed?.kind !== "tags") {
+      throw new Error("expected tag invalidation");
+    }
+    (exposed.tags as string[]).push("changed");
+
+    expect((await adapter.readChanges({ after: "0", limit: 10 })).changes).toEqual([
+      { cursor: "1", invalidations: [{ kind: "tags", tags: ["cards"] }] },
+    ]);
+  });
+
+  test("returns a reset for a cursor with trailing non-decimal syntax", async () => {
+    const adapter = new MemorySyncAdapter();
+
+    expect(await adapter.readChanges({ after: "0x1", limit: 10 })).toMatchObject({
+      changes: [],
+      reset: true,
+    });
   });
 
   test("returns a reset when retained history no longer covers the cursor", async () => {

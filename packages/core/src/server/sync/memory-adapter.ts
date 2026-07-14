@@ -9,12 +9,14 @@ import type {
   StoredResponse,
   SyncAdapter,
   SyncChange,
+  SyncInvalidation,
 } from "./adapter.ts";
 
 const MAX_CHANGES = 1000;
 const MAX_MUTATIONS = 10_000;
 const MUTATION_LEASE_MS = 30_000;
 const MUTATION_TTL_MS = 24 * 60 * 60 * 1000;
+const UNSIGNED_DECIMAL_PATTERN = /^\d+$/;
 
 interface PendingMutation {
   fingerprint: string;
@@ -36,6 +38,14 @@ function mutationKey(input: Pick<MutationLease, "key" | "principal">): string {
   return `${input.principal.length}:${input.principal}${input.key}`;
 }
 
+function cloneInvalidations(invalidations: readonly SyncInvalidation[]): SyncInvalidation[] {
+  return invalidations.map((invalidation) =>
+    invalidation.kind === "tags"
+      ? { kind: "tags", tags: [...invalidation.tags] }
+      : { kind: "path", path: invalidation.path, type: invalidation.type }
+  );
+}
+
 export class MemorySyncAdapter implements SyncAdapter {
   readonly scope = "process-local" as const;
   private readonly changes: SyncChange[] = [];
@@ -45,7 +55,11 @@ export class MemorySyncAdapter implements SyncAdapter {
   beginMutation(input: BeginMutationInput): Promise<BeginMutationResult> {
     const now = Date.now();
     const key = mutationKey(input);
-    const existing = this.mutations.get(key);
+    let existing = this.mutations.get(key);
+    if (existing?.state === "succeeded" && existing.expiresAt <= now) {
+      this.mutations.delete(key);
+      existing = undefined;
+    }
     if (existing) {
       if (existing.fingerprint !== input.fingerprint) {
         return Promise.resolve({ kind: "conflict", reason: "payload-mismatch" });
@@ -116,7 +130,7 @@ export class MemorySyncAdapter implements SyncAdapter {
     }
     const change: SyncChange = {
       cursor: String(this.nextCursor),
-      invalidations: input.invalidations,
+      invalidations: cloneInvalidations(input.invalidations),
     };
     this.nextCursor += 1;
     this.changes.push(change);
@@ -144,13 +158,19 @@ export class MemorySyncAdapter implements SyncAdapter {
     if (input.after === undefined) {
       return { changes: [], cursor, hasMore: false, reset: false };
     }
+    if (!UNSIGNED_DECIMAL_PATTERN.test(input.after)) {
+      return { changes: [], cursor, hasMore: false, reset: true };
+    }
     const after = Number.parseInt(input.after, 10);
     const oldest = Number.parseInt(this.changes[0]?.cursor ?? cursor, 10);
     if (!Number.isSafeInteger(after) || after < oldest - 1 || after > Number(cursor)) {
       return { changes: [], cursor, hasMore: false, reset: true };
     }
     const available = this.changes.filter((change) => Number.parseInt(change.cursor, 10) > after);
-    const changes = available.slice(0, input.limit);
+    const changes = available.slice(0, input.limit).map((change) => ({
+      cursor: change.cursor,
+      invalidations: cloneInvalidations(change.invalidations),
+    }));
     return {
       changes,
       cursor: changes.at(-1)?.cursor ?? input.after,

@@ -22,6 +22,10 @@ export const PollingSyncNotifier = PollingSyncNotifierImplementation;
 export const resolveSyncStreamPath = resolveSyncStreamPathImplementation;
 export const runWithSyncStreamPath = runWithSyncStreamPathImplementation;
 
+export type MemorySyncAdapter = MemorySyncAdapterImplementation;
+export type MemorySyncNotifier = MemorySyncNotifierImplementation;
+export type PollingSyncNotifier = PollingSyncNotifierImplementation;
+
 export type {
   BeginMutationInput,
   BeginMutationResult,

@@ -805,6 +805,7 @@ export function RouterProvider({
         return;
       }
       source = new EventSource(streamUrl);
+      source.addEventListener("open", recover);
       source.addEventListener("furin.sync", onSync);
     };
 
@@ -828,6 +829,7 @@ export function RouterProvider({
       });
     return () => {
       disposed = true;
+      source?.removeEventListener("open", recover);
       source?.removeEventListener("furin.sync", onSync);
       source?.close();
     };

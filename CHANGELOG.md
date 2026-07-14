@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Breaking
 - Minimal version is bun v1.4.0 to avoid segfault with RSC update
+- **Sync stream runtime options** — `createSyncStreamPlugin()` no longer accepts the obsolete string channel argument; pass `SyncRuntimeOptions` when configuring a non-default adapter.
 
 ### Added
 - **Host-local SQLite sync adapter** — the optional `@teyik0/furin-sync-sqlite` package implements atomic leases, replay responses, and cursor catch-up with `bun:sqlite`. The task-manager example now shares its WAL database with this adapter; the explicit `host-local` scope distinguishes one-machine durability from multi-host PostgreSQL/Redis deployments.
@@ -28,6 +29,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Yuku parser packages upgraded** — `yuku-parser` and `@yuku-toolchain/types` moved to `0.6.1`; the parser dependency architecture test now verifies the direct parser dependency without pinning the exact patch in the assertion.
 
 ### Fixed
+- **React Doctor diagnostics** — docs search now lets TanStack Query schedule index fetching without effect-driven refetches, and the task-manager example respects reduced-motion preferences for animated UI.
+- **Distributed sync correctness** — reconnects now catch up without relying on a new SSE notification; notifier subscriptions and polling are race-safe; lease renewal continues during slow adapter calls; memory and Redis cursors, retention, snapshots, and replay expiry follow adapter invariants; and PostgreSQL prevents incomplete replay rows.
 - **Locale-independent build fingerprints** — route fingerprint sorting now uses code-unit ordering instead of locale-sensitive collation, preventing build-ID differences across host locales.
 - **Static export route coverage** — dynamic SSG routes without usable `staticParams()` now fail the default static build instead of being silently omitted, and static build manifests now list rendered and skipped routes deterministically.
 - **Scaffolder duplicate outputs** — project generation now fails before writing files when a template contains duplicate destination paths.

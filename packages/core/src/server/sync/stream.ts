@@ -118,14 +118,9 @@ function clientInvalidations(change: SyncChange): string[] {
   return [...entries];
 }
 
-export function createSyncStreamPlugin(
-  path?: string,
-  runtimeOptions?: SyncRuntimeOptions | string
-) {
+export function createSyncStreamPlugin(path?: string, runtimeOptions?: SyncRuntimeOptions) {
   const streamPath = path ?? defaultStreamPath;
-  const runtime = resolveSyncRuntime(
-    typeof runtimeOptions === "string" ? undefined : runtimeOptions
-  );
+  const runtime = resolveSyncRuntime(runtimeOptions);
   return new Elysia({ name: `furin-sync-stream-${streamPath}` })
     .get(`${streamPath}/changes`, async ({ request, set }) => {
       set.headers["cache-control"] = "no-store";

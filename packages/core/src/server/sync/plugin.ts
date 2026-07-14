@@ -186,10 +186,10 @@ export function furinSync(options?: SyncRuntimeOptions) {
     const renewAfter = Math.max(1000, Math.floor(result.lease.leaseMs / 3));
     const scheduleRenewal = () => {
       active.renewal = setTimeout(async () => {
-        await runtime.adapter.renewMutation(result.lease).catch(() => undefined);
         if (activeMutations.get(ctx.request) === active) {
           scheduleRenewal();
         }
+        await runtime.adapter.renewMutation(result.lease).catch(() => undefined);
       }, renewAfter);
       active.renewal.unref?.();
     };

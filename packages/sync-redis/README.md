@@ -7,6 +7,7 @@ The package uses Bun's native `RedisClient`; it has no PostgreSQL dependency.
 import { RedisClient } from "bun"
 import { redisSyncAdapter, redisSyncNotifier } from "@teyik0/furin-sync-redis"
 
+const redisUrl = process.env.FURIN_SYNC_REDIS_URL
 const client = new RedisClient(redisUrl)
 const adapter = redisSyncAdapter({ client, namespace: "my-app" })
 const notifier = redisSyncNotifier({ client, namespace: "my-app" })

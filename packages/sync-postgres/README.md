@@ -3,7 +3,7 @@
 Optional PostgreSQL-backed distributed sync adapter for Furin. Apply the bundled migration before starting the application.
 
 ```sh
-FURIN_SYNC_POSTGRES_URL=postgres://... bunx furin-sync-postgres-migrate
+FURIN_SYNC_POSTGRES_URL=postgres://... bunx --package @teyik0/furin-sync-postgres furin-sync-postgres-migrate
 ```
 
 ```ts

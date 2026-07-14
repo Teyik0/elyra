@@ -91,6 +91,76 @@ test("furinSync uses the injected adapter for reservation and atomic completion"
   expect(completed[0]?.lease).toEqual(lease);
 });
 
+test("furinSync schedules the next lease renewal while the current renewal is pending", async () => {
+  const renewal = Promise.withResolvers<"renewed">();
+  const route = Promise.withResolvers<void>();
+  let renewalCalls = 0;
+  const lease: MutationLease = {
+    id: "lease-1",
+    key: "POST:/cards:slow-renewal",
+    leaseMs: 30_000,
+    principal: "principal",
+  };
+  const adapter: SyncAdapter = {
+    scope: "distributed",
+    abortMutation: () => Promise.resolve(),
+    beginMutation: () => Promise.resolve({ kind: "execute", lease }),
+    completeMutation: () => Promise.resolve({ cursor: undefined, kind: "committed" }),
+    currentCursor: () => Promise.resolve("0"),
+    readChanges: () => Promise.resolve({ changes: [], cursor: "0", hasMore: false, reset: false }),
+    renewMutation: () => {
+      renewalCalls += 1;
+      return renewal.promise;
+    },
+  };
+  const notifier: SyncNotifier = {
+    publish: () => Promise.resolve(),
+    subscribe: () => Promise.resolve({ unsubscribe: () => Promise.resolve() }),
+  };
+  const app = new Elysia().use(furinSync({ adapter, notifier })).post("/cards", async () => {
+    await route.promise;
+    return { ok: true };
+  });
+  const originalSetTimeout = globalThis.setTimeout;
+  const scheduled: Array<() => void> = [];
+  const fakeSetTimeout = ((...args: Parameters<typeof setTimeout>) => {
+    const [callback, delay, ...callbackArgs] = args;
+    if (delay !== 10_000) {
+      return originalSetTimeout(...args);
+    }
+    if (typeof callback !== "function") {
+      throw new Error("expected renewal timer callback");
+    }
+    scheduled.push(() => callback(...callbackArgs));
+    return 1 as unknown as ReturnType<typeof setTimeout>;
+  }) as typeof setTimeout;
+  let responsePromise: Promise<Response> | undefined;
+
+  try {
+    globalThis.setTimeout = fakeSetTimeout;
+    responsePromise = app.handle(
+      new Request("http://localhost/cards", {
+        headers: { "Idempotency-Key": "slow-renewal" },
+        method: "POST",
+      })
+    );
+    for (let attempt = 0; attempt < 20 && scheduled.length === 0; attempt += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: wait for Elysia to enter the route handler.
+      await Promise.resolve();
+    }
+    scheduled[0]?.();
+    await Promise.resolve();
+
+    expect(renewalCalls).toBe(1);
+    expect(scheduled).toHaveLength(2);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    renewal.resolve("renewed");
+    route.resolve();
+    await responsePromise;
+  }
+});
+
 test("furinSync direct handle completes inside bun:test", async () => {
   resetSyncTestState();
   try {

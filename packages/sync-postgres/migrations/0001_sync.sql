@@ -13,6 +13,15 @@ CREATE TABLE IF NOT EXISTS furin_sync.mutations (
   expires_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   completed_at timestamptz,
+  CONSTRAINT furin_sync_mutations_succeeded_response_check CHECK (
+    state <> 'succeeded'
+    OR (
+      response_status IS NOT NULL
+      AND response_headers IS NOT NULL
+      AND response_body IS NOT NULL
+      AND completed_at IS NOT NULL
+    )
+  ),
   PRIMARY KEY (namespace, mutation_key),
   UNIQUE (mutation_id)
 );
@@ -33,6 +42,3 @@ CREATE TABLE IF NOT EXISTS furin_sync.changes (
 
 CREATE INDEX IF NOT EXISTS furin_sync_mutations_expiry_idx
   ON furin_sync.mutations (expires_at);
-
-CREATE INDEX IF NOT EXISTS furin_sync_changes_created_idx
-  ON furin_sync.changes (namespace, created_at);

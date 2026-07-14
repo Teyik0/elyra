@@ -25,6 +25,48 @@ describeWithRedis("Redis sync", () => {
 
   testSyncAdapterConformance(() => adapter);
 
+  test("resets malformed stream cursors", async () => {
+    expect(await adapter.readChanges({ after: "0x0-0", limit: 10 })).toEqual({
+      changes: [],
+      cursor: "0-0",
+      hasMore: false,
+      reset: true,
+    });
+  });
+
+  test("continues after the last evicted stream cursor", async () => {
+    let evictedCursor: string | undefined;
+    for (let index = 0; index <= 1000; index += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: Ordered writes make the boundary deterministic.
+      const mutation = await adapter.beginMutation({
+        fingerprint: `fingerprint-${index}`,
+        key: `mutation-${index}`,
+        principal: "user",
+      });
+      if (mutation.kind !== "execute") {
+        throw new Error("Expected an executable mutation");
+      }
+      const completed = await adapter.completeMutation({
+        invalidations: [{ kind: "tags", tags: [`tag-${index}`] }],
+        lease: mutation.lease,
+        response: { body: new Uint8Array(), headers: [], status: 204 },
+      });
+      if (completed.kind !== "committed" || completed.cursor === undefined) {
+        throw new Error("Expected a committed cursor");
+      }
+      evictedCursor ??= completed.cursor;
+    }
+    if (evictedCursor === undefined) {
+      throw new Error("Expected an evicted cursor");
+    }
+
+    expect(await adapter.readChanges({ after: evictedCursor, limit: 1 })).toMatchObject({
+      changes: [{ invalidations: [{ kind: "tags", tags: ["tag-1"] }] }],
+      hasMore: true,
+      reset: false,
+    });
+  });
+
   test("atomically persists replay response and invalidations", async () => {
     const mutation = await adapter.beginMutation({
       fingerprint: "fingerprint",

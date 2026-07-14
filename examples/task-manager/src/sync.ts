@@ -3,10 +3,6 @@ import { sqlite } from "./db";
 
 migrateSqliteSync(sqlite);
 
-const namespace =
-  process.env.FURIN_SYNC_NAMESPACE ??
-  (process.env.NODE_ENV === "test" ? `task-manager-test-${process.pid}` : "task-manager");
-
 export const taskManagerSync = {
-  adapter: sqliteSyncAdapter({ database: sqlite, namespace }),
+  adapter: sqliteSyncAdapter({ database: sqlite, namespace: "task-manager" }),
 };

@@ -121,6 +121,14 @@ bun add @teyik0/furin-sync-redis
 bun add @teyik0/furin-sync-sqlite
 ```
 
+Before configuring the PostgreSQL adapter, apply its bundled migration. You can run the
+package binary directly or apply `@teyik0/furin-sync-postgres/migration.sql` through your
+existing migration system:
+
+```sh
+FURIN_SYNC_POSTGRES_URL=postgres://... bunx --package @teyik0/furin-sync-postgres furin-sync-postgres-migrate
+```
+
 PostgreSQL is the recommended source of truth for most multi-replica applications. Pass the same runtime to the mutation plugin and the Furin page plugin:
 
 ```ts

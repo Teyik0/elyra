@@ -24,6 +24,7 @@ import {
 const CHANGE_RETENTION = 1000;
 const LEASE_MS = 30_000;
 const MUTATION_TTL_MS = 24 * 60 * 60 * 1000;
+const REDIS_STREAM_CURSOR_PATTERN = /^\d+-\d+$/;
 
 export interface RedisSyncOptions {
   client: RedisClient;
@@ -108,11 +109,11 @@ function serializeResponse(response: StoredResponse): SerializedResponse {
 }
 
 function compareStreamIds(left: string, right: string): number {
-  const leftParts = left.split("-");
-  const rightParts = right.split("-");
-  if (leftParts.length !== 2 || rightParts.length !== 2) {
+  if (!(REDIS_STREAM_CURSOR_PATTERN.test(left) && REDIS_STREAM_CURSOR_PATTERN.test(right))) {
     throw new Error("[furin-sync-redis] Invalid Redis Stream cursor.");
   }
+  const leftParts = left.split("-");
+  const rightParts = right.split("-");
   const leftTime = BigInt(leftParts[0] as string);
   const rightTime = BigInt(rightParts[0] as string);
   if (leftTime !== rightTime) {
@@ -251,7 +252,7 @@ export class RedisSyncAdapter implements SyncAdapter {
       return { changes: [], cursor: currentCursor, hasMore: false, reset: true };
     }
     const trimmed = await this.client.get(this.trimmedKey);
-    if (trimmed !== null && compareStreamIds(input.after, trimmed) <= 0) {
+    if (trimmed !== null && compareStreamIds(input.after, trimmed) < 0) {
       return { changes: [], cursor: currentCursor, hasMore: false, reset: true };
     }
     const entries = streamEntries(
@@ -264,7 +265,7 @@ export class RedisSyncAdapter implements SyncAdapter {
       ])
     );
     const latestTrimmed = await this.client.get(this.trimmedKey);
-    if (latestTrimmed !== null && compareStreamIds(input.after, latestTrimmed) <= 0) {
+    if (latestTrimmed !== null && compareStreamIds(input.after, latestTrimmed) < 0) {
       return {
         changes: [],
         cursor: await this.currentCursor(),
