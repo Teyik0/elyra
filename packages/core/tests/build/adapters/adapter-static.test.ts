@@ -18,6 +18,7 @@ const UNSAFE_DIR_RE = /unsafe to delete/;
 const PRERENDER_FAIL_RE = /route\\(s\\) failed to pre-render/;
 const UNSAFE_PATH_RE = /unsafe output path/;
 const REQUEST_LOADER_STATIC_RE = /requestLoader.*static/i;
+const STATIC_EXPORT_RE = /cannot be statically exported/i;
 
 __setDevMode(false);
 
@@ -139,9 +140,14 @@ scanned = await scanApp(app);
 let patchedRoutes = scanned.routes.map((route) =>
   route.pattern.includes(":") ? { ...route, page: { ...route.page, staticParams: undefined } } : route
 );
+await assertRejects(
+  () => withBuildStub(() => buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), scanned.root, { staticConfig: { outDir: scanned.distDir }, target: "static" })),
+  STATIC_EXPORT_RE,
+  "B5 dynamic route without staticParams rejects by default"
+);
 await withBuildStub(() =>
   buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), scanned.root, {
-    staticConfig: { outDir: scanned.distDir },
+    staticConfig: { onSSR: "skip", outDir: scanned.distDir },
     target: "static",
   })
 );
@@ -239,13 +245,45 @@ patchedRoutes = scanned.routes.map((item) =>
     ? { ...item, page: { ...item.page, staticParams: () => Promise.reject(new Error("staticParams-boom")) } }
     : item
 );
+await assertRejects(
+  () => withBuildStub(() => buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), scanned.root, { staticConfig: { outDir: scanned.distDir }, target: "static" })),
+  STATIC_EXPORT_RE,
+  "B18 staticParams failure rejects by default"
+);
 manifest = await withBuildStub(() =>
   buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), scanned.root, {
-    staticConfig: { outDir: scanned.distDir },
+    staticConfig: { onSSR: "skip", outDir: scanned.distDir },
     target: "static",
   })
 );
 assert(manifest.skippedRoutes.includes(dynamicRoute.pattern), "B18 staticParams failure skipped");
+
+const slowRoute = {
+  ...baseRoute,
+  page: {
+    ...baseRoute.page,
+    loader: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      return { pageData: "slow" };
+    },
+  },
+  pattern: "/z-slow",
+};
+const fastRoute = {
+  ...baseRoute,
+  page: {
+    ...baseRoute.page,
+    loader: async () => ({ pageData: "fast" }),
+  },
+  pattern: "/a-fast",
+};
+manifest = await withBuildStub(() =>
+  buildStaticTarget([slowRoute, fastRoute], app.path, join(app.path, ".furin/build"), scanned.root, {
+    staticConfig: { outDir: scanned.distDir },
+    target: "static",
+  })
+);
+assert(JSON.stringify(manifest.renderedRoutes) === JSON.stringify(["/a-fast", "/z-slow"]), "B19 rendered routes sorted");
 
 patchedRoutes = scanned.routes.map((item) =>
   item.pattern === dynamicRoute.pattern
@@ -255,7 +293,7 @@ patchedRoutes = scanned.routes.map((item) =>
 await assertRejects(
   () => withBuildStub(() => buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), scanned.root, { staticConfig: { outDir: scanned.distDir }, target: "static" })),
   UNSAFE_PATH_RE,
-  "B19 path traversal rejected"
+  "B20 path traversal rejected"
 );
 `;
 

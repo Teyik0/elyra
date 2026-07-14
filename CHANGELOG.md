@@ -23,6 +23,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 - **Locale-independent build fingerprints** — route fingerprint sorting now uses code-unit ordering instead of locale-sensitive collation, preventing build-ID differences across host locales.
+- **Static export route coverage** — dynamic SSG routes without usable `staticParams()` now fail the default static build instead of being silently omitted, and static build manifests now list rendered and skipped routes deterministically.
 - **Scaffolder duplicate outputs** — project generation now fails before writing files when a template contains duplicate destination paths.
 - **Docs table-of-contents cleanup** — pending hash-scroll animation frames are cancelled on unmount, satisfying React effect cleanup checks.
 

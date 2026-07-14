@@ -49,6 +49,38 @@ function pathToOutputFile(urlPath: string, outDir: string, fileName: string): st
   return resolved;
 }
 
+function sortRouteList(routes: string[]): string[] {
+  return routes.toSorted((a, b) => (a < b ? -1 : Number(a > b)));
+}
+
+function assertNoStaticExportSkips(onSSR: "error" | "skip", skippedRoutes: string[]): void {
+  if (onSSR !== "error" || skippedRoutes.length === 0) {
+    return;
+  }
+  const failed = sortRouteList(skippedRoutes);
+  const list = failed.map((r) => `  • ${r}`).join("\n");
+  throw new Error(
+    `[furin] static: ${failed.length} route(s) cannot be statically exported:\n${list}\n` +
+      `Define \`staticParams()\` for dynamic SSG routes or set \`onSSR: "skip"\` in your static config.`
+  );
+}
+
+function assertNoPrerenderSkips(
+  onSSR: "error" | "skip",
+  skippedRoutes: string[],
+  afterQueueCount: number
+): void {
+  if (onSSR !== "error" || skippedRoutes.length <= afterQueueCount) {
+    return;
+  }
+  const failed = sortRouteList(skippedRoutes.slice(afterQueueCount));
+  const list = failed.map((r) => `  • ${r}`).join("\n");
+  throw new Error(
+    `[furin] static: ${failed.length} route(s) failed to pre-render:\n${list}\n` +
+      `Set \`onSSR: "skip"\` in your static config to suppress this error.`
+  );
+}
+
 // ── Pre-render worker ─────────────────────────────────────────────────────────
 
 async function prerenderAndWrite(
@@ -382,20 +414,14 @@ export async function buildStaticTarget(
     basePath,
     searchRoutes
   );
+  assertNoStaticExportSkips(onSSR, skippedRoutes);
   // Snapshot after queue-building: routes skipped due to missing staticParams() are
   // already recorded; only routes added during task execution are prerender failures.
   const afterQueueCount = skippedRoutes.length;
   await runWithConcurrency(tasks, STATIC_CONCURRENCY);
 
   // Fail the build when onSSR="error" and any prerender task was recorded as skipped.
-  if (onSSR === "error" && skippedRoutes.length > afterQueueCount) {
-    const failed = skippedRoutes.slice(afterQueueCount);
-    const list = failed.map((r) => `  • ${r}`).join("\n");
-    throw new Error(
-      `[furin] static: ${failed.length} route(s) failed to pre-render:\n${list}\n` +
-        `Set \`onSSR: "skip"\` in your static config to suppress this error.`
-    );
-  }
+  assertNoPrerenderSkips(onSSR, skippedRoutes, afterQueueCount);
 
   // ── 9. Write 404.html (SPA fallback for GitHub Pages) ───────────────────
   writeFileSync(join(outDir, "404.html"), shellHtml);
@@ -413,7 +439,7 @@ export async function buildStaticTarget(
     basePath,
     generatedAt: new Date().toISOString(),
     outDir: toPosixPath(outDir),
-    renderedRoutes,
-    skippedRoutes,
+    renderedRoutes: sortRouteList(renderedRoutes),
+    skippedRoutes: sortRouteList(skippedRoutes),
   };
 }
