@@ -138,7 +138,7 @@ function pendingPathInvalidations(entries: readonly string[]): SyncInvalidation[
   );
 }
 
-export function furinSync(options?: SyncRuntimeOptions) {
+export function furinSync(options: SyncRuntimeOptions) {
   const runtime = resolveSyncRuntime(options);
 
   async function beginMutation(ctx: MutationContext): Promise<Response | undefined> {
@@ -172,15 +172,6 @@ export function furinSync(options?: SyncRuntimeOptions) {
     }
     if (result.kind === "conflict") {
       return conflictResponse(result.reason);
-    }
-    if (result.kind === "unavailable") {
-      return Response.json(
-        {
-          code: "FURIN_SYNC_CAPACITY_EXCEEDED",
-          message: "The mutation replay store is temporarily full.",
-        },
-        { headers: { "retry-after": "1" }, status: 503 }
-      );
     }
     const active: ActiveMutation = { lease: result.lease, renewal: undefined };
     const renewAfter = Math.max(1000, Math.floor(result.lease.leaseMs / 3));

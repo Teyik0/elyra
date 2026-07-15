@@ -8,21 +8,15 @@ const SYNC_STREAM_DEFAULT_PATH = "/_furin/sync";
 // stream path comes from the current furin instance.
 const requestSyncStreamPath = new AsyncLocalStorage<string | undefined>();
 
-export type FurinSyncOption =
-  | boolean
-  | {
-      streamPath?: string;
-    }
-  | (SyncRuntimeOptions & {
-      streamPath?: string;
-    });
+export interface FurinSyncOptions extends SyncRuntimeOptions {
+  streamPath?: string;
+}
+
+export type FurinSyncOption = FurinSyncOptions | false;
 
 export function resolveSyncStreamPath(sync: FurinSyncOption | undefined): string | undefined {
   if (!sync) {
     return;
-  }
-  if (sync === true) {
-    return SYNC_STREAM_DEFAULT_PATH;
   }
   return sync.streamPath ?? SYNC_STREAM_DEFAULT_PATH;
 }
@@ -43,10 +37,6 @@ export function runWithSyncStreamPath<T>(path: string | undefined, fn: () => T):
   return requestSyncStreamPath.run(path, fn);
 }
 
-export function syncRuntimeOptions(
-  sync: FurinSyncOption | undefined
-): SyncRuntimeOptions | undefined {
-  return sync && typeof sync === "object" && "adapter" in sync
-    ? { adapter: sync.adapter, notifier: sync.notifier }
-    : undefined;
+export function syncRuntimeOptions(sync: FurinSyncOptions): SyncRuntimeOptions {
+  return { adapter: sync.adapter, notifier: sync.notifier };
 }

@@ -4,36 +4,6 @@ interface ListenerSubscription {
   listener: (cursor: string) => void;
 }
 
-export class MemorySyncNotifier implements SyncNotifier {
-  private readonly listeners = new Set<ListenerSubscription>();
-
-  publish(cursor: string): Promise<void> {
-    for (const subscription of [...this.listeners]) {
-      try {
-        subscription.listener(cursor);
-      } catch {
-        // Notifications are best-effort wake-ups; durable recovery reads the change log.
-      }
-    }
-    return Promise.resolve();
-  }
-
-  subscribe(listener: (cursor: string) => void): Promise<SyncSubscription> {
-    const subscription = { listener };
-    this.listeners.add(subscription);
-    return Promise.resolve({
-      unsubscribe: () => {
-        this.listeners.delete(subscription);
-        return Promise.resolve();
-      },
-    });
-  }
-
-  reset(): void {
-    this.listeners.clear();
-  }
-}
-
 export class PollingSyncNotifier implements SyncNotifier {
   private readonly adapter: SyncAdapter;
   private readonly intervalMs: number;
@@ -137,5 +107,3 @@ export class PollingSyncNotifier implements SyncNotifier {
     this.timer.unref?.();
   }
 }
-
-export const memorySyncNotifier = new MemorySyncNotifier();

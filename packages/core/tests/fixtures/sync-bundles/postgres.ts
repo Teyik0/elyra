@@ -1,3 +1,3 @@
-import { postgresSyncAdapter } from "../../../../sync-postgres/dist/index.js";
+import { postgresSyncAdapter } from "../../../dist/server/sync/postgres/index.js";
 
 console.log(postgresSyncAdapter);

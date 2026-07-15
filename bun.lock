@@ -70,7 +70,6 @@
       "dependencies": {
         "@elysiajs/eden": "^1.4.0",
         "@teyik0/furin": "workspace:*",
-        "@teyik0/furin-sync-sqlite": "workspace:*",
         "bun-plugin-tailwind": "^0.1.2",
         "clsx": "^2.1.1",
         "drizzle-orm": "^0.45.2",
@@ -112,6 +111,7 @@
       "version": "0.3.0-alpha.1",
       "bin": {
         "furin": "./src/cli/index.ts",
+        "furin-sync-postgres-migrate": "./dist/server/sync/postgres/migrate.js",
       },
       "dependencies": {
         "@elysiajs/static": "^1.4.10",
@@ -131,39 +131,6 @@
         "evlog": "catalog:",
         "react": "catalog:",
         "react-dom": "catalog:",
-      },
-    },
-    "packages/sync-postgres": {
-      "name": "@teyik0/furin-sync-postgres",
-      "version": "0.3.0-alpha.1",
-      "bin": {
-        "furin-sync-postgres-migrate": "./dist/migrate.js",
-      },
-      "devDependencies": {
-        "@teyik0/furin": "workspace:*",
-      },
-      "peerDependencies": {
-        "@teyik0/furin": "workspace:*",
-      },
-    },
-    "packages/sync-redis": {
-      "name": "@teyik0/furin-sync-redis",
-      "version": "0.3.0-alpha.1",
-      "devDependencies": {
-        "@teyik0/furin": "workspace:*",
-      },
-      "peerDependencies": {
-        "@teyik0/furin": "workspace:*",
-      },
-    },
-    "packages/sync-sqlite": {
-      "name": "@teyik0/furin-sync-sqlite",
-      "version": "0.3.0-alpha.1",
-      "devDependencies": {
-        "@teyik0/furin": "workspace:*",
-      },
-      "peerDependencies": {
-        "@teyik0/furin": "workspace:*",
       },
     },
   },
@@ -724,12 +691,6 @@
     "@teyik0/furin-example-task-manager": ["@teyik0/furin-example-task-manager@workspace:examples/task-manager"],
 
     "@teyik0/furin-example-weather": ["@teyik0/furin-example-weather@workspace:examples/weather"],
-
-    "@teyik0/furin-sync-postgres": ["@teyik0/furin-sync-postgres@workspace:packages/sync-postgres"],
-
-    "@teyik0/furin-sync-redis": ["@teyik0/furin-sync-redis@workspace:packages/sync-redis"],
-
-    "@teyik0/furin-sync-sqlite": ["@teyik0/furin-sync-sqlite@workspace:packages/sync-sqlite"],
 
     "@tokenizer/inflate": ["@tokenizer/inflate@0.4.1", "", { "dependencies": { "debug": "^4.4.3", "token-types": "^6.1.1" } }, "sha512-2mAv+8pkG6GIZiF1kNg1jAjh27IDxEPKwdGul3snfztFerfPGI1LjDezZp3i7BElXompqEtPmoPx6c2wgtWsOA=="],
 

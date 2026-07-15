@@ -26,6 +26,28 @@ CREATE TABLE IF NOT EXISTS furin_sync.mutations (
   UNIQUE (mutation_id)
 );
 
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'furin_sync_mutations_succeeded_response_check'
+      AND conrelid = 'furin_sync.mutations'::regclass
+  ) THEN
+    ALTER TABLE furin_sync.mutations
+      ADD CONSTRAINT furin_sync_mutations_succeeded_response_check CHECK (
+        state <> 'succeeded'
+        OR (
+          response_status IS NOT NULL
+          AND response_headers IS NOT NULL
+          AND response_body IS NOT NULL
+          AND completed_at IS NOT NULL
+        )
+      ) NOT VALID;
+  END IF;
+END
+$$;
+
 CREATE TABLE IF NOT EXISTS furin_sync.streams (
   namespace text PRIMARY KEY,
   current_cursor bigint NOT NULL DEFAULT 0,

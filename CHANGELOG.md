@@ -7,21 +7,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Breaking
-- Minimal version is bun v1.4.0 to avoid segfault with RSC update
-- **Sync stream runtime options** — `createSyncStreamPlugin()` no longer accepts the obsolete string channel argument; pass `SyncRuntimeOptions` when configuring a non-default adapter.
+- **Minimum Bun version** — Bun 1.4.0 is now required to avoid a runtime crash when updating RSC content.
+- **Explicit sync runtime** — `furinSync()`, `createSyncStreamPlugin()`, and active `furin({ sync })` configurations now require a shared runtime object. The `sync: true` and no-argument development shorthands, `MemorySyncAdapter`, and `MemorySyncNotifier` have been removed; `sync: false` remains available to disable sync explicitly. SQLite `:memory:` replaces the development storage implementation and remains rejected in production.
+- **Consolidated sync adapter exports** — the unpublished adapter workspaces have moved into `@teyik0/furin/sync/postgres`, `@teyik0/furin/sync/redis`, and `@teyik0/furin/sync/sqlite`; no compatibility packages are published.
 
 ### Added
-- **Host-local SQLite sync adapter** — the optional `@teyik0/furin-sync-sqlite` package implements atomic leases, replay responses, and cursor catch-up with `bun:sqlite`. The task-manager example now shares its WAL database with this adapter; the explicit `host-local` scope distinguishes one-machine durability from multi-host PostgreSQL/Redis deployments.
-- **Distributed sync adapters** — the new optional `@teyik0/furin-sync-postgres` and `@teyik0/furin-sync-redis` packages provide durable cross-replica idempotency, mutation leases, replay, and ordered change journals using Bun's native SQL and Redis clients. PostgreSQL ships a versioned migration; Redis also exports an independent best-effort notifier.
-- **Injectable sync runtime** — `SyncAdapter` durable storage is now separate from `SyncNotifier` wake-ups. The core includes process-local memory for development, cursor polling for safety, atomic mutation completion, lease renewal, and a common public adapter conformance suite.
-- **Sync bundle isolation coverage** — build fixtures verify that core, SQLite, PostgreSQL, Redis, hybrid, and browser bundles contain only their imported backends; optional adapters declare `sideEffects: false` and are not root dependencies.
+- **SQLite sync adapter** — the `@teyik0/furin/sync/sqlite` subpath implements atomic leases, replay responses, and cursor catch-up with `bun:sqlite`. Its scope is `process-local` for memory databases and `host-local` for file-backed databases.
+- **Distributed sync adapters** — the `@teyik0/furin/sync/postgres` and `@teyik0/furin/sync/redis` subpaths provide durable cross-replica idempotency, mutation leases, replay, and ordered change journals using Bun's native SQL and Redis clients. PostgreSQL ships an idempotent schema bootstrap and migration CLI; Redis also exports an independent best-effort notifier.
+- **Injectable sync runtime** — `SyncAdapter` durable storage is separate from `SyncNotifier` wake-ups. The core includes cursor polling for safety, atomic mutation completion, lease renewal, and a common public adapter conformance suite.
+- **Sync bundle isolation coverage** — build fixtures verify that core, SQLite, PostgreSQL, Redis, hybrid, and browser bundles contain only their imported backends from the single side-effect-free package.
 - **Composite React Server Components** — `furin/rsc` now exports explicit RSC primitives for loader-returned server markup. `renderServerComponent()` transports server-rendered React output through SSR and SPA data responses, while `createCompositeComponent()` and `<CompositeComponent>` let client-owned `children`, component slots, and render props compose into server-owned markup without turning the whole route into client JavaScript.
 - **Partial prerendering for personalized cached routes** — `createRoute({ requestLoader })` separates request-specific data from the public route loader. SSG/ISR routes can cache the public shell while streaming `requestData` per request under Suspense; pure static export rejects `requestLoader` because no request runtime exists.
 - **RSC build graph and runtime guards** — Bun builds now emit the isolated Flight codec graph, enforce matching React / React DOM / React Server DOM versions, and provide `furin/server-only` plus `furin/client-only` imports for build-time graph boundary assertions.
 - **RSC documentation and example route** — the rendering guide now documents composite RSC, request-scoped data, and the current tradeoffs against Next.js-style default Server Components. The task-manager example includes an `/rsc` route and production transfer-size comparison against the conventional ISR route.
 
 ### Changed
-- **Production sync requires explicit durable storage** — implicit memory remains zero-config in development, while production rejects missing or process-local adapters. Explicit host-local SQLite is supported for one machine; PostgreSQL or Redis remains required across hosts. Pass the same `{ adapter, notifier? }` object to `furinSync()` and `furin({ sync })`.
+- **Production sync requires durable storage** — every environment now passes an explicit runtime. Production rejects process-local adapters, file-backed SQLite is supported for one machine, and PostgreSQL or Redis remains required across hosts.
 - **Optimistic sync runs before network work** — `useSync()` applies its optimistic callback synchronously, while cursor-only notifications and coalesced catch-up keep UI response independent of network latency.
 - **Route data transport now supports Flight payloads** — SSR and `/_furin/data` switch to the route-frame stream when loader data contains RSC sources, preserving nested/cyclic data, deferred values, and SPA navigation compatibility.
 - **Build IDs cover server-rendered output more completely** — Bun and package target fingerprints now include route metadata, source contents, framework render pipeline inputs, and mounted-app prefixes so SSR-only changes trigger stale-deploy detection.
@@ -29,8 +30,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Yuku parser packages upgraded** — `yuku-parser` and `@yuku-toolchain/types` moved to `0.6.1`; the parser dependency architecture test now verifies the direct parser dependency without pinning the exact patch in the assertion.
 
 ### Fixed
+- **Sync adapter durable invariants** — SQLite now rejects succeeded mutation rows without replay data, preserves renewed in-progress leases past mutation-retention expiry, and reports SQLite failures as rejected promises; PostgreSQL migration reruns now add the replay-data check to existing tables.
+- **Sync stream catch-up reliability** — SSE `open` is now the single post-connect catch-up trigger, preventing duplicate requests without allowing a failed earlier attempt to suppress recovery.
+- **Distributed sync validation hardening** — third-party GitHub Actions in the database-backed validation workflow are pinned to reviewed commit SHAs.
 - **React Doctor diagnostics** — docs search now lets TanStack Query schedule index fetching without effect-driven refetches, and the task-manager example respects reduced-motion preferences for animated UI.
-- **Distributed sync correctness** — reconnects now catch up without relying on a new SSE notification; notifier subscriptions and polling are race-safe; lease renewal continues during slow adapter calls; memory and Redis cursors, retention, snapshots, and replay expiry follow adapter invariants; and PostgreSQL prevents incomplete replay rows.
+- **Distributed sync correctness** — reconnects now catch up without relying on a new SSE notification; notifier subscriptions and polling are race-safe; lease renewal continues during slow adapter calls; SQLite and Redis cursors, retention, snapshots, and replay expiry follow adapter invariants; and PostgreSQL prevents incomplete replay rows.
 - **Locale-independent build fingerprints** — route fingerprint sorting now uses code-unit ordering instead of locale-sensitive collation, preventing build-ID differences across host locales.
 - **Static export route coverage** — dynamic SSG routes without usable `staticParams()` now fail the default static build instead of being silently omitted, and static build manifests now list rendered and skipped routes deterministically.
 - **Scaffolder duplicate outputs** — project generation now fails before writing files when a template contains duplicate destination paths.
@@ -46,7 +50,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Prefixed cache purges** — `revalidatePath()` now purges mounted apps by their physical prefixed URL instead of the logical app-local path.
 - **PPR tag invalidation** — partial-prerender public-shell caches are instance-scoped, registered with the cache invalidator, and cleared by `revalidateTag()`.
 - **Sync mutation replay bounds** — `furinSync()` now replays bounded `Response` bodies, rejects unbounded or oversized response bodies safely, and does not re-execute retries for unreplayable mutation responses.
-- **Memory sync adapter eviction** — completed mutation replay entries now expire and evict under normal mutation traffic and capacity pressure, avoiding stale replay storage growth.
 - **Docs table-of-contents cleanup** — pending hash-scroll animation frames are cancelled on unmount, satisfying React effect cleanup checks.
 
 ## [0.2.0-alpha.5] — 2026-07-12

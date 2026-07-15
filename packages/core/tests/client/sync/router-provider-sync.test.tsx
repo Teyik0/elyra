@@ -25,6 +25,7 @@ class FakeEventSource {
   static latest: FakeEventSource | undefined;
 
   listeners = new Map<string, SyncEventListener>();
+  readyState = 0;
   url: string;
 
   constructor(url: string | URL) {
@@ -39,6 +40,7 @@ class FakeEventSource {
   }
 
   close(): void {
+    this.readyState = 2;
     FakeEventSource.latest = undefined;
   }
 
@@ -50,6 +52,7 @@ class FakeEventSource {
   }
 
   open(): void {
+    this.readyState = 1;
     this.listeners.get("open")?.(new Event("open"));
   }
 
@@ -168,7 +171,7 @@ describe("RouterProvider sync refresh", () => {
       const url = new URL(input.toString(), window.location.origin);
       if (url.pathname === "/_furin/sync/changes") {
         requested.changes.push(url.searchParams.get("after") ?? "initial");
-        const hasEvent = requested.changes.length >= 3;
+        const hasEvent = requested.changes.length >= 2;
         return Promise.resolve(
           Response.json({
             changes: hasEvent ? [{ cursor: "1", invalidations: ["/board"] }] : [],
@@ -200,7 +203,7 @@ describe("RouterProvider sync refresh", () => {
     await waitForDom(() => container.textContent === "fresh", { timeoutMs: 2000 });
 
     expect(FakeEventSource.latest?.url).toBe("/_furin/sync");
-    expect(requested.changes).toEqual(["initial", "0", "0"]);
+    expect(requested.changes).toEqual(["initial", "0"]);
     expect(requested.data).toBe(1);
   });
 
@@ -241,11 +244,68 @@ describe("RouterProvider sync refresh", () => {
       FakeEventSource.latest?.open();
       await Promise.resolve();
     });
+    expect(requested.changes).toEqual(["initial", "0"]);
+
+    await act(async () => {
+      FakeEventSource.latest?.open();
+      await Promise.resolve();
+    });
 
     await waitForDom(() => requested.changes.length === 3, { timeoutMs: 100 });
     await waitForDom(() => container.textContent === "fresh", { timeoutMs: 2000 });
 
     expect(requested.changes).toEqual(["initial", "0", "0"]);
+    expect(requested.data).toBe(1);
+  });
+
+  test("catches up on the first open after a transient pre-open failure", async () => {
+    const requested = {
+      changes: [] as string[],
+      data: 0,
+    };
+    globalThis.fetch = mock((input: RequestInfo | URL) => {
+      const url = new URL(input.toString(), window.location.origin);
+      if (url.pathname === "/_furin/sync/changes") {
+        requested.changes.push(url.searchParams.get("after") ?? "initial");
+        if (requested.changes.length === 1) {
+          return Promise.resolve(
+            Response.json({ changes: [], cursor: "0", hasMore: false, reset: false })
+          );
+        }
+        if (FakeEventSource.latest?.readyState !== 1) {
+          return Promise.reject(new Error("Sync journal temporarily unavailable"));
+        }
+        return Promise.resolve(
+          Response.json({
+            changes: [{ cursor: "1", invalidations: ["/board"] }],
+            cursor: "1",
+            hasMore: false,
+            reset: false,
+          })
+        );
+      }
+      if (url.pathname === "/_furin/data") {
+        requested.data += 1;
+        return Promise.resolve(makeNdjsonResponse({ message: "fresh" }));
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    }) as unknown as typeof globalThis.fetch;
+
+    const route = makeRoute("/board");
+    const initialMatch = await loadInitialMatch(route);
+    const { cleanup, container } = await renderRouter(route, initialMatch);
+    currentCleanup = cleanup;
+
+    await waitForDom(() => FakeEventSource.latest !== undefined, { timeoutMs: 2000 });
+    expect(requested.changes).toEqual(["initial"]);
+    await act(async () => {
+      FakeEventSource.latest?.open();
+      await Promise.resolve();
+    });
+
+    await waitForDom(() => container.textContent === "fresh", { timeoutMs: 2000 });
+
+    expect(requested.changes).toEqual(["initial", "0"]);
     expect(requested.data).toBe(1);
   });
 });

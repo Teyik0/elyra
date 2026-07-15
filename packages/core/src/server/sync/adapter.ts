@@ -20,8 +20,7 @@ export interface MutationLease {
 export type BeginMutationResult =
   | { kind: "execute"; lease: MutationLease }
   | { kind: "replay"; response: StoredResponse }
-  | { kind: "conflict"; reason: "in-progress" | "payload-mismatch" }
-  | { kind: "unavailable" };
+  | { kind: "conflict"; reason: "in-progress" | "payload-mismatch" };
 
 export type SyncInvalidation =
   | { kind: "path"; path: string; type: "layout" | "page" }

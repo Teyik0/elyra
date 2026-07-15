@@ -150,7 +150,7 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 | **On-demand cache invalidation** | `revalidatePath`, `revalidateTag`, `updateTag` | Coordinate router/query cache in application code | `revalidatePath`, `revalidateTag`, path/tag invalidation rules |
 | **Durable idempotency journal** | Application responsibility | Application responsibility | SQLite, PostgreSQL, or Redis adapter |
 | **Missed-event catch-up** | Application responsibility | Application/query-library responsibility | Ordered cursor journal + SSE wake-up |
-| **Optional backend isolation** | Deployment/runtime dependent | Environment code is build-time separated | Separate side-effect-free adapter packages |
+| **Optional backend isolation** | Deployment/runtime dependent | Environment code is build-time separated | Independent side-effect-free package subpaths |
 
 Next.js has the broadest integrated cache revalidation API. TanStack Start emphasizes typed same-origin Server Functions and deliberate client-cache integration. Furin keeps standard HTTP routes as the public mutation contract and adds an optional durable replay/change journal around them. The recommended production topology is PostgreSQL for correctness, with Redis only as an optional low-latency notifier.
 

@@ -3,14 +3,15 @@ import { afterAll, afterEach, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { testSyncAdapterConformance } from "../../core/tests/helpers/sync-adapter-conformance";
-import { migrateSqliteSync, sqliteSyncAdapter } from "../src";
+import { migrateSqliteSync, sqliteSyncAdapter } from "../../../../src/server/sync/sqlite/index.ts";
+import { testSyncAdapterConformance } from "../../../helpers/sync-adapter-conformance.ts";
 
 const database = new Database(":memory:");
 migrateSqliteSync(database);
 afterAll(() => database.close());
 afterEach(() => setSystemTime());
 let conformanceNamespace = 0;
+const succeededResponseCheckPattern = /furin_sync_mutations_succeeded_response_check/;
 
 testSyncAdapterConformance(() => {
   conformanceNamespace += 1;
@@ -20,8 +21,19 @@ testSyncAdapterConformance(() => {
   });
 });
 
-test("declares its host-local deployment boundary", () => {
-  expect(sqliteSyncAdapter({ database, namespace: "scope" }).scope).toBe("host-local");
+test("declares in-memory databases as process-local", () => {
+  expect(sqliteSyncAdapter({ database, namespace: "scope" }).scope).toBe("process-local");
+});
+
+test("declares empty-filename databases as process-local", () => {
+  const emptyDatabase = new Database("");
+  try {
+    expect(sqliteSyncAdapter({ database: emptyDatabase, namespace: "empty-scope" }).scope).toBe(
+      "process-local"
+    );
+  } finally {
+    emptyDatabase.close();
+  }
 });
 
 test("persists and replays a completed mutation", async () => {
@@ -49,6 +61,19 @@ test("persists and replays a completed mutation", async () => {
       principal: "user",
     })
   ).toEqual({ kind: "replay", response });
+});
+
+test("rejects succeeded mutations without replay data", () => {
+  expect(() =>
+    database
+      .query<never, [string, string, string]>(
+        `INSERT INTO furin_sync_mutations (
+          namespace, mutation_key, mutation_id, fingerprint, state,
+          lease_expires_at, expires_at
+        ) VALUES (?, ?, ?, 'fingerprint', 'succeeded', 1000, 2000)`
+      )
+      .run("invalid-replay", "mutation", crypto.randomUUID())
+  ).toThrow(succeededResponseCheckPattern);
 });
 
 test("commits the replay response and invalidation under one cursor", async () => {
@@ -166,6 +191,8 @@ test("coordinates reservations across two connections to one WAL file", async ()
     migrateSqliteSync(firstDatabase);
     const firstAdapter = sqliteSyncAdapter({ database: firstDatabase, namespace: "shared" });
     const secondAdapter = sqliteSyncAdapter({ database: secondDatabase, namespace: "shared" });
+    expect(firstAdapter.scope).toBe("host-local");
+    expect(secondAdapter.scope).toBe("host-local");
     const mutation = await firstAdapter.beginMutation({
       fingerprint: "body",
       key: "create-card",
@@ -213,6 +240,57 @@ test("renews a live lease and rejects it after the renewed deadline", async () =
   expect(await adapter.renewMutation(mutation.lease)).toBe("renewed");
   setSystemTime(new Date(1000 + 2 * mutation.lease.leaseMs));
   expect(await adapter.renewMutation(mutation.lease)).toBe("lost");
+});
+
+test("keeps renewed in-progress mutations after retention expiry", async () => {
+  setSystemTime(new Date(1000));
+  const adapter = sqliteSyncAdapter({ database, namespace: "long-renew" });
+  const mutation = await adapter.beginMutation({
+    fingerprint: "body",
+    key: "update-card",
+    principal: "user",
+  });
+  if (mutation.kind !== "execute") {
+    throw new Error("Expected an executable mutation");
+  }
+
+  setSystemTime(new Date(2000));
+  expect(
+    await adapter.renewMutation({
+      ...mutation.lease,
+      leaseMs: 25 * 60 * 60 * 1000,
+    })
+  ).toBe("renewed");
+
+  setSystemTime(new Date(1000 + 24 * 60 * 60 * 1000 + 10_000));
+  expect(
+    await adapter.beginMutation({
+      fingerprint: "body",
+      key: "update-card",
+      principal: "user",
+    })
+  ).toEqual({ kind: "conflict", reason: "in-progress" });
+  expect(
+    await adapter.completeMutation({
+      invalidations: [],
+      lease: mutation.lease,
+      response: { body: new Uint8Array(), headers: [], status: 204 },
+    })
+  ).toEqual({ cursor: undefined, kind: "committed" });
+});
+
+test("rejects sqlite failures through the returned promise", async () => {
+  const failingDatabase = new Database(":memory:");
+  const adapter = sqliteSyncAdapter({ database: failingDatabase, namespace: "closed" });
+  failingDatabase.close();
+
+  await expect(
+    adapter.beginMutation({
+      fingerprint: "body",
+      key: "update-card",
+      principal: "user",
+    })
+  ).rejects.toThrow();
 });
 
 test("requests a reset when retained history no longer covers the cursor", async () => {

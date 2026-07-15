@@ -1,10 +1,11 @@
+import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { __setDevMode, IS_DEV } from "../../../src/server/runtime-env";
 import type { SyncAdapter } from "../../../src/server/sync/adapter";
 import { resolveSyncStreamPath, syncRuntimeOptions } from "../../../src/server/sync/config";
-import { MemorySyncAdapter } from "../../../src/server/sync/memory-adapter";
 import { PollingSyncNotifier } from "../../../src/server/sync/notifier";
 import { resolveSyncRuntime } from "../../../src/server/sync/runtime";
+import { migrateSqliteSync, sqliteSyncAdapter } from "../../../src/server/sync/sqlite/index.ts";
 
 const originalDevMode = IS_DEV;
 
@@ -19,7 +20,7 @@ function durableAdapter(
   return {
     scope,
     abortMutation: async () => undefined,
-    beginMutation: async () => ({ kind: "unavailable" }),
+    beginMutation: async () => ({ kind: "conflict", reason: "in-progress" }),
     completeMutation: async () => ({ kind: "lost" }),
     currentCursor,
     readChanges: async () => ({ changes: [], cursor: "0", hasMore: false, reset: false }),
@@ -28,18 +29,23 @@ function durableAdapter(
 }
 
 describe("sync runtime", () => {
-  test("keeps the legacy streamPath-only development configuration", () => {
-    const sync = { streamPath: "/events" };
+  test("resolves a custom stream path from an explicit runtime", () => {
+    const adapter = durableAdapter("host-local", async () => "0");
+    const sync = { adapter, streamPath: "/events" };
     expect(resolveSyncStreamPath(sync)).toBe("/events");
-    expect(syncRuntimeOptions(sync)).toBeUndefined();
+    expect(syncRuntimeOptions(sync)).toEqual({ adapter, notifier: undefined });
   });
 
-  test("rejects implicit and process-local storage in production", () => {
+  test("rejects process-local SQLite storage in production", () => {
     __setDevMode(false);
-    expect(() => resolveSyncRuntime(undefined)).toThrow("explicit durable SyncAdapter");
-    expect(() => resolveSyncRuntime({ adapter: new MemorySyncAdapter() })).toThrow(
-      "process-local SyncAdapter"
-    );
+    const database = new Database(":memory:");
+    try {
+      migrateSqliteSync(database);
+      const adapter = sqliteSyncAdapter({ database, namespace: "runtime" });
+      expect(() => resolveSyncRuntime({ adapter })).toThrow("process-local SyncAdapter");
+    } finally {
+      database.close();
+    }
   });
 
   test("accepts an explicit host-local adapter in production", () => {

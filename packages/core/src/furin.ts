@@ -31,11 +31,7 @@ import { loadProdRoutes } from "./server/router/discovery.ts";
 import { createDataEndpoint, createRoutePlugin } from "./server/router/plugin.ts";
 import { createSearchRouteMetadata } from "./server/router/schemas.ts";
 import { IS_DEV } from "./server/runtime-env.ts";
-import {
-  type FurinSyncOption,
-  resolveSyncStreamPath,
-  syncRuntimeOptions,
-} from "./server/sync/config.ts";
+import { type FurinSyncOption, resolveSyncStreamPath } from "./server/sync/config.ts";
 import { createSyncStreamPlugin } from "./server/sync/stream.ts";
 
 // biome-ignore lint/suspicious/noEmptyInterface: intentionally augmentable via furin-env.d.ts
@@ -332,9 +328,9 @@ export interface FurinOptions {
    */
   prefix?: string;
   /**
-   * Enables Furin's built-in sync event stream. The opinionated default mounts
-   * Server-Sent Events at `/_furin/sync`; pass an object only for constrained
-   * reverse-proxy deployments that need a custom internal path.
+   * Configures Furin's sync event stream with the required adapter. The
+   * optional `streamPath` defaults to `/_furin/sync`. Omit this option or pass
+   * `false` to disable sync.
    */
   sync?: FurinSyncOption;
 }
@@ -364,7 +360,6 @@ export async function furin({
 }: FurinOptions = {}) {
   const prefix = normalizePrefix(rawPrefix);
   const syncStreamPath = resolveSyncStreamPath(sync);
-  const syncRuntime = syncRuntimeOptions(sync);
   initLogger({ env: { service: "furin" } });
   const loggerPlugin = createLoggerPlugin(prefix, syncStreamPath, logger, clientLogging === true);
 
@@ -458,7 +453,7 @@ export async function furin({
           : () => new Response(null, { status: 404 })
       )
       .use(createDevInspectorPlugin())
-      .use(syncStreamPath ? createSyncStreamPlugin(syncStreamPath, syncRuntime) : new Elysia())
+      .use(sync ? createSyncStreamPlugin(sync) : new Elysia())
       .use(createDataEndpoint(routes))
       .use((app) =>
         routes.reduce(
@@ -565,7 +560,7 @@ export async function furin({
         return app;
       })()
     )
-    .use(syncStreamPath ? createSyncStreamPlugin(syncStreamPath, syncRuntime) : new Elysia())
+    .use(sync ? createSyncStreamPlugin(sync) : new Elysia())
     .use(createDataEndpoint(routes))
     .use((app) =>
       routes.reduce(
@@ -624,6 +619,8 @@ export { revalidatePath, setCachePurger } from "./server/cache/invalidation.ts";
 export { buildElement, buildErrorElement, renderRootNotFound } from "./server/render/index.ts";
 export type { ResolvedRoute, SegmentBoundary } from "./server/router/index.ts";
 export {
+  type FurinSyncOption,
+  type FurinSyncOptions,
   furinSync,
   type SyncAdapter,
   type SyncInput,

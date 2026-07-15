@@ -8,7 +8,7 @@ if (databaseUrl === undefined || databaseUrl.length === 0) {
 
 const sql = new SQL(databaseUrl);
 try {
-  const migration = await Bun.file(new URL("../migrations/0001_sync.sql", import.meta.url)).text();
+  const migration = await Bun.file(new URL("./migration.sql", import.meta.url)).text();
   await sql.unsafe(migration);
 } finally {
   await sql.close();

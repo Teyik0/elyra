@@ -1,3 +1,3 @@
-import { MemorySyncAdapter } from "../../../dist/server/sync/index.js";
+import { furinSync } from "../../../dist/server/sync/index.js";
 
-console.log(new MemorySyncAdapter().scope);
+console.log(furinSync);

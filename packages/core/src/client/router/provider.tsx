@@ -788,6 +788,7 @@ export function RouterProvider({
         }
       });
     };
+    const onOpen = () => recover();
     const onSync = (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data) as { cursor?: unknown };
@@ -805,7 +806,7 @@ export function RouterProvider({
         return;
       }
       source = new EventSource(streamUrl);
-      source.addEventListener("open", recover);
+      source.addEventListener("open", onOpen);
       source.addEventListener("furin.sync", onSync);
     };
 
@@ -816,8 +817,6 @@ export function RouterProvider({
           return;
         }
         connect();
-        // Close the initialization/SSE race using the durable change log.
-        recover();
       })
       .catch((error: unknown) => {
         if (disposed) {
@@ -829,7 +828,7 @@ export function RouterProvider({
       });
     return () => {
       disposed = true;
-      source?.removeEventListener("open", recover);
+      source?.removeEventListener("open", onOpen);
       source?.removeEventListener("furin.sync", onSync);
       source?.close();
     };

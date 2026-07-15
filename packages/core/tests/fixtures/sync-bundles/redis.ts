@@ -1,3 +1,3 @@
-import { redisSyncAdapter } from "../../../../sync-redis/dist/index.js";
+import { redisSyncAdapter } from "../../../dist/server/sync/redis/index.js";
 
 console.log(redisSyncAdapter);

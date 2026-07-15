@@ -1,4 +1,4 @@
-import { migrateSqliteSync, sqliteSyncAdapter } from "@teyik0/furin-sync-sqlite";
+import { migrateSqliteSync, sqliteSyncAdapter } from "@teyik0/furin/sync/sqlite";
 import { sqlite } from "./db";
 
 migrateSqliteSync(sqlite);

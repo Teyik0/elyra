@@ -1,3 +1,4 @@
+import type { SQL } from "bun";
 import type {
   BeginMutationInput,
   BeginMutationResult,
@@ -10,8 +11,7 @@ import type {
   SyncAdapter,
   SyncChange,
   SyncInvalidation,
-} from "@teyik0/furin/sync";
-import type { SQL } from "bun";
+} from "../adapter.ts";
 
 const CHANGE_RETENTION = 1000;
 const LEASE_MS = 30_000;

@@ -38,7 +38,8 @@
   "module": "./dist/furin.js",
   "types": "./dist/furin.d.ts",
   "bin": {
-    "furin": "./src/cli/index.ts"
+    "furin": "./src/cli/index.ts",
+    "furin-sync-postgres-migrate": "./dist/server/sync/postgres/migrate.js"
   },
   "exports": {
     ".": {
@@ -77,6 +78,23 @@
       "bun": "./src/server/sync/index.ts",
       "import": "./dist/server/sync/index.js"
     },
+    "./sync/postgres": {
+      "types": "./dist/server/sync/postgres/index.d.ts",
+      "bun": "./src/server/sync/postgres/index.ts",
+      "import": "./dist/server/sync/postgres/index.js"
+    },
+    "./sync/postgres/migration.sql": "./src/server/sync/postgres/migration.sql",
+    "./sync/redis": {
+      "types": "./dist/server/sync/redis/index.d.ts",
+      "bun": "./src/server/sync/redis/index.ts",
+      "import": "./dist/server/sync/redis/index.js"
+    },
+    "./sync/sqlite": {
+      "types": "./dist/server/sync/sqlite/index.d.ts",
+      "bun": "./src/server/sync/sqlite/index.ts",
+      "import": "./dist/server/sync/sqlite/index.js"
+    },
+    "./sync/sqlite/migration.sql": "./src/server/sync/sqlite/migration.sql",
     "./strip-plugin": {
       "types": "./dist/plugin/index.d.ts",
       "bun": "./src/plugin/index.ts",

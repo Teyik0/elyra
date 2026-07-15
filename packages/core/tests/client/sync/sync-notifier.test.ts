@@ -1,52 +1,18 @@
 import { describe, expect, test } from "bun:test";
 import type { SyncAdapter } from "../../../src/server/sync/adapter.ts";
-import { MemorySyncNotifier, PollingSyncNotifier } from "../../../src/server/sync/notifier.ts";
+import { PollingSyncNotifier } from "../../../src/server/sync/notifier.ts";
 
 function adapterWithCursor(currentCursor: () => Promise<string>): SyncAdapter {
   return {
     scope: "distributed",
     abortMutation: () => Promise.resolve(),
-    beginMutation: () => Promise.resolve({ kind: "unavailable" }),
+    beginMutation: () => Promise.resolve({ kind: "conflict", reason: "in-progress" }),
     completeMutation: () => Promise.resolve({ kind: "lost" }),
     currentCursor,
     readChanges: () => Promise.resolve({ changes: [], cursor: "0", hasMore: false, reset: false }),
     renewMutation: () => Promise.resolve("lost"),
   };
 }
-
-describe("MemorySyncNotifier", () => {
-  test("isolates listener failures while delivering a publication", async () => {
-    const notifier = new MemorySyncNotifier();
-    let delivered = 0;
-    await notifier.subscribe(() => {
-      throw new Error("listener failed");
-    });
-    await notifier.subscribe(() => {
-      delivered += 1;
-    });
-
-    await expect(notifier.publish("1")).resolves.toBeUndefined();
-    expect(delivered).toBe(1);
-  });
-
-  test("keeps subscriptions independent when they share a listener", async () => {
-    const notifier = new MemorySyncNotifier();
-    let delivered = 0;
-    const listener = () => {
-      delivered += 1;
-    };
-    const first = await notifier.subscribe(listener);
-    const second = await notifier.subscribe(listener);
-
-    await first.unsubscribe();
-    await notifier.publish("1");
-    expect(delivered).toBe(1);
-
-    await second.unsubscribe();
-    await notifier.publish("2");
-    expect(delivered).toBe(1);
-  });
-});
 
 describe("PollingSyncNotifier", () => {
   test("removes a listener when initial cursor lookup fails", async () => {

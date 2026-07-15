@@ -1,3 +1,4 @@
+import type { RedisClient } from "bun";
 import type {
   BeginMutationInput,
   BeginMutationResult,
@@ -12,14 +13,13 @@ import type {
   SyncInvalidation,
   SyncNotifier,
   SyncSubscription,
-} from "@teyik0/furin/sync";
-import type { RedisClient } from "bun";
+} from "../adapter.ts";
 import {
   ABORT_MUTATION_SCRIPT,
   BEGIN_MUTATION_SCRIPT,
   COMPLETE_MUTATION_SCRIPT,
   RENEW_MUTATION_SCRIPT,
-} from "./scripts";
+} from "./scripts.ts";
 
 const CHANGE_RETENTION = 1000;
 const LEASE_MS = 30_000;

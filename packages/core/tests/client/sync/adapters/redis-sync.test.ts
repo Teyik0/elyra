@@ -1,8 +1,8 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { RedisClient, SQL } from "bun";
-import { testSyncAdapterConformance } from "../../core/tests/helpers/sync-adapter-conformance";
-import { postgresSyncAdapter } from "../../sync-postgres/src";
-import { redisSyncAdapter, redisSyncNotifier } from "../src";
+import { postgresSyncAdapter } from "../../../../src/server/sync/postgres/index.ts";
+import { redisSyncAdapter, redisSyncNotifier } from "../../../../src/server/sync/redis/index.ts";
+import { testSyncAdapterConformance } from "../../../helpers/sync-adapter-conformance.ts";
 
 const redisUrl = process.env.FURIN_SYNC_REDIS_URL;
 const databaseUrl = process.env.FURIN_SYNC_POSTGRES_URL;
@@ -175,7 +175,7 @@ describeWithBoth("PostgreSQL with Redis notifier", () => {
 
   beforeEach(async () => {
     const migration = await Bun.file(
-      new URL("../../sync-postgres/migrations/0001_sync.sql", import.meta.url)
+      new URL("../../../../src/server/sync/postgres/migration.sql", import.meta.url)
     ).text();
     await sql.unsafe(migration);
     await sql`DELETE FROM furin_sync.changes WHERE namespace = ${namespace}`;

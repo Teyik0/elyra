@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { Elysia } from "elysia";
 import {
@@ -17,9 +18,35 @@ import type {
 } from "../../../src/server/sync/adapter.ts";
 import { furinSync } from "../../../src/server/sync/plugin.ts";
 import { MAX_SYNC_REPLAY_RESPONSE_BYTES } from "../../../src/server/sync/response.ts";
+import { migrateSqliteSync, sqliteSyncAdapter } from "../../../src/server/sync/sqlite/index.ts";
 import { __resetSyncState, createSyncStreamPlugin } from "../../../src/server/sync/stream.ts";
 
 type StreamReadResult = Awaited<ReturnType<ReadableStreamDefaultReader<Uint8Array>["read"]>>;
+
+const syncDatabase = new Database(":memory:");
+migrateSqliteSync(syncDatabase);
+const syncListeners = new Set<(cursor: string) => void>();
+const testNotifier: SyncNotifier = {
+  publish(cursor) {
+    for (const listener of syncListeners) {
+      listener(cursor);
+    }
+    return Promise.resolve();
+  },
+  subscribe(listener) {
+    syncListeners.add(listener);
+    return Promise.resolve({
+      unsubscribe() {
+        syncListeners.delete(listener);
+        return Promise.resolve();
+      },
+    });
+  },
+};
+const testSync = {
+  adapter: sqliteSyncAdapter({ database: syncDatabase, namespace: "sync-plugin-tests" }),
+  notifier: testNotifier,
+};
 
 function readStreamChunk(
   reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -164,7 +191,7 @@ test("furinSync schedules the next lease renewal while the current renewal is pe
 test("furinSync direct handle completes inside bun:test", async () => {
   resetSyncTestState();
   try {
-    const app = new Elysia().use(furinSync()).post(
+    const app = new Elysia().use(furinSync(testSync)).post(
       "/cards",
       () => ({
         ok: true,
@@ -192,7 +219,7 @@ test("furinSync enforces idempotent mutation semantics directly", async () => {
   try {
     let calls = 0;
     const syncApp = new Elysia()
-      .use(furinSync())
+      .use(furinSync(testSync))
       .post("/synced", () => {
         calls += 1;
         return { calls };
@@ -215,7 +242,7 @@ test("furinSync enforces idempotent mutation semantics directly", async () => {
     expect(await response.json()).toEqual({ calls: 1 });
 
     calls = 0;
-    const replayApp = new Elysia().use(furinSync()).post("/cards", () => {
+    const replayApp = new Elysia().use(furinSync(testSync)).post("/cards", () => {
       calls += 1;
       return { calls };
     });
@@ -245,7 +272,7 @@ test("furinSync enforces idempotent mutation semantics directly", async () => {
     expect(await response.json()).toMatchObject({ code: "FURIN_IDEMPOTENCY_MISMATCH" });
 
     calls = 0;
-    const retryApp = new Elysia().use(furinSync()).post("/retry", ({ status }) => {
+    const retryApp = new Elysia().use(furinSync(testSync)).post("/retry", ({ status }) => {
       calls += 1;
       return calls === 1 ? status("Service Unavailable", "retry") : { calls };
     });
@@ -269,7 +296,7 @@ test("furinSync refuses unbounded Response bodies without re-executing retries",
   resetSyncTestState();
   try {
     let calls = 0;
-    const app = new Elysia().use(furinSync()).post("/download", () => {
+    const app = new Elysia().use(furinSync(testSync)).post("/download", () => {
       calls += 1;
       return new Response("ok");
     });
@@ -302,7 +329,7 @@ test("furinSync replays bounded Response bodies", async () => {
   resetSyncTestState();
   try {
     let calls = 0;
-    const app = new Elysia().use(furinSync()).post("/created", () => {
+    const app = new Elysia().use(furinSync(testSync)).post("/created", () => {
       calls += 1;
       return new Response("created", {
         headers: { "content-length": "7", "x-route": "created" },
@@ -336,7 +363,7 @@ test("furinSync refuses oversized Response bodies without re-executing retries",
   resetSyncTestState();
   try {
     let calls = 0;
-    const app = new Elysia().use(furinSync()).post("/large", () => {
+    const app = new Elysia().use(furinSync(testSync)).post("/large", () => {
       calls += 1;
       return new Response("too large", {
         headers: { "content-length": String(MAX_SYNC_REPLAY_RESPONSE_BYTES + 1) },
@@ -370,8 +397,8 @@ test("furinSync refuses oversized Response bodies without re-executing retries",
 test("furinSync SSE notification completes inside bun:test", async () => {
   resetSyncTestState();
   const app = new Elysia()
-    .use(createSyncStreamPlugin())
-    .use(furinSync())
+    .use(createSyncStreamPlugin(testSync))
+    .use(furinSync(testSync))
     .patch("/cards/:cardId", () => ({ ok: true }), {
       sync: { invalidate: { path: "/board", type: "layout" } },
     });
@@ -410,7 +437,7 @@ test("sync stream opens when notifier subscription fails", async () => {
   const adapter: SyncAdapter = {
     scope: "distributed",
     abortMutation: () => Promise.resolve(),
-    beginMutation: () => Promise.resolve({ kind: "unavailable" }),
+    beginMutation: () => Promise.resolve({ kind: "conflict", reason: "in-progress" }),
     completeMutation: () => Promise.resolve({ kind: "lost" }),
     currentCursor: () => Promise.resolve(cursor),
     readChanges: () => Promise.resolve({ changes: [], cursor, hasMore: false, reset: false }),
@@ -420,7 +447,7 @@ test("sync stream opens when notifier subscription fails", async () => {
     publish: () => Promise.resolve(),
     subscribe: () => Promise.reject(new Error("notifier unavailable")),
   };
-  const app = new Elysia().use(createSyncStreamPlugin(undefined, { adapter, notifier }));
+  const app = new Elysia().use(createSyncStreamPlugin({ adapter, notifier }));
   const response = await app.handle(new Request("http://localhost/_furin/sync"));
   try {
     expect(response.status).toBe(200);

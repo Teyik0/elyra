@@ -137,9 +137,10 @@ export default route.page({
 // src/api/posts.ts
 import { furinSync } from "@teyik0/furin";
 import { Elysia, t } from "elysia";
+import { sync } from "../sync";
 
 export const postsApi = new Elysia()
-  .use(furinSync())
+  .use(furinSync(sync))
   .post(
     "/posts",
     async ({ body }) => db.posts.create(body),
@@ -150,9 +151,9 @@ export const postsApi = new Elysia()
   );
 ```
 
-The `sync` route option is provided by the `furinSync()` macro. Install the macro on the same Elysia plugin that declares the routes. Mutations are synchronized by default; use `sync: false` only for non-replayable effects.
+The `sync` route option is provided by the `furinSync(sync)` macro. Install the macro on the same Elysia plugin that declares the routes. Mutations are synchronized by default; use `sync: false` only for non-replayable effects.
 
-`furinSync()` requires an `Idempotency-Key` header for every synced mutation, replays successful responses for duplicate requests, and appends successful invalidations to its change log. The built-in replay store only accepts small bounded responses: serialized bodies are capped at 1 MB, and returned `Response` objects must include a valid `Content-Length`. This makes idempotency and multi-tab refresh part of the default mutation contract instead of per-route boilerplate.
+`furinSync()` requires an `Idempotency-Key` header for every synced mutation, replays successful responses for duplicate requests, and appends successful invalidations to its change log. The sync replay layer only accepts small bounded responses: serialized bodies are capped at 1 MB, and returned `Response` objects must include a valid `Content-Length`. This makes idempotency and multi-tab refresh part of the default mutation contract instead of per-route boilerplate.
 
 If you only need response-header invalidation without live broadcast, the lower-level `furinInvalidate()` macro still provides the `invalidate` route option.
 
@@ -188,9 +189,9 @@ X-Furin-Revalidate: /blog/my-post,/blog:layout
 
 The client-side router (`RouterProvider`) intercepts **all** `window.fetch` calls. When it sees this header it busts the corresponding prefetch cache entries, ensuring the next SPA navigation fetches fresh HTML from the server instead of using a stale prefetch.
 
-When `furin({ sync: true })` is enabled, Furin mounts `/_furin/sync` and injects the stream configuration into the page HTML. SSE emits lightweight `furin.sync` cursor notifications. The client reads missed changes from `/_furin/sync/changes`, invalidates prefetched HTML in order, and refreshes the active route when it depends on the changed path or tag.
+When `furin({ sync })` receives the shared runtime, Furin mounts `/_furin/sync` and injects the stream configuration into the page HTML. SSE emits lightweight `furin.sync` cursor notifications. The client reads missed changes from `/_furin/sync/changes`, invalidates prefetched HTML in order, and refreshes the active route when it depends on the changed path or tag.
 
-In development, the default journal and idempotency responses live in process memory. Production requires an explicit durable adapter. PostgreSQL completion atomically stores the replay response, advances the cursor, and records invalidations in one transaction. Lease acquisition, the application handler, and domain writes happen separately. Redis provides the equivalent completion contract with Lua and Redis Streams, while SQLite provides it for one host. SSE and `SyncNotifier` remain best-effort wake-ups, while `/_furin/sync/changes` is the durable recovery path.
+The runtime is explicit in every environment. SQLite `:memory:` is available for development and tests but rejected in production; file-backed SQLite is durable on one host. PostgreSQL completion atomically stores the replay response, advances the cursor, and records invalidations in one transaction. Lease acquisition, the application handler, and domain writes happen separately. Redis provides the equivalent completion contract with Lua and Redis Streams. SSE and `SyncNotifier` remain best-effort wake-ups, while `/_furin/sync/changes` is the durable recovery path.
 
 This sync journal coordinates mutation replay and browser invalidation; it is not an ISR page-cache backend. Page caches remain process-local. Multi-replica deployments therefore need cross-replica origin-cache invalidation or a shared page cache for cached HTML, in addition to CDN purging. Purging only the CDN can let another replica repopulate it with stale HTML from that replica's local cache.
 

@@ -28,14 +28,35 @@ export const api = new Elysia({ prefix: "/api" })
 
 ## Mount It After Furin
 
+Create the runtime once and share it with the page and API plugins. SQLite memory is convenient for local development and tests:
+
+```ts
+// src/sync.ts
+import { Database } from "bun:sqlite"
+import {
+  migrateSqliteSync,
+  sqliteSyncAdapter,
+} from "@teyik0/furin/sync/sqlite"
+
+const database = new Database(":memory:")
+migrateSqliteSync(database)
+
+export const sync = {
+  adapter: sqliteSyncAdapter({ database, namespace: "my-app" }),
+}
+```
+
+Production rejects this process-local database. Use a file-backed SQLite database on one host or a distributed adapter for multiple replicas.
+
 ```ts
 // src/server.ts
 import { Elysia } from "elysia"
 import { furin } from "@teyik0/furin"
 import { api } from "./api/index.ts"
+import { sync } from "./sync.ts"
 
 const app = new Elysia()
-  .use(await furin({ pagesDir: "./src/pages", sync: true }))
+  .use(await furin({ pagesDir: "./src/pages", sync }))
   .use(api)
   .listen(3000)
 
@@ -46,14 +67,15 @@ Elysia instance order matters. Mount Furin first so it can install the page runt
 
 ## Sync Mutations
 
-Use `furinSync()` in the same Elysia plugin that declares mutation routes. Every non-GET/HEAD/OPTIONS route is synchronized by default: Furin requires an idempotency key, stores successful responses for replay, and publishes any resulting cache invalidations. Calling `furinSync()` without options uses process-local memory in development only.
+Use `furinSync(sync)` in the same Elysia plugin that declares mutation routes. Every non-GET/HEAD/OPTIONS route is synchronized by default: Furin requires an idempotency key, stores successful responses for replay, and publishes any resulting cache invalidations. The runtime is always explicit and must be shared with `furin({ sync })`.
 
 ```ts
 import { furinSync } from "@teyik0/furin"
 import { Elysia, t } from "elysia"
+import { sync } from "../sync.ts"
 
 export const api = new Elysia({ prefix: "/api" })
-  .use(furinSync())
+  .use(furinSync(sync))
   .post(
     "/posts",
     async ({ body }) => {
@@ -101,32 +123,28 @@ await api.api.posts.post(
 )
 ```
 
-Repeating the same request with the same key returns the original response without executing the handler again. Reusing a key with a different payload returns `409`. The built-in replay store only accepts small bounded responses: serialized bodies are capped at 1 MB, and returned `Response` objects must include a valid `Content-Length`. Disable synchronization for payments, uploads, streams, downloads, or other non-replayable effects:
+Repeating the same request with the same key returns the original response without executing the handler again. Reusing a key with a different payload returns `409`. The sync replay layer only accepts small bounded responses: serialized bodies are capped at 1 MB, and returned `Response` objects must include a valid `Content-Length`. Disable synchronization for payments, uploads, streams, downloads, or other non-replayable effects:
 
 ```ts
 .post("/payments", createPayment, { sync: false })
 ```
 
-The sync stream endpoint is internal and opinionated: `/_furin/sync`. SSE only announces the latest cursor; the client recovers ordered invalidations through `/_furin/sync/changes`. Enabling `sync: true` in `furin()` injects this runtime automatically, so you do not need a React provider or application wrapper.
+The sync stream endpoint is internal and opinionated: `/_furin/sync`. SSE only announces the latest cursor; the client recovers ordered invalidations through `/_furin/sync/changes`. Passing the explicit runtime to `furin({ sync })` injects the client configuration automatically, so you do not need a React provider or application wrapper.
 
 ### Production adapters
 
-Production requires an explicit durable adapter. Install only the backend you use; the root package neither depends on nor re-exports any adapter:
+All adapters ship as isolated subpaths of the main package. Install Furin once:
 
 ```sh
-bun add @teyik0/furin-sync-postgres
-# or
-bun add @teyik0/furin-sync-redis
-# or, for a single host
-bun add @teyik0/furin-sync-sqlite
+bun add @teyik0/furin
 ```
 
-Before configuring the PostgreSQL adapter, apply its bundled migration. You can run the
-package binary directly or apply `@teyik0/furin-sync-postgres/migration.sql` through your
-existing migration system:
+Before configuring the PostgreSQL adapter, apply its bundled idempotent schema bootstrap.
+It is not a versioned migration history. You can run the package CLI directly or apply
+`@teyik0/furin/sync/postgres/migration.sql` through your existing migration system:
 
 ```sh
-FURIN_SYNC_POSTGRES_URL=postgres://... bunx --package @teyik0/furin-sync-postgres furin-sync-postgres-migrate
+FURIN_SYNC_POSTGRES_URL=postgres://... bunx --package @teyik0/furin furin-sync-postgres-migrate
 ```
 
 PostgreSQL is the recommended source of truth for most multi-replica applications. Pass the same runtime to the mutation plugin and the Furin page plugin:
@@ -135,7 +153,7 @@ PostgreSQL is the recommended source of truth for most multi-replica application
 import { SQL } from "bun"
 import { Elysia } from "elysia"
 import { furin, furinSync } from "@teyik0/furin"
-import { postgresSyncAdapter } from "@teyik0/furin-sync-postgres"
+import { postgresSyncAdapter } from "@teyik0/furin/sync/postgres"
 
 const sql = new SQL(databaseUrl) // read from server-only configuration
 const sync = {
@@ -155,8 +173,8 @@ Without a notifier, Furin polls `currentCursor()` as a correctness-preserving wa
 
 ```ts
 import { RedisClient, SQL } from "bun"
-import { postgresSyncAdapter } from "@teyik0/furin-sync-postgres"
-import { redisSyncNotifier } from "@teyik0/furin-sync-redis"
+import { postgresSyncAdapter } from "@teyik0/furin/sync/postgres"
+import { redisSyncNotifier } from "@teyik0/furin/sync/redis"
 
 const sync = {
   adapter: postgresSyncAdapter({
@@ -172,7 +190,7 @@ const sync = {
 
 | Deployment | Choice |
 |---|---|
-| Local development or one disposable process | built-in memory |
+| Local development or one disposable process | SQLite `:memory:` |
 | Durable deployment on one host | SQLite adapter |
 | Multi-replica with an application PostgreSQL database | PostgreSQL adapter (recommended) |
 | Redis is already the durable sync source | Redis adapter |
@@ -180,7 +198,7 @@ const sync = {
 
 The notifier only sends a small cursor and is best-effort. The durable adapter owns response replay and ordered catch-up, so a Redis outage or missed SSE event delays refresh but does not lose changes. Completion atomically stores the replay response and its invalidations. This is not a claim of exactly-once execution for arbitrary domain writes: Furin cannot put an external API call or an application database transaction inside the adapter transaction.
 
-All optional packages declare `sideEffects: false` and use type-only imports from Furin. SQLite, PostgreSQL, and Redis remain isolated from one another and no backend is present in the browser bundle. The task-manager example uses SQLite for its application data and sync journal. SQLite is `host-local`: use PostgreSQL or Redis instead when replicas run on separate hosts. IndexedDB outbox/offline replay is tracked separately and is not part of this server contract.
+The main package declares `sideEffects: false`, and each adapter has an independent entrypoint. SQLite, PostgreSQL, and Redis remain isolated from one another and no backend is present in the browser bundle. The task-manager example uses file-backed SQLite for its application data and sync journal. SQLite `:memory:` is process-local and development-only; file-backed SQLite is `host-local`. Use PostgreSQL or Redis instead when replicas run on separate hosts. IndexedDB outbox/offline replay is tracked separately and is not part of this server contract.
 
 For client-side mutations with a body, `useSync()` is the optional ergonomic layer. It keeps the Eden Treaty route as the source of truth, adds the mandatory `Idempotency-Key`, and gives you one place to attach optimistic updates:
 

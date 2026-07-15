@@ -1,7 +1,6 @@
 import { IS_DEV } from "../runtime-env.ts";
 import type { SyncAdapter, SyncNotifier, SyncRuntimeOptions } from "./adapter.ts";
-import { memorySyncAdapter } from "./memory-adapter.ts";
-import { memorySyncNotifier, PollingSyncNotifier } from "./notifier.ts";
+import { PollingSyncNotifier } from "./notifier.ts";
 
 const POLL_INTERVAL_MS = 250;
 const pollingNotifiers = new WeakMap<object, PollingSyncNotifier>();
@@ -11,13 +10,7 @@ export interface ResolvedSyncRuntime {
   notifier: SyncNotifier;
 }
 
-export function resolveSyncRuntime(options: SyncRuntimeOptions | undefined): ResolvedSyncRuntime {
-  if (!options) {
-    if (!IS_DEV) {
-      throw new Error("[furin] Production sync requires an explicit durable SyncAdapter.");
-    }
-    return { adapter: memorySyncAdapter, notifier: memorySyncNotifier };
-  }
+export function resolveSyncRuntime(options: SyncRuntimeOptions): ResolvedSyncRuntime {
   if (!IS_DEV && options.adapter.scope === "process-local") {
     throw new Error("[furin] Production sync cannot use a process-local SyncAdapter.");
   }

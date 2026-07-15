@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { SQL } from "bun";
-import { testSyncAdapterConformance } from "../../core/tests/helpers/sync-adapter-conformance";
-import { postgresSyncAdapter } from "../src";
+import { postgresSyncAdapter } from "../../../../src/server/sync/postgres/index.ts";
+import { testSyncAdapterConformance } from "../../../helpers/sync-adapter-conformance.ts";
 
 const databaseUrl = process.env.FURIN_SYNC_POSTGRES_URL;
 const describeWithPostgres = databaseUrl === undefined ? describe.skip : describe;
+const succeededResponseCheckPattern = /furin_sync_mutations_succeeded_response_check/;
 
 describeWithPostgres("PostgresSyncAdapter", () => {
   const sql = new SQL(databaseUrl as string);
@@ -13,7 +14,7 @@ describeWithPostgres("PostgresSyncAdapter", () => {
 
   beforeAll(async () => {
     const migration = await Bun.file(
-      new URL("../migrations/0001_sync.sql", import.meta.url)
+      new URL("../../../../src/server/sync/postgres/migration.sql", import.meta.url)
     ).text();
     await sql.unsafe(migration);
   });
@@ -31,8 +32,8 @@ describeWithPostgres("PostgresSyncAdapter", () => {
   testSyncAdapterConformance(() => adapter);
 
   test("rejects succeeded mutations without replay data", async () => {
-    await expect(
-      sql`
+    try {
+      await sql`
         INSERT INTO furin_sync.mutations (
           namespace, mutation_key, mutation_id, fingerprint, state,
           lease_expires_at, expires_at
@@ -40,8 +41,14 @@ describeWithPostgres("PostgresSyncAdapter", () => {
           ${namespace}, 'invalid-succeeded', ${crypto.randomUUID()}, 'fingerprint', 'succeeded',
           clock_timestamp(), clock_timestamp() + interval '1 day'
         )
-      `
-    ).rejects.toThrow();
+      `;
+      throw new Error("Expected the replay-data constraint to reject the mutation");
+    } catch (error) {
+      if (!(error instanceof Error)) {
+        throw error;
+      }
+      expect(error.message).toMatch(succeededResponseCheckPattern);
+    }
   });
 
   test("atomically persists replay response and invalidations", async () => {

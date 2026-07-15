@@ -16,6 +16,7 @@ test("multi-instance furin composition", () => {
       "-e",
       `
 import { expect } from "bun:test";
+import { Database } from "bun:sqlite";
 import { join } from "node:path";
 import { Elysia } from "elysia";
 import { furin } from "./src/furin.ts";
@@ -27,12 +28,21 @@ import {
 } from "./src/server/render/template.ts";
 import { __setDevMode } from "./src/server/runtime-env.ts";
 import { __resetSyncState } from "./src/server/sync/stream.ts";
+import {
+  migrateSqliteSync,
+  sqliteSyncAdapter,
+} from "./src/server/sync/sqlite/index.ts";
 import { createTmpApp, writeAppFile } from "./tests/support/app-fixtures.ts";
 
 const TEST_TEMPLATE = "<html><body><!--ssr-outlet--></body></html>";
 const ACTIVE_ADMIN_NAV_LINK_RE = new RegExp('href="/admin/nav"[^>]*data-status="active"');
 const tmpApps = [];
 const originalCwd = process.cwd();
+const syncDatabase = new Database(":memory:");
+migrateSqliteSync(syncDatabase);
+const adminSync = {
+  adapter: sqliteSyncAdapter({ database: syncDatabase, namespace: "multi-instance-admin" }),
+};
 
 function resetState() {
   __setDevMode(true);
@@ -156,7 +166,7 @@ async function mountBothApps(options) {
   const admin = await furin({
     pagesDir: adminPagesDir,
     prefix: "/admin",
-    sync: options?.adminSync ?? false,
+    sync: options?.adminSync ? adminSync : undefined,
   });
   const parent = new Elysia().use(front).use(admin);
   return { app, parent };

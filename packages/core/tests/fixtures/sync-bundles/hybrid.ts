@@ -1,4 +1,4 @@
-import { postgresSyncAdapter } from "../../../../sync-postgres/dist/index.js";
-import { redisSyncNotifier } from "../../../../sync-redis/dist/index.js";
+import { postgresSyncAdapter } from "../../../dist/server/sync/postgres/index.js";
+import { redisSyncNotifier } from "../../../dist/server/sync/redis/index.js";
 
 console.log(postgresSyncAdapter, redisSyncNotifier);

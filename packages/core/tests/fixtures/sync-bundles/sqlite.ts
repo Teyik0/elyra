@@ -1,3 +1,3 @@
-import { sqliteSyncAdapter } from "../../../../sync-sqlite/dist/index.js";
+import { sqliteSyncAdapter } from "../../../dist/server/sync/sqlite/index.js";
 
 console.log(sqliteSyncAdapter);

@@ -6,7 +6,8 @@
   "scripts": {
     "fix": "ultracite fix",
     "dev": "bun --hot src/server.ts",
-    "test": "bun test --parallel --isolate --bail",
+    "test": "bun test --parallel --isolate --bail && bun run test:e2e",
+    "test:e2e": "bun test --bail ./e2e/task-manager.e2e.ts",
     "test:dev": "bun test --changed --parallel --isolate --bail",
     "tscheck": "tsc --noEmit",
     "build": "furin build --target bun --compile embed",
@@ -18,7 +19,6 @@
   "dependencies": {
     "@elysiajs/eden": "^1.4.0",
     "@teyik0/furin": "workspace:*",
-    "@teyik0/furin-sync-sqlite": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "bun-plugin-tailwind": "^0.1.2",
     "clsx": "^2.1.1",

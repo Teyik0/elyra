@@ -1,8 +1,8 @@
 import { Elysia } from "elysia";
 import { IS_DEV } from "../runtime-env.ts";
 import type { SyncAdapter, SyncChange, SyncRuntimeOptions, SyncSubscription } from "./adapter.ts";
-import { memorySyncAdapter } from "./memory-adapter.ts";
-import { memorySyncNotifier } from "./notifier.ts";
+import type { FurinSyncOptions } from "./config.ts";
+import { syncRuntimeOptions } from "./config.ts";
 import { resolveSyncRuntime } from "./runtime.ts";
 
 export type { ChangePage as SyncChangePage, SyncChange } from "./adapter.ts";
@@ -118,9 +118,9 @@ function clientInvalidations(change: SyncChange): string[] {
   return [...entries];
 }
 
-export function createSyncStreamPlugin(path?: string, runtimeOptions?: SyncRuntimeOptions) {
-  const streamPath = path ?? defaultStreamPath;
-  const runtime = resolveSyncRuntime(runtimeOptions);
+export function createSyncStreamPlugin(options: FurinSyncOptions) {
+  const streamPath = options.streamPath ?? defaultStreamPath;
+  const runtime = resolveSyncRuntime(syncRuntimeOptions(options));
   return new Elysia({ name: `furin-sync-stream-${streamPath}` })
     .get(`${streamPath}/changes`, async ({ request, set }) => {
       set.headers["cache-control"] = "no-store";
@@ -181,7 +181,7 @@ export function createSyncStreamPlugin(path?: string, runtimeOptions?: SyncRunti
     });
 }
 
-/** @internal — resets process-local sync state between tests. */
+/** @internal — closes process-local stream state between tests. */
 export function __resetSyncState(): void {
   for (const state of resolvedStates) {
     state.subscription.unsubscribe().catch(() => undefined);
@@ -199,6 +199,4 @@ export function __resetSyncState(): void {
   }
   streams.clear();
   resolvedStates.clear();
-  memorySyncAdapter.reset();
-  memorySyncNotifier.reset();
 }

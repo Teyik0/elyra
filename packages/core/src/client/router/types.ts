@@ -206,7 +206,7 @@ export interface RouterProviderProps {
   root: RuntimeRoute | null;
   routes: ClientRoute[];
   /**
-   * Optional internal SSE endpoint emitted by `furin({ sync: true })`.
+   * Optional internal SSE endpoint emitted by `furin({ sync })`.
    * When present, RouterProvider listens for cross-client invalidations.
    */
   syncStream?: string | undefined;
