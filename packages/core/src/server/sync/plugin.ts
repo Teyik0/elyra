@@ -5,6 +5,7 @@ import {
   runInvalidationRules,
 } from "../auto-invalidate/runtime.ts";
 import type { InvalidationInput } from "../auto-invalidate/types.ts";
+import { peekPendingInvalidations } from "../cache/invalidation.ts";
 import type { MutationLease, SyncInvalidation, SyncRuntimeOptions } from "./adapter.ts";
 import { createMutationFingerprint, sha256Hex } from "./fingerprint.ts";
 import { mergeStoredResponseHeaders, replayResponse, storeResponse } from "./response.ts";
@@ -43,6 +44,7 @@ type CompletionContext = MutationContext &
     response?: unknown;
     responseValue?: unknown;
   };
+type PathInvalidation = Extract<SyncInvalidation, { kind: "path" }>;
 
 const routeMetadata = new WeakMap<Request, RouteSyncMetadata>();
 const activeMutations = new WeakMap<Request, ActiveMutation>();
@@ -130,7 +132,7 @@ function normalizedInvalidations(input: InvalidationInput | undefined): SyncInva
   return invalidations;
 }
 
-function pendingPathInvalidations(entries: readonly string[]): SyncInvalidation[] {
+function pendingPathInvalidations(entries: readonly string[]): PathInvalidation[] {
   return entries.map((entry) =>
     entry.endsWith(":layout")
       ? { kind: "path" as const, path: entry.slice(0, -":layout".length), type: "layout" }
@@ -214,6 +216,7 @@ export function furinSync(options: SyncRuntimeOptions) {
       return completion.kind === "lost" ? leaseLostResponse() : replayResponse(result.response);
     }
 
+    const manualPending = peekPendingInvalidations();
     const invalidate = routeMetadata.get(ctx.request)?.invalidate;
     if (invalidate) {
       runInvalidationRules(invalidate);
@@ -224,8 +227,16 @@ export function furinSync(options: SyncRuntimeOptions) {
     }
     const response = mergeStoredResponseHeaders(result.response, ctx.set.headers);
     const semanticInvalidations = normalizedInvalidations(invalidate);
-    const invalidations =
-      semanticInvalidations.length > 0 ? semanticInvalidations : pendingPathInvalidations(pending);
+    const invalidations = [...semanticInvalidations];
+    for (const manual of pendingPathInvalidations(manualPending)) {
+      const duplicated = semanticInvalidations.some(
+        (semantic) =>
+          semantic.kind === "path" && semantic.path === manual.path && semantic.type === manual.type
+      );
+      if (!duplicated) {
+        invalidations.push(manual);
+      }
+    }
     const completion = await runtime.adapter.completeMutation({
       invalidations,
       lease: active.lease,

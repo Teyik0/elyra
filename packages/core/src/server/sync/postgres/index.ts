@@ -44,7 +44,9 @@ interface ChangeRow {
 }
 
 function mutationKey(input: Pick<MutationLease, "key" | "principal">): string {
-  return `${input.principal.length}:${input.principal}${input.key}`;
+  return new Bun.CryptoHasher("sha256")
+    .update(`${input.principal.length}:${input.principal}${input.key}`)
+    .digest("hex");
 }
 
 function storedResponse(row: MutationRow): StoredResponse {

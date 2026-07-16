@@ -40,6 +40,10 @@ export function consumePendingInvalidations(): string[] {
   return paths;
 }
 
+export function peekPendingInvalidations(): string[] {
+  return [..._activeInvalidationSet()];
+}
+
 // ── CDN purger hook ───────────────────────────────────────────────────────────
 // Process-global on purpose: the CDN sits in front of every mounted app.
 

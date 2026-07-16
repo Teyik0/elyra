@@ -105,6 +105,48 @@ test("commits the replay response and invalidation under one cursor", async () =
   });
 });
 
+test("preserves changes after the cursor exceeds the safe integer range", async () => {
+  const namespace = "large-cursor";
+  database
+    .query<never, [string, bigint, bigint]>(
+      `INSERT INTO furin_sync_streams (namespace, current_cursor, oldest_cursor)
+       VALUES (?, ?, ?)`
+    )
+    .run(namespace, BigInt(Number.MAX_SAFE_INTEGER), BigInt(Number.MAX_SAFE_INTEGER));
+  const adapter = sqliteSyncAdapter({ database, namespace });
+
+  async function appendChange(index: number): Promise<string | undefined> {
+    const mutation = await adapter.beginMutation({
+      fingerprint: `body-${index}`,
+      key: `mutation-${index}`,
+      principal: "user",
+    });
+    if (mutation.kind !== "execute") {
+      throw new Error("Expected an executable mutation");
+    }
+    const completed = await adapter.completeMutation({
+      invalidations: [{ kind: "path", path: `/page-${index}`, type: "page" }],
+      lease: mutation.lease,
+      response: { body: new Uint8Array(), headers: [], status: 204 },
+    });
+    if (completed.kind !== "committed") {
+      throw new Error("Expected a committed mutation");
+    }
+    return completed.cursor;
+  }
+
+  expect(await appendChange(1)).toBe("9007199254740992");
+  expect(await appendChange(2)).toBe("9007199254740993");
+  expect(
+    await adapter.readChanges({ after: String(Number.MAX_SAFE_INTEGER), limit: 10 })
+  ).toMatchObject({
+    changes: [{ cursor: "9007199254740992" }, { cursor: "9007199254740993" }],
+    cursor: "9007199254740993",
+    hasMore: false,
+    reset: false,
+  });
+});
+
 test("rejects another payload and releases an aborted lease", async () => {
   const adapter = sqliteSyncAdapter({ database, namespace: "abort" });
   const mutation = await adapter.beginMutation({

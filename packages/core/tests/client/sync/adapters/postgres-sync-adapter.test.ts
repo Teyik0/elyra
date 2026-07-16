@@ -7,6 +7,31 @@ const databaseUrl = process.env.FURIN_SYNC_POSTGRES_URL;
 const describeWithPostgres = databaseUrl === undefined ? describe.skip : describe;
 const succeededResponseCheckPattern = /furin_sync_mutations_succeeded_response_check/;
 
+test("bounds PostgreSQL mutation keys before binding them", async () => {
+  const boundValues: unknown[] = [];
+  const transaction = ((_: TemplateStringsArray, ...values: unknown[]) => {
+    boundValues.push(...values);
+    return Promise.resolve([]);
+  }) as unknown as SQL;
+  const sql = {
+    begin<Result>(callback: (tx: SQL) => Promise<Result>): Promise<Result> {
+      return callback(transaction);
+    },
+  } as unknown as SQL;
+  const adapter = postgresSyncAdapter({ namespace: "bounded-keys", sql });
+  const key = `POST:/cards/${"segment/".repeat(500)}:idempotency-key`;
+  const principal = "principal";
+  const rawMutationKey = `${principal.length}:${principal}${key}`;
+  const digest = new Bun.CryptoHasher("sha256").update(rawMutationKey).digest("hex");
+
+  expect(await adapter.beginMutation({ fingerprint: "fingerprint", key, principal })).toMatchObject(
+    { kind: "execute" }
+  );
+  expect(boundValues).toContain(digest);
+  expect(boundValues).not.toContain(rawMutationKey);
+  expect(boundValues).not.toContain(`bounded-keys:${rawMutationKey}`);
+});
+
 describeWithPostgres("PostgresSyncAdapter", () => {
   const sql = new SQL(databaseUrl as string);
   const namespace = "postgres-conformance";
@@ -97,6 +122,39 @@ describeWithPostgres("PostgresSyncAdapter", () => {
       hasMore: false,
       reset: false,
     });
+  });
+
+  test("supports mutation keys larger than a PostgreSQL btree entry", async () => {
+    const key = Array.from({ length: 300 }, () => crypto.randomUUID()).join(":");
+    const response = {
+      body: new TextEncoder().encode("created"),
+      headers: [["content-type", "text/plain"]] as const,
+      status: 201,
+    };
+    const mutation = await adapter.beginMutation({
+      fingerprint: "large-key-fingerprint",
+      key,
+      principal: "user",
+    });
+    if (mutation.kind !== "execute") {
+      throw new Error("Expected an executable mutation");
+    }
+
+    expect(await adapter.renewMutation(mutation.lease)).toBe("renewed");
+    expect(
+      await adapter.completeMutation({
+        invalidations: [],
+        lease: mutation.lease,
+        response,
+      })
+    ).toEqual({ cursor: undefined, kind: "committed" });
+    expect(
+      await adapter.beginMutation({
+        fingerprint: "large-key-fingerprint",
+        key,
+        principal: "user",
+      })
+    ).toEqual({ kind: "replay", response });
   });
 
   test("allows one owner and rejects a previous owner after lease takeover", async () => {

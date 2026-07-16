@@ -4,6 +4,7 @@ import { Elysia } from "elysia";
 import {
   __resetCacheState,
   _runWithRequestInvalidationScope,
+  revalidatePath,
 } from "../../../src/server/cache/index.ts";
 import type {
   BeginMutationInput,
@@ -116,6 +117,61 @@ test("furinSync uses the injected adapter for reservation and atomic completion"
   expect(response.status).toBe(200);
   expect(completed).toHaveLength(1);
   expect(completed[0]?.lease).toEqual(lease);
+});
+
+test("furinSync durably preserves manual and declarative invalidations", async () => {
+  resetSyncTestState();
+  const completed: CompleteMutationInput[] = [];
+  const lease: MutationLease = {
+    id: "lease-combined-invalidations",
+    key: "POST:/cards:combined-invalidations",
+    leaseMs: 30_000,
+    principal: "principal",
+  };
+  const adapter: SyncAdapter = {
+    scope: "distributed",
+    abortMutation: () => Promise.resolve(),
+    beginMutation: () => Promise.resolve({ kind: "execute", lease }),
+    completeMutation: (input) => {
+      completed.push(input);
+      return Promise.resolve({ cursor: "1", kind: "committed" });
+    },
+    currentCursor: () => Promise.resolve("0"),
+    readChanges: () => Promise.resolve({ changes: [], cursor: "0", hasMore: false, reset: false }),
+    renewMutation: () => Promise.resolve("renewed"),
+  };
+  const notifier: SyncNotifier = {
+    publish: () => Promise.resolve(),
+    subscribe: () => Promise.resolve({ unsubscribe: () => Promise.resolve() }),
+  };
+  const app = new Elysia().use(furinSync({ adapter, notifier })).post(
+    "/cards",
+    () => {
+      revalidatePath("/manual", "page");
+      revalidatePath("/declared", "layout");
+      return { ok: true };
+    },
+    { sync: { invalidate: { path: "/declared", type: "layout" } } }
+  );
+
+  try {
+    const response = await _runWithRequestInvalidationScope(() =>
+      app.handle(
+        new Request("http://localhost/cards", {
+          headers: { "Idempotency-Key": "combined-invalidations" },
+          method: "POST",
+        })
+      )
+    );
+
+    expect(response.headers.get("x-furin-revalidate")).toBe("/manual,/declared:layout");
+    expect(completed[0]?.invalidations).toEqual([
+      { kind: "path", path: "/declared", type: "layout" },
+      { kind: "path", path: "/manual", type: "page" },
+    ]);
+  } finally {
+    resetSyncTestState();
+  }
 });
 
 test("furinSync schedules the next lease renewal while the current renewal is pending", async () => {

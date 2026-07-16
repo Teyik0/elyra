@@ -30,6 +30,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Yuku parser packages upgraded** — `yuku-parser` and `@yuku-toolchain/types` moved to `0.6.1`; the parser dependency architecture test now verifies the direct parser dependency without pinning the exact patch in the assertion.
 
 ### Fixed
+- **Sync invalidation durability** — synced handlers now preserve manual `revalidatePath()` and `revalidateTag()` results alongside declarative invalidations in the durable change journal without duplicating identical paths.
+- **PostgreSQL idempotency key bounds** — the PostgreSQL sync adapter now stores fixed-size SHA-256 mutation keys, preventing long request paths or idempotency keys from exceeding btree index-entry limits.
+- **SQLite cursor precision** — SQLite sync streams now preserve exact 64-bit cursors beyond JavaScript's safe-integer range, preventing rounded cursors from losing or duplicating retained changes.
 - **Sync adapter durable invariants** — SQLite now rejects succeeded mutation rows without replay data, preserves renewed in-progress leases past mutation-retention expiry, and reports SQLite failures as rejected promises; PostgreSQL migration reruns now add the replay-data check to existing tables.
 - **Sync stream catch-up reliability** — SSE `open` is now the single post-connect catch-up trigger, preventing duplicate requests without allowing a failed earlier attempt to suppress recovery.
 - **Distributed sync validation hardening** — third-party GitHub Actions in the database-backed validation workflow are pinned to reviewed commit SHAs.
