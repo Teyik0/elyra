@@ -1,4 +1,4 @@
-import type { RuntimePage, RuntimeRoute } from "../../client.ts";
+import type { RuntimePage, RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import type { ErrorComponent } from "../../shared/error.ts";
 import type { NotFoundComponent } from "../../shared/not-found.ts";
 

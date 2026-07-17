@@ -2,7 +2,7 @@
 import { existsSync, statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, parse } from "node:path";
-import type { RuntimePage, RuntimeRoute } from "../../client.ts";
+import type { RuntimePage, RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import type { ErrorComponent } from "../../shared/error.ts";
 import type { NotFoundComponent } from "../../shared/not-found.ts";
 import {

@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { Elysia } from "elysia";
 import { Suspense, use } from "react";
-import { createRoute, type RuntimePage, type RuntimeRoute } from "../../../src/client";
+import { createRoute } from "../../../src/client";
+import type { RuntimePage, RuntimeRoute } from "../../../src/client/internal/runtime-types.ts";
 import { revalidateTag } from "../../../src/server/auto-invalidate";
 import { clearPprRouteCache, invalidatePprRoute } from "../../../src/server/render/ppr-route";
 import { createRoutePlugin } from "../../../src/server/router/plugin.ts";

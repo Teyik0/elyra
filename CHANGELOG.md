@@ -7,6 +7,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ## [Unreleased]
 
 ### Breaking
+- **Strict public route types** — `RuntimeRoute`, `RuntimePage`, the obsolete `PageConfig`, and the phantom `RouteRef`/`route.ref` API have moved out of the public client contract. Route inference now uses hidden type-only symbols, accepts named loader-data interfaces without index signatures, hides deferred runtime metadata, and accepts readonly cache-tag arrays.
 - **Minimum Bun version** — Bun 1.4.0 is now required to avoid a runtime crash when updating RSC content.
 - **Explicit sync runtime** — `furinSync()`, `createSyncStreamPlugin()`, and active `furin({ sync })` configurations now require a shared runtime object. The `sync: true` and no-argument development shorthands, `MemorySyncAdapter`, and `MemorySyncNotifier` have been removed; `sync: false` remains available to disable sync explicitly. SQLite `:memory:` replaces the development storage implementation and remains rejected in production.
 - **Consolidated sync adapter exports** — the unpublished adapter workspaces have moved into `@teyik0/furin/sync/postgres`, `@teyik0/furin/sync/redis`, and `@teyik0/furin/sync/sqlite`; no compatibility packages are published.
@@ -30,6 +31,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Yuku parser packages upgraded** — `yuku-parser` and `@yuku-toolchain/types` moved to `0.6.1`; the parser dependency architecture test now verifies the direct parser dependency without pinning the exact patch in the assertion.
 
 ### Fixed
+- **Collision-free deferred metadata** — `defer()` now uses one internal runtime symbol for branding, removing unsafe type assertions while preserving user loader fields named `__isDeferred`.
 - **Sync invalidation durability** — synced handlers now preserve manual `revalidatePath()` and `revalidateTag()` results alongside declarative invalidations in the durable change journal without duplicating identical paths.
 - **PostgreSQL idempotency key bounds** — the PostgreSQL sync adapter now stores fixed-size SHA-256 mutation keys, preventing long request paths or idempotency keys from exceeding btree index-entry limits.
 - **SQLite cursor precision** — SQLite sync streams now preserve exact 64-bit cursors beyond JavaScript's safe-integer range, preventing rounded cursors from losing or duplicating retained changes.

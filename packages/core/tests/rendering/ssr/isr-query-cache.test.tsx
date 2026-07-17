@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { Elysia } from "elysia";
-import { createRoute, type RuntimePage, type RuntimeRoute } from "../../../src/client";
+import { createRoute } from "../../../src/client";
+import type { RuntimePage, RuntimeRoute } from "../../../src/client/internal/runtime-types.ts";
 import { __resetCacheState, revalidatePath } from "../../../src/server/cache/index.ts";
 import { createRoutePlugin } from "../../../src/server/router/plugin.ts";
 import type { ResolvedRoute, RootLayout } from "../../../src/server/router/types.ts";

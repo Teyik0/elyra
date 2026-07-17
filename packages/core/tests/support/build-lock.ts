@@ -25,7 +25,13 @@ async function acquireBuildTestLock(): Promise<() => void> {
         continue;
       }
 
-      const ageMs = Date.now() - statSync(LOCK_DIR).mtimeMs;
+      let ageMs: number;
+      try {
+        ageMs = Date.now() - statSync(LOCK_DIR).mtimeMs;
+      } catch {
+        await delay(5);
+        continue;
+      }
       if (ageMs > STALE_LOCK_MS) {
         rmSync(LOCK_DIR, { force: true, recursive: true });
         continue;

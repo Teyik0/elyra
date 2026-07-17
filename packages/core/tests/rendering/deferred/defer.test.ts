@@ -2,9 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { defer, isDeferred } from "../../../src/client";
 
 describe("defer()", () => {
-  test("returns an object marked __isDeferred = true", () => {
-    const result = defer({ board: "x", stats: Promise.resolve(1) });
-    expect(result.__isDeferred).toBe(true);
+  test("preserves user data named __isDeferred", () => {
+    const result = defer({ __isDeferred: "user-data", board: "x" });
+    expect(result.__isDeferred).toBe("user-data");
+    expect(isDeferred(result)).toBe(true);
   });
 
   test("preserves synchronous values", () => {
@@ -56,8 +57,10 @@ describe("isDeferred()", () => {
   });
 
   test("returns false if the mark is absent, inherited, or falsy", () => {
+    const deferred = defer({ x: 1 });
     expect(isDeferred({ __isDeferred: false })).toBe(false);
     expect(isDeferred(Object.create({ __isDeferred: true }))).toBe(false);
+    expect(isDeferred(Object.create(deferred))).toBe(false);
   });
 
   test("returns false for null/undefined/primitives", () => {

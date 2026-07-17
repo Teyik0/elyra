@@ -1,7 +1,7 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: HMR polling and invalidation are intentionally sequential
 import { existsSync } from "node:fs";
 import type { Context } from "elysia";
-import type { RuntimePage, RuntimeRoute } from "../../client.ts";
+import type { RuntimePage, RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import type { SearchRouteMetadata } from "../../shared/search-params.ts";
 import { collectRouteChainFromRoute, isFurinPage, isFurinRoute } from "../../shared/utils/index.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";

@@ -1,5 +1,6 @@
 import type { Context } from "elysia";
-import { isDeferred, type RequestLoaderContext, type RuntimeRoute } from "../../client.ts";
+import type { RuntimeRoute } from "../../client/internal/runtime-types.ts";
+import { isDeferred, type RequestLoaderContext } from "../../client.ts";
 import { type FurinNotFoundError, isNotFoundError } from "../../shared/not-found.ts";
 import { useLogger } from "../context-logger.ts";
 import type { ResolvedRoute } from "../router/index.ts";
@@ -134,7 +135,7 @@ function createLoaderCtx(
  * Splits a single loader result into sync scalars and deferred Promises.
  *
  * A loader result is considered "deferred" only when wrapped with `defer()`
- * (i.e. carries the `__isDeferred` brand). A loader that returned a plain
+ * (i.e. carries the internal deferred brand). A loader that returned a plain
  * object keeps all its values in sync — even if some happen to be Promises —
  * preserving the long-standing semantic that only an explicit `defer()` opts
  * into streaming.
@@ -147,9 +148,6 @@ function splitOneLoaderResult(result: Record<string, unknown>): {
   const deferred: Record<string, Promise<unknown>> = {};
   const isDef = isDeferred(result);
   for (const [key, value] of Object.entries(result)) {
-    if (key === "__isDeferred") {
-      continue;
-    }
     assertPublicLoaderKey(key);
     if (isDef && isPromiseLike(value)) {
       deferred[key] = Promise.resolve(value);
@@ -193,10 +191,9 @@ export function runRequestLoaderData(
   route: ResolvedRoute,
   ctx: Context
 ): Promise<object> | undefined {
-  const loaders = [
-    ...route.routeChain.map((entry) => entry.requestLoader),
-    route.page.requestLoader,
-  ].filter((loader) => loader !== undefined);
+  const loaders = route.routeChain
+    .map((entry) => entry.requestLoader)
+    .filter((loader) => loader !== undefined);
   if (loaders.length === 0) {
     return;
   }
@@ -419,8 +416,5 @@ export function runPublicLoaders(route: ResolvedRoute, ctx: Context): Promise<Lo
 }
 
 export function hasRequestLoader(route: ResolvedRoute): boolean {
-  return (
-    route.page.requestLoader !== undefined ||
-    route.routeChain.some((entry) => entry.requestLoader !== undefined)
-  );
+  return route.routeChain.some((entry) => entry.requestLoader !== undefined);
 }

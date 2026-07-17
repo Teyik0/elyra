@@ -35,6 +35,6 @@
     "drizzle-kit": "^0.31.0",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "tailwindcss": "^4.3.1"
+    "tailwindcss": "^4.3.3"
   }
 }

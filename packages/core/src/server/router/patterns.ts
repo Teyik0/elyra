@@ -1,5 +1,5 @@
 import { parse } from "node:path";
-import type { RuntimePage, RuntimeRoute } from "../../client.ts";
+import type { RuntimePage, RuntimeRoute } from "../../client/internal/runtime-types.ts";
 
 export function collectIntermediateLayoutDirs(pagePath: string, rootPath: string): string[] {
   const pageDir = pagePath.slice(0, pagePath.lastIndexOf("/"));
@@ -17,11 +17,11 @@ export function collectIntermediateLayoutDirs(pagePath: string, rootPath: string
 
 export function resolveMode(page: RuntimePage, routeChain: RuntimeRoute[]): "ssr" | "ssg" | "isr" {
   const routeConfig = page._route;
-  const mode = routeConfig.mode ?? (page as { mode?: string }).mode;
-  const revalidate = routeConfig.revalidate ?? (page as { revalidate?: number }).revalidate;
+  const mode = routeConfig.mode ?? page.mode;
+  const revalidate = routeConfig.revalidate ?? page.revalidate;
 
   if (mode) {
-    return mode as "ssr" | "ssg" | "isr";
+    return mode;
   }
 
   const hasLoader = routeChain.some((r) => r.loader) || !!page.loader;

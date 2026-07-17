@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RuntimeRoute } from "../../../src/client.ts";
+import type { RuntimeRoute } from "../../../src/client/internal/runtime-types.ts";
 import { scanRootLayout } from "../../../src/server/router/discovery.ts";
 import {
   collectRouteChainFromRoute,

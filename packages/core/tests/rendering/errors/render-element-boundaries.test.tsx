@@ -18,7 +18,7 @@
 import { describe, expect, test } from "bun:test";
 import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import { FurinErrorBoundary, FurinNotFoundBoundary } from "../../../src/client/boundaries.tsx";
-import type { RuntimePage, RuntimeRoute } from "../../../src/client.ts";
+import type { RuntimePage, RuntimeRoute } from "../../../src/client/internal/runtime-types.ts";
 import { buildElement, buildErrorElement } from "../../../src/server/render/element.tsx";
 import type { ResolvedRoute, SegmentBoundary } from "../../../src/server/router/types.ts";
 import { __setDevMode, IS_DEV } from "../../../src/server/runtime-env.ts";

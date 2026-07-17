@@ -1,5 +1,5 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: polling helpers intentionally await each retry before the next attempt
-import type { RuntimePage, RuntimeRoute } from "../../client";
+import type { RuntimePage, RuntimeRoute } from "../../client/internal/runtime-types.ts";
 
 export function isFurinPage(value: unknown): value is RuntimePage {
   return (

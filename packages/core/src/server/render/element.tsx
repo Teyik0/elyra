@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { wrapSegmentBoundaries } from "../../client/boundaries.tsx";
 import { DefaultErrorFallback, DefaultNotFoundFallback } from "../../client/default-screens.tsx";
-import type { RuntimeRoute } from "../../client.ts";
+import type { RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import type { ErrorComponent } from "../../shared/error.ts";
 import type { FurinNotFoundError, NotFoundComponent } from "../../shared/not-found.ts";
 import type { ResolvedRoute, SegmentBoundary } from "../router/index.ts";

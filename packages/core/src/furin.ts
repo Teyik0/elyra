@@ -611,7 +611,7 @@ function createNotFoundHandling(
 export { FurinErrorBoundary, FurinNotFoundBoundary } from "./client/boundaries.tsx";
 // ── Public API re-export ──────────────────────────────────────────────────────
 // biome-ignore-start lint/performance/noBarrelFile: intentional — furin.ts is the public package entry
-export type { DeferredData, RuntimePage, RuntimeRoute } from "./client.ts";
+export type { DeferredData } from "./client.ts";
 export { defer, isDeferred } from "./client.ts";
 export type { InvalidationInput, InvalidationRule } from "./server/auto-invalidate/index.ts";
 export { furinInvalidate, revalidateTag } from "./server/auto-invalidate/index.ts";

@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import "../../setup/evlog-mock";
 
 import { Elysia, t } from "elysia";
-import { createRoute, defer, type RuntimePage, type RuntimeRoute } from "../../../src/client";
+import { createRoute, defer } from "../../../src/client";
+import type { RuntimePage, RuntimeRoute } from "../../../src/client/internal/runtime-types.ts";
 import type { ResolvedRoute } from "../../../src/server/router/index.ts";
 import { createDataEndpoint } from "../../../src/server/router/index.ts";
 import { __setDevMode } from "../../../src/server/runtime-env.ts";

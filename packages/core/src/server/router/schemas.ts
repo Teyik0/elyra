@@ -1,7 +1,7 @@
 import { parseQueryFromURL, parseQueryStandardSchema } from "elysia/parse-query";
 import { getSchemaValidator } from "elysia/schema";
 import type { AnySchema } from "elysia/types";
-import type { RuntimeRoute } from "../../client.ts";
+import type { RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import {
   collectSearchDefaults,
   type SearchParamsInput,

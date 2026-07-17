@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RuntimePage, RuntimeRoute } from "../../../src/client.ts";
+import type { RuntimePage, RuntimeRoute } from "../../../src/client/internal/runtime-types.ts";
 import { scanPages } from "../../../src/server/router/discovery.ts";
 import { resolveMode } from "../../../src/server/router/patterns.ts";
 import { __setDevMode, IS_DEV } from "../../../src/server/runtime-env.ts";

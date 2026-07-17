@@ -276,10 +276,8 @@ function assertNoRequestLoaders(routes: ResolvedRoute[], root: RootLayout): void
   if (root.route.requestLoader !== undefined) {
     offenders.push("  • <root layout>");
   }
-  const requestScopedRoutes = routes.filter(
-    (route) =>
-      route.page.requestLoader !== undefined ||
-      route.routeChain.some((entry) => entry.requestLoader !== undefined)
+  const requestScopedRoutes = routes.filter((route) =>
+    route.routeChain.some((entry) => entry.requestLoader !== undefined)
   );
   offenders.push(...requestScopedRoutes.map((route) => `  • ${route.pattern}`));
   if (offenders.length === 0) {

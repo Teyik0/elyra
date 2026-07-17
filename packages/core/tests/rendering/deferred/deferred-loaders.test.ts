@@ -79,6 +79,22 @@ describe("runLoaders — DeferredData", () => {
     expect(await result.deferredPromises?.stats).toBe(99);
   });
 
+  test("loader with defer() preserves user data named __isDeferred", async () => {
+    const route = makeRoute(
+      () => defer({ __isDeferred: "user-data", stats: Promise.resolve(99) }),
+      []
+    );
+    const result = await runLoaders(route, makeCtx());
+
+    expect(result.type).toBe("data");
+    if (result.type !== "data") {
+      return;
+    }
+
+    expect(result.syncData.__isDeferred).toBe("user-data");
+    expect(await result.deferredPromises?.stats).toBe(99);
+  });
+
   test("Promises in defer() are NOT awaited in syncData", async () => {
     let resolved = false;
     const slowPromise = new Promise<number>((r) =>

@@ -1,8 +1,8 @@
 import type React from "react";
-import type { RuntimeRoute } from "../../client.ts";
 import type { ErrorComponent } from "../../shared/error.ts";
 import type { NotFoundComponent } from "../../shared/not-found.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
+import type { RuntimeRoute } from "../internal/runtime-types.ts";
 
 /**
  * Augment this interface via declaration merging in furin-env.d.ts
