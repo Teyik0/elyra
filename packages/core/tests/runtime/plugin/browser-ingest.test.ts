@@ -28,6 +28,17 @@ test.serial("browser log ingest is not mounted unless clientLogging is enabled",
   expect(res.status).toBe(404);
 });
 
+test.serial("dev inspector is not mounted by default", async () => {
+  __setDevMode(true);
+  const app = await furin({ clientLogging: false, pagesDir: fixturesDir });
+
+  const response = await app.handle(
+    new Request("http://localhost/__furin/_inspect/isr", { headers: { host: "attacker.test" } })
+  );
+
+  expect(response.status).toBe(404);
+});
+
 test.serial("browser log ingest accepts browser events when enabled", async () => {
   __setDevMode(true);
 
@@ -61,4 +72,35 @@ test.serial("browser log ingest rejects oversized batches", async () => {
   );
 
   expect(res.status).toBe(413);
+});
+
+test.serial("browser log ingest stops reading an oversized chunked body", async () => {
+  __setDevMode(true);
+  let pulls = 0;
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    cancel() {
+      cancelled = true;
+    },
+    pull(controller) {
+      pulls += 1;
+      controller.enqueue(new TextEncoder().encode("x".repeat(8192)));
+      if (pulls === 20) {
+        controller.close();
+      }
+    },
+  });
+  const app = await furin({ clientLogging: true, pagesDir: fixturesDir });
+
+  const res = await app.handle(
+    new Request("http://localhost/_furin/ingest", {
+      body: stream,
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+  );
+
+  expect(res.status).toBe(413);
+  expect(cancelled).toBe(true);
+  expect(pulls).toBeLessThan(20);
 });

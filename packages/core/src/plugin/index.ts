@@ -59,18 +59,14 @@ const plugin: Bun.BunPlugin = {
 
       const source = await Bun.file(args.path).text();
 
-      try {
-        const result = transformForClient(source, args.path);
-        // Output is TS/TSX (yuku parses directly, no pre-transpile). Bun's
-        // bundler picks the loader from the file extension and applies the
-        // project tsconfig — including the JSX automatic runtime.
-        return {
-          contents: result.code,
-          loader: args.path.endsWith(".tsx") ? "tsx" : "ts",
-        };
-      } catch (err) {
-        console.error(`[furin] strip-plugin transform error for ${args.path}:`, err);
-      }
+      const result = transformForClient(source, args.path);
+      // Output is TS/TSX (yuku parses directly, no pre-transpile). Bun's
+      // bundler picks the loader from the file extension and applies the
+      // project tsconfig — including the JSX automatic runtime.
+      return {
+        contents: result.code,
+        loader: args.path.endsWith(".tsx") ? "tsx" : "ts",
+      };
     });
   },
 };

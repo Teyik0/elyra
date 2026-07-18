@@ -8,6 +8,7 @@ import { resolveSyncRuntime } from "../../../src/server/sync/runtime";
 import { migrateSqliteSync, sqliteSyncAdapter } from "../../../src/server/sync/sqlite/index.ts";
 
 const originalDevMode = IS_DEV;
+const principal = () => "principal";
 
 afterEach(() => {
   __setDevMode(originalDevMode);
@@ -31,9 +32,9 @@ function durableAdapter(
 describe("sync runtime", () => {
   test("resolves a custom stream path from an explicit runtime", () => {
     const adapter = durableAdapter("host-local", async () => "0");
-    const sync = { adapter, streamPath: "/events" };
+    const sync = { adapter, principal, streamPath: "/events" };
     expect(resolveSyncStreamPath(sync)).toBe("/events");
-    expect(syncRuntimeOptions(sync)).toEqual({ adapter, notifier: undefined });
+    expect(syncRuntimeOptions(sync)).toEqual({ adapter, notifier: undefined, principal });
   });
 
   test("rejects process-local SQLite storage in production", () => {
@@ -42,7 +43,7 @@ describe("sync runtime", () => {
     try {
       migrateSqliteSync(database);
       const adapter = sqliteSyncAdapter({ database, namespace: "runtime" });
-      expect(() => resolveSyncRuntime({ adapter })).toThrow("process-local SyncAdapter");
+      expect(() => resolveSyncRuntime({ adapter, principal })).toThrow("process-local SyncAdapter");
     } finally {
       database.close();
     }
@@ -51,7 +52,7 @@ describe("sync runtime", () => {
   test("accepts an explicit host-local adapter in production", () => {
     __setDevMode(false);
     const adapter = durableAdapter("host-local", async () => "0");
-    expect(resolveSyncRuntime({ adapter }).adapter).toBe(adapter);
+    expect(resolveSyncRuntime({ adapter, principal }).adapter).toBe(adapter);
   });
 
   test("uses currentCursor polling when a distributed adapter has no notifier", async () => {
@@ -59,6 +60,7 @@ describe("sync runtime", () => {
     let cursor = "0";
     const runtime = resolveSyncRuntime({
       adapter: durableAdapter("distributed", async () => cursor),
+      principal,
     });
     expect(runtime.notifier).toBeInstanceOf(PollingSyncNotifier);
     let receiveCursor: (nextCursor: string) => void = () => {

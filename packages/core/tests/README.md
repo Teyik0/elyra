@@ -29,6 +29,9 @@ build output, or an Elysia request.
 - `*.dom.test.tsx`: DOM-specific tests when a separate suffix makes the runtime
   requirement clearer.
 - `*.type.test.ts` / `*.type.test.tsx`: compile-time type contracts.
+- `*.scenario.ts` / `*.scenario.tsx`: Worker entrypoints invoked by a colocated
+  test when process-global module state requires isolation; these are not test
+  runner entrypoints themselves.
 
 Use the suffix to communicate execution cost. Use the folder to communicate
 which Furin behavior is covered.

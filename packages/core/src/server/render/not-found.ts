@@ -5,12 +5,11 @@ import { FurinNotFoundError } from "../../shared/not-found.ts";
 import { useLogger } from "../context-logger.ts";
 import { currentInstance } from "../instance.ts";
 import type { RootLayout } from "../router/index.ts";
-import { IS_DEV } from "../runtime-env.ts";
 import { assembleHTML, streamToString } from "./assemble.ts";
 import { buildNotFoundElement } from "./element.tsx";
 import { generateIndexHtml } from "./shell.ts";
 import { withSSRRouterContext } from "./ssr.ts";
-import { getDevTemplate, getProductionTemplate } from "./template.ts";
+import { getProductionTemplate } from "./template.ts";
 
 /**
  * Renders the root-level not-found component into a complete 404 HTML Response.
@@ -22,23 +21,10 @@ export async function renderRootNotFound(
 ): Promise<Response> {
   const prodTemplate = getProductionTemplate();
   let template: string;
-  if (prodTemplate !== null) {
-    template = prodTemplate;
-  } else if (IS_DEV && request !== undefined) {
-    try {
-      template = await getDevTemplate(new URL(request.url).origin);
-    } catch (devTemplateErr) {
-      useLogger().set({
-        furin: {
-          render: "not-found",
-          action: "dev_template_fallback",
-          error: devTemplateErr instanceof Error ? devTemplateErr.message : String(devTemplateErr),
-        },
-      });
-      template = generateIndexHtml();
-    }
-  } else {
+  if (prodTemplate === null) {
     template = generateIndexHtml();
+  } else {
+    template = prodTemplate;
   }
   const notFoundError = new FurinNotFoundError(undefined);
 

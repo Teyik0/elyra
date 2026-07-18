@@ -42,6 +42,7 @@ const syncDatabase = new Database(":memory:");
 migrateSqliteSync(syncDatabase);
 const adminSync = {
   adapter: sqliteSyncAdapter({ database: syncDatabase, namespace: "multi-instance-admin" }),
+  principal: () => "admin",
 };
 
 function resetState() {

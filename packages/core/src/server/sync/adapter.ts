@@ -75,4 +75,7 @@ export interface SyncNotifier {
 export interface SyncRuntimeOptions {
   adapter: SyncAdapter;
   notifier?: SyncNotifier;
+  principal: (context: Context) => Promise<string> | string;
 }
+
+import type { Context } from "elysia";

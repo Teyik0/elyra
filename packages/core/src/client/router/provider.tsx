@@ -15,6 +15,8 @@ import {
 import {
   applyRevalidateEntries,
   applyRevalidateHeader,
+  decodeHashFragment,
+  isSameOriginFetchResult,
   normalizeHref,
   shouldAutoRefreshPath,
   shouldInterceptClick,
@@ -647,7 +649,7 @@ export function RouterProvider({
 
     const destUrl = new URL(instruction.href, window.location.origin);
     if (destUrl.hash) {
-      const id = decodeURIComponent(destUrl.hash.slice(1));
+      const id = decodeHashFragment(destUrl.hash.slice(1));
       const element = document.getElementById(id);
       if (element) {
         element.scrollIntoView({ behavior: "instant", block: "start" });
@@ -708,6 +710,9 @@ export function RouterProvider({
     const originalFetch = window.fetch;
     const wrapped = async (...args: Parameters<typeof fetch>): Promise<Response> => {
       const response = await originalFetch.apply(window, args);
+      if (!isSameOriginFetchResult(args[0], response.url, window.location.origin)) {
+        return response;
+      }
       const invalidated: Array<{ path: string; type: "page" | "layout" }> = [];
       applyRevalidateHeader(response.headers, (path, type) => {
         const resolvedType = type ?? "page";

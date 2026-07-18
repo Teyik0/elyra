@@ -29,9 +29,10 @@ interface KanbanProps {
   onMutation?: () => void;
 }
 
-interface CardsOverride {
-  cards: KanbanCard[];
+interface CardsState {
+  cards: KanbanCard[] | null;
   source: KanbanCard[];
+  sourceEpoch: number;
 }
 
 function moveCard(
@@ -110,24 +111,39 @@ function restoreDeletedCard(
 }
 
 export const Kanban = ({ initialCards, boardId, onMutation }: KanbanProps) => {
-  const [cardsOverride, setCardsOverride] = useState<CardsOverride | null>(null);
+  const [cardsState, setCardsState] = useState<CardsState>({
+    cards: null,
+    source: initialCards,
+    sourceEpoch: 0,
+  });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const cards = cardsOverride?.source === initialCards ? cardsOverride.cards : initialCards;
+  if (cardsState.source !== initialCards) {
+    setCardsState({
+      cards: null,
+      source: initialCards,
+      sourceEpoch: cardsState.sourceEpoch + 1,
+    });
+  }
+  const { sourceEpoch } = cardsState;
+  const cards =
+    cardsState.source === initialCards ? (cardsState.cards ?? initialCards) : initialCards;
 
   const setCards = useCallback<Dispatch<SetStateAction<KanbanCard[]>>>(
     (nextCards) => {
-      setCardsOverride((currentOverride) => {
-        const currentCards =
-          currentOverride?.source === initialCards ? currentOverride.cards : initialCards;
+      setCardsState((currentState) => {
+        if (currentState.source !== initialCards || currentState.sourceEpoch !== sourceEpoch) {
+          return currentState;
+        }
+        const currentCards = currentState.cards ?? initialCards;
         const resolvedCards =
           typeof nextCards === "function"
             ? (nextCards as (currentCards: KanbanCard[]) => KanbanCard[])(currentCards)
             : nextCards;
-        return { cards: resolvedCards, source: initialCards };
+        return { ...currentState, cards: resolvedCards };
       });
     },
-    [initialCards]
+    [initialCards, sourceEpoch]
   );
 
   return (

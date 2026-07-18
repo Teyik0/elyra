@@ -99,8 +99,10 @@ export function buildErrorElement(
 ): ReactNode {
   const ErrorView = component ?? DefaultErrorFallback;
   let message: string;
-  if (component) {
+  if (component && IS_DEV) {
     message = messageOverride ?? errorMessageOf(error);
+  } else if (component) {
+    message = messageOverride ?? GENERIC_ERROR_MESSAGE;
   } else if (IS_DEV) {
     // No user error.tsx: in dev, surface the real error message so the
     // developer can see what actually broke instead of a generic placeholder.

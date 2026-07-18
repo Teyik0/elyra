@@ -188,4 +188,28 @@ async function runISRBackgroundRevalidationScenarios(): Promise<void> {
   await waitForBackground(() => loaderReleased, "race revalidation did not complete");
   await waitForPendingISRRevalidations();
   expect(isrCache.has(cacheKey)).toBe(false);
+
+  __resetCacheState();
+  const missCacheKey = "/isr-page/miss-race";
+  const missGate = createDeferred();
+  let missLoaderStarted = false;
+  route = createISRRoute(isrRoute, {
+    loader: async () => {
+      missLoaderStarted = true;
+      await missGate.promise;
+      return { timestamp: Date.now() };
+    },
+    pattern: missCacheKey,
+  });
+  const invalidatedMissCtx = createMockLoaderContext({ path: missCacheKey });
+  const rendering = handleISR(route, invalidatedMissCtx, result.root, "");
+  await waitForBackground(() => missLoaderStarted, "cache-miss render did not start");
+  isrCache.set(missCacheKey, { generatedAt: 0, html: "superseded", revalidate: 60 });
+  revalidatePath(missCacheKey, "page");
+  missGate.resolve();
+
+  await rendering;
+
+  expect(isrCache.has(missCacheKey)).toBe(false);
+  expect(invalidatedMissCtx.set.headers["cache-control"]).toBe("no-store");
 }

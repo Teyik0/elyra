@@ -56,8 +56,10 @@ class FakeEventSource {
     this.listeners.get("open")?.(new Event("open"));
   }
 
-  removeEventListener(type: string): void {
-    this.listeners.delete(type);
+  removeEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
+    if (typeof listener === "function" && this.listeners.get(type) === listener) {
+      this.listeners.delete(type);
+    }
   }
 }
 

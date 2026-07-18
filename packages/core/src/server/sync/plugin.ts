@@ -7,7 +7,7 @@ import {
 import type { InvalidationInput } from "../auto-invalidate/types.ts";
 import { peekPendingInvalidations } from "../cache/invalidation.ts";
 import type { MutationLease, SyncInvalidation, SyncRuntimeOptions } from "./adapter.ts";
-import { createMutationFingerprint, sha256Hex } from "./fingerprint.ts";
+import { createMutationFingerprint } from "./fingerprint.ts";
 import { mergeStoredResponseHeaders, replayResponse, storeResponse } from "./response.ts";
 import { resolveSyncRuntime } from "./runtime.ts";
 
@@ -67,14 +67,6 @@ function getIdempotencyKey(ctx: MutationContext): string | undefined {
   }
   const fromRequest = ctx.request.headers.get("Idempotency-Key");
   return fromRequest || undefined;
-}
-
-function getPrincipalScope(request: Request): string {
-  const authorization = request.headers.get("authorization");
-  const credentials = authorization
-    ? JSON.stringify(["authorization", authorization])
-    : JSON.stringify(["cookie", request.headers.get("cookie") ?? ""]);
-  return sha256Hex(credentials);
 }
 
 function supportsReplayBody(request: Request): boolean {
@@ -165,7 +157,10 @@ export function furinSync(options: SyncRuntimeOptions) {
     }
 
     const url = new URL(ctx.request.url);
-    const principal = getPrincipalScope(ctx.request);
+    const principal = await options.principal(ctx as Context);
+    if (principal.length === 0) {
+      throw new Error("[furin] Sync principal must not be empty.");
+    }
     const key = `${ctx.request.method}:${url.pathname}:${idempotencyKey}`;
     const fingerprint = createMutationFingerprint({ body: ctx.body, request: ctx.request });
     const result = await runtime.adapter.beginMutation({ fingerprint, key, principal });
@@ -207,15 +202,6 @@ export function furinSync(options: SyncRuntimeOptions) {
     active: ActiveMutation
   ): Promise<Response | undefined> {
     const result = await storeResponse(ctx.responseValue, ctx.set);
-    if (result.kind === "unreplayable") {
-      const completion = await runtime.adapter.completeMutation({
-        invalidations: [],
-        lease: active.lease,
-        response: result.response,
-      });
-      return completion.kind === "lost" ? leaseLostResponse() : replayResponse(result.response);
-    }
-
     const manualPending = peekPendingInvalidations();
     const invalidate = routeMetadata.get(ctx.request)?.invalidate;
     if (invalidate) {
@@ -247,6 +233,9 @@ export function furinSync(options: SyncRuntimeOptions) {
     }
     if (completion.cursor !== undefined) {
       runtime.notifier.publish(completion.cursor).catch(() => undefined);
+    }
+    if (result.kind === "unreplayable") {
+      return replayResponse(response);
     }
   }
 

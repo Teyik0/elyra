@@ -9,6 +9,7 @@ import {
   deleteISRCache,
   getISRCache,
   pendingISRRevalidations,
+  releaseISRCacheGeneration,
   setISRCacheIfGenerationUnchanged,
 } from "../cache/isr.ts";
 import type { ISRCacheEntry } from "../cache/isr-ssg.ts";
@@ -23,6 +24,7 @@ import {
   resolvePath,
   streamToString,
 } from "./assemble.ts";
+import { runPublicLoaders } from "./loaders.ts";
 import {
   type PreparedRender,
   prepareRender,
@@ -195,55 +197,68 @@ export async function handleISR(
   }
 
   const cacheGeneration = captureISRCacheGeneration(cacheKey);
-  const renderStart = Date.now();
-  const prepared = await prepareRender(route, ctx, root, undefined, false, undefined, searchRoutes);
+  try {
+    const renderStart = Date.now();
+    const loaderResult = await runPublicLoaders(route, ctx);
+    const prepared = await prepareRender(
+      route,
+      ctx,
+      root,
+      undefined,
+      false,
+      loaderResult,
+      searchRoutes
+    );
 
-  if (prepared instanceof Response) {
-    return prepared;
+    if (prepared instanceof Response) {
+      return prepared;
+    }
+
+    const { element, headData, headers, syncData, template, status, errorDigest } = prepared;
+
+    if (status !== 200) {
+      return renderISRNon200(prepared, route, ctx, root, errorDigest, renderStart, buildId);
+    }
+
+    const stream = await renderToReadableStream(element);
+    await stream.allReady;
+    const reactHtml = await streamToString(stream);
+    const html = assembleHTML(template, headData, reactHtml, syncData);
+    const generatedAt = Date.now();
+
+    useLogger().set({
+      furin: {
+        cache: "miss",
+        render: "isr",
+        render_ms: generatedAt - renderStart,
+        route: route.pattern,
+      },
+    });
+
+    const cacheStored = setISRCacheIfGenerationUnchanged(
+      cacheKey,
+      { generatedAt, html, revalidate },
+      cacheGeneration
+    );
+    if (cacheStored) {
+      autoInvalidateRegistry.registerLoaderTags(cacheKey, route.tags);
+    }
+
+    const etag = isrEtag(buildId, generatedAt);
+    // Apply loader-set headers first so custom headers survive, then let the
+    // ISR-critical headers win (the cache contract is framework-owned).
+    for (const [key, value] of Object.entries(headers)) {
+      ctx.set.headers[key] = value;
+    }
+    ctx.set.headers["content-type"] = "text/html; charset=utf-8";
+    ctx.set.headers["cache-control"] = cacheStored ? isrCacheControl(true, revalidate) : "no-store";
+    if (etag) {
+      ctx.set.headers.etag = etag;
+    }
+    return html;
+  } finally {
+    releaseISRCacheGeneration(cacheKey, cacheGeneration);
   }
-
-  const { element, headData, headers, syncData, template, status, errorDigest } = prepared;
-
-  if (status !== 200) {
-    return renderISRNon200(prepared, route, ctx, root, errorDigest, renderStart, buildId);
-  }
-
-  const stream = await renderToReadableStream(element);
-  await stream.allReady;
-  const reactHtml = await streamToString(stream);
-  const html = assembleHTML(template, headData, reactHtml, syncData);
-  const generatedAt = Date.now();
-
-  useLogger().set({
-    furin: {
-      cache: "miss",
-      render: "isr",
-      render_ms: generatedAt - renderStart,
-      route: route.pattern,
-    },
-  });
-
-  const cacheStored = setISRCacheIfGenerationUnchanged(
-    cacheKey,
-    { generatedAt, html, revalidate },
-    cacheGeneration
-  );
-  if (cacheStored) {
-    autoInvalidateRegistry.registerLoaderTags(cacheKey, route.tags);
-  }
-
-  const etag = isrEtag(buildId, generatedAt);
-  // Apply loader-set headers first so custom headers survive, then let the
-  // ISR-critical headers win (the cache contract is framework-owned).
-  for (const [key, value] of Object.entries(headers)) {
-    ctx.set.headers[key] = value;
-  }
-  ctx.set.headers["content-type"] = "text/html; charset=utf-8";
-  ctx.set.headers["cache-control"] = isrCacheControl(true, revalidate);
-  if (etag) {
-    ctx.set.headers.etag = etag;
-  }
-  return html;
 }
 
 function revalidateInBackground(
@@ -335,6 +350,7 @@ function revalidateInBackground(
               logger.error(err instanceof Error ? err : new Error(String(err)));
               logger.emit();
             })
+            .finally(() => releaseISRCacheGeneration(cacheKey, cacheGeneration))
             .finally(() => {
               resolve();
               resource.emitDestroy();

@@ -202,9 +202,11 @@ new Elysia()
 
 ### `sync`
 
-**Type:** `{ adapter: SyncAdapter; notifier?: SyncNotifier; streamPath?: string } | false`
+**Type:** `{ adapter: SyncAdapter; principal: (ctx: Context) => string | Promise<string>; notifier?: SyncNotifier; streamPath?: string } | false`
 
 Enable Furin's built-in sync transport with an explicit runtime. Omit the option or pass `false` to disable the page-side transport. Furin mounts SSE at `/_furin/sync`, exposes cursor catch-up at `/_furin/sync/changes`, and injects the client runtime automatically. API mutations using `furinSync()` are synchronized by default and may opt out per route with `sync: false`.
+
+`principal` is mandatory and must return the authenticated application identity. Furin calls it after upstream authentication hooks; replay keys are isolated by this value. Never derive it from an unverified cookie or header.
 
 Synced mutations stay regular API routes. There are no server actions, generated mutation names, collections, or React wrapper providers required.
 

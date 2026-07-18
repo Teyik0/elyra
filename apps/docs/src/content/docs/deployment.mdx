@@ -206,7 +206,7 @@ const adapter = postgresSyncAdapter({
   namespace,
   sql: new SQL(databaseUrl),
 })
-const sync = { adapter }
+const sync = { adapter, principal: ({ request }) => requireUser(request).id }
 
 new Elysia()
   .use(furinSync(sync))
@@ -228,6 +228,7 @@ const client = new RedisClient(redisUrl)
 const sync = {
   adapter,
   notifier: redisSyncNotifier({ client, namespace }),
+  principal: ({ request }) => requireUser(request).id,
 }
 ```
 

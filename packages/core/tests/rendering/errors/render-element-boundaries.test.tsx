@@ -238,6 +238,7 @@ describe("buildElement — boundary interleaving", () => {
 
 describe("buildErrorElement — error message extraction", () => {
   test("uses Error.message when error is an Error instance and no override is supplied", () => {
+    __setDevMode(true);
     const E: ErrorComponent = ({ error }) => <span>{error.message}</span>;
     const el = buildErrorElement(
       E,
@@ -247,18 +248,42 @@ describe("buildErrorElement — error message extraction", () => {
       500
     ) as ReactElement;
     expect((el.props as { error: { message: string } }).error.message).toBe("something broke");
+    __setDevMode(originalDevMode);
   });
 
   test("uses the raw string when error is a plain string", () => {
+    __setDevMode(true);
     const E: ErrorComponent = ({ error }) => <span>{error.message}</span>;
     const el = buildErrorElement(E, "plain string error", "d2", undefined, 500) as ReactElement;
     expect((el.props as { error: { message: string } }).error.message).toBe("plain string error");
+    __setDevMode(originalDevMode);
   });
 
   test("returns empty string when error is neither Error nor string", () => {
+    __setDevMode(true);
     const E: ErrorComponent = ({ error }) => <span>{error.message}</span>;
     const el = buildErrorElement(E, 42, "d3", undefined, 500) as ReactElement;
     expect((el.props as { error: { message: string } }).error.message).toBe("");
+    __setDevMode(originalDevMode);
+  });
+
+  test("prod: custom error component receives a generic internal error message", () => {
+    __setDevMode(false);
+    try {
+      const E: ErrorComponent = ({ error }) => <span>{error.message}</span>;
+      const el = buildErrorElement(
+        E,
+        new Error("database-password=secret"),
+        "d3b",
+        undefined,
+        500
+      ) as ReactElement;
+      expect((el.props as { error: { message: string } }).error.message).toBe(
+        "An unexpected error occurred."
+      );
+    } finally {
+      __setDevMode(originalDevMode);
+    }
   });
 
   test("prod: generic message when no component provided (no internal leak)", () => {

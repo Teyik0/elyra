@@ -1,14 +1,15 @@
 import { Elysia } from "elysia";
 import { IS_DEV } from "../runtime-env.ts";
-import type { SyncAdapter, SyncChange, SyncRuntimeOptions, SyncSubscription } from "./adapter.ts";
+import type { SyncAdapter, SyncChange, SyncSubscription } from "./adapter.ts";
 import type { FurinSyncOptions } from "./config.ts";
 import { syncRuntimeOptions } from "./config.ts";
-import { resolveSyncRuntime } from "./runtime.ts";
+import { type ResolvedSyncRuntime, resolveSyncRuntime } from "./runtime.ts";
 
 export type { ChangePage as SyncChangePage, SyncChange } from "./adapter.ts";
 
 const DEFAULT_CHANGE_LIMIT = 100;
 const MAX_CHANGE_LIMIT = 500;
+const MAX_STREAM_CLIENTS = 100;
 const MAX_CURSOR_LENGTH = 128;
 const SAFETY_POLL_INTERVAL_MS = IS_DEV ? 250 : 15_000;
 const UNSIGNED_INTEGER_PATTERN = /^\d+$/;
@@ -19,9 +20,11 @@ const noOpSubscription: SyncSubscription = {
 };
 
 interface StreamState {
-  clients: Set<ReadableStreamDefaultController<Uint8Array>>;
+  clients: Map<
+    ReadableStreamDefaultController<Uint8Array>,
+    ReturnType<typeof setInterval> | undefined
+  >;
   cursor: string | undefined;
-  heartbeats: Set<ReturnType<typeof setInterval>>;
   safetyPoll: ReturnType<typeof setInterval>;
   subscription: SyncSubscription;
 }
@@ -35,27 +38,45 @@ function encodeSseCursor(cursor: string): Uint8Array {
   );
 }
 
+function closeClient(
+  state: StreamState,
+  client: ReadableStreamDefaultController<Uint8Array>
+): void {
+  const heartbeat = state.clients.get(client);
+  state.clients.delete(client);
+  if (heartbeat) {
+    clearInterval(heartbeat);
+  }
+  try {
+    client.close();
+  } catch {
+    // already closed
+  }
+}
+
 function notifyState(state: StreamState, cursor: string): void {
   if (state.cursor === cursor) {
     return;
   }
   state.cursor = cursor;
   const chunk = encodeSseCursor(cursor);
-  for (const client of [...state.clients]) {
+  for (const client of state.clients.keys()) {
+    if (client.desiredSize === null || client.desiredSize <= 0) {
+      closeClient(state, client);
+      continue;
+    }
     try {
       client.enqueue(chunk);
     } catch {
-      state.clients.delete(client);
+      closeClient(state, client);
     }
   }
 }
 
-async function createStreamState(options: SyncRuntimeOptions): Promise<StreamState> {
-  const runtime = resolveSyncRuntime(options);
+async function createStreamState(runtime: ResolvedSyncRuntime): Promise<StreamState> {
   const state = {} as StreamState;
-  state.clients = new Set();
+  state.clients = new Map();
   state.cursor = await runtime.adapter.currentCursor();
-  state.heartbeats = new Set();
   state.safetyPoll = setInterval(() => {
     runtime.adapter
       .currentCursor()
@@ -70,16 +91,16 @@ async function createStreamState(options: SyncRuntimeOptions): Promise<StreamSta
   return state;
 }
 
-function getStreamState(options: SyncRuntimeOptions): Promise<StreamState> {
-  const existing = streams.get(options.adapter);
+function getStreamState(runtime: ResolvedSyncRuntime): Promise<StreamState> {
+  const existing = streams.get(runtime.adapter);
   if (existing) {
     return existing;
   }
-  const state = createStreamState(options);
-  streams.set(options.adapter, state);
+  const state = createStreamState(runtime);
+  streams.set(runtime.adapter, state);
   state.catch(() => {
-    if (streams.get(options.adapter) === state) {
-      streams.delete(options.adapter);
+    if (streams.get(runtime.adapter) === state) {
+      streams.delete(runtime.adapter);
     }
   });
   return state;
@@ -139,35 +160,37 @@ export function createSyncStreamPlugin(options: FurinSyncOptions) {
     })
     .get(streamPath, async () => {
       const state = await getStreamState(runtime);
+      if (state.clients.size >= MAX_STREAM_CLIENTS) {
+        return Response.json({ code: "FURIN_SYNC_STREAM_CAPACITY" }, { status: 503 });
+      }
       let controllerRef: ReadableStreamDefaultController<Uint8Array> | undefined;
       let heartbeat: ReturnType<typeof setInterval> | undefined;
       const stream = new ReadableStream<Uint8Array>({
         cancel() {
           if (controllerRef) {
-            state.clients.delete(controllerRef);
+            closeClient(state, controllerRef);
           }
           if (heartbeat) {
             clearInterval(heartbeat);
-            state.heartbeats.delete(heartbeat);
           }
         },
         start(controller) {
           controllerRef = controller;
-          state.clients.add(controller);
           controller.enqueue(encoder.encode(": connected\nretry: 3000\n\n"));
+          state.clients.set(controller, undefined);
           heartbeat = setInterval(() => {
+            if (controller.desiredSize === null || controller.desiredSize <= 0) {
+              closeClient(state, controller);
+              return;
+            }
             try {
               controller.enqueue(encoder.encode(": heartbeat\n\n"));
             } catch {
-              state.clients.delete(controller);
-              if (heartbeat) {
-                clearInterval(heartbeat);
-                state.heartbeats.delete(heartbeat);
-              }
+              closeClient(state, controller);
             }
           }, 15_000);
           heartbeat.unref?.();
-          state.heartbeats.add(heartbeat);
+          state.clients.set(controller, heartbeat);
         },
       });
 
@@ -186,15 +209,8 @@ export function __resetSyncState(): void {
   for (const state of resolvedStates) {
     state.subscription.unsubscribe().catch(() => undefined);
     clearInterval(state.safetyPoll);
-    for (const heartbeat of state.heartbeats) {
-      clearInterval(heartbeat);
-    }
-    for (const client of state.clients) {
-      try {
-        client.close();
-      } catch {
-        // already closed
-      }
+    for (const client of state.clients.keys()) {
+      closeClient(state, client);
     }
   }
   streams.clear();

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createContext, resolveTemplateSrc } from "../src/pipeline/context.ts";
@@ -67,6 +67,49 @@ describe("stage5Generation", () => {
       'Template destination "../escaped.ts" escapes the target directory.'
     );
     expect(existsSync(resolve(parentDir, "escaped.ts"))).toBe(false);
+  });
+
+  it("refuses to generate through a symbolic-link target", async () => {
+    const parentDir = mkdtempSync(resolve(tmpdir(), "create-furin-generation-parent-"));
+    const externalDir = mkdtempSync(resolve(tmpdir(), "create-furin-generation-external-"));
+    tempDirs.push(parentDir, externalDir);
+    const targetDir = resolve(parentDir, "app");
+    symlinkSync(externalDir, targetDir, "dir");
+    const sourcePath = resolve(import.meta.dir, "../templates/simple/src/server.ts.ejs");
+    const ctx = createContext({
+      fileTree: [{ kind: "ejs", relativePath: "server.ts", sourcePath }],
+      projectName: "my-app",
+      projectNameKebab: "my-app",
+      projectNamePascal: "MyApp",
+      targetDir,
+    });
+
+    await expect(stage5Generation(ctx)).rejects.toThrow("symbolic link");
+    expect(existsSync(resolve(externalDir, "server.ts"))).toBe(false);
+  });
+
+  it("allows destination segments that begin with two dots", async () => {
+    const targetDir = mkdtempSync(resolve(tmpdir(), "create-furin-generation-"));
+    tempDirs.push(targetDir);
+
+    const sourcePath = resolve(import.meta.dir, "../templates/simple/src/server.ts.ejs");
+    const ctx = createContext({
+      fileTree: [
+        {
+          kind: "ejs",
+          relativePath: "..cache/server.ts",
+          sourcePath,
+        },
+      ],
+      projectName: "my-app",
+      projectNameKebab: "my-app",
+      projectNamePascal: "MyApp",
+      targetDir,
+    });
+
+    await stage5Generation(ctx);
+
+    expect(existsSync(resolve(targetDir, "..cache/server.ts"))).toBe(true);
   });
 
   it("rejects template source paths that escape the templates directory", () => {

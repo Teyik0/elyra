@@ -1,7 +1,17 @@
 import { type Context, ElysiaCustomStatusResponse, StatusMap } from "elysia";
 import type { StoredResponse } from "./adapter.ts";
 
-const HOP_BY_HOP_HEADERS = new Set(["connection", "keep-alive", "transfer-encoding", "upgrade"]);
+const NON_REPLAYABLE_HEADERS = new Set([
+  "authorization",
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "set-cookie",
+  "transfer-encoding",
+  "upgrade",
+  "www-authenticate",
+]);
 export const MAX_SYNC_REPLAY_RESPONSE_BYTES = 1024 * 1024;
 const UNREPLAYABLE_SYNC_RESPONSE_BODY = new TextEncoder().encode(
   JSON.stringify({
@@ -32,7 +42,7 @@ function unwrapStatusResponse(value: unknown): { status: number; value: unknown 
 function responseHeaders(headers: Context["set"]["headers"]): Headers {
   const result = new Headers();
   for (const [name, value] of Object.entries(headers)) {
-    if (value !== undefined && !HOP_BY_HOP_HEADERS.has(name.toLowerCase())) {
+    if (value !== undefined && !NON_REPLAYABLE_HEADERS.has(name.toLowerCase())) {
       for (const entry of Array.isArray(value) ? value : [value]) {
         result.append(name, String(entry));
       }
@@ -123,12 +133,15 @@ export function mergeStoredResponseHeaders(
   headers: Context["set"]["headers"]
 ): StoredResponse {
   const merged = new Headers(
-    storedResponse.headers.map(([name, value]) => [name, value] as [string, string])
+    storedResponse.headers
+      .filter(([name]) => !NON_REPLAYABLE_HEADERS.has(name.toLowerCase()))
+      .map(([name, value]) => [name, value] as [string, string])
   );
   for (const [name, value] of Object.entries(headers)) {
-    if (value !== undefined && !HOP_BY_HOP_HEADERS.has(name.toLowerCase())) {
+    if (value !== undefined && !NON_REPLAYABLE_HEADERS.has(name.toLowerCase())) {
+      merged.delete(name);
       for (const entry of Array.isArray(value) ? value : [value]) {
-        merged.set(name, String(entry));
+        merged.append(name, String(entry));
       }
     }
   }
@@ -149,7 +162,9 @@ export async function storeResponse(
       return unreplayable();
     }
     const headers = new Headers(
-      [...clone.headers.entries()].filter(([name]) => !HOP_BY_HOP_HEADERS.has(name.toLowerCase()))
+      [...clone.headers.entries()].filter(
+        ([name]) => !NON_REPLAYABLE_HEADERS.has(name.toLowerCase())
+      )
     );
     return storedResponseResult(headers, body, clone.status);
   }
@@ -177,7 +192,11 @@ export function replayResponse(stored: StoredResponse): Response {
       ? null
       : stored.body.slice();
   return new Response(body, {
-    headers: new Headers(stored.headers.map(([name, value]) => [name, value] as [string, string])),
+    headers: new Headers(
+      stored.headers
+        .filter(([name]) => !NON_REPLAYABLE_HEADERS.has(name.toLowerCase()))
+        .map(([name, value]) => [name, value] as [string, string])
+    ),
     status: stored.status,
   });
 }

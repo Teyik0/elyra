@@ -1,6 +1,6 @@
 import type { Context } from "elysia";
 import type { SearchRouteMetadata } from "../../shared/search-params.ts";
-import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
+import { autoInvalidateRegistry, getAutoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { registerCacheInvalidator } from "../cache/registry.ts";
 import { type Cache, createRouteCache, type RevalidateType } from "../cache/route-cache.ts";
 import { allStateBuckets, currentInstance, type FurinInstance } from "../instance.ts";
@@ -42,6 +42,7 @@ function hasPprEntryForPath(cache: Cache<CachedPprRoute>, path: string): boolean
 }
 
 function createPprRouteState(instance: FurinInstance): PprRouteState {
+  const registry = getAutoInvalidateRegistry(instance);
   let cache: Cache<CachedPprRoute>;
   cache = createRouteCache<CachedPprRoute>({
     maxSize: MAX_PPR_ROUTE_CACHE_SIZE,
@@ -51,7 +52,7 @@ function createPprRouteState(instance: FurinInstance): PprRouteState {
       if (path === null || hasPprEntryForPath(cache, path)) {
         return;
       }
-      autoInvalidateRegistry.unregisterPath(path);
+      registry.unregisterPath(path);
     },
     pathFromKey: pathFromPprCacheKey,
   });

@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import { navigationHrefPolicy } from "./link-utils.ts";
 import type { RouterContextValue } from "./types.ts";
 
 export const RouterContext = createContext<RouterContextValue | null>(null);
@@ -16,6 +17,9 @@ export const CLIENT_FALLBACK_ROUTER: RouterContextValue = {
   },
   isNavigating: false,
   navigate: (href, _opts) => {
+    if (navigationHrefPolicy(href, window.location.origin) === "blocked") {
+      return Promise.reject(new Error("[furin] Unsafe navigation URL."));
+    }
     window.location.href = href;
     return Promise.resolve();
   },

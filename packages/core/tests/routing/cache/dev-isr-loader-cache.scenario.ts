@@ -17,6 +17,10 @@ import { createRoutePlugin } from "../../../src/server/router/plugin.ts";
 import type { ResolvedRoute, RootLayout } from "../../../src/server/router/types.ts";
 import { __setDevMode, IS_DEV } from "../../../src/server/runtime-env.ts";
 
+// This scenario runs in the dedicated Worker created by
+// dev-isr-loader-cache.test.ts. The Worker isolates the dev/cache module state;
+// the parent bun:test case owns test discovery and failure reporting.
+
 const fixturesDir = join(import.meta.dir, "../../fixtures/pages/default");
 const template =
   '<!DOCTYPE html><html><head><!--FURIN_HEAD--></head><body><div id="root"><!--FURIN_HTML--></div><!--FURIN_TAIL--></body></html>';

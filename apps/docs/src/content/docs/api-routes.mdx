@@ -43,6 +43,7 @@ migrateSqliteSync(database)
 
 export const sync = {
   adapter: sqliteSyncAdapter({ database, namespace: "my-app" }),
+  principal: ({ request }) => requireUser(request).id,
 }
 ```
 
@@ -158,6 +159,7 @@ import { postgresSyncAdapter } from "@teyik0/furin/sync/postgres"
 const sql = new SQL(databaseUrl) // read from server-only configuration
 const sync = {
   adapter: postgresSyncAdapter({ namespace: "task-manager", sql }),
+  principal: ({ request }) => requireUser(request).id,
 }
 
 new Elysia()
@@ -185,6 +187,7 @@ const sync = {
     client: new RedisClient(redisUrl),
     namespace: "task-manager",
   }),
+  principal: ({ request }) => requireUser(request).id,
 }
 ```
 

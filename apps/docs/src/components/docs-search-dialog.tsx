@@ -308,7 +308,7 @@ export function DocsSearchDialog() {
         }}
       >
         <DialogClose asChild>
-          <button className="sr-only" ref={closeButtonRef} type="button">
+          <button className="sr-only" ref={closeButtonRef} tabIndex={-1} type="button">
             Close search
           </button>
         </DialogClose>

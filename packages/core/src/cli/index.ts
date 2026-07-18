@@ -44,6 +44,10 @@ function extractCompileFlag(args: string[]): {
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
+    if (arg === "--") {
+      parseableArgs.push(...args.slice(index));
+      break;
+    }
     if (arg === "--compile") {
       const next = args[index + 1];
       if (next && !next.startsWith("-")) {

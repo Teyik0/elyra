@@ -1,9 +1,11 @@
 import type { Context } from "elysia";
 import type { RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import { isDeferred, type RequestLoaderContext } from "../../client.ts";
+import { computeErrorDigest } from "../../shared/digest.ts";
 import { type FurinNotFoundError, isNotFoundError } from "../../shared/not-found.ts";
 import { useLogger } from "../context-logger.ts";
 import type { ResolvedRoute } from "../router/index.ts";
+import { IS_DEV } from "../runtime-env.ts";
 
 export type LoaderResult =
   | {
@@ -267,9 +269,34 @@ export async function serializeDeferredRejection(err: unknown): Promise<unknown>
     return wrapped;
   }
   if (err instanceof Error) {
-    return err;
+    if (IS_DEV) {
+      return err;
+    }
+    const wrapped = sanitizedDeferredError();
+    Object.assign(wrapped, { __furinDigest: computeErrorDigest(err) });
+    return wrapped;
   }
-  return new Error(String(err));
+  if (IS_DEV) {
+    return new Error(String(err));
+  }
+  const wrapped = sanitizedDeferredError();
+  Object.assign(wrapped, { __furinDigest: computeErrorDigest(err) });
+  return wrapped;
+}
+
+function sanitizedDeferredError(): Error {
+  const error = new Error("An unexpected error occurred.");
+  for (const property of [
+    "column",
+    "line",
+    "originalColumn",
+    "originalLine",
+    "sourceURL",
+    "stack",
+  ]) {
+    Reflect.deleteProperty(error, property);
+  }
+  return error;
 }
 
 async function runLoadersInternal(

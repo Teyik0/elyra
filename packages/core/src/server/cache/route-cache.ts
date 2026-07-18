@@ -41,7 +41,7 @@ export function pathWithoutSearch(path: string): string {
 
 export function pathWithRequestSearch(path: string, requestUrl: string): string {
   const { search } = new URL(requestUrl);
-  return `${path}${search}`;
+  return `${pathWithoutSearch(path)}${search}`;
 }
 
 function matchesPath(urlPath: string, path: string, type: RevalidateType): boolean {

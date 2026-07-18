@@ -4,11 +4,15 @@ import { toCrossJSONAsync } from "seroval";
 import { computeErrorDigest } from "../../shared/digest.ts";
 import { serializeRouteFrames } from "../../shared/route-frame.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
-import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { useLogger } from "../context-logger.ts";
 import { injectSyncRuntimeScript, resolvePath } from "../render/assemble.ts";
 import { handleISR } from "../render/isr.ts";
-import { hasRequestLoader, type LoaderResult, runLoaders } from "../render/loaders.ts";
+import {
+  hasRequestLoader,
+  type LoaderResult,
+  runLoaders,
+  runPublicLoaders,
+} from "../render/loaders.ts";
 import { renderPprRoute } from "../render/ppr-route.ts";
 import { createDeferredRouteFrameStream } from "../render/route-frame-transport.ts";
 import { extractTitle } from "../render/shell.ts";
@@ -282,19 +286,9 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       syntheticCtx.params = parsedParams.params;
       syntheticCtx.query = parsedQuery.query as SearchParamsInput;
 
-      const result = await runLoaders(matched.route, syntheticCtx as unknown as Context);
-
-      // Keep the auto-invalidate registry in sync with whatever path was just
-      // served, so subsequent `revalidateTag(...)` calls (e.g. from a mutation
-      // afterHandle) can still find this URL by tag. Without this, a SPA-only
-      // navigation path (which never goes through the full-HTML render that
-      // also registers tags) would silently fall off the registry — the first
-      // mutation invalidates and unregisters via the cache `onDelete` hook,
-      // the next SPA fetch re-loads but does not re-register, and from then
-      // on `revalidateTag` finds no path to invalidate.
-      if (result.type === "data") {
-        autoInvalidateRegistry.registerLoaderTags(pathname, matched.route.tags);
-      }
+      const result = await (matched.route.mode === "isr" || matched.route.mode === "ssg"
+        ? runPublicLoaders(matched.route, syntheticCtx as unknown as Context)
+        : runLoaders(matched.route, syntheticCtx as unknown as Context));
 
       return createLoaderDataResponse(result, matched.route, syntheticRequest.url);
     },

@@ -38,5 +38,5 @@ export function runWithSyncStreamPath<T>(path: string | undefined, fn: () => T):
 }
 
 export function syncRuntimeOptions(sync: FurinSyncOptions): SyncRuntimeOptions {
-  return { adapter: sync.adapter, notifier: sync.notifier };
+  return { adapter: sync.adapter, notifier: sync.notifier, principal: sync.principal };
 }

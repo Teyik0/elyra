@@ -121,6 +121,7 @@ export async function buildPackageTarget(
     apps: [
       {
         buildId,
+        clientLogging: options.clientLogging ?? false,
         prefix,
         rootPath: root.path,
         routes: routes.map((r) => ({ pattern: r.pattern, path: r.path, mode: r.mode })),

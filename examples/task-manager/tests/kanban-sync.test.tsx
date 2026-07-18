@@ -193,6 +193,45 @@ test("applies remote create, move, and delete loader refreshes", async () => {
   }
 });
 
+test("does not restore an optimistic board when loader data returns to an earlier reference", async () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  document.body.appendChild(container);
+  const initialCards = [{ column: "backlog" as const, id: "card-1", title: "Move me" }];
+  const refreshedCards = [{ column: "backlog" as const, id: "card-1", title: "Refreshed" }];
+
+  try {
+    await act(() => {
+      root.render(createElement(Kanban, { boardId: "board-1", initialCards }));
+    });
+    const card = container.querySelector('[draggable="true"]');
+    const todoColumn = container.querySelectorAll("ul").item(1);
+    const dataTransfer = createDataTransfer();
+
+    await act(() => {
+      if (card) {
+        dispatchDrag(card, "dragstart", dataTransfer);
+        dispatchDrag(todoColumn, "drop", dataTransfer);
+      }
+    });
+    expect(todoColumn.textContent).toContain("Move me");
+
+    await act(() => {
+      root.render(createElement(Kanban, { boardId: "board-1", initialCards: refreshedCards }));
+    });
+    expect(container.querySelectorAll("ul").item(0).textContent).toContain("Refreshed");
+
+    await act(() => {
+      root.render(createElement(Kanban, { boardId: "board-1", initialCards }));
+    });
+    expect(container.querySelectorAll("ul").item(0).textContent).toContain("Move me");
+    expect(container.querySelectorAll("ul").item(1).textContent).not.toContain("Move me");
+  } finally {
+    await act(() => root.unmount());
+    container.remove();
+  }
+});
+
 test("removes an optimistic created card when creation fails", async () => {
   const container = document.createElement("div");
   const root = createRoot(container);

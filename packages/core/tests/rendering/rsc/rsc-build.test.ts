@@ -82,7 +82,28 @@ describe("RSC graph environment guards", () => {
         reactDom: "19.2.0-canary-1",
         reactServerDom: "19.2.0-canary-1",
       })
-    ).toThrow("insecure");
+    ).toThrow("supported patched React 19 version");
+  });
+
+  test("accepts only patched supported React 19 release lines", () => {
+    for (const version of ["19.0.6", "19.0.9", "19.1.7", "19.1.8", "19.2.6", "19.2.7"]) {
+      expect(() =>
+        assertCompatibleRscVersions({ react: version, reactDom: version, reactServerDom: version })
+      ).not.toThrow();
+    }
+    for (const version of [
+      "19.0.5",
+      "19.1.6",
+      "19.2.5",
+      "19.2.6-canary.1",
+      "19.3.0",
+      "20.0.0",
+      "19.2",
+    ]) {
+      expect(() =>
+        assertCompatibleRscVersions({ react: version, reactDom: version, reactServerDom: version })
+      ).toThrow("supported patched React 19 version");
+    }
   });
 
   test("rejects server-only modules from the browser graph", async () => {

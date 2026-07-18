@@ -47,6 +47,7 @@ const testNotifier: SyncNotifier = {
 const testSync = {
   adapter: sqliteSyncAdapter({ database: syncDatabase, namespace: "sync-plugin-tests" }),
   notifier: testNotifier,
+  principal: ({ request }: { request: Request }) => request.headers.get("x-user") ?? "principal",
 };
 
 function readStreamChunk(
@@ -104,7 +105,7 @@ test("furinSync uses the injected adapter for reservation and atomic completion"
     subscribe: () => Promise.reject(new Error("notifier unavailable")),
   };
   const app = new Elysia()
-    .use(furinSync({ adapter, notifier }))
+    .use(furinSync({ adapter, notifier, principal: () => "principal" }))
     .post("/cards", () => ({ ok: true }));
 
   const response = await app.handle(
@@ -144,7 +145,7 @@ test("furinSync durably preserves manual and declarative invalidations", async (
     publish: () => Promise.resolve(),
     subscribe: () => Promise.resolve({ unsubscribe: () => Promise.resolve() }),
   };
-  const app = new Elysia().use(furinSync({ adapter, notifier })).post(
+  const app = new Elysia().use(furinSync({ adapter, notifier, principal: () => "principal" })).post(
     "/cards",
     () => {
       revalidatePath("/manual", "page");
@@ -200,10 +201,12 @@ test("furinSync schedules the next lease renewal while the current renewal is pe
     publish: () => Promise.resolve(),
     subscribe: () => Promise.resolve({ unsubscribe: () => Promise.resolve() }),
   };
-  const app = new Elysia().use(furinSync({ adapter, notifier })).post("/cards", async () => {
-    await route.promise;
-    return { ok: true };
-  });
+  const app = new Elysia()
+    .use(furinSync({ adapter, notifier, principal: () => "principal" }))
+    .post("/cards", async () => {
+      await route.promise;
+      return { ok: true };
+    });
   const originalSetTimeout = globalThis.setTimeout;
   const scheduled: Array<() => void> = [];
   const fakeSetTimeout = ((...args: Parameters<typeof setTimeout>) => {
@@ -348,6 +351,44 @@ test("furinSync enforces idempotent mutation semantics directly", async () => {
   }
 });
 
+test("furinSync scopes replay by the application principal and never replays cookies", async () => {
+  resetSyncTestState();
+  try {
+    let calls = 0;
+    const app = new Elysia()
+      .use(
+        furinSync({
+          ...testSync,
+          principal: ({ request }) => request.headers.get("x-user") ?? "anonymous",
+        })
+      )
+      .post("/cards", ({ set }) => {
+        calls += 1;
+        set.headers["set-cookie"] = `request=${calls}; Path=/`;
+        return { calls };
+      });
+    const requestForPrincipal = (principal: string) =>
+      app.handle(
+        new Request("http://localhost/cards", {
+          headers: { "Idempotency-Key": "same", "x-user": principal },
+          method: "POST",
+        })
+      );
+
+    const alice = await requestForPrincipal("alice");
+    const bob = await requestForPrincipal("bob");
+    const aliceReplay = await requestForPrincipal("alice");
+
+    expect(await alice.json()).toEqual({ calls: 1 });
+    expect(await bob.json()).toEqual({ calls: 2 });
+    expect(await aliceReplay.json()).toEqual({ calls: 1 });
+    expect(aliceReplay.headers.get("set-cookie")).toBeNull();
+    expect(calls).toBe(2);
+  } finally {
+    resetSyncTestState();
+  }
+});
+
 test("furinSync refuses unbounded Response bodies without re-executing retries", async () => {
   resetSyncTestState();
   try {
@@ -376,6 +417,60 @@ test("furinSync refuses unbounded Response bodies without re-executing retries",
       code: "FURIN_UNREPLAYABLE_SYNC_RESPONSE",
     });
     expect(calls).toBe(1);
+  } finally {
+    resetSyncTestState();
+  }
+});
+
+test("furinSync publishes invalidations for successful mutations with unreplayable responses", async () => {
+  resetSyncTestState();
+  const completed: CompleteMutationInput[] = [];
+  const published: string[] = [];
+  const lease: MutationLease = {
+    id: "lease-unreplayable-invalidation",
+    key: "POST:/download:unreplayable-invalidation",
+    leaseMs: 30_000,
+    principal: "principal",
+  };
+  const adapter: SyncAdapter = {
+    scope: "distributed",
+    abortMutation: () => Promise.resolve(),
+    beginMutation: () => Promise.resolve({ kind: "execute", lease }),
+    completeMutation: (input) => {
+      completed.push(input);
+      return Promise.resolve({ cursor: "7", kind: "committed" });
+    },
+    currentCursor: () => Promise.resolve("0"),
+    readChanges: () => Promise.resolve({ changes: [], cursor: "0", hasMore: false, reset: false }),
+    renewMutation: () => Promise.resolve("renewed"),
+  };
+  const notifier: SyncNotifier = {
+    publish: (cursor) => {
+      published.push(cursor);
+      return Promise.resolve();
+    },
+    subscribe: () => Promise.resolve({ unsubscribe: () => Promise.resolve() }),
+  };
+  const app = new Elysia()
+    .use(furinSync({ adapter, notifier, principal: () => "principal" }))
+    .post("/download", () => new Response("ok"), {
+      sync: { invalidate: { path: "/board", type: "layout" } },
+    });
+
+  try {
+    const response = await _runWithRequestInvalidationScope(() =>
+      app.handle(
+        new Request("http://localhost/download", {
+          headers: { "Idempotency-Key": "unreplayable-invalidation" },
+          method: "POST",
+        })
+      )
+    );
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("x-furin-revalidate")).toBe("/board:layout");
+    expect(completed[0]?.invalidations).toEqual([{ kind: "path", path: "/board", type: "layout" }]);
+    expect(published).toEqual(["7"]);
   } finally {
     resetSyncTestState();
   }
@@ -487,6 +582,37 @@ test("furinSync SSE notification completes inside bun:test", async () => {
   }
 });
 
+test("sync stream closes a client that does not drain its queue", async () => {
+  resetSyncTestState();
+  const app = new Elysia()
+    .use(createSyncStreamPlugin(testSync))
+    .use(furinSync(testSync))
+    .post("/slow-client", () => ({ ok: true }), {
+      sync: { invalidate: { path: "/slow-client", type: "page" } },
+    });
+  const streamResponse = await app.handle(new Request("http://localhost/_furin/sync"));
+  const reader = streamResponse.body?.getReader();
+  if (!reader) {
+    throw new Error("Expected stream response body");
+  }
+
+  try {
+    await app.handle(
+      new Request("http://localhost/slow-client", {
+        headers: { "Idempotency-Key": "slow-client" },
+        method: "POST",
+      })
+    );
+
+    const connected = await readStreamChunk(reader, "queued SSE prelude", 1000);
+    expect(new TextDecoder().decode(connected.value)).toContain(": connected");
+    expect((await readStreamChunk(reader, "slow client closure", 1000)).done).toBe(true);
+  } finally {
+    await reader.cancel();
+    resetSyncTestState();
+  }
+});
+
 test("sync stream opens when notifier subscription fails", async () => {
   resetSyncTestState();
   const cursor = "0";
@@ -503,7 +629,9 @@ test("sync stream opens when notifier subscription fails", async () => {
     publish: () => Promise.resolve(),
     subscribe: () => Promise.reject(new Error("notifier unavailable")),
   };
-  const app = new Elysia().use(createSyncStreamPlugin({ adapter, notifier }));
+  const app = new Elysia().use(
+    createSyncStreamPlugin({ adapter, notifier, principal: () => "principal" })
+  );
   const response = await app.handle(new Request("http://localhost/_furin/sync"));
   try {
     expect(response.status).toBe(200);

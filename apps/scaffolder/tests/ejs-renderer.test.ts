@@ -30,7 +30,7 @@ describe("renderEjsFile — simple template", () => {
   it("renders server.ts.ejs with projectName substituted", async () => {
     const src = resolve(TEMPLATES_DIR, "simple/src/server.ts.ejs");
     const output = await renderEjsFile(src, mockVars);
-    expect(output).toContain("My Test App running at");
+    expect(output).toContain("Furin running at");
     expect(output).not.toContain("<%=");
   });
 
@@ -46,7 +46,18 @@ describe("renderEjsFile — full template", () => {
   it("renders server.ts.ejs with projectName substituted", async () => {
     const src = resolve(TEMPLATES_DIR, "full/src/server.ts.ejs");
     const output = await renderEjsFile(src, mockVars);
-    expect(output).toContain("My Test App running at");
+    expect(output).toContain("Furin running at");
     expect(output).not.toContain("<%=");
+  });
+
+  it("does not interpolate a project name as generated JavaScript", async () => {
+    const src = resolve(TEMPLATES_DIR, "full/src/server.ts.ejs");
+    const output = await renderEjsFile(src, {
+      ...mockVars,
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: security regression sentinel must remain literal.
+      projectName: "${globalThis.compromised = true}",
+    });
+
+    expect(output).not.toContain("compromised");
   });
 });

@@ -134,6 +134,38 @@ export type ParseRouteParamsResult =
   | { ok: true; params: UnknownObject }
   | { errors: unknown; ok: false };
 
+type RouteInputValidationResult =
+  | { ok: true; value: UnknownObject }
+  | { errors: unknown; ok: false };
+
+async function validateRouteInput(
+  input: UnknownObject,
+  schema: AnySchema
+): Promise<RouteInputValidationResult> {
+  if (isStandardSchema(schema)) {
+    const validator = getSchemaValidator(schema, { dynamic: true });
+    const checked = await validator?.Check(input);
+    if (checked && typeof checked === "object" && "issues" in checked) {
+      return { errors: checked.issues, ok: false };
+    }
+    if (checked && typeof checked === "object" && "value" in checked) {
+      return { ok: true, value: checked.value as UnknownObject };
+    }
+    return { ok: true, value: input };
+  }
+
+  const inputWithDefaults = applySchemaDefaults(schema as UnknownObject, input);
+  const validator = getSchemaValidator(schema, { coerce: true, dynamic: true });
+  if (validator?.Check(inputWithDefaults) === false) {
+    return { errors: [...(validator?.Errors(inputWithDefaults) ?? [])], ok: false };
+  }
+
+  return {
+    ok: true,
+    value: (validator?.parse(inputWithDefaults) ?? inputWithDefaults) as UnknownObject,
+  };
+}
+
 /**
  * Parses and validates a logical route URL's search string for the synthetic
  * `/_furin/data` request path. This keeps SPA navigations aligned with the
@@ -149,33 +181,14 @@ export async function parseRouteQuery(
     return { ok: true, query: parseQueryFromURL(url.search, 1) as SearchParamsInput };
   }
 
-  if (isStandardSchema(schema)) {
-    const rawQuery = parseQueryStandardSchema(url.search, 1) as UnknownObject;
-    const validator = getSchemaValidator(schema, { dynamic: true });
-    const checked = await validator?.Check(rawQuery);
-    if (checked && typeof checked === "object" && "issues" in checked) {
-      return { errors: checked.issues, ok: false };
-    }
-    if (checked && typeof checked === "object" && "value" in checked) {
-      return { ok: true, query: checked.value as SearchParamsInput };
-    }
-    return { ok: true, query: rawQuery as SearchParamsInput };
-  }
-
-  const rawQuery = parseJsonQueryObjects(
-    parseQueryFromURL(url.search, 1, collectQueryArrayKeys(schema)) as UnknownObject,
-    collectQueryObjectKeys(schema)
-  );
-  const queryWithDefaults = applySchemaDefaults(schema as UnknownObject, rawQuery);
-  const validator = getSchemaValidator(schema, { coerce: true, dynamic: true });
-  if (validator?.Check(queryWithDefaults) === false) {
-    return { errors: [...(validator?.Errors(queryWithDefaults) ?? [])], ok: false };
-  }
-
-  return {
-    ok: true,
-    query: (validator?.parse(queryWithDefaults) ?? queryWithDefaults) as SearchParamsInput,
-  };
+  const rawQuery = isStandardSchema(schema)
+    ? (parseQueryStandardSchema(url.search, 1) as UnknownObject)
+    : parseJsonQueryObjects(
+        parseQueryFromURL(url.search, 1, collectQueryArrayKeys(schema)) as UnknownObject,
+        collectQueryObjectKeys(schema)
+      );
+  const result = await validateRouteInput(rawQuery, schema);
+  return result.ok ? { ok: true, query: result.value as SearchParamsInput } : result;
 }
 
 /**
@@ -193,28 +206,8 @@ export async function parseRouteParams(
     return { ok: true, params };
   }
 
-  if (isStandardSchema(schema)) {
-    const validator = getSchemaValidator(schema, { dynamic: true });
-    const checked = await validator?.Check(params);
-    if (checked && typeof checked === "object" && "issues" in checked) {
-      return { errors: checked.issues, ok: false };
-    }
-    if (checked && typeof checked === "object" && "value" in checked) {
-      return { ok: true, params: checked.value as UnknownObject };
-    }
-    return { ok: true, params };
-  }
-
-  const paramsWithDefaults = applySchemaDefaults(schema as UnknownObject, params);
-  const validator = getSchemaValidator(schema, { coerce: true, dynamic: true });
-  if (validator?.Check(paramsWithDefaults) === false) {
-    return { errors: [...(validator?.Errors(paramsWithDefaults) ?? [])], ok: false };
-  }
-
-  return {
-    ok: true,
-    params: (validator?.parse(paramsWithDefaults) ?? paramsWithDefaults) as UnknownObject,
-  };
+  const result = await validateRouteInput(params, schema);
+  return result.ok ? { ok: true, params: result.value } : result;
 }
 
 export function createSearchRouteMetadata(
