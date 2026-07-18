@@ -234,6 +234,8 @@ async function buildTaskQueue(
       continue;
     }
     for (const params of result.paramSets) {
+      const urlPath = resolvePath(result.route.pattern, params);
+      pathToOutputFile(urlPath, outDir, "index.html");
       tasks.push(() =>
         prerenderAndWrite(
           result.route,
@@ -359,50 +361,7 @@ export async function buildStaticTarget(
   const ssgRoutes = collectSsgRoutes(routes, onSSR, skippedRoutes);
   const searchRoutes = createSearchRouteMetadata(ssgRoutes);
 
-  // ── 2. Clean & create output directories ─────────────────────────────────
-  rmSync(outDir, { force: true, recursive: true });
-  ensureDir(outDir);
-
-  const targetDir = join(buildRoot, "static");
-  rmSync(targetDir, { force: true, recursive: true });
-  ensureDir(targetDir);
-
-  // ── 3. Build client bundle ────────────────────────────────────────────────
-  const { entryChunk, cssChunks } = await buildClient(ssgRoutes, {
-    basePath,
-    clientLogging: Boolean(options.clientLogging),
-    outDir: targetDir,
-    plugins: options.plugins,
-    publicPath,
-    rootLayout: root.path,
-  });
-
-  // ── 4. Generate HTML shell template ──────────────────────────────────────
-  // Emit a <link rel="icon"> only when a favicon.ico exists in the public dir.
-  // This ensures the browser finds it even when the site is served from a sub-path.
-  const publicFavicon = join(rootDir, "public", "favicon.ico");
-  const faviconHref = existsSync(publicFavicon) ? `${basePath}/favicon.ico` : undefined;
-  const shellHtml = generateProdIndexHtml(entryChunk, cssChunks, undefined, faviconHref, true);
-
-  // ── 5. Prime the renderer with the production shell ──────────────────────
-  // Must be called before any prerenderSSG invocation.
-  // prepareRender() checks getProductionTemplate() first (before IS_DEV), so
-  // setting the content here is sufficient — no need to flip IS_DEV globally.
-  setProductionTemplateContent(shellHtml);
-
-  // ── 6. Copy public/ → outDir/ ─────────────────────────────────────────────
-  const publicSrcDir = join(rootDir, "public");
-  if (existsSync(publicSrcDir)) {
-    cpSync(publicSrcDir, outDir, { recursive: true });
-  }
-
-  // ── 7. Copy _client/ chunks → outDir/_client/ ────────────────────────────
-  const clientSrcDir = join(targetDir, "client");
-  if (existsSync(clientSrcDir)) {
-    cpSync(clientSrcDir, join(outDir, "_client"), { recursive: true });
-  }
-
-  // ── 8. Pre-render SSG routes ──────────────────────────────────────────────
+  // ── 2. Resolve and validate every output path before writing artifacts ────
   const tasks = await buildTaskQueue(
     ssgRoutes,
     root,
@@ -416,16 +375,61 @@ export async function buildStaticTarget(
   // Snapshot after queue-building: routes skipped due to missing staticParams() are
   // already recorded; only routes added during task execution are prerender failures.
   const afterQueueCount = skippedRoutes.length;
+
+  // ── 3. Clean & create output directories ─────────────────────────────────
+  rmSync(outDir, { force: true, recursive: true });
+  ensureDir(outDir);
+
+  const targetDir = join(buildRoot, "static");
+  rmSync(targetDir, { force: true, recursive: true });
+  ensureDir(targetDir);
+
+  // ── 4. Build client bundle ────────────────────────────────────────────────
+  const { entryChunk, cssChunks } = await buildClient(ssgRoutes, {
+    basePath,
+    clientLogging: Boolean(options.clientLogging),
+    outDir: targetDir,
+    plugins: options.plugins,
+    publicPath,
+    rootLayout: root.path,
+  });
+
+  // ── 5. Generate HTML shell template ──────────────────────────────────────
+  // Emit a <link rel="icon"> only when a favicon.ico exists in the public dir.
+  // This ensures the browser finds it even when the site is served from a sub-path.
+  const publicFavicon = join(rootDir, "public", "favicon.ico");
+  const faviconHref = existsSync(publicFavicon) ? `${basePath}/favicon.ico` : undefined;
+  const shellHtml = generateProdIndexHtml(entryChunk, cssChunks, undefined, faviconHref, true);
+
+  // ── 6. Prime the renderer with the production shell ──────────────────────
+  // Must be called before any prerenderSSG invocation.
+  // prepareRender() checks getProductionTemplate() first (before IS_DEV), so
+  // setting the content here is sufficient — no need to flip IS_DEV globally.
+  setProductionTemplateContent(shellHtml);
+
+  // ── 7. Copy public/ → outDir/ ─────────────────────────────────────────────
+  const publicSrcDir = join(rootDir, "public");
+  if (existsSync(publicSrcDir)) {
+    cpSync(publicSrcDir, outDir, { recursive: true });
+  }
+
+  // ── 8. Copy _client/ chunks → outDir/_client/ ────────────────────────────
+  const clientSrcDir = join(targetDir, "client");
+  if (existsSync(clientSrcDir)) {
+    cpSync(clientSrcDir, join(outDir, "_client"), { recursive: true });
+  }
+
+  // ── 9. Pre-render SSG routes ──────────────────────────────────────────────
   await runWithConcurrency(tasks, STATIC_CONCURRENCY);
 
   // Fail the build when onSSR="error" and any prerender task was recorded as skipped.
   assertNoPrerenderSkips(onSSR, skippedRoutes, afterQueueCount);
 
-  // ── 9. Write 404.html (SPA fallback for GitHub Pages) ───────────────────
+  // ── 10. Write 404.html (SPA fallback for GitHub Pages) ──────────────────
   writeFileSync(join(outDir, "404.html"), shellHtml);
   console.log("[furin] static: wrote 404.html (SPA shell fallback)");
 
-  // ── 10. Clean up intermediate build artifacts ────────────────────────────
+  // ── 11. Clean up intermediate build artifacts ───────────────────────────
   rmSync(targetDir, { force: true, recursive: true });
 
   console.log(

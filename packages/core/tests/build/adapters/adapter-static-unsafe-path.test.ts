@@ -1,46 +1,44 @@
 import "../../setup/global.ts";
 
 import { expect, test } from "bun:test";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { __resetCacheState } from "../../../src/server/cache/index.ts";
-import { __resetTemplateState } from "../../../src/server/render/template.ts";
-import { scanPages } from "../../../src/server/router/index.ts";
-import { __setDevMode } from "../../../src/server/runtime-env.ts";
-import { createTmpApp } from "../../support/app-fixtures.ts";
-import { withBuildStub } from "../../support/with-build-stub.ts";
+import type { ResolvedRoute, RootLayout } from "../../../src/server/router/types.ts";
 
 const { buildStaticTarget } = await import("../../../src/adapter/static.ts");
 const UNSAFE_PATH_RE = /unsafe output path/;
 
-test("buildStaticTarget rejects unsafe output paths", async () => {
-  __setDevMode(false);
-  __resetCacheState();
-  __resetTemplateState();
+test("buildStaticTarget rejects all unsafe output paths before creating artifacts", async () => {
+  const rootDir = mkdtempSync(join(tmpdir(), "furin-static-unsafe-"));
+  const buildRoot = join(rootDir, ".furin/build");
+  const outDir = join(rootDir, "dist");
+  const routeEntry = { __type: "FURIN_ROUTE" } satisfies RootLayout["route"];
+  const root: RootLayout = { path: join(rootDir, "root.tsx"), route: routeEntry };
+  const unsafeRoute: ResolvedRoute = {
+    mode: "ssg",
+    page: {
+      __type: "FURIN_PAGE",
+      _route: routeEntry,
+      component: () => null,
+      staticParams: async () => [{ slug: "../../etc/passwd" }],
+    },
+    path: join(rootDir, "[slug].tsx"),
+    pattern: "/:slug",
+    routeChain: [routeEntry],
+    segmentBoundaries: [],
+  };
 
-  const app = createTmpApp("cli-app");
   try {
-    const scanned = await scanPages(join(app.path, "src/pages"));
-    const dynamicRoute = scanned.routes.find((route) => route.pattern.includes(":"));
-    expect(dynamicRoute).toBeDefined();
-    if (dynamicRoute === undefined) {
-      return;
-    }
-    const unsafeRoute = {
-      ...dynamicRoute,
-      page: {
-        ...dynamicRoute.page,
-        staticParams: async () => [{ slug: "../../etc/passwd" }],
-      },
-    };
     await expect(
-      withBuildStub(() =>
-        buildStaticTarget([unsafeRoute], app.path, join(app.path, ".furin/build"), scanned.root, {
-          staticConfig: { outDir: join(app.path, "dist") },
-          target: "static",
-        }),
-      ),
+      buildStaticTarget([unsafeRoute], rootDir, buildRoot, root, {
+        staticConfig: { outDir },
+        target: "static",
+      })
     ).rejects.toThrow(UNSAFE_PATH_RE);
+    expect(existsSync(join(buildRoot, "static"))).toBe(false);
+    expect(existsSync(outDir)).toBe(false);
   } finally {
-    app.cleanup();
+    rmSync(rootDir, { force: true, recursive: true });
   }
 });

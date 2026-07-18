@@ -31,6 +31,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Yuku parser packages upgraded** — `yuku-parser` and `@yuku-toolchain/types` moved to `0.6.1`; the parser dependency architecture test now verifies the direct parser dependency without pinning the exact patch in the assertion.
 
 ### Fixed
+- **Build reliability** — paths produced by `staticParams()` are now validated before client bundling or output-directory creation, and long-running build adapter tests signal completion explicitly under Bun's parallel runner.
 - **Collision-free deferred metadata** — `defer()` now uses one internal runtime symbol for branding, removing unsafe type assertions while preserving user loader fields named `__isDeferred`.
 - **Sync invalidation durability** — synced handlers now preserve manual `revalidatePath()` and `revalidateTag()` results alongside declarative invalidations in the durable change journal without duplicating identical paths.
 - **PostgreSQL idempotency key bounds** — the PostgreSQL sync adapter now stores fixed-size SHA-256 mutation keys, preventing long request paths or idempotency keys from exceeding btree index-entry limits.

@@ -387,7 +387,7 @@ if (process.env[RUN_SCENARIOS_ENV] === "1") {
     } satisfies ScenarioWorkerResult);
   }
 } else {
-  test("buildStaticTarget scenarios", async () => {
-    await runScenarioWorker();
+  test("buildStaticTarget scenarios", (done) => {
+    runScenarioWorker().then(() => done(), done);
   }, 30_000);
 }
