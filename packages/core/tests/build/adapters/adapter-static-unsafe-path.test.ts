@@ -30,12 +30,21 @@ test("buildStaticTarget rejects all unsafe output paths before creating artifact
   };
 
   try {
-    await expect(
-      buildStaticTarget([unsafeRoute], rootDir, buildRoot, root, {
+    let thrown: unknown;
+    try {
+      await buildStaticTarget([unsafeRoute], rootDir, buildRoot, root, {
         staticConfig: { outDir },
         target: "static",
-      })
-    ).rejects.toThrow(UNSAFE_PATH_RE);
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    if (!(thrown instanceof Error)) {
+      throw new TypeError("Expected static export to reject with an Error");
+    }
+    expect(thrown.message).toMatch(UNSAFE_PATH_RE);
     expect(existsSync(join(buildRoot, "static"))).toBe(false);
     expect(existsSync(outDir)).toBe(false);
   } finally {

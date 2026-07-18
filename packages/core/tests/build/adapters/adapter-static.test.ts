@@ -62,6 +62,20 @@ async function runStaticBuild(fixtureName: string, extra?: Pick<BuildAppOptions,
   return { app, distDir, manifest, root, routes };
 }
 
+function rejectionError(operation: Promise<unknown>): Promise<Error> {
+  return operation.then(
+    () => {
+      throw new Error("Expected operation to reject");
+    },
+    (error: unknown) => {
+      if (!(error instanceof Error)) {
+        throw new TypeError("Expected operation to reject with an Error");
+      }
+      return error;
+    },
+  );
+}
+
 async function runBuildStaticTargetScenarios(): Promise<void> {
   __setDevMode(false);
 
@@ -85,7 +99,7 @@ async function runBuildStaticTargetScenarios(): Promise<void> {
     routeChain: [requestRouteEntry],
     segmentBoundaries: [],
   };
-  await expect(
+  let buildError = await rejectionError(
     buildStaticTarget(
       [requestRoute],
       "/tmp/furin-static-test",
@@ -93,8 +107,9 @@ async function runBuildStaticTargetScenarios(): Promise<void> {
       root,
       { target: "static" },
     ),
-  ).rejects.toThrow(REQUEST_LOADER_STATIC_RE);
-  await expect(
+  );
+  expect(buildError.message).toMatch(REQUEST_LOADER_STATIC_RE);
+  buildError = await rejectionError(
     buildStaticTarget(
       [],
       "/tmp/furin-static-test",
@@ -102,7 +117,8 @@ async function runBuildStaticTargetScenarios(): Promise<void> {
       { ...root, route: { ...root.route, requestLoader: async () => ({ userId: "private" }) } },
       { target: "static" },
     ),
-  ).rejects.toThrow(REQUEST_LOADER_STATIC_RE);
+  );
+  expect(buildError.message).toMatch(REQUEST_LOADER_STATIC_RE);
 
   let result = await runStaticBuild("cli-app");
   expect(existsSync(join(result.distDir, "index.html"))).toBe(true);
@@ -128,25 +144,27 @@ async function runBuildStaticTargetScenarios(): Promise<void> {
 
   let app = makeApp("cli-app-ssr");
   let scanned = await scanApp(app);
-  await expect(
+  buildError = await rejectionError(
     withBuildStub(() =>
       buildStaticTarget(scanned.routes, app.path, join(app.path, ".furin/build"), scanned.root, {
         staticConfig: { outDir: scanned.distDir },
         target: "static",
       }),
     ),
-  ).rejects.toThrow(SSR_STATIC_RE);
+  );
+  expect(buildError.message).toMatch(SSR_STATIC_RE);
 
   app = makeApp("cli-app-ssr");
   scanned = await scanApp(app);
-  await expect(
+  buildError = await rejectionError(
     withBuildStub(() =>
       buildStaticTarget(scanned.routes, app.path, join(app.path, ".furin/build"), scanned.root, {
         staticConfig: { outDir: scanned.distDir },
         target: "static",
       }),
     ),
-  ).rejects.toThrow("/dashboard");
+  );
+  expect(buildError.message).toMatch("/dashboard");
 
   app = makeApp("cli-app-ssr");
   scanned = await scanApp(app);
@@ -166,14 +184,15 @@ async function runBuildStaticTargetScenarios(): Promise<void> {
       ? { ...route, page: { ...route.page, staticParams: undefined } }
       : route,
   );
-  await expect(
+  buildError = await rejectionError(
     withBuildStub(() =>
       buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), scanned.root, {
         staticConfig: { outDir: scanned.distDir },
         target: "static",
       }),
     ),
-  ).rejects.toThrow(STATIC_EXPORT_RE);
+  );
+  expect(buildError.message).toMatch(STATIC_EXPORT_RE);
   await withBuildStub(() =>
     buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), scanned.root, {
       staticConfig: { onSSR: "skip", outDir: scanned.distDir },
@@ -192,12 +211,13 @@ async function runBuildStaticTargetScenarios(): Promise<void> {
 
   app = makeApp("cli-app");
   scanned = await scanApp(app);
-  await expect(
+  buildError = await rejectionError(
     buildStaticTarget(scanned.routes, app.path, join(app.path, ".furin/build"), scanned.root, {
       staticConfig: { basePath: "sub-path", outDir: scanned.distDir },
       target: "static",
     }),
-  ).rejects.toThrow(BASEPATH_RE);
+  );
+  expect(buildError.message).toMatch(BASEPATH_RE);
 
   result = await runStaticBuild("cli-app", {
     staticConfig: { basePath: "/furin/", outDir: "dist" },
@@ -208,24 +228,27 @@ async function runBuildStaticTargetScenarios(): Promise<void> {
 
   app = makeApp("cli-app");
   scanned = await scanApp(app);
-  await expect(
+  buildError = await rejectionError(
     buildStaticTarget(scanned.routes, app.path, join(app.path, ".furin/build"), scanned.root, {
       staticConfig: { outDir: "/" },
       target: "static",
     }),
-  ).rejects.toThrow(UNSAFE_DIR_RE);
-  await expect(
+  );
+  expect(buildError.message).toMatch(UNSAFE_DIR_RE);
+  buildError = await rejectionError(
     buildStaticTarget(scanned.routes, app.path, join(app.path, ".furin/build"), scanned.root, {
       staticConfig: { outDir: app.path },
       target: "static",
     }),
-  ).rejects.toThrow(UNSAFE_DIR_RE);
-  await expect(
+  );
+  expect(buildError.message).toMatch(UNSAFE_DIR_RE);
+  buildError = await rejectionError(
     buildStaticTarget(scanned.routes, app.path, join(app.path, ".furin/build"), scanned.root, {
       staticConfig: { outDir: join(app.path, "..") },
       target: "static",
     }),
-  ).rejects.toThrow(UNSAFE_DIR_RE);
+  );
+  expect(buildError.message).toMatch(UNSAFE_DIR_RE);
 
   app = makeApp("cli-app");
   scanned = await scanApp(app);
@@ -280,7 +303,7 @@ async function runBuildStaticTargetScenarios(): Promise<void> {
   );
   expect(manifest.skippedRoutes).toContain("/will-fail");
   expect(manifest.renderedRoutes).not.toContain("/will-fail");
-  await expect(
+  buildError = await rejectionError(
     withBuildStub(() =>
       buildStaticTarget(
         [route, ...scanned.routes.filter((item) => item.mode === "ssg")],
@@ -290,7 +313,8 @@ async function runBuildStaticTargetScenarios(): Promise<void> {
         { staticConfig: { outDir: scanned.distDir }, target: "static" },
       ),
     ),
-  ).rejects.toThrow(PRERENDER_FAIL_RE);
+  );
+  expect(buildError.message).toMatch(PRERENDER_FAIL_RE);
 
   const dynamicRoute = scanned.routes.find((item) => item.pattern.includes(":"))!;
   expect(dynamicRoute).toBeDefined();
@@ -305,14 +329,15 @@ async function runBuildStaticTargetScenarios(): Promise<void> {
         }
       : item,
   );
-  await expect(
+  buildError = await rejectionError(
     withBuildStub(() =>
       buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), scanned.root, {
         staticConfig: { outDir: scanned.distDir },
         target: "static",
       }),
     ),
-  ).rejects.toThrow(STATIC_EXPORT_RE);
+  );
+  expect(buildError.message).toMatch(STATIC_EXPORT_RE);
   manifest = await withBuildStub(() =>
     buildStaticTarget(patchedRoutes, app.path, join(app.path, ".furin/build"), scanned.root, {
       staticConfig: { onSSR: "skip", outDir: scanned.distDir },
