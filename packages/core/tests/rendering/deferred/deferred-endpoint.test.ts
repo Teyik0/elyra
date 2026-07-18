@@ -422,6 +422,38 @@ describe("GET /_furin/data", () => {
     expect(resolvedStats).toBe(42);
   });
 
+  test("streams requestData for an ISR route during SPA navigation", async () => {
+    const routeDefinition = createRoute({
+      loader: () => ({ catalog: "Shoes" }),
+      mode: "isr",
+      requestLoader: ({ cookies }) => ({ user: cookies.get("session") }),
+    });
+    const route = {
+      mode: "isr",
+      page: runtimePage(routeDefinition.page({ component: () => null })),
+      path: "/ppr-account",
+      pattern: "/ppr-account",
+      routeChain: [runtimeRoute(routeDefinition)],
+      segmentBoundaries: [],
+    } satisfies ResolvedRoute;
+    const app = new Elysia().use(createDataEndpoint([route]));
+
+    const res = await app.handle(
+      new Request("http://localhost/_furin/data?path=%2Fppr-account", {
+        headers: { cookie: "session=alice" },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const { deferredPromises, syncData } = await parseDeferredNdjson(
+      res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      undefined
+    );
+    expect(syncData.catalog).toBe("Shoes");
+    expect(deferredPromises.requestData).toBeInstanceOf(Promise);
+    expect(await deferredPromises.requestData).toEqual({ user: "alice" });
+  });
+
   test("returns the response before deferred Promises have resolved", async () => {
     const { app, routes } = createDataTestApp();
     const deferRoute = routes.find((r) => r.pattern === "/defer-page");

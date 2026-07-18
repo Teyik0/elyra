@@ -168,3 +168,48 @@ test("synthetic ISR renders preserve repeated query values for loaders", async (
 
   expect(observedQuery).toEqual({ tag: ["a", "b"] });
 });
+
+test("synthetic ISR renders preserve __proto__ query values for loaders", async () => {
+  let observedQuery: unknown;
+  const route = createRoute({
+    loader: ({ query }) => {
+      observedQuery = query;
+      return {};
+    },
+    mode: "isr",
+  });
+  const page = route.page({ component: () => <main>search</main> });
+  const resolved = {
+    mode: "isr",
+    page: page as unknown as RuntimePage,
+    path: "/search.tsx",
+    pattern: "/search",
+    routeChain: [route as unknown as RuntimeRoute],
+    segmentBoundaries: [],
+  } satisfies ResolvedRoute;
+  const root = {
+    path: "/root.tsx",
+    route: {
+      __type: "FURIN_ROUTE",
+      layout: ({ children }) => (
+        <html lang="en">
+          <body>{children}</body>
+        </html>
+      ),
+    },
+  } satisfies RootLayout;
+
+  await renderForPath(
+    resolved,
+    {},
+    root,
+    "http://localhost",
+    "isr",
+    undefined,
+    undefined,
+    "?__proto__=from-input"
+  );
+
+  expect(Object.hasOwn(observedQuery as object, "__proto__")).toBe(true);
+  expect(Reflect.get(observedQuery as object, "__proto__")).toBe("from-input");
+});

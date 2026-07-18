@@ -3,7 +3,9 @@ import { sqlite } from "./db";
 
 migrateSqliteSync(sqlite);
 
+const TASK_MANAGER_SYNC_ID = "task-manager";
+
 export const taskManagerSync = {
-  adapter: sqliteSyncAdapter({ database: sqlite, namespace: "task-manager" }),
-  principal: () => "task-manager",
+  adapter: sqliteSyncAdapter({ database: sqlite, namespace: TASK_MANAGER_SYNC_ID }),
+  principal: () => TASK_MANAGER_SYNC_ID,
 };

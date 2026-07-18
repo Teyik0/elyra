@@ -12,6 +12,7 @@ import {
   type LoaderResult,
   runLoaders,
   runPublicLoaders,
+  runRequestLoaderData,
 } from "../render/loaders.ts";
 import { renderPprRoute } from "../render/ppr-route.ts";
 import { createDeferredRouteFrameStream } from "../render/route-frame-transport.ts";
@@ -33,6 +34,28 @@ type SyntheticDataContext = Omit<Context, "params" | "query"> & {
   params: DataRouteParamsInput;
   query: SearchParamsInput;
 };
+
+async function runDataEndpointLoaders(route: ResolvedRoute, ctx: Context): Promise<LoaderResult> {
+  if (route.mode !== "isr" && route.mode !== "ssg") {
+    return runLoaders(route, ctx);
+  }
+
+  const result = await runPublicLoaders(route, ctx);
+  if (result.type !== "data") {
+    return result;
+  }
+  const requestData = runRequestLoaderData(route, ctx);
+  if (requestData === undefined) {
+    return result;
+  }
+  return {
+    ...result,
+    deferredPromises: {
+      ...(result.deferredPromises ?? {}),
+      requestData,
+    },
+  };
+}
 
 async function createLoaderDataResponse(
   result: LoaderResult,
@@ -286,9 +309,10 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       syntheticCtx.params = parsedParams.params;
       syntheticCtx.query = parsedQuery.query as SearchParamsInput;
 
-      const result = await (matched.route.mode === "isr" || matched.route.mode === "ssg"
-        ? runPublicLoaders(matched.route, syntheticCtx as unknown as Context)
-        : runLoaders(matched.route, syntheticCtx as unknown as Context));
+      const result = await runDataEndpointLoaders(
+        matched.route,
+        syntheticCtx as unknown as Context
+      );
 
       return createLoaderDataResponse(result, matched.route, syntheticRequest.url);
     },

@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { fromCrossJSON, toCrossJSON } from "seroval";
 import "../../setup/evlog-mock";
 
+import { FurinErrorBoundary } from "../../../src/client/boundaries.tsx";
 import { serializeDeferredRejection } from "../../../src/server/render/loaders.ts";
 import { __setDevMode, IS_DEV } from "../../../src/server/runtime-env.ts";
+import { computeErrorDigest } from "../../../src/shared/digest.ts";
 import { isNotFoundError, notFound } from "../../../src/shared/not-found.ts";
 
 async function roundtrip(value: unknown): Promise<unknown> {
@@ -82,9 +86,10 @@ describe("serializeDeferredRejection — preserves rejection semantics over Cros
       const secret = new Error("database-password=secret");
       secret.stack = "database-password=secret\n at /private/server.ts:1:1";
 
-      const result = await roundtrip(secret);
       const normalized = await serializeDeferredRejection(secret);
-      const wire = JSON.stringify(toCrossJSON(normalized));
+      const chunk = toCrossJSON(normalized);
+      const wire = JSON.stringify(chunk);
+      const result = fromCrossJSON(chunk, {});
 
       expect((result as Error).message).toBe("An unexpected error occurred.");
       expect((result as Error).stack).not.toContain("database-password");
@@ -94,6 +99,30 @@ describe("serializeDeferredRejection — preserves rejection semantics over Cros
       expect(wire).not.toContain("/private/server.ts");
       expect(wire).not.toContain("loaders.ts");
       expect(wire).not.toContain("sourceURL");
+    } finally {
+      __setDevMode(originalDevMode);
+    }
+  });
+
+  test("production rejection keeps its server digest in a parent error boundary", async () => {
+    const originalDevMode = IS_DEV;
+    __setDevMode(false);
+    try {
+      const serverError = new Error("database-password=secret");
+      serverError.stack = "database-password=secret\n at /private/server.ts:1:1";
+      const serverDigest = computeErrorDigest(serverError);
+      const clientError = (await roundtrip(serverError)) as Error;
+      const boundary = new FurinErrorBoundary({
+        children: null,
+        fallback: ({ error }) => createElement("span", null, error.digest),
+      });
+      const derived = FurinErrorBoundary.getDerivedStateFromError(clientError);
+      boundary.state = { ...boundary.state, ...derived } as typeof boundary.state;
+
+      const html = renderToStaticMarkup(boundary.render());
+
+      expect(computeErrorDigest(clientError)).not.toBe(serverDigest);
+      expect(html).toContain(serverDigest);
     } finally {
       __setDevMode(originalDevMode);
     }

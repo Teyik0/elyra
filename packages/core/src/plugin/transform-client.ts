@@ -285,7 +285,11 @@ function isRoutePageCall(
     callee.property.name === "page"
   ) {
     const object = unwrapTSExpression(callee.object);
-    if (object.type === "Identifier" && bindings.routeNames.has(object.name)) {
+    if (
+      object.type === "Identifier" &&
+      bindings.routeNames.has(object.name) &&
+      !hasShadowingDeclaration(object.name, ancestors)
+    ) {
       return true;
     }
     return isCreateRouteExpression(object, bindings, ancestors);

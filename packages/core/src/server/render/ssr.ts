@@ -373,7 +373,7 @@ export function renderForPath(
     async () => {
       const resolvedPath = resolvePath(route.pattern, params);
       const requestUrl = new URL(`${resolvedPath}${search ?? ""}`, origin);
-      const query: { [key: string]: string | string[] } = {};
+      const query: { [key: string]: string | string[] } = Object.create(null);
       for (const [key, value] of requestUrl.searchParams) {
         const previous = query[key];
         if (previous === undefined) {

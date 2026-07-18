@@ -176,6 +176,23 @@ describe("transformForClient — route.page() loader removal", () => {
     expect(result.removedServerCode).toBe(true);
   });
 
+  test("preserves loader properties on route parameters that shadow an imported route", () => {
+    const input = `
+      import { route } from "./root";
+      function buildLocalPage(route) {
+        return route.page({
+          loader: async () => ({ local: true }),
+          component: ({ local }) => null,
+        });
+      }
+    `;
+    const result = transformForClient(input, "/app/src/pages/index.tsx");
+
+    expect(result.code).toMatch(LOADER_PROPERTY_RE);
+    expect(result.code).toContain("local: true");
+    expect(result.removedServerCode).toBe(false);
+  });
+
   test("strips calls built from an aliased Furin createRoute import", () => {
     const input = `
       import { createRoute as defineRoute } from "@teyik0/furin/client";

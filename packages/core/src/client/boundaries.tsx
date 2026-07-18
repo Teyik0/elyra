@@ -17,6 +17,14 @@ const SERVER_RESET_NOOP = () => {
   /* reset is a client-only action; on the server the response is already committed */
 };
 
+function getServerDigest(error: Error): string | undefined {
+  if (isFurinServerError(error)) {
+    return error.digest;
+  }
+  const digest = (error as Error & { __furinDigest?: unknown }).__furinDigest;
+  return typeof digest === "string" ? digest : undefined;
+}
+
 interface ErrorBoundaryProps {
   children: ReactNode;
   /**
@@ -46,9 +54,9 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   /**
-   * Digest computed at the moment the error was latched. Stored in state so
-   * each distinct caught error gets its own ID, instead of all of them
-   * inheriting the server-provided `digest` prop.
+   * Digest preserved from a server error or computed when the error was
+   * latched. Stored in state so each distinct caught error gets its own ID,
+   * instead of all of them inheriting the server-provided `digest` prop.
    */
   digest: string | null;
   /** Unmount/remount counter — bumped on reset to force React to discard
@@ -74,10 +82,10 @@ export class FurinErrorBoundary extends Component<ErrorBoundaryProps, ErrorBound
   };
 
   static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
-    // Compute the digest right at catch-time so the value is anchored to THIS
-    // specific error instance. Doing it here (vs. lazily in render) also means
-    // a re-render with the same latched error keeps the same ID.
-    return { digest: computeErrorDigest(error), error };
+    // Preserve server digests carried by SPA error sentinels or deferred
+    // rejections. Otherwise compute one right at catch-time so the value is
+    // anchored to this specific error instance across re-renders.
+    return { digest: getServerDigest(error) ?? computeErrorDigest(error), error };
   }
 
   override componentDidUpdate(prevProps: ErrorBoundaryProps) {
@@ -109,18 +117,17 @@ export class FurinErrorBoundary extends Component<ErrorBoundaryProps, ErrorBound
       }
       const Fallback = this.props.fallback ?? DefaultErrorFallback;
       // Digest precedence:
-      //   1. FurinServerError.digest — when the server emitted an error
-      //      sentinel through the SPA-nav payload, the synthesized error
-      //      carries the server's own digest so logs correlate without
-      //      recomputing a different hash from a synthetic stack.
-      //   2. state.digest — computed at catch time, always correct for the
-      //      ACTUAL caught error.
+      //   1. A server digest — carried by an SPA error sentinel or serialized
+      //      deferred rejection so logs correlate without recomputing a
+      //      different hash from a sanitized error and synthetic stack.
+      //   2. state.digest — preserved or computed at catch time for the
+      //      actual caught error.
       //   3. props.digest — the server-rendered digest, only meaningful for
       //      the very first error post-hydration; we still honour it as a
       //      last-resort fallback in case state.digest is somehow missing
       //      (e.g. tests that inject state by hand).
       //   4. recompute on the spot — defensive, should never be reached.
-      const serverDigest = isFurinServerError(error) ? error.digest : undefined;
+      const serverDigest = getServerDigest(error);
       const finalDigest = serverDigest ?? digest ?? this.props.digest ?? computeErrorDigest(error);
       const message = this.props.fallback ? error.message : getPublicErrorMessage(error);
       // Status precedence: FurinServerError carries the original Response.status
