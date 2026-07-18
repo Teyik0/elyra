@@ -12,7 +12,7 @@ import {
   type LoaderResult,
   runLoaders,
   runPublicLoaders,
-  runRequestLoaderData,
+  withRequestLoaderData,
 } from "../render/loaders.ts";
 import { renderPprRoute } from "../render/ppr-route.ts";
 import { createDeferredRouteFrameStream } from "../render/route-frame-transport.ts";
@@ -41,20 +41,10 @@ async function runDataEndpointLoaders(route: ResolvedRoute, ctx: Context): Promi
   }
 
   const result = await runPublicLoaders(route, ctx);
-  if (result.type !== "data") {
+  if (result.type !== "data" || !hasRequestLoader(route)) {
     return result;
   }
-  const requestData = runRequestLoaderData(route, ctx);
-  if (requestData === undefined) {
-    return result;
-  }
-  return {
-    ...result,
-    deferredPromises: {
-      ...(result.deferredPromises ?? {}),
-      requestData,
-    },
-  };
+  return withRequestLoaderData(route, ctx, result);
 }
 
 async function createLoaderDataResponse(

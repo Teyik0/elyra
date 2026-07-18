@@ -209,6 +209,26 @@ export function runRequestLoaderData(
   return requestData;
 }
 
+export function withRequestLoaderData(
+  route: ResolvedRoute,
+  ctx: Context,
+  publicResult: Extract<LoaderResult, { type: "data" }>
+): Extract<LoaderResult, { type: "data" }> {
+  const requestData = runRequestLoaderData(route, ctx);
+  if (requestData === undefined) {
+    throw new Error(
+      "[furin] internal invariant: requestLoader data requested for a route without requestLoader"
+    );
+  }
+  return {
+    ...publicResult,
+    deferredPromises: {
+      ...(publicResult.deferredPromises ?? {}),
+      requestData,
+    },
+  };
+}
+
 /**
  * Merges per-loader results into the unified sync / deferred maps used by
  * `runLoaders`. `results` is ordered ancestor-most → page, so later loaders
