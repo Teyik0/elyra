@@ -7,6 +7,7 @@ import type {
   Program,
   SourceLang,
 } from "yuku-parser";
+import { walk } from "yuku-parser";
 import { detectLangFromPath, unwrapTSExpression } from "../server/lang-detect.ts";
 import { parseSource } from "../shared/parser.ts";
 import { type AstNode, walkAST } from "../shared/utils/ast-walk.ts";
@@ -113,37 +114,155 @@ function collectImportedBindings(program: Program): RouteTransformBindings {
   return bindings;
 }
 
-function isCreateRouteCall(node: CallExpression, bindings: RouteTransformBindings): boolean {
-  return node.callee.type === "Identifier" && bindings.createRouteNames.has(node.callee.name);
+function bindingPatternHasName(pattern: unknown, name: string): boolean {
+  if (!(pattern && typeof pattern === "object")) {
+    return false;
+  }
+  const node = pattern as AstNode;
+  if (node.type === "Identifier") {
+    return node.name === name;
+  }
+  if (node.type === "AssignmentPattern") {
+    return bindingPatternHasName(node.left, name);
+  }
+  if (node.type === "RestElement") {
+    return bindingPatternHasName(node.argument, name);
+  }
+  if (node.type === "ArrayPattern") {
+    return (
+      Array.isArray(node.elements) &&
+      node.elements.some((element) => bindingPatternHasName(element, name))
+    );
+  }
+  if (node.type === "ObjectPattern") {
+    return (
+      Array.isArray(node.properties) &&
+      node.properties.some((property) => {
+        if (!(property && typeof property === "object")) {
+          return false;
+        }
+        const propertyNode = property as AstNode;
+        return bindingPatternHasName(
+          propertyNode.type === "Property" ? propertyNode.value : propertyNode.argument,
+          name
+        );
+      })
+    );
+  }
+  if (node.type === "TSParameterProperty") {
+    return bindingPatternHasName(node.parameter, name);
+  }
+  return false;
 }
 
-function isCreateRouteExpression(node: unknown, bindings: RouteTransformBindings): boolean {
+function declarationHasName(node: AstNode, name: string): boolean {
+  if (node.type === "VariableDeclaration" && Array.isArray(node.declarations)) {
+    return node.declarations.some((declaration) => {
+      if (!(declaration && typeof declaration === "object")) {
+        return false;
+      }
+      return bindingPatternHasName((declaration as AstNode).id, name);
+    });
+  }
+  if (node.type === "FunctionDeclaration" || node.type === "ClassDeclaration") {
+    return bindingPatternHasName(node.id, name);
+  }
+  return false;
+}
+
+function functionScopeHasName(scope: AstNode, name: string): boolean {
+  if (
+    scope.type !== "FunctionDeclaration" &&
+    scope.type !== "FunctionExpression" &&
+    scope.type !== "ArrowFunctionExpression"
+  ) {
+    return false;
+  }
+  return (
+    (Array.isArray(scope.params) &&
+      scope.params.some((param) => bindingPatternHasName(param, name))) ||
+    (scope.type === "FunctionExpression" && bindingPatternHasName(scope.id, name))
+  );
+}
+
+function blockScopeHasName(scope: AstNode, name: string): boolean {
+  if (scope.type !== "BlockStatement" || !Array.isArray(scope.body)) {
+    return false;
+  }
+  return scope.body.some((statement) =>
+    statement && typeof statement === "object"
+      ? declarationHasName(statement as AstNode, name)
+      : false
+  );
+}
+
+function loopScopeHasName(scope: AstNode, name: string): boolean {
+  const declaration = scope.type === "ForStatement" ? scope.init : scope.left;
+  return (
+    (scope.type === "ForStatement" ||
+      scope.type === "ForInStatement" ||
+      scope.type === "ForOfStatement") &&
+    !!declaration &&
+    typeof declaration === "object" &&
+    declarationHasName(declaration as AstNode, name)
+  );
+}
+
+function hasShadowingDeclaration(name: string, ancestors: AstNode[]): boolean {
+  return ancestors.some(
+    (scope) =>
+      functionScopeHasName(scope, name) ||
+      (scope.type === "CatchClause" && bindingPatternHasName(scope.param, name)) ||
+      blockScopeHasName(scope, name) ||
+      loopScopeHasName(scope, name)
+  );
+}
+
+function isCreateRouteCall(
+  node: CallExpression,
+  bindings: RouteTransformBindings,
+  ancestors: AstNode[]
+): boolean {
+  return (
+    node.callee.type === "Identifier" &&
+    bindings.createRouteNames.has(node.callee.name) &&
+    !hasShadowingDeclaration(node.callee.name, ancestors)
+  );
+}
+
+function isCreateRouteExpression(
+  node: unknown,
+  bindings: RouteTransformBindings,
+  ancestors: AstNode[]
+): boolean {
   if (!node || typeof node !== "object") {
     return false;
   }
   const expression = unwrapTSExpression(node as { type: string }) as AstNode;
   return (
     expression.type === "CallExpression" &&
-    isCreateRouteCall(expression as unknown as CallExpression, bindings)
+    isCreateRouteCall(expression as unknown as CallExpression, bindings, ancestors)
   );
 }
 
 function collectLocalRouteBindings(program: Program, bindings: RouteTransformBindings): void {
-  walkAST(program, (node) => {
-    if (node.type !== "VariableDeclarator") {
-      return;
-    }
-    const { id, init } = node;
-    if (!id || typeof id !== "object") {
-      return;
-    }
-    const identifier = id as AstNode;
-    if (identifier.type !== "Identifier" || typeof identifier.name !== "string") {
-      return;
-    }
-    if (isCreateRouteExpression(init, bindings)) {
-      bindings.routeNames.add(identifier.name);
-    }
+  walk(program, {
+    VariableDeclarator(node, context) {
+      if (node.type !== "VariableDeclarator") {
+        return;
+      }
+      const { id, init } = node;
+      if (!id || typeof id !== "object") {
+        return;
+      }
+      const identifier = id as unknown as AstNode;
+      if (identifier.type !== "Identifier" || typeof identifier.name !== "string") {
+        return;
+      }
+      if (isCreateRouteExpression(init, bindings, context.ancestors() as AstNode[])) {
+        bindings.routeNames.add(identifier.name);
+      }
+    },
   });
 }
 
@@ -153,7 +272,11 @@ function collectRouteTransformBindings(program: Program): RouteTransformBindings
   return bindings;
 }
 
-function isRoutePageCall(node: CallExpression, bindings: RouteTransformBindings): boolean {
+function isRoutePageCall(
+  node: CallExpression,
+  bindings: RouteTransformBindings,
+  ancestors: AstNode[]
+): boolean {
   const { callee } = node;
   if (
     callee.type === "MemberExpression" &&
@@ -162,20 +285,53 @@ function isRoutePageCall(node: CallExpression, bindings: RouteTransformBindings)
     callee.property.name === "page"
   ) {
     const object = unwrapTSExpression(callee.object);
-    if (object.type === "Identifier" && bindings.routeNames.has(object.name)) {
+    if (
+      object.type === "Identifier" &&
+      bindings.routeNames.has(object.name) &&
+      !hasShadowingDeclaration(object.name, ancestors)
+    ) {
       return true;
     }
-    return isCreateRouteExpression(object, bindings);
+    return isCreateRouteExpression(object, bindings, ancestors);
   }
   return false;
 }
 
-function isTargetCall(node: CallExpression, bindings: RouteTransformBindings): boolean {
-  return isCreateRouteCall(node, bindings) || isRoutePageCall(node, bindings);
+function isTargetCall(
+  node: CallExpression,
+  bindings: RouteTransformBindings,
+  ancestors: AstNode[]
+): boolean {
+  return isCreateRouteCall(node, bindings, ancestors) || isRoutePageCall(node, bindings, ancestors);
 }
 
 function isObjectExpressionNode(node: { type: string }): node is ObjectExpression {
   return node.type === "ObjectExpression";
+}
+
+function staticPropertyName(property: ObjectProperty): string | undefined {
+  const { key } = property;
+  if (key.type === "Identifier" && !property.computed && typeof key.name === "string") {
+    return key.name;
+  }
+  if (key.type === "Literal" && typeof key.value === "string") {
+    return key.value;
+  }
+}
+
+function assertRoutePropertiesAreStaticallySafe(obj: ObjectExpression): void {
+  for (const property of obj.properties) {
+    if (property.type !== "Property") {
+      throw new Error(
+        "[furin] Route configuration spreads are not allowed because server-only properties cannot be stripped safely."
+      );
+    }
+    if (property.computed && staticPropertyName(property) === undefined) {
+      throw new Error(
+        "[furin] A dynamic computed property in route configuration cannot be stripped safely."
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -183,24 +339,14 @@ function isObjectExpressionNode(node: { type: string }): node is ObjectExpressio
 // Returns true if any property was removed.
 // ---------------------------------------------------------------------------
 function removeServerProperties(s: MagicString, source: string, obj: ObjectExpression): boolean {
+  assertRoutePropertiesAreStaticallySafe(obj);
+
   const toRemove = obj.properties.filter((p): p is ObjectProperty => {
-    // Skip spread elements — they have no key.
     if (p.type !== "Property") {
       return false;
     }
-    const { key } = p;
-    // Static identifier key: { loader: fn }
-    if (p.computed) {
-      return false;
-    }
-    if (key.type === "Identifier" && typeof key.name === "string") {
-      return SERVER_ONLY_PROPERTIES.has(key.name);
-    }
-    // Quoted string key: { "loader": fn }
-    if (key.type === "Literal" && typeof key.value === "string") {
-      return SERVER_ONLY_PROPERTIES.has(key.value);
-    }
-    return false;
+    const name = staticPropertyName(p);
+    return name !== undefined && SERVER_ONLY_PROPERTIES.has(name);
   });
   if (toRemove.length === 0) {
     return false;
@@ -467,26 +613,24 @@ function removeServerExports(s: MagicString, source: string, program: Program): 
   let removedServerCode = false;
   const bindings = collectRouteTransformBindings(program);
 
-  walkAST(program, (node) => {
-    if (node.type !== "CallExpression") {
-      return;
-    }
-    const call = node as unknown as CallExpression;
-    if (!isTargetCall(call, bindings)) {
-      return;
-    }
-    // Unwrap `createRoute({...} as Config)` / `route.page({...} satisfies Opts)` etc.
-    const [firstArg] = call.arguments;
-    if (!firstArg) {
-      return;
-    }
-    const arg = unwrapTSExpression(firstArg);
-    if (!isObjectExpressionNode(arg)) {
-      return;
-    }
-    if (removeServerProperties(s, source, arg)) {
-      removedServerCode = true;
-    }
+  walk(program, {
+    CallExpression(call, context) {
+      if (!isTargetCall(call, bindings, context.ancestors() as AstNode[])) {
+        return;
+      }
+      // Unwrap `createRoute({...} as Config)` / `route.page({...} satisfies Opts)` etc.
+      const [firstArg] = call.arguments;
+      if (!firstArg) {
+        return;
+      }
+      const arg = unwrapTSExpression(firstArg);
+      if (!isObjectExpressionNode(arg)) {
+        return;
+      }
+      if (removeServerProperties(s, source, arg)) {
+        removedServerCode = true;
+      }
+    },
   });
 
   return removedServerCode;

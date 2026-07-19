@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import "../../setup/evlog-mock";
 
 import { Elysia, t } from "elysia";
-import { createRoute, defer, type RuntimePage, type RuntimeRoute } from "../../../src/client";
+import { createRoute, defer } from "../../../src/client";
+import type { RuntimePage, RuntimeRoute } from "../../../src/client/internal/runtime-types.ts";
 import type { ResolvedRoute } from "../../../src/server/router/index.ts";
 import { createDataEndpoint } from "../../../src/server/router/index.ts";
 import { __setDevMode } from "../../../src/server/runtime-env.ts";
@@ -419,6 +420,70 @@ describe("GET /_furin/data", () => {
     expect(deferredPromises.stats).toBeInstanceOf(Promise);
     const resolvedStats = await deferredPromises.stats;
     expect(resolvedStats).toBe(42);
+  });
+
+  test("streams requestData for an ISR route during SPA navigation", async () => {
+    const routeDefinition = createRoute({
+      loader: () => ({ catalog: "Shoes" }),
+      mode: "isr",
+      requestLoader: ({ cookies }) => ({ user: cookies.get("session") }),
+    });
+    const route = {
+      mode: "isr",
+      page: runtimePage(routeDefinition.page({ component: () => null })),
+      path: "/ppr-account",
+      pattern: "/ppr-account",
+      routeChain: [runtimeRoute(routeDefinition)],
+      segmentBoundaries: [],
+    } satisfies ResolvedRoute;
+    const app = new Elysia().use(createDataEndpoint([route]));
+
+    const res = await app.handle(
+      new Request("http://localhost/_furin/data?path=%2Fppr-account", {
+        headers: { cookie: "session=alice" },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const { deferredPromises, syncData } = await parseDeferredNdjson(
+      res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      undefined
+    );
+    expect(syncData.catalog).toBe("Shoes");
+    expect(deferredPromises.requestData).toBeInstanceOf(Promise);
+    expect(await deferredPromises.requestData).toEqual({ user: "alice" });
+  });
+
+  test("forwards request headers to loaders reading request.headers", async () => {
+    const routeDefinition = createRoute({
+      loader: ({ request }) => ({
+        authHeader: request.headers.get("authorization"),
+        cookieHeader: request.headers.get("cookie"),
+      }),
+    });
+    const route = {
+      mode: "ssr",
+      page: runtimePage(routeDefinition.page({ component: () => null })),
+      path: "/protected",
+      pattern: "/protected",
+      routeChain: [runtimeRoute(routeDefinition)],
+      segmentBoundaries: [],
+    } satisfies ResolvedRoute;
+    const app = new Elysia().use(createDataEndpoint([route]));
+
+    const res = await app.handle(
+      new Request("http://localhost/_furin/data?path=%2Fprotected", {
+        headers: { authorization: "Bearer token-123", cookie: "session=alice" },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const { syncData } = await parseDeferredNdjson(
+      res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      undefined
+    );
+    expect(syncData.cookieHeader).toBe("session=alice");
+    expect(syncData.authHeader).toBe("Bearer token-123");
   });
 
   test("returns the response before deferred Promises have resolved", async () => {

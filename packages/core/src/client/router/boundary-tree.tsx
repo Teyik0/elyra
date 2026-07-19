@@ -1,7 +1,7 @@
 import type React from "react";
 import { createElement } from "react";
-import type { RuntimeRoute } from "../../client.ts";
 import { type BoundaryOptions, FurinErrorBoundary, wrapSegmentBoundaries } from "../boundaries.tsx";
+import type { RuntimeRoute } from "../internal/runtime-types.ts";
 import { FurinServerError } from "../server-error.ts";
 import { RouterContext } from "./context.ts";
 import type {

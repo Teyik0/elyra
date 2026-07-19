@@ -1,6 +1,13 @@
 import React from "react";
 import { version as reactDomVersion } from "react-dom";
 
+const STABLE_REACT_VERSION = /^(\d+)\.(\d+)\.(\d+)$/;
+const MINIMUM_REACT_19_PATCH = new Map([
+  [0, 6],
+  [1, 7],
+  [2, 6],
+]);
+
 export interface RscVersions {
   react: string;
   reactDom: string;
@@ -15,12 +22,13 @@ export function assertCompatibleRscVersions(versions: RscVersions): void {
         `react-server-dom-webpack=${versions.reactServerDom}.`
     );
   }
-  const [majorSegment, minorSegment, patchSegment] = versions.react.split(".");
-  const major = Number.parseInt(majorSegment ?? "", 10);
-  const minor = Number.parseInt(minorSegment ?? "", 10);
-  const patch = Number.parseInt(patchSegment ?? "", 10);
-  if (major === 19 && minor === 2 && (patch ?? 0) < 1) {
-    throw new Error("[furin/rsc] React 19.2.0 is insecure; use the pinned patched React line.");
+  const match = STABLE_REACT_VERSION.exec(versions.react);
+  const major = Number(match?.[1]);
+  const minor = Number(match?.[2]);
+  const patch = Number(match?.[3]);
+  const minimumPatch = MINIMUM_REACT_19_PATCH.get(minor);
+  if (!match || major !== 19 || minimumPatch === undefined || patch < minimumPatch) {
+    throw new Error("[furin/rsc] RSC requires a supported patched React 19 version.");
   }
 }
 

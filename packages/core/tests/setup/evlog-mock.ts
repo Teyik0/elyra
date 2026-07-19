@@ -1,5 +1,6 @@
 import { mock } from "bun:test";
 import type { AnyElysia } from "elysia";
+import type { RequestLogger } from "evlog";
 
 export interface EvlogMockFields {
   [key: string]: unknown;
@@ -12,6 +13,19 @@ const noop = () => undefined;
 export const evlogSetMock = mock((_entry: EvlogMockFields) => undefined);
 
 let setHandler: EvlogMockSet = evlogSetMock;
+
+function createUseLoggerMock(): RequestLogger {
+  return {
+    emit: () => null,
+    error: noop,
+    fork: (_label: string, fn: () => unknown) => fn(),
+    getContext: () => ({}),
+    info: noop,
+    set: (entry: EvlogMockFields) => setHandler(entry),
+    setLevel: noop,
+    warn: noop,
+  };
+}
 
 export function setEvlogSetHandler(handler: EvlogMockSet): void {
   setHandler = handler;
@@ -29,9 +43,7 @@ mock.module("evlog/elysia", () => ({
         set: (entry: EvlogMockFields) => setHandler(entry),
       },
     })),
-  useLogger: () => ({
-    set: (entry: EvlogMockFields) => setHandler(entry),
-  }),
+  useLogger: createUseLoggerMock,
 }));
 
 mock.module("evlog", () => ({
@@ -51,10 +63,5 @@ mock.module("evlog", () => ({
   }),
   initLogger: noop,
   log: { debug: noop, error: noop, info: noop, warn: noop },
-  useLogger: () => ({
-    error: noop,
-    info: noop,
-    set: (entry: EvlogMockFields) => setHandler(entry),
-    warn: noop,
-  }),
+  useLogger: createUseLoggerMock,
 }));

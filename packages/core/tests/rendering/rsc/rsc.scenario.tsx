@@ -259,7 +259,7 @@ try {
     loader: async () =>
       defer({
         readyArticle: await renderServerComponent(<h1>Ready Flight article</h1>),
-        slowArticle: Promise.resolve(await renderServerComponent(<h1>Deferred Flight article</h1>)),
+        slowArticle: renderServerComponent(<h1>Deferred Flight article</h1>),
       }),
   });
   const deferredRscResolved = asResolvedRoute({

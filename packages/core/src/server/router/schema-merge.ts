@@ -1,6 +1,6 @@
 import { t } from "elysia";
 import type { AnySchema } from "elysia/types";
-import type { RuntimeRoute } from "../../client.ts";
+import type { RuntimeRoute } from "../../client/internal/runtime-types.ts";
 
 interface SchemaObject {
   [key: string]: unknown;

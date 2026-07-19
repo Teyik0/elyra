@@ -1,0 +1,214 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const SERVER_READY_TIMEOUT_MS = 10_000;
+const HTTP_TIMEOUT_MS = 5000;
+const SSE_TIMEOUT_MS = 2000;
+const SERVER_URL_PATTERN = /Task Manager running at (http:\/\/localhost:\d+)/;
+
+interface CreatedBoard {
+  createdAt: string;
+  id: string;
+  name: string;
+}
+
+interface SyncChangesResponse {
+  changes: Array<{
+    cursor: string;
+    invalidations: string[];
+  }>;
+  cursor: string;
+  hasMore: boolean;
+  reset: boolean;
+}
+
+function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs: number): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => reject(new Error(`Timed out waiting for ${label}`)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  });
+}
+
+async function readOutput(
+  stream: ReadableStream<Uint8Array>,
+  onOutput: (output: string) => void
+): Promise<string> {
+  const decoder = new TextDecoder();
+  const reader = stream.getReader();
+  let output = "";
+  let chunk = await reader.read();
+
+  while (!chunk.done) {
+    output += decoder.decode(chunk.value, { stream: true });
+    onOutput(output);
+    // biome-ignore lint/performance/noAwaitInLoops: process output must be consumed sequentially.
+    chunk = await reader.read();
+  }
+
+  output += decoder.decode();
+  onOutput(output);
+  return output;
+}
+
+describe.serial("task-manager production E2E", () => {
+  const serverPath = join(import.meta.dir, "../.furin/build/bun/server");
+  const workingDirectory = mkdtempSync(join(tmpdir(), "furin-task-manager-e2e-"));
+  const ready = Promise.withResolvers<string>();
+  let baseUrl = "";
+  let server: ReturnType<typeof Bun.spawn> | undefined;
+  let stderrOutput: Promise<string> | undefined;
+  let stdoutOutput: Promise<string> | undefined;
+
+  beforeAll(async () => {
+    if (!existsSync(serverPath)) {
+      throw new Error("Task-manager production binary is missing. Run `bun run build` first.");
+    }
+
+    server = Bun.spawn({
+      cmd: [serverPath],
+      cwd: workingDirectory,
+      env: { ...process.env, PORT: "0" },
+      stderr: "pipe",
+      stdout: "pipe",
+    });
+    stdoutOutput = readOutput(server.stdout, (output) => {
+      const match = output.match(SERVER_URL_PATTERN);
+      if (match?.[1]) {
+        ready.resolve(match[1]);
+      }
+    });
+    stderrOutput = new Response(server.stderr).text();
+
+    baseUrl = await withTimeout(
+      Promise.race([
+        ready.promise,
+        server.exited.then(async (exitCode) => {
+          const stderr = await stderrOutput;
+          throw new Error(`Task-manager exited with code ${exitCode}.\n${stderr}`);
+        }),
+      ]),
+      "the task-manager server",
+      SERVER_READY_TIMEOUT_MS
+    );
+  });
+
+  afterAll(async () => {
+    server?.kill();
+    await server?.exited;
+    await Promise.allSettled([stdoutOutput, stderrOutput]);
+    rmSync(workingDirectory, { force: true, recursive: true });
+  });
+
+  test("a synced board mutation reaches SSE, the durable journal, and the invalidated ISR page", async () => {
+    const boardName = `E2E board ${crypto.randomUUID()}`;
+    const idempotencyKey = crypto.randomUUID();
+
+    const initialPage = await withTimeout(
+      fetch(`${baseUrl}/`),
+      "the initial page",
+      HTTP_TIMEOUT_MS
+    );
+    expect(initialPage.status).toBe(200);
+    expect(await initialPage.text()).toContain("Task Manager");
+
+    const streamResponse = await withTimeout(
+      fetch(`${baseUrl}/_furin/sync`),
+      "the sync stream",
+      HTTP_TIMEOUT_MS
+    );
+    expect(streamResponse.status).toBe(200);
+    expect(streamResponse.headers.get("content-type")).toContain("text/event-stream");
+    if (!streamResponse.body) {
+      throw new Error("The sync stream has no response body.");
+    }
+    const streamReader = streamResponse.body.getReader();
+
+    try {
+      const connected = await withTimeout(
+        streamReader.read(),
+        "the SSE connection event",
+        SSE_TIMEOUT_MS
+      );
+      expect(new TextDecoder().decode(connected.value)).toContain(": connected");
+
+      const createBoard = () =>
+        fetch(`${baseUrl}/api/boards`, {
+          body: JSON.stringify({ name: boardName }),
+          headers: {
+            "content-type": "application/json",
+            "Idempotency-Key": idempotencyKey,
+          },
+          method: "POST",
+        });
+
+      const createResponse = await withTimeout(
+        createBoard(),
+        "the board mutation",
+        HTTP_TIMEOUT_MS
+      );
+      expect(createResponse.status).toBe(200);
+      expect(createResponse.headers.get("x-furin-revalidate")).toBe("/,/rsc,/board:layout");
+      expect(createResponse.headers.get("x-furin-sync")).toBe("1");
+      const createdBoard = (await createResponse.json()) as CreatedBoard;
+      expect(createdBoard).toMatchObject({ name: boardName });
+
+      const notification = await withTimeout(
+        streamReader.read(),
+        "the board sync notification",
+        SSE_TIMEOUT_MS
+      );
+      const notificationText = new TextDecoder().decode(notification.value);
+      expect(notificationText).toContain("event: furin.sync");
+      expect(notificationText).toContain('data: {"cursor":"1"}');
+
+      const changesResponse = await withTimeout(
+        fetch(`${baseUrl}/_furin/sync/changes?after=0`),
+        "the durable sync changes",
+        HTTP_TIMEOUT_MS
+      );
+      expect(changesResponse.status).toBe(200);
+      const changes = (await changesResponse.json()) as SyncChangesResponse;
+      expect(changes).toMatchObject({ cursor: "1", hasMore: false, reset: false });
+      expect(changes.changes).toEqual([
+        {
+          cursor: "1",
+          invalidations: ["/:layout", "/", "/rsc", "/board:layout"],
+        },
+      ]);
+
+      const replayResponse = await withTimeout(
+        createBoard(),
+        "the idempotent mutation replay",
+        HTTP_TIMEOUT_MS
+      );
+      expect(replayResponse.status).toBe(200);
+      expect(await replayResponse.json()).toEqual(createdBoard);
+
+      const boardsResponse = await withTimeout(
+        fetch(`${baseUrl}/api/boards`),
+        "the boards API",
+        HTTP_TIMEOUT_MS
+      );
+      const boards = (await boardsResponse.json()) as CreatedBoard[];
+      expect(boards.filter((board) => board.name === boardName)).toHaveLength(1);
+
+      const invalidatedPage = await withTimeout(
+        fetch(`${baseUrl}/`),
+        "the invalidated ISR page",
+        HTTP_TIMEOUT_MS
+      );
+      expect(invalidatedPage.status).toBe(200);
+      expect(await invalidatedPage.text()).toContain(boardName);
+    } finally {
+      await streamReader.cancel();
+    }
+  });
+});

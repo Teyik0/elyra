@@ -32,6 +32,21 @@ function makeRoute(path: string, linkTo: string): ClientRoute {
   };
 }
 
+/** Page rendering a plain `<a>` (MDX/CMS-style), which goes through the
+ *  provider's document-level click interceptor instead of Furin Link. */
+function makeNativeAnchorRoute(path: string, href: string): ClientRoute {
+  return {
+    load: async () => ({
+      default: {
+        _route: { __type: "FURIN_ROUTE" } as never,
+        component: () => createElement("div", null, createElement("a", { href }, `Go to ${href}`)),
+      },
+    }),
+    pattern: path,
+    regex: new RegExp(`^${path}$`),
+  };
+}
+
 async function dispatchReactEvent(target: EventTarget, event: Event): Promise<void> {
   await act(async () => {
     target.dispatchEvent(event);
@@ -257,5 +272,73 @@ describe("RouterProvider click interception", () => {
     } finally {
       errorLog.mockRestore();
     }
+  });
+
+  /** Clicks `anchor` with a trailing document-level listener (registered after
+   *  the provider's interceptor) that records whether the provider called
+   *  preventDefault, then prevents default itself so happy-dom never performs
+   *  a real navigation. */
+  async function clickNativeAnchor(anchor: HTMLAnchorElement): Promise<boolean> {
+    let preventedByProvider = false;
+    const guard = (e: Event) => {
+      preventedByProvider = e.defaultPrevented;
+      e.preventDefault();
+    };
+    document.addEventListener("click", guard);
+    try {
+      await dispatchReactEvent(
+        anchor,
+        new MouseEvent("click", { bubbles: true, cancelable: true })
+      );
+    } finally {
+      document.removeEventListener("click", guard);
+    }
+    return preventedByProvider;
+  }
+
+  test("native <a> matching a local route is intercepted as SPA navigation", async () => {
+    const routes = [makeNativeAnchorRoute("/page-a", "/page-b"), makeRoute("/page-b", "/page-a")];
+    const { container, cleanup } = await renderRouterWithLink(routes, "/page-a");
+    currentCleanup = cleanup;
+
+    const anchor = container.querySelector("a") as HTMLAnchorElement;
+    expect(anchor).not.toBeNull();
+
+    const intercepted = await clickNativeAnchor(anchor);
+    expect(intercepted).toBe(true);
+
+    await new Promise<void>((resolve, reject) => {
+      const start = Date.now();
+      const interval = setInterval(() => {
+        if (pushStateCalls.length === 1) {
+          clearInterval(interval);
+          resolve();
+        } else if (Date.now() - start > 2000) {
+          clearInterval(interval);
+          reject(new Error("Timed out waiting for navigation"));
+        }
+      }, 10);
+    });
+    await flushReactUpdates();
+
+    expect(pushStateCalls.length).toBe(1);
+    expect(pushStateCalls[0]?.url).toBe("/page-b");
+  });
+
+  test("native <a> to a path outside the app's routes is left to the browser", async () => {
+    // Root app (basePath "") whose route table does not include /admin — the
+    // link belongs to a sibling furin app mounted under another prefix.
+    const routes = [makeNativeAnchorRoute("/page-a", "/admin"), makeRoute("/page-b", "/page-a")];
+    const { container, cleanup } = await renderRouterWithLink(routes, "/page-a");
+    currentCleanup = cleanup;
+
+    const anchor = container.querySelector("a") as HTMLAnchorElement;
+    expect(anchor).not.toBeNull();
+
+    const intercepted = await clickNativeAnchor(anchor);
+    await flushReactUpdates();
+
+    expect(intercepted).toBe(false);
+    expect(pushStateCalls.length).toBe(0);
   });
 });

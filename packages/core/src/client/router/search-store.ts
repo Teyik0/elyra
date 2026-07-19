@@ -1,5 +1,6 @@
 import { createContext } from "react";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
+import { navigationHrefPolicy } from "./link-utils.ts";
 import type { RouterContextValue } from "./types.ts";
 
 export interface SearchStoreSnapshot {
@@ -75,6 +76,9 @@ export const FALLBACK_SEARCH_STORE = createSearchStore({
   currentHref: "/",
   navigate: (href, _opts) => {
     if (typeof window !== "undefined") {
+      if (navigationHrefPolicy(href, window.location.origin) === "blocked") {
+        return Promise.reject(new Error("[furin] Unsafe navigation URL."));
+      }
       window.location.href = href;
     }
     return Promise.resolve();

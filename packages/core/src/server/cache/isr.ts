@@ -1,4 +1,4 @@
-import { type FurinInstance, instanceSlot } from "../instance.ts";
+import { allStateBuckets, type FurinInstance, instanceSlot } from "../instance.ts";
 import { createHtmlRouteCache, type ISRCacheEntry } from "./isr-ssg";
 import { registerCacheInvalidator } from "./registry";
 import type { Cache } from "./route-cache";
@@ -6,18 +6,29 @@ import { createStoreView, type StoreView } from "./store-view";
 
 interface ISRCacheState {
   cache: Cache<ISRCacheEntry>;
-  generations: Map<string, number>;
+  generations: Map<string, Set<ISRCacheGeneration>>;
   pendingRevalidations: Map<string, Promise<void>>;
+}
+
+export interface ISRCacheGeneration {
+  valid: boolean;
 }
 
 // Per-instance ISR HTML cache — registered against the owning instance's
 // invalidator map on first access.
 const instanceIsrCache = instanceSlot<ISRCacheState>((instance) => {
-  const generations = new Map<string, number>();
+  const generations = new Map<string, Set<ISRCacheGeneration>>();
   const pendingRevalidations = new Map<string, Promise<void>>();
   const cache = createHtmlRouteCache<ISRCacheEntry>("isr", {
     onDelete: (key) => {
-      generations.set(key, (generations.get(key) ?? 0) + 1);
+      const pending = generations.get(key);
+      if (pending === undefined) {
+        return;
+      }
+      for (const generation of pending) {
+        generation.valid = false;
+      }
+      generations.delete(key);
     },
   });
   registerCacheInvalidator(cache, instance);
@@ -45,20 +56,37 @@ export function setISRCache(key: string, entry: ISRCacheEntry): void {
   instanceIsrCache().cache.set(key, entry);
 }
 
-export function captureISRCacheGeneration(key: string): number {
-  return instanceIsrCache().generations.get(key) ?? 0;
+export function captureISRCacheGeneration(key: string): ISRCacheGeneration {
+  const state = instanceIsrCache();
+  const generation = { valid: true };
+  const pending = state.generations.get(key);
+  if (pending === undefined) {
+    state.generations.set(key, new Set([generation]));
+  } else {
+    pending.add(generation);
+  }
+  return generation;
+}
+
+export function releaseISRCacheGeneration(key: string, generation: ISRCacheGeneration): void {
+  const { generations } = instanceIsrCache();
+  const pending = generations.get(key);
+  pending?.delete(generation);
+  if (pending?.size === 0) {
+    generations.delete(key);
+  }
 }
 
 export function setISRCacheIfGenerationUnchanged(
   key: string,
   entry: ISRCacheEntry,
-  generation: number
+  generation: ISRCacheGeneration
 ): boolean {
-  const state = instanceIsrCache();
-  if ((state.generations.get(key) ?? 0) !== generation) {
+  releaseISRCacheGeneration(key, generation);
+  if (!generation.valid) {
     return false;
   }
-  state.cache.set(key, entry);
+  instanceIsrCache().cache.set(key, entry);
   return true;
 }
 
@@ -71,6 +99,9 @@ export function clearPendingISRRevalidations(instance?: FurinInstance): void {
 }
 
 export async function waitForPendingISRRevalidations(): Promise<void> {
-  await Promise.allSettled(instanceIsrCache().pendingRevalidations.values());
+  const pending = allStateBuckets().flatMap((instance) => [
+    ...instanceIsrCache(instance).pendingRevalidations.values(),
+  ]);
+  await Promise.allSettled(pending);
   await Bun.sleep(1);
 }

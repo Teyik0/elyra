@@ -142,6 +142,24 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 
 ---
 
+## Mutations & Multi-replica Sync
+
+| Dimension | Next.js | TanStack Start | Furin |
+|---|---|---|---|
+| **Mutation contract** | Server Actions or route handlers | Server Functions or server routes | Elysia HTTP routes + Eden Treaty |
+| **On-demand cache invalidation** | `revalidatePath`, `revalidateTag`, `updateTag` | Coordinate router/query cache in application code | `revalidatePath`, `revalidateTag`, path/tag invalidation rules |
+| **Durable idempotency journal** | Application responsibility | Application responsibility | SQLite, PostgreSQL, or Redis adapter |
+| **Missed-event catch-up** | Application responsibility | Application/query-library responsibility | Ordered cursor journal + SSE wake-up |
+| **Optional backend isolation** | Deployment/runtime dependent | Environment code is build-time separated | Independent side-effect-free package subpaths |
+
+Next.js has the broadest integrated cache revalidation API. TanStack Start emphasizes typed same-origin Server Functions and deliberate client-cache integration. Furin keeps standard HTTP routes as the public mutation contract and adds an optional durable replay/change journal around them. The recommended production topology is PostgreSQL for correctness, with Redis only as an optional low-latency notifier.
+
+Furin adopts the immediately useful local-first behavior described in the [Linear performance analysis](https://performance.dev/how-is-linear-so-fast-a-technical-breakdown): `useSync()` applies optimistic state synchronously, SSE carries only a cursor, and catch-up is coalesced. It deliberately does not pretend that a server journal is a browser database. IndexedDB outbox, offline mutation replay, and conflict resolution remain a separate opt-in project.
+
+Sources: [Next.js revalidation](https://nextjs.org/docs/app/getting-started/revalidating), [TanStack Start Server Functions](https://tanstack.com/start/latest/docs/framework/react/guide/server-functions), and [TanStack environment tree-shaking](https://tanstack.com/start/latest/docs/framework/react/guide/environment-functions).
+
+---
+
 ## Routing & Layouts
 
 | Dimension | Next.js | TanStack Start | Furin |

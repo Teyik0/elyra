@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { expectTypeOf } from "expect-type";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { RuntimeRoute } from "../../../src/client";
 import { FurinErrorBoundary } from "../../../src/client/boundaries.tsx";
+import type { RuntimeRoute } from "../../../src/client/internal/runtime-types.ts";
 import type {
   CacheEntry,
   LinkProps,

@@ -80,6 +80,17 @@ describe.serial("compile: embed", () => {
     expect(result.stderr + result.stdout).toContain("Unknown option");
   });
 
+  test("CLI build does not parse --compile after the option terminator", async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+
+    const result = await runCli(["build", "--", "--compile=invalid"], { cwd: app.path });
+    const output = result.stderr + result.stdout;
+
+    expect(result.exitCode).toBeGreaterThan(0);
+    expect(output).toContain("Unexpected argument");
+    expect(output).not.toContain("Invalid compile mode");
+  });
+
   test("generateCompileEntry with embed produces file imports and __setCompileContext", () => {
     const app = rememberTmpApp(createTmpApp("cli-app"));
 
@@ -95,6 +106,7 @@ describe.serial("compile: embed", () => {
       apps: [
         {
           buildId: undefined,
+          clientLogging: true,
           rootPath: join(app.path, "src/pages/root.tsx"),
           routes: [{ pattern: "/", path: join(app.path, "src/pages/index.tsx"), mode: "ssg" }],
           rootConventions: undefined,
@@ -112,6 +124,7 @@ describe.serial("compile: embed", () => {
 
     expect(content).toContain('with { type: "file" }');
     expect(content).toContain("__setCompileContext");
+    expect(content).toContain("clientLogging: true");
     expect(content).toContain("embedded:");
     expect(content).toContain("modules:");
     expect(content).toContain("import(");

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { wrapSegmentBoundaries } from "../../client/boundaries.tsx";
 import { DefaultErrorFallback, DefaultNotFoundFallback } from "../../client/default-screens.tsx";
-import type { RuntimeRoute } from "../../client.ts";
+import type { RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import type { ErrorComponent } from "../../shared/error.ts";
 import type { FurinNotFoundError, NotFoundComponent } from "../../shared/not-found.ts";
 import type { ResolvedRoute, SegmentBoundary } from "../router/index.ts";
@@ -99,8 +99,10 @@ export function buildErrorElement(
 ): ReactNode {
   const ErrorView = component ?? DefaultErrorFallback;
   let message: string;
-  if (component) {
+  if (component && IS_DEV) {
     message = messageOverride ?? errorMessageOf(error);
+  } else if (component) {
+    message = messageOverride ?? GENERIC_ERROR_MESSAGE;
   } else if (IS_DEV) {
     // No user error.tsx: in dev, surface the real error message so the
     // developer can see what actually broke instead of a generic placeholder.

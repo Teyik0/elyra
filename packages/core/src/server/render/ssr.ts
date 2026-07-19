@@ -15,7 +15,6 @@ import type { RouterContextValue } from "../../client/router/types.ts";
 import { computeErrorDigest } from "../../shared/digest.ts";
 import { containsRscSource, serializeRouteFrames } from "../../shared/route-frame.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
-import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { runInSyntheticRenderScope, useLogger } from "../context-logger.ts";
 import { currentInstance } from "../instance.ts";
 // FurinNotFoundError is used indirectly via buildNotFoundElement in element.tsx
@@ -35,7 +34,12 @@ import {
   streamToString,
 } from "./assemble.ts";
 import { buildElement, buildErrorElement, buildNotFoundElement } from "./element.tsx";
-import { type LoaderResult, runLoaders, serializeDeferredRejection } from "./loaders.ts";
+import {
+  type LoaderResult,
+  runLoaders,
+  runPublicLoaders,
+  serializeDeferredRejection,
+} from "./loaders.ts";
 import { serializeDeferredRouteFrame } from "./route-frame-transport.ts";
 import { buildHeadInjection, generateIndexHtml, safeJson } from "./shell.ts";
 import { getDevTemplate, getProductionTemplate } from "./template.ts";
@@ -222,6 +226,18 @@ function buildSuccessRender(
   }
 }
 
+async function resolveRenderTemplate(ctx: Context): Promise<string> {
+  const productionTemplate = getProductionTemplate();
+  if (productionTemplate !== null) {
+    return productionTemplate;
+  }
+  if (IS_DEV && ctx.server) {
+    const template = await getDevTemplate(ctx.server.url.origin);
+    return template;
+  }
+  return generateIndexHtml();
+}
+
 /**
  * Shared pipeline steps used by both `renderToHTML` (buffered) and `renderSSR`
  * (streaming). Runs loaders, builds props, head injection, resolves template,
@@ -270,10 +286,7 @@ export async function prepareRender(
     path: ctx.path,
   };
 
-  const prodTemplate = getProductionTemplate();
-  const template =
-    prodTemplate ??
-    (IS_DEV ? await getDevTemplate(new URL(ctx.request.url).origin) : generateIndexHtml());
+  const template = await resolveRenderTemplate(ctx);
 
   let element: ReactNode;
   let headData = "";
@@ -360,9 +373,20 @@ export function renderForPath(
     async () => {
       const resolvedPath = resolvePath(route.pattern, params);
       const requestUrl = new URL(`${resolvedPath}${search ?? ""}`, origin);
+      const query: { [key: string]: string | string[] } = Object.create(null);
+      for (const [key, value] of requestUrl.searchParams) {
+        const previous = query[key];
+        if (previous === undefined) {
+          query[key] = value;
+        } else if (Array.isArray(previous)) {
+          previous.push(value);
+        } else {
+          query[key] = [previous, value];
+        }
+      }
       const ctx: Context = {
         params,
-        query: Object.fromEntries(requestUrl.searchParams),
+        query,
         request: new Request(requestUrl),
         headers: {},
         cookie: {},
@@ -372,13 +396,14 @@ export function renderForPath(
         path: resolvedPath,
       } as Context;
 
+      const loaderResult = await runPublicLoaders(route, ctx);
       const prepared = await prepareRender(
         route,
         ctx,
         root,
         basePath,
         true,
-        undefined,
+        loaderResult,
         searchRoutes
       );
       if (prepared instanceof Response) {
@@ -558,11 +583,6 @@ export async function renderSSR(
   if (prepared instanceof Response) {
     return prepared;
   }
-
-  autoInvalidateRegistry.registerLoaderTags(
-    resolvePath(route.pattern, ctx.params ?? {}),
-    route.tags
-  );
 
   useLogger().set({
     furin: {

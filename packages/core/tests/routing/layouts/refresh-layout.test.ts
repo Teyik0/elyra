@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { RuntimeRoute } from "../../../src/client.ts";
+import type { RuntimeRoute } from "../../../src/client/internal/runtime-types.ts";
 import { refreshLayoutChain } from "../../../src/server/router/index.ts";
 
 describe("refreshLayoutChain", () => {

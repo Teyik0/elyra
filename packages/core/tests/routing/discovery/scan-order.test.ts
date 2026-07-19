@@ -104,12 +104,23 @@ describe("scanPages: route order is deterministic", () => {
     );
   });
 
-  test("throws when a page file coexists with a same-name route directory", async () => {
-    mkdirSync(join(tempDir, "foo"));
-    writePage(join(tempDir, "foo.tsx"));
+  test("throws when dynamic routes differ only by parameter name", async () => {
+    mkdirSync(join(tempDir, "users"));
+    writePage(join(tempDir, "users", "[id].tsx"));
+    writePage(join(tempDir, "users", "[slug].tsx"));
 
     await expect(scanPages(tempDir)).rejects.toThrow(
-      '[furin] Ambiguous route segment "foo": "foo.tsx" cannot coexist with directory "foo/". Move the page to "foo/index.tsx".'
+      '[furin] Duplicate route pattern "/users/:param" from "users/[id].tsx" and "users/[slug].tsx".'
     );
+  });
+
+  test("allows a page file and same-name directory when their route patterns differ", async () => {
+    mkdirSync(join(tempDir, "foo"));
+    writePage(join(tempDir, "foo.tsx"));
+    writePage(join(tempDir, "foo", "bar.tsx"));
+
+    const { routes } = await scanPages(tempDir);
+
+    expect(routes.map((route) => route.pattern)).toEqual(["/foo/bar", "/foo"]);
   });
 });

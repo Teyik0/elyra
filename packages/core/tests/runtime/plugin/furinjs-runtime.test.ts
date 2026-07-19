@@ -114,6 +114,33 @@ test.serial("furin() production rejects missing FURIN_CLIENT_DIR assets", async 
   );
 });
 
+test.serial(
+  "compiled browser logging keeps ingest enabled despite an explicit runtime false",
+  async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+    __setDevMode(false);
+    process.chdir(app.path);
+    const templatePath = join(app.path, "template.html");
+    writeFileSync(templatePath, "<html><body><!--app-html--></body></html>");
+    __setCompileContext({
+      ...(await createCompileContext(app.path)),
+      clientLogging: true,
+      embedded: { assets: {}, template: templatePath },
+    });
+
+    const instance = await furin({ clientLogging: false, pagesDir: join(app.path, "src/pages") });
+    const response = await instance.handle(
+      new Request("http://localhost/_furin/ingest", {
+        body: JSON.stringify([{ event: { msg: "browser log" } }]),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+      })
+    );
+
+    expect(response.status).toBe(204);
+  }
+);
+
 test.serial("furin() production resolves client assets next to module URL", async () => {
   const app = rememberTmpApp(createTmpApp("cli-app"));
   __setDevMode(false);

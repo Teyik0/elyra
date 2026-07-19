@@ -10,6 +10,10 @@ permissions:
   pull-requests: write
 
 jobs:
+  distributed-sync:
+    name: Distributed sync validation
+    uses: ./.github/workflows/distributed-sync-validation.yaml
+
   build:
     name: Workflow - CI
     runs-on: ubuntu-latest

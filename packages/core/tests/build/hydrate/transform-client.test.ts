@@ -176,6 +176,23 @@ describe("transformForClient — route.page() loader removal", () => {
     expect(result.removedServerCode).toBe(true);
   });
 
+  test("preserves loader properties on route parameters that shadow an imported route", () => {
+    const input = `
+      import { route } from "./root";
+      function buildLocalPage(route) {
+        return route.page({
+          loader: async () => ({ local: true }),
+          component: ({ local }) => null,
+        });
+      }
+    `;
+    const result = transformForClient(input, "/app/src/pages/index.tsx");
+
+    expect(result.code).toMatch(LOADER_PROPERTY_RE);
+    expect(result.code).toContain("local: true");
+    expect(result.removedServerCode).toBe(false);
+  });
+
   test("strips calls built from an aliased Furin createRoute import", () => {
     const input = `
       import { createRoute as defineRoute } from "@teyik0/furin/client";
@@ -194,6 +211,38 @@ describe("transformForClient — route.page() loader removal", () => {
     expect(result.code).not.toMatch(LOADER_PROPERTY_RE);
     expect(result.code).toContain("component");
     expect(result.removedServerCode).toBe(true);
+  });
+
+  test("preserves loader properties on factories that shadow a Furin import", () => {
+    const input = `
+      import { createRoute as defineRoute } from "@teyik0/furin/client";
+      const route = defineRoute({ loader: () => ({ root: true }) });
+      function buildLocalRoute(defineRoute) {
+        return defineRoute({
+          loader: () => ({ local: true }),
+          component: () => null,
+        });
+      }
+    `;
+    const result = transformForClient(input, "/app/src/pages/index.tsx");
+
+    expect(result.code).not.toContain("root: true");
+    expect(result.code).toContain("local: true");
+    expect(result.removedServerCode).toBe(true);
+  });
+
+  test("preserves loader properties when a classic for initializer shadows an import", () => {
+    const input = `
+      import { createRoute as defineRoute } from "@teyik0/furin/client";
+      const route = defineRoute({ loader: () => ({ root: true }) });
+      for (let defineRoute = localFactory; defineRoute; defineRoute = null) {
+        defineRoute({ loader: () => ({ local: true }) });
+      }
+    `;
+    const result = transformForClient(input, "/app/src/pages/index.tsx");
+
+    expect(result.code).not.toContain("root: true");
+    expect(result.code).toContain("local: true");
   });
 });
 
@@ -367,8 +416,7 @@ describe("transformForClient — dead code elimination", () => {
 // ---------------------------------------------------------------------------
 
 describe("transformForClient — property key variants", () => {
-  test("does not remove computed property keys (computed: true)", () => {
-    // `{ [serverOnlyKey]: fn }` — AST marks this as computed, must be preserved
+  test("rejects dynamic computed route properties", () => {
     const input = `
       ${FURIN_CLIENT_IMPORT}
       const serverOnlyKey = "loader";
@@ -378,10 +426,33 @@ describe("transformForClient — property key variants", () => {
         component: () => null,
       });
     `;
+
+    expect(() => transformForClient(input, "test.tsx")).toThrow("computed property");
+  });
+
+  test("removes a statically computed loader property", () => {
+    const input = `
+      ${FURIN_CLIENT_IMPORT}
+      export default createRoute({
+        ["loader"]: async () => ({ secret: "server-only" }),
+        mode: "ssr",
+      });
+    `;
+
     const result = transformForClient(input, "test.tsx");
 
-    // Computed key is NOT a server-only identifier reference → not removed
-    expect(result.removedServerCode).toBe(false);
+    expect(result.code).not.toContain("server-only");
+    expect(result.removedServerCode).toBe(true);
+  });
+
+  test("rejects spreads in route configuration objects", () => {
+    const input = `
+      ${FURIN_CLIENT_IMPORT}
+      const serverOptions = { loader: async () => ({ secret: true }) };
+      export default createRoute({ ...serverOptions, mode: "ssr" });
+    `;
+
+    expect(() => transformForClient(input, "test.tsx")).toThrow("spread");
   });
 
   test("removes quoted string key 'loader'", () => {
@@ -622,7 +693,7 @@ describe("transformForClient — TypeScript syntax", () => {
     expect(result.code).not.toMatch(IMPORT_DB_RE);
   });
 
-  test("preserves imports referenced after directive prologues and spread elements", () => {
+  test("rejects route spreads even when explicit properties follow them", () => {
     const input = `
       ${FURIN_CLIENT_IMPORT}
       import { makeConfig, renderWidget } from "./db";
@@ -637,13 +708,7 @@ describe("transformForClient — TypeScript syntax", () => {
         },
       });
     `;
-    const result = transformForClient(input, "test.tsx");
-
-    expect(result.removedServerCode).toBe(true);
-    expect(result.code).not.toContain("makeConfig");
-    expect(result.code).toContain("renderWidget");
-    expect(result.code).toContain('"use memo"');
-    expect(result.code).toContain("...shared");
+    expect(() => transformForClient(input, "test.tsx")).toThrow("spreads are not allowed");
   });
 
   test("type alias declaration does not keep its referenced names as runtime references", () => {

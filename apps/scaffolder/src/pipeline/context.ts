@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 // ── Template manifest types ────────────────────────────────────────────────
 
@@ -166,7 +166,8 @@ export function assertPathInsideDirectory(
   errorMessage: string
 ): void {
   const relativePath = relative(rootDir, candidatePath);
-  if (relativePath === "" || !(relativePath.startsWith("..") || isAbsolute(relativePath))) {
+  const isParentPath = relativePath === ".." || relativePath.startsWith(`..${sep}`);
+  if (relativePath === "" || !(isParentPath || isAbsolute(relativePath))) {
     return;
   }
   throw new Error(errorMessage);

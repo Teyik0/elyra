@@ -30,6 +30,6 @@ describe("@teyik0/furin/search types", () => {
 
     expectTypeOf<SetProductsSearch>().toBeCallableWith({ page: 2 });
     expectTypeOf<SetProductsSearch>().toBeCallableWith((prev) => ({ page: prev.page + 1 }));
-    expectTypeOf<SetProductsSearch>().parameter(0).not.toMatchTypeOf<{ missing: true }>();
+    expectTypeOf<SetProductsSearch>().parameter(0).not.toExtend<{ missing: true }>();
   });
 });

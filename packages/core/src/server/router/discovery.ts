@@ -1,8 +1,8 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: route discovery walks filesystem entries sequentially for deterministic ordering
-import { existsSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, parse } from "node:path";
-import type { RuntimePage, RuntimeRoute } from "../../client.ts";
+import type { RuntimePage, RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import type { ErrorComponent } from "../../shared/error.ts";
 import type { NotFoundComponent } from "../../shared/not-found.ts";
 import {
@@ -140,30 +140,6 @@ function routeRelativePath(pagesDir: string, absolutePath: string): string {
   return path.startsWith(`${dir}/`) ? path.slice(dir.length + 1) : path;
 }
 
-function isDirectory(path: string): boolean {
-  try {
-    return statSync(path).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function assertNoPageFileDirectoryCollision(pagesDir: string, relativePath: string): void {
-  const parsed = parse(relativePath);
-  if (parsed.name === "index") {
-    return;
-  }
-
-  const segmentPath = parsed.dir ? `${parsed.dir}/${parsed.name}` : parsed.name;
-  if (!isDirectory(`${pagesDir}/${segmentPath}`)) {
-    return;
-  }
-
-  throw new Error(
-    `[furin] Ambiguous route segment "${segmentPath}": "${relativePath}" cannot coexist with directory "${segmentPath}/". Move the page to "${segmentPath}/index${parsed.ext}".`
-  );
-}
-
 export async function scanPages(pagesDir: string): Promise<{
   root: RootLayout;
   routes: ResolvedRoute[];
@@ -210,6 +186,11 @@ export async function scanRootLayout(pagesDir: string): Promise<RootLayout> {
 
 const CONVENTION_FILE_NAMES = ["not-found", "error"] as const;
 const SOURCE_MODULE_EXTENSIONS = [".tsx", ".ts", ".jsx", ".js"] as const;
+const DYNAMIC_ROUTE_SEGMENT_RE = /(^|\/):[^/]+/g;
+
+function routePatternKey(pattern: string): string {
+  return pattern.replace(DYNAMIC_ROUTE_SEGMENT_RE, "$1:param");
+}
 
 function isConventionFileName(name: string): boolean {
   return (CONVENTION_FILE_NAMES as readonly string[]).includes(name);
@@ -267,16 +248,15 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
       continue;
     }
 
-    assertNoPageFileDirectoryCollision(pagesDir, relativePath);
-
     const pattern = filePathToPattern(relativePath);
-    const previousPath = seenPatterns.get(pattern);
+    const patternKey = routePatternKey(pattern);
+    const previousPath = seenPatterns.get(patternKey);
     if (previousPath !== undefined) {
       throw new Error(
-        `[furin] Duplicate route pattern "${pattern}" from "${previousPath}" and "${relativePath}".`
+        `[furin] Duplicate route pattern "${patternKey}" from "${previousPath}" and "${relativePath}".`
       );
     }
-    seenPatterns.set(pattern, relativePath);
+    seenPatterns.set(patternKey, relativePath);
 
     const [notFound, errorComponent, segmentBoundaries] = await Promise.all([
       resolveNearestConvention<NotFoundComponent>(

@@ -1,12 +1,12 @@
 import type { Context } from "elysia";
 import type { SearchRouteMetadata } from "../../shared/search-params.ts";
-import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
+import { autoInvalidateRegistry, getAutoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { registerCacheInvalidator } from "../cache/registry.ts";
 import { type Cache, createRouteCache, type RevalidateType } from "../cache/route-cache.ts";
 import { allStateBuckets, currentInstance, type FurinInstance } from "../instance.ts";
 import type { ResolvedRoute, RootLayout } from "../router/index.ts";
 import { resolvePath } from "./assemble.ts";
-import { type LoaderResult, runPublicLoaders, runRequestLoaderData } from "./loaders.ts";
+import { type LoaderResult, runPublicLoaders, withRequestLoaderData } from "./loaders.ts";
 import { renderSSR } from "./ssr.ts";
 
 interface CachedPprRoute {
@@ -42,6 +42,7 @@ function hasPprEntryForPath(cache: Cache<CachedPprRoute>, path: string): boolean
 }
 
 function createPprRouteState(instance: FurinInstance): PprRouteState {
+  const registry = getAutoInvalidateRegistry(instance);
   let cache: Cache<CachedPprRoute>;
   cache = createRouteCache<CachedPprRoute>({
     maxSize: MAX_PPR_ROUTE_CACHE_SIZE,
@@ -51,7 +52,7 @@ function createPprRouteState(instance: FurinInstance): PprRouteState {
       if (path === null || hasPprEntryForPath(cache, path)) {
         return;
       }
-      autoInvalidateRegistry.unregisterPath(path);
+      registry.unregisterPath(path);
     },
     pathFromKey: pathFromPprCacheKey,
   });
@@ -113,17 +114,7 @@ export async function renderPprRoute(
       });
   }
 
-  const requestData = runRequestLoaderData(route, ctx);
-  if (requestData === undefined) {
-    throw new Error("[furin] internal PPR invariant: requestLoader is missing");
-  }
-  const actualResult: Extract<LoaderResult, { type: "data" }> = {
-    ...cached.publicResult,
-    deferredPromises: {
-      ...(cached.publicResult.deferredPromises ?? {}),
-      requestData,
-    },
-  };
+  const actualResult = withRequestLoaderData(route, ctx, cached.publicResult);
   const response = await renderSSR(route, ctx, root, actualResult, searchRoutes);
   response.headers.set("Cache-Control", "private, no-store");
   return response;

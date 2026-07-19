@@ -5,6 +5,69 @@ const HASH_FRAGMENT_RE = /#.*$/;
 /** Strips one or more trailing slashes — used by `buildDataEndpoint` in static mode. */
 export const TRAILING_SLASHES_RE = /\/+$/;
 
+export type NavigationHrefPolicy = "blocked" | "external" | "internal";
+
+export function navigationHrefPolicy(
+  href: string,
+  currentOrigin: string | undefined
+): NavigationHrefPolicy {
+  for (let index = 0; index < href.length; index += 1) {
+    const code = href.charCodeAt(index);
+    if (code <= 31 || code === 127) {
+      return "blocked";
+    }
+  }
+  let url: URL;
+  try {
+    url = new URL(href, currentOrigin ?? "http://localhost");
+  } catch {
+    return "blocked";
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    return "blocked";
+  }
+  if (currentOrigin === undefined) {
+    return href.startsWith("http://") || href.startsWith("https://") || href.startsWith("//")
+      ? "external"
+      : "internal";
+  }
+  return url.origin === currentOrigin ? "internal" : "external";
+}
+
+export function decodeHashFragment(fragment: string): string {
+  try {
+    return decodeURIComponent(fragment);
+  } catch {
+    return fragment;
+  }
+}
+
+export function isSameOriginFetchResult(
+  input: RequestInfo | URL,
+  responseUrl: string,
+  currentOrigin: string
+): boolean {
+  if (responseUrl.length === 0) {
+    return false;
+  }
+  try {
+    let inputUrl: string;
+    if (typeof input === "string") {
+      inputUrl = input;
+    } else if (input instanceof URL) {
+      inputUrl = input.href;
+    } else {
+      inputUrl = input.url;
+    }
+    return (
+      new URL(inputUrl, currentOrigin).origin === currentOrigin &&
+      new URL(responseUrl, currentOrigin).origin === currentOrigin
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Builds a full href string from a pathname, optional search params, and optional hash.
  * Null/undefined search values are omitted.

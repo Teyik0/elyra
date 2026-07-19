@@ -1,8 +1,16 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { Elysia } from "elysia";
 import { Suspense, use } from "react";
-import { createRoute, type RuntimePage, type RuntimeRoute } from "../../../src/client";
+import { createRoute } from "../../../src/client";
+import type { RuntimePage, RuntimeRoute } from "../../../src/client/internal/runtime-types.ts";
 import { revalidateTag } from "../../../src/server/auto-invalidate";
+import { getAutoInvalidateRegistry } from "../../../src/server/auto-invalidate/registry.ts";
+import {
+  __clearInstanceRegistry,
+  createInstance,
+  registerInstance,
+  withInstance,
+} from "../../../src/server/instance.ts";
 import { clearPprRouteCache, invalidatePprRoute } from "../../../src/server/render/ppr-route";
 import { createRoutePlugin } from "../../../src/server/router/plugin.ts";
 import type { ResolvedRoute, RootLayout } from "../../../src/server/router/types.ts";
@@ -26,6 +34,53 @@ afterAll(async () => {
 });
 
 describe("partial prerendering", () => {
+  test("cross-instance invalidation removes tags from the cache-owning app", async () => {
+    const route = createRoute({
+      loader: () => ({ catalog: "Shoes" }),
+      mode: "isr",
+      requestLoader: () => ({ user: "alice" }),
+      tags: ["catalog"],
+    });
+    const page = route.page({
+      component: ({ catalog }) => <main>{catalog}</main>,
+    });
+    const resolved = {
+      mode: "isr",
+      page: page as unknown as RuntimePage,
+      path: "/account.tsx",
+      pattern: "/account",
+      routeChain: [route as unknown as RuntimeRoute],
+      segmentBoundaries: [],
+      tags: ["catalog"],
+    } satisfies ResolvedRoute;
+    const root = {
+      path: "/root.tsx",
+      route: {
+        __type: "FURIN_ROUTE",
+        layout: ({ children }) => (
+          <html lang="en">
+            <body>{children}</body>
+          </html>
+        ),
+      },
+    } satisfies RootLayout;
+    const owner = registerInstance(createInstance("/owner", "/owner/pages"));
+    registerInstance(createInstance("/other", "/other/pages"));
+    const app = new Elysia().use(createRoutePlugin(resolved, root, "build-1"));
+
+    try {
+      await withInstance(owner, () => app.handle(new Request("http://localhost/account")));
+      expect(getAutoInvalidateRegistry(owner).pathsForTags(["catalog"])).toEqual(["/account"]);
+
+      expect(invalidatePprRoute("/account", "page")).toBe(true);
+
+      expect(getAutoInvalidateRegistry(owner).pathsForTags(["catalog"])).toEqual([]);
+    } finally {
+      clearPprRouteCache(owner);
+      __clearInstanceRegistry();
+    }
+  });
+
   test("an ISR route caches public data while requestLoader reruns per request", async () => {
     let publicCalls = 0;
     let privateCalls = 0;

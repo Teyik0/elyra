@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import "../../setup/evlog-mock";
 
 import { Elysia, t } from "elysia";
-import type { RuntimeRoute } from "../../../src/client.ts";
+import type { RuntimeRoute } from "../../../src/client/internal/runtime-types.ts";
 import { collectRouteTags } from "../../../src/server/router/discovery.ts";
 import { mergeRouteSchemas } from "../../../src/server/router/schema-merge.ts";
 import { parseRouteQuery } from "../../../src/server/router/schemas.ts";

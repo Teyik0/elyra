@@ -5,7 +5,7 @@ import {
   type SearchParamsInput,
 } from "../shared/search-params.ts";
 import { CLIENT_FALLBACK_ROUTER, RouterContext, useRouter } from "./router/context.ts";
-import { buildHref, normalizeHref } from "./router/link-utils.ts";
+import { buildHref, navigationHrefPolicy, normalizeHref } from "./router/link-utils.ts";
 import type { LinkProps, RouterContextValue, RouteTo } from "./router/types.ts";
 
 // biome-ignore lint/performance/noBarrelFile: re-exporting router symbols preserves backward compatibility for @teyik0/furin/link consumers
@@ -53,7 +53,8 @@ function computeLinkView<To extends RouteTo>(
     logicalHref.startsWith("http://") ||
     logicalHref.startsWith("https://") ||
     logicalHref.startsWith("//");
-  const href = isAbsolute ? logicalHref : router.basePath + logicalHref;
+  const candidateHref = isAbsolute ? logicalHref : router.basePath + logicalHref;
+  const href = navigationHrefPolicy(candidateHref, undefined) === "blocked" ? "#" : candidateHref;
   const isActive = !isAbsolute && router.currentHref === normalizeHref(logicalHrefWithoutHash);
   const resolvedChildren = typeof children === "function" ? children({ isActive }) : children;
   const extraProps: React.AnchorHTMLAttributes<HTMLAnchorElement> = {
@@ -64,11 +65,7 @@ function computeLinkView<To extends RouteTo>(
 }
 
 function isSameOriginUrl(url: string): boolean {
-  try {
-    return new URL(url, window.location.origin).origin === window.location.origin;
-  } catch {
-    return false;
-  }
+  return navigationHrefPolicy(url, window.location.origin) === "internal";
 }
 
 /**
@@ -173,6 +170,10 @@ function LinkInteractive<To extends RouteTo>({
     }
     // Let browser handle non-self targets (e.g. target="_blank")
     if (anchorProps.target && anchorProps.target !== "_self") {
+      return;
+    }
+    if (navigationHrefPolicy(logicalHref, window.location.origin) === "blocked") {
+      e.preventDefault();
       return;
     }
     // Let browser handle external links

@@ -182,16 +182,54 @@ interface FurinBrowserEvent {
   [key: string]: unknown;
 }
 
-function isOversizedBrowserIngest(body: unknown, request: Request): boolean {
+type BrowserIngestRead =
+  | { body: unknown; kind: "ok" }
+  | { kind: "invalid" }
+  | { kind: "oversized" };
+
+async function readBrowserIngest(request: Request): Promise<BrowserIngestRead> {
   const contentLength = request.headers.get("content-length");
   if (contentLength) {
     const declaredBytes = Number(contentLength);
     if (Number.isFinite(declaredBytes) && declaredBytes > MAX_BROWSER_INGEST_BYTES) {
-      return true;
+      await request.body?.cancel();
+      return { kind: "oversized" };
     }
   }
-
-  return new TextEncoder().encode(JSON.stringify(body)).byteLength > MAX_BROWSER_INGEST_BYTES;
+  if (request.body === null) {
+    return { kind: "invalid" };
+  }
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      // biome-ignore lint/performance/noAwaitInLoops: request body chunks must be read sequentially.
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      total += value.byteLength;
+      if (total > MAX_BROWSER_INGEST_BYTES) {
+        await reader.cancel();
+        return { kind: "oversized" };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return { body: JSON.parse(new TextDecoder().decode(bytes)), kind: "ok" };
+  } catch {
+    return { kind: "invalid" };
+  }
 }
 
 /** Evlog wide-event plugin + browser log ingest endpoint for one instance. */
@@ -230,12 +268,17 @@ function createLoggerPlugin(
 
   return app.post(
     "/_furin/ingest",
-    ({ body, log, request, status }) => {
-      if (!Array.isArray(body)) {
+    async ({ log, request, status }) => {
+      const parsed = await readBrowserIngest(request);
+      if (parsed.kind === "oversized") {
+        return status(413);
+      }
+      if (parsed.kind === "invalid") {
         return status("Bad Request");
       }
-      if (isOversizedBrowserIngest(body, request)) {
-        return status(413);
+      const { body } = parsed;
+      if (!Array.isArray(body)) {
+        return status("Bad Request");
       }
       const batch = (body as DrainContext[]).slice(0, MAX_BROWSER_INGEST_EVENTS);
       for (const entry of batch) {
@@ -259,7 +302,7 @@ function createLoggerPlugin(
       }
       return status("No Content");
     },
-    { parse: "json" }
+    { parse: "none" }
   ) as unknown as Elysia;
 }
 
@@ -328,9 +371,9 @@ export interface FurinOptions {
    */
   prefix?: string;
   /**
-   * Enables Furin's built-in sync event stream. The opinionated default mounts
-   * Server-Sent Events at `/_furin/sync`; pass an object only for constrained
-   * reverse-proxy deployments that need a custom internal path.
+   * Configures Furin's sync event stream with the required adapter. The
+   * optional `streamPath` defaults to `/_furin/sync`. Omit this option or pass
+   * `false` to disable sync.
    */
   sync?: FurinSyncOption;
 }
@@ -361,7 +404,6 @@ export async function furin({
   const prefix = normalizePrefix(rawPrefix);
   const syncStreamPath = resolveSyncStreamPath(sync);
   initLogger({ env: { service: "furin" } });
-  const loggerPlugin = createLoggerPlugin(prefix, syncStreamPath, logger, clientLogging === true);
 
   const cwd = process.cwd();
   // The pagesDir param drives which compile context this instance loads. In a
@@ -369,6 +411,12 @@ export async function furin({
   // lookup then falls back to the (stable) prefix, then to the sole context.
   const paramPagesDir = resolve(cwd, pagesDir ?? "src/pages");
   const ctx = getCompileContext(paramPagesDir, prefix);
+  const loggerPlugin = createLoggerPlugin(
+    prefix,
+    syncStreamPath,
+    logger,
+    clientLogging === true || ctx?.clientLogging === true
+  );
   const resolvedPagesDir = ctx?.rootPath ? dirname(ctx.rootPath) : paramPagesDir;
 
   // Unique name per pagesDir to avoid Elysia's name-based plugin dedup.
@@ -393,8 +441,6 @@ export async function furin({
     // Lazy import — build pipeline has native deps not available in compiled binaries
     const { registerDevPagePlugin } = await import("./server/dev-page-plugin.ts");
     registerDevPagePlugin();
-
-    const { createDevInspectorPlugin } = await import("./server/dev-inspector.ts");
 
     const { scanPages } = await import("./server/router/index.ts");
     const { root, routes } = await scanPages(resolvedPagesDir);
@@ -452,12 +498,7 @@ export async function furin({
           ? file(join(publicDir, "favicon.ico"))
           : () => new Response(null, { status: 404 })
       )
-      .use(createDevInspectorPlugin())
-      .use(
-        syncStreamPath
-          ? createSyncStreamPlugin(syncStreamPath, `${prefix}${syncStreamPath}`)
-          : new Elysia()
-      )
+      .use(sync ? createSyncStreamPlugin(sync) : new Elysia())
       .use(createDataEndpoint(routes))
       .use((app) =>
         routes.reduce(
@@ -564,11 +605,7 @@ export async function furin({
         return app;
       })()
     )
-    .use(
-      syncStreamPath
-        ? createSyncStreamPlugin(syncStreamPath, `${prefix}${syncStreamPath}`)
-        : new Elysia()
-    )
+    .use(sync ? createSyncStreamPlugin(sync) : new Elysia())
     .use(createDataEndpoint(routes))
     .use((app) =>
       routes.reduce(
@@ -619,14 +656,23 @@ function createNotFoundHandling(
 export { FurinErrorBoundary, FurinNotFoundBoundary } from "./client/boundaries.tsx";
 // ── Public API re-export ──────────────────────────────────────────────────────
 // biome-ignore-start lint/performance/noBarrelFile: intentional — furin.ts is the public package entry
-export type { DeferredData, RuntimePage, RuntimeRoute } from "./client.ts";
+export type { DeferredData } from "./client.ts";
 export { defer, isDeferred } from "./client.ts";
 export type { InvalidationInput, InvalidationRule } from "./server/auto-invalidate/index.ts";
 export { furinInvalidate, revalidateTag } from "./server/auto-invalidate/index.ts";
 export { revalidatePath, setCachePurger } from "./server/cache/invalidation.ts";
 export { buildElement, buildErrorElement, renderRootNotFound } from "./server/render/index.ts";
 export type { ResolvedRoute, SegmentBoundary } from "./server/router/index.ts";
-export { furinSync, type SyncInput, type SyncRouteOption } from "./server/sync/index.ts";
+export {
+  type FurinSyncOption,
+  type FurinSyncOptions,
+  furinSync,
+  type SyncAdapter,
+  type SyncInput,
+  type SyncNotifier,
+  type SyncRouteOption,
+  type SyncRuntimeOptions,
+} from "./server/sync/index.ts";
 export { Await, useAsyncError, useAsyncValue } from "./shared/await.tsx";
 export type { ErrorComponent, ErrorProps } from "./shared/error.ts";
 export type {

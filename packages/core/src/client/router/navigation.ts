@@ -4,7 +4,7 @@ import {
   type SearchParamsInput,
 } from "../../shared/search-params.ts";
 import { useRouter } from "./context.ts";
-import { buildHref } from "./link-utils.ts";
+import { buildHref, navigationHrefPolicy } from "./link-utils.ts";
 import type { RouteSearch, RouteTo } from "./types.ts";
 
 export interface NavigateInput<To extends RouteTo> {
@@ -17,19 +17,6 @@ export interface NavigateInput<To extends RouteTo> {
 
 export type Navigate = <To extends RouteTo>(next: NavigateInput<To>) => Promise<void>;
 type NavigateOptions = Parameters<ReturnType<typeof useRouter>["navigate"]>[1];
-
-function isExternalAbsoluteHref(href: string): boolean {
-  if (href.startsWith("//")) {
-    return true;
-  }
-  if (!(href.startsWith("http://") || href.startsWith("https://"))) {
-    return false;
-  }
-  if (typeof window === "undefined") {
-    return true;
-  }
-  return new URL(href).origin !== window.location.origin;
-}
 
 export function useNavigate(): Navigate {
   const router = useRouter();
@@ -46,7 +33,14 @@ export function useNavigate(): Navigate {
         next.hash,
         searchDefaults
       );
-      if (isExternalAbsoluteHref(href) && typeof window !== "undefined") {
+      const policy = navigationHrefPolicy(
+        href,
+        typeof window === "undefined" ? undefined : window.location.origin
+      );
+      if (policy === "blocked") {
+        return Promise.reject(new Error("[furin] Unsafe navigation URL."));
+      }
+      if (policy === "external" && typeof window !== "undefined") {
         window.location.assign(href);
         return Promise.resolve();
       }

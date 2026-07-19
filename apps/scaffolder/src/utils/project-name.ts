@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { lstatSync, readdirSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { ScaffolderError } from "../errors.ts";
 
@@ -37,6 +37,20 @@ export function validateProjectName(value: string): string {
 export function ensureTargetDirIsSafe(targetDir: string): void {
   const root = resolve(process.cwd());
   const resolved = resolve(targetDir);
+  let stats: ReturnType<typeof lstatSync> | undefined;
+  try {
+    stats = lstatSync(resolved);
+  } catch (error) {
+    if ((error as { code?: string }).code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  if (stats?.isSymbolicLink()) {
+    throw new ScaffolderError(
+      `Target path "${basename(resolved)}" already exists as a symbolic link`
+    );
+  }
 
   if (resolved === root) {
     const entries = getVisibleEntries(resolved);
@@ -46,8 +60,8 @@ export function ensureTargetDirIsSafe(targetDir: string): void {
     return;
   }
 
-  if (existsSync(resolved)) {
-    if (!statSync(resolved).isDirectory()) {
+  if (stats) {
+    if (!stats.isDirectory()) {
       throw new ScaffolderError(
         `Target path "${basename(resolved)}" already exists and is not a directory`
       );

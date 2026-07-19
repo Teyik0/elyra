@@ -49,17 +49,20 @@ describe("runLoaders requestLoader", () => {
     let calls = 0;
     const route = {
       mode: "ssr",
-      page: {
-        requestLoader: (ctx: { cookies: Map<string, string | undefined> }) => {
-          calls += 1;
-          expect("set" in ctx).toBe(false);
-          expect("redirect" in ctx).toBe(false);
-          return { user: ctx.cookies.get("session") };
+      page: {},
+      routeChain: [
+        {
+          __type: "FURIN_ROUTE",
+          requestLoader: (ctx: { cookies: Map<string, string | undefined> }) => {
+            calls += 1;
+            expect("set" in ctx).toBe(false);
+            expect("redirect" in ctx).toBe(false);
+            return { user: ctx.cookies.get("session") };
+          },
         },
-      },
+      ],
       path: "/with-loader.tsx",
       pattern: "/with-loader",
-      routeChain: [],
       segmentBoundaries: [],
     } as unknown as ResolvedRoute;
     const context = createMockLoaderContext({

@@ -38,7 +38,8 @@
   "module": "./dist/furin.js",
   "types": "./dist/furin.d.ts",
   "bin": {
-    "furin": "./src/cli/index.ts"
+    "furin": "./src/cli/index.ts",
+    "furin-sync-postgres-migrate": "./dist/server/sync/postgres/migrate.js"
   },
   "exports": {
     ".": {
@@ -72,6 +73,28 @@
       "bun": "./src/server/router/index.ts",
       "import": "./dist/server/router/index.js"
     },
+    "./sync": {
+      "types": "./dist/server/sync/index.d.ts",
+      "bun": "./src/server/sync/index.ts",
+      "import": "./dist/server/sync/index.js"
+    },
+    "./sync/postgres": {
+      "types": "./dist/server/sync/postgres/index.d.ts",
+      "bun": "./src/server/sync/postgres/index.ts",
+      "import": "./dist/server/sync/postgres/index.js"
+    },
+    "./sync/postgres/migration.sql": "./src/server/sync/postgres/migration.sql",
+    "./sync/redis": {
+      "types": "./dist/server/sync/redis/index.d.ts",
+      "bun": "./src/server/sync/redis/index.ts",
+      "import": "./dist/server/sync/redis/index.js"
+    },
+    "./sync/sqlite": {
+      "types": "./dist/server/sync/sqlite/index.d.ts",
+      "bun": "./src/server/sync/sqlite/index.ts",
+      "import": "./dist/server/sync/sqlite/index.js"
+    },
+    "./sync/sqlite/migration.sql": "./src/server/sync/sqlite/migration.sql",
     "./strip-plugin": {
       "types": "./dist/plugin/index.d.ts",
       "bun": "./src/plugin/index.ts",
@@ -117,11 +140,11 @@
   },
   "dependencies": {
     "@elysiajs/static": "^1.4.10",
-    "@yuku-toolchain/types": "0.6.1",
-    "magic-string": "^0.30.21",
+    "@yuku-toolchain/types": "0.6.12",
+    "magic-string": "^1.0.0",
     "react-server-dom-webpack": "19.2.7",
     "seroval": "^1.5.5",
-    "yuku-parser": "0.6.1"
+    "yuku-parser": "0.6.12"
   },
   "devDependencies": {
     "@types/react": "catalog:",

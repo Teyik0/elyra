@@ -10,7 +10,7 @@ import {
 
 const FRAME_VERSION = 3;
 const MAX_FRAME_BYTES = 1024 * 1024;
-const MAX_STREAM_BYTES = 8 * 1024 * 1024;
+export const MAX_ROUTE_FRAME_STREAM_BYTES = 8 * 1024 * 1024;
 const RSC_DESCRIPTOR = "__furinRsc";
 
 interface RouteFrameEnvelope {
@@ -206,8 +206,10 @@ export function serializeRouteFrames(
     lines.push(encodeFrame({ id: source.id, type: "rsc-end" }));
   }
   const payload = lines.join("");
-  if (new TextEncoder().encode(payload).byteLength > MAX_STREAM_BYTES) {
-    throw new Error(`[furin] route frame stream exceeds the ${MAX_STREAM_BYTES}-byte limit`);
+  if (new TextEncoder().encode(payload).byteLength > MAX_ROUTE_FRAME_STREAM_BYTES) {
+    throw new Error(
+      `[furin] route frame stream exceeds the ${MAX_ROUTE_FRAME_STREAM_BYTES}-byte limit`
+    );
   }
   return payload;
 }
@@ -317,8 +319,10 @@ export async function parseRouteFrameLines(
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one bounded state machine validates every versioned frame variant
   const processLine = (line: string): void => {
     byteLength += new TextEncoder().encode(line).byteLength + 1;
-    if (byteLength > MAX_STREAM_BYTES) {
-      throw new Error(`[furin] route frame stream exceeds the ${MAX_STREAM_BYTES}-byte limit`);
+    if (byteLength > MAX_ROUTE_FRAME_STREAM_BYTES) {
+      throw new Error(
+        `[furin] route frame stream exceeds the ${MAX_ROUTE_FRAME_STREAM_BYTES}-byte limit`
+      );
     }
     const envelope = JSON.parse(line) as RouteFrameEnvelope;
     if (envelope.__furinRouteFrame !== FRAME_VERSION) {

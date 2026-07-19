@@ -139,6 +139,27 @@ describe("useSync", () => {
     }
   });
 
+  test("applies the optimistic update synchronously before starting the mutation", async () => {
+    const events: string[] = [];
+    const mutation = (): Promise<MutationResult> => {
+      events.push("network");
+      return Promise.resolve({ data: { ok: true }, error: null });
+    };
+    const { cleanup, run } = renderHook<CardPatch, MutationResult>(mutation, {
+      optimistic: () => {
+        events.push("optimistic");
+      },
+    });
+
+    try {
+      const pending = run({ title: "Renamed" });
+      expect(events).toEqual(["optimistic", "network"]);
+      await pending;
+    } finally {
+      cleanup();
+    }
+  });
+
   test("rolls back optimistic updates when an Eden-style response resolves with error", async () => {
     const events: string[] = [];
     const mutation = async (): Promise<MutationResult> => ({

@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { spinner } from "@clack/prompts";
 import { buildEjsVars, renderEjsFile } from "../../engine/renderer.ts";
+import { ensureTargetDirIsSafe } from "../../utils/project-name.ts";
 import { assertPathInsideDirectory, type PipelineContext, TEMPLATES_DIR } from "../context.ts";
 
 function resolveDestinationPath(ctx: PipelineContext, relativePath: string): string {
@@ -84,6 +85,7 @@ export async function stage5Generation(ctx: PipelineContext): Promise<void> {
   }
 
   assertUniqueDestinations(ctx);
+  ensureTargetDirIsSafe(ctx.targetDir);
 
   const s = spinner();
   s.start("Creating project files…");

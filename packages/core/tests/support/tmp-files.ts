@@ -25,7 +25,7 @@ export function withTmpFiles(
   fn: (paths: TmpFilePaths) => Promise<void>
 ): Promise<void> {
   mkdirSync(tmpDir, { recursive: true });
-  const prefix = `page-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const prefix = `tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const paths: TmpFilePaths = Object.fromEntries(
     Object.keys(files).map((name) => {
       const path = join(tmpDir, `${prefix}-${name}`);

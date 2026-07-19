@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import "../../setup/evlog-mock";
 
-import { type Context, Elysia } from "elysia";
+import { Elysia } from "elysia";
 import {
   autoInvalidateRegistry,
   furinInvalidate,
@@ -24,8 +24,8 @@ import {
   ssgCache,
 } from "../../../src/server/cache/index.ts";
 import { createInstance, registerInstance, withInstance } from "../../../src/server/instance.ts";
-import { runLoaders } from "../../../src/server/render/loaders.ts";
 import type { ResolvedRoute } from "../../../src/server/router/index.ts";
+import { createDataEndpoint } from "../../../src/server/router/plugin.ts";
 import { flushMicrotasks } from "../../support/microtasks";
 
 afterEach(async () => {
@@ -223,45 +223,30 @@ describe("furinInvalidate macro", () => {
     expect(response.headers.get("x-furin-revalidate")).toBeNull();
   });
 
-  test("data endpoint re-registers loader tags after a SPA-only fetch (regression for delete-then-stale-UI)", async () => {
-    // Repro of the task-manager bug: after a mutation invalidates a page, the
-    // dev cache's onDelete hook unregisters the path from the auto-invalidate
-    // registry. A SPA refresh runs the loaders and must re-register the tag
-    // mapping so the next mutation can still find the URL by tag.
+  test("data endpoint does not retain uncached dynamic paths", async () => {
     const route = {
-      mode: "ssr",
+      mode: "isr",
       page: {
         loader: () => ({ pageData: "from-page" }),
       },
-      path: "/with-loader.tsx",
-      pattern: "/with-loader",
+      path: "/items/[id].tsx",
+      pattern: "/items/:id",
       routeChain: [],
       segmentBoundaries: [],
       tags: ["boards"],
     } as unknown as ResolvedRoute;
 
-    const ctx = {
-      cookie: {},
-      headers: new Headers(),
-      params: {},
-      path: "/with-loader",
-      query: {},
-      redirect: (url: string, status?: number) =>
-        new Response(null, { headers: { Location: url }, status: status ?? 302 }),
-      request: new Request("http://localhost/with-loader"),
-      set: { headers: {} },
-    } as unknown as Context;
-
     autoInvalidateRegistry.reset();
-    expect(autoInvalidateRegistry.pathsForTags(["boards"])).toEqual([]);
-
-    const result = await runLoaders(route, ctx);
-    expect(result.type).toBe("data");
-    if (result.type === "data") {
-      autoInvalidateRegistry.registerLoaderTags("/with-loader", route.tags);
+    const app = new Elysia().use(createDataEndpoint([route]));
+    for (let index = 0; index < 200; index += 1) {
+      // biome-ignore lint/performance/noAwaitInLoops: requests verify cardinality across paths.
+      const response = await app.handle(
+        new Request(`http://localhost/_furin/data?path=/items/${index}`)
+      );
+      expect(response.status).toBe(200);
     }
 
-    expect(autoInvalidateRegistry.pathsForTags(["boards"])).toEqual(["/with-loader"]);
+    expect(autoInvalidateRegistry.pathsForTags(["boards"])).toEqual([]);
   });
 
   test("two plugins both calling furinInvalidate() + DELETE → header still set (task-manager replica)", async () => {

@@ -55,7 +55,7 @@ To link **across** apps, use a plain absolute anchor (`<a href="/admin">`): the 
 | Caches (SSG/ISR/dev loaders) | Per instance — same logical path in two apps never collides |
 | `revalidatePath(path)` | Invalidates that logical path in **every** mounted app (shared-data semantics) |
 | `revalidateTag(tag)` | Cross-app by design — a mutation on a shared API invalidates pages in any app using the tag |
-| Sync stream (`sync: true`) | Per instance: own SSE channel, own cursor sequence, mounted at `{prefix}/_furin/sync` |
+| Sync stream | Mounted at `{prefix}/_furin/sync`; adapter identity and namespace control journal isolation |
 | `x-furin-build-id` | Each app reports its own build ID |
 | 404 | Root app keeps the historical global handler (a parent `.onError` registered before `.use(furin)` still wins); prefixed apps render their own not-found via an instance catch-all |
 

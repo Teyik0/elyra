@@ -185,7 +185,6 @@ export function DocsSearchDialog() {
     isSuccess: isIndexReady,
     isError: isIndexError,
     isLoading: isIndexLoading,
-    refetch: refetchIndex,
   } = useQuery({
     enabled: open,
     queryFn: () => loadSearchIndex(router.basePath),
@@ -246,12 +245,6 @@ export function DocsSearchDialog() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [open]);
-
-  useEffect(() => {
-    if (open && isIndexError) {
-      refetchIndex();
-    }
-  }, [open, isIndexError, refetchIndex]);
 
   const selectResult = (href: string): void => {
     closeButtonRef.current?.click();
@@ -315,7 +308,7 @@ export function DocsSearchDialog() {
         }}
       >
         <DialogClose asChild>
-          <button className="sr-only" ref={closeButtonRef} type="button">
+          <button className="sr-only" ref={closeButtonRef} tabIndex={-1} type="button">
             Close search
           </button>
         </DialogClose>

@@ -1,5 +1,6 @@
 import { toCrossJSON } from "seroval";
 import {
+  MAX_ROUTE_FRAME_STREAM_BYTES,
   serializeRouteFrame,
   serializeRouteFrames,
   serializeRouteFrameValue,
@@ -36,14 +37,23 @@ export function createDeferredRouteFrameStream(
   const encoder = new TextEncoder();
   return new ReadableStream<Uint8Array>({
     async start(controller) {
-      controller.enqueue(
-        encoder.encode(serializeRouteFrames(syncData, Object.keys(deferredPromises)))
+      const initialFrame = encoder.encode(
+        serializeRouteFrames(syncData, Object.keys(deferredPromises))
       );
+      let encodedBytes = initialFrame.byteLength;
+      controller.enqueue(initialFrame);
       await Promise.all(
         Object.entries(deferredPromises).map(async ([key, promise], index) => {
-          controller.enqueue(
-            encoder.encode(await serializeDeferredRouteFrame(key, promise, `defer-${index}`))
+          const frame = encoder.encode(
+            await serializeDeferredRouteFrame(key, promise, `defer-${index}`)
           );
+          encodedBytes += frame.byteLength;
+          if (encodedBytes > MAX_ROUTE_FRAME_STREAM_BYTES) {
+            throw new Error(
+              `[furin] route frame stream exceeds the ${MAX_ROUTE_FRAME_STREAM_BYTES}-byte limit`
+            );
+          }
+          controller.enqueue(frame);
         })
       );
       controller.close();

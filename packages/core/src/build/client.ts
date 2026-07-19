@@ -68,26 +68,22 @@ export async function buildClient(
         }
 
         const code = await Bun.file(path).text();
-        try {
-          const result = transformForClient(code, path);
-          // transformForClient now emits TS/TSX directly (no pre-transpile),
-          // so JSX → React handling is delegated to Bun.build's loader, which
-          // applies the project tsconfig's automatic runtime by default.
-          const transformed = result.code
-            .replaceAll(`"@teyik0/furin/client"`, JSON.stringify(CLIENT_MODULE_PATH))
-            .replaceAll(`'furin/client'`, JSON.stringify(CLIENT_MODULE_PATH))
-            .replaceAll(`"@teyik0/furin/link"`, JSON.stringify(LINK_MODULE_PATH))
-            .replaceAll(`'furin/link'`, JSON.stringify(LINK_MODULE_PATH))
-            .replaceAll(`"@teyik0/furin/search"`, JSON.stringify(SEARCH_MODULE_PATH))
-            .replaceAll(`'furin/search'`, JSON.stringify(SEARCH_MODULE_PATH));
+        const result = transformForClient(code, path);
+        // transformForClient now emits TS/TSX directly (no pre-transpile),
+        // so JSX → React handling is delegated to Bun.build's loader, which
+        // applies the project tsconfig's automatic runtime by default.
+        const transformed = result.code
+          .replaceAll(`"@teyik0/furin/client"`, JSON.stringify(CLIENT_MODULE_PATH))
+          .replaceAll(`'furin/client'`, JSON.stringify(CLIENT_MODULE_PATH))
+          .replaceAll(`"@teyik0/furin/link"`, JSON.stringify(LINK_MODULE_PATH))
+          .replaceAll(`'furin/link'`, JSON.stringify(LINK_MODULE_PATH))
+          .replaceAll(`"@teyik0/furin/search"`, JSON.stringify(SEARCH_MODULE_PATH))
+          .replaceAll(`'furin/search'`, JSON.stringify(SEARCH_MODULE_PATH));
 
-          return {
-            contents: transformed,
-            loader: path.endsWith(".tsx") ? "tsx" : "ts",
-          };
-        } catch (error) {
-          console.error(`[furin] Transform error for ${path}:`, error);
-        }
+        return {
+          contents: transformed,
+          loader: path.endsWith(".tsx") ? "tsx" : "ts",
+        };
       });
     },
   };

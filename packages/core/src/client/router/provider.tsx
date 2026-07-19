@@ -15,6 +15,8 @@ import {
 import {
   applyRevalidateEntries,
   applyRevalidateHeader,
+  decodeHashFragment,
+  isSameOriginFetchResult,
   normalizeHref,
   shouldAutoRefreshPath,
   shouldInterceptClick,
@@ -647,7 +649,7 @@ export function RouterProvider({
 
     const destUrl = new URL(instruction.href, window.location.origin);
     if (destUrl.hash) {
-      const id = decodeURIComponent(destUrl.hash.slice(1));
+      const id = decodeHashFragment(destUrl.hash.slice(1));
       const element = document.getElementById(id);
       if (element) {
         element.scrollIntoView({ behavior: "instant", block: "start" });
@@ -693,12 +695,19 @@ export function RouterProvider({
       if (logicalHref === null) {
         return;
       }
+      // Don't capture a link that matches no local route: it may belong to a
+      // sibling furin app mounted under a different basePath. Let the browser
+      // navigate; the server routes it to the correct app.
+      const logicalPathname = new URL(logicalHref, window.location.origin).pathname;
+      if (!routes.some((r) => r.regex.test(logicalPathname))) {
+        return;
+      }
       e.preventDefault();
       navigate(logicalHref, { resetScroll: !logicalHref.includes("#") });
     };
     document.addEventListener("click", handler);
     return () => document.removeEventListener("click", handler);
-  }, [navigate, basePath]);
+  }, [navigate, basePath, routes]);
 
   // Intercept all window.fetch calls to auto-process X-Furin-Revalidate headers.
   useEffect(() => {
@@ -708,6 +717,9 @@ export function RouterProvider({
     const originalFetch = window.fetch;
     const wrapped = async (...args: Parameters<typeof fetch>): Promise<Response> => {
       const response = await originalFetch.apply(window, args);
+      if (!isSameOriginFetchResult(args[0], response.url, window.location.origin)) {
+        return response;
+      }
       const invalidated: Array<{ path: string; type: "page" | "layout" }> = [];
       applyRevalidateHeader(response.headers, (path, type) => {
         const resolvedType = type ?? "page";
@@ -788,6 +800,7 @@ export function RouterProvider({
         }
       });
     };
+    const onOpen = () => recover();
     const onSync = (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data) as { cursor?: unknown };
@@ -805,6 +818,7 @@ export function RouterProvider({
         return;
       }
       source = new EventSource(streamUrl);
+      source.addEventListener("open", onOpen);
       source.addEventListener("furin.sync", onSync);
     };
 
@@ -815,8 +829,6 @@ export function RouterProvider({
           return;
         }
         connect();
-        // Close the initialization/SSE race using the durable change log.
-        recover();
       })
       .catch((error: unknown) => {
         if (disposed) {
@@ -828,6 +840,7 @@ export function RouterProvider({
       });
     return () => {
       disposed = true;
+      source?.removeEventListener("open", onOpen);
       source?.removeEventListener("furin.sync", onSync);
       source?.close();
     };

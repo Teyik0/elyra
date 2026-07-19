@@ -1,8 +1,8 @@
 import type React from "react";
-import type { RuntimeRoute } from "../../client.ts";
 import type { ErrorComponent } from "../../shared/error.ts";
 import type { NotFoundComponent } from "../../shared/not-found.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
+import type { RuntimeRoute } from "../internal/runtime-types.ts";
 
 /**
  * Augment this interface via declaration merging in furin-env.d.ts
@@ -206,7 +206,7 @@ export interface RouterProviderProps {
   root: RuntimeRoute | null;
   routes: ClientRoute[];
   /**
-   * Optional internal SSE endpoint emitted by `furin({ sync: true })`.
+   * Optional internal SSE endpoint emitted by `furin({ sync })`.
    * When present, RouterProvider listens for cross-client invalidations.
    */
   syncStream?: string | undefined;

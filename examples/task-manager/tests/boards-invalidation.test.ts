@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 
 import { __resetCacheState } from "../../../packages/core/src/server/cache";
-import { __resetSyncState } from "../../../packages/core/src/server/sync";
+import { __resetSyncState } from "../../../packages/core/src/server/sync/stream";
 import { boardPlugin } from "../src/api/modules/boards";
 import { db } from "../src/db";
 import { boards } from "../src/db/schema";

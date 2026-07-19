@@ -6,7 +6,8 @@
   "scripts": {
     "fix": "ultracite fix",
     "dev": "bun --hot src/server.ts",
-    "test": "bun test --parallel --isolate --bail",
+    "test": "bun test --parallel --isolate --bail && bun run test:e2e",
+    "test:e2e": "bun test --bail ./e2e/task-manager.e2e.ts",
     "test:dev": "bun test --changed --parallel --isolate --bail",
     "tscheck": "tsc --noEmit",
     "build": "furin build --target bun --compile embed",
@@ -34,6 +35,6 @@
     "drizzle-kit": "^0.31.0",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "tailwindcss": "^4.3.1"
+    "tailwindcss": "^4.3.3"
   }
 }

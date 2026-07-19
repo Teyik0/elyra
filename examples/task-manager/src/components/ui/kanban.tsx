@@ -1,7 +1,7 @@
 // biome-ignore-all lint/performance/noJsxPropsBind: drag/drop and edit handlers are intentionally scoped to card/column state
 import { useSync } from "@teyik0/furin/client";
 import { Link } from "@teyik0/furin/link";
-import { domAnimation, LazyMotion, m } from "framer-motion";
+import { domAnimation, LazyMotion, MotionConfig, m } from "framer-motion";
 import {
   type Dispatch,
   type DragEvent,
@@ -29,9 +29,10 @@ interface KanbanProps {
   onMutation?: () => void;
 }
 
-interface CardsOverride {
-  cards: KanbanCard[];
+interface CardsState {
+  cards: KanbanCard[] | null;
   source: KanbanCard[];
+  sourceEpoch: number;
 }
 
 function moveCard(
@@ -110,90 +111,107 @@ function restoreDeletedCard(
 }
 
 export const Kanban = ({ initialCards, boardId, onMutation }: KanbanProps) => {
-  const [cardsOverride, setCardsOverride] = useState<CardsOverride | null>(null);
+  const [cardsState, setCardsState] = useState<CardsState>({
+    cards: null,
+    source: initialCards,
+    sourceEpoch: 0,
+  });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const cards = cardsOverride?.source === initialCards ? cardsOverride.cards : initialCards;
+  if (cardsState.source !== initialCards) {
+    setCardsState({
+      cards: null,
+      source: initialCards,
+      sourceEpoch: cardsState.sourceEpoch + 1,
+    });
+  }
+  const { sourceEpoch } = cardsState;
+  const cards =
+    cardsState.source === initialCards ? (cardsState.cards ?? initialCards) : initialCards;
 
   const setCards = useCallback<Dispatch<SetStateAction<KanbanCard[]>>>(
     (nextCards) => {
-      setCardsOverride((currentOverride) => {
-        const currentCards =
-          currentOverride?.source === initialCards ? currentOverride.cards : initialCards;
+      setCardsState((currentState) => {
+        if (currentState.source !== initialCards || currentState.sourceEpoch !== sourceEpoch) {
+          return currentState;
+        }
+        const currentCards = currentState.cards ?? initialCards;
         const resolvedCards =
           typeof nextCards === "function"
             ? (nextCards as (currentCards: KanbanCard[]) => KanbanCard[])(currentCards)
             : nextCards;
-        return { cards: resolvedCards, source: initialCards };
+        return { ...currentState, cards: resolvedCards };
       });
     },
-    [initialCards]
+    [initialCards, sourceEpoch]
   );
 
   return (
     <LazyMotion features={domAnimation}>
-      {errorMessage ? (
-        <div className="mx-6 mt-6 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-red-300 text-sm">
-          {errorMessage}
+      <MotionConfig reducedMotion="user">
+        {errorMessage ? (
+          <div className="mx-6 mt-6 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-red-300 text-sm">
+            {errorMessage}
+          </div>
+        ) : null}
+
+        <div className="flex h-full w-full gap-4 overflow-x-auto p-6">
+          <Column
+            boardId={boardId}
+            cards={cards}
+            column="backlog"
+            headingColor="text-neutral-400"
+            onMutation={onMutation}
+            setCards={setCards}
+            setErrorMessage={setErrorMessage}
+            setIsDragging={setIsDragging}
+            title="Backlog"
+          />
+          <Column
+            boardId={boardId}
+            cards={cards}
+            column="todo"
+            headingColor="text-yellow-300"
+            onMutation={onMutation}
+            setCards={setCards}
+            setErrorMessage={setErrorMessage}
+            setIsDragging={setIsDragging}
+            title="TODO"
+          />
+          <Column
+            boardId={boardId}
+            cards={cards}
+            column="doing"
+            headingColor="text-blue-300"
+            onMutation={onMutation}
+            setCards={setCards}
+            setErrorMessage={setErrorMessage}
+            setIsDragging={setIsDragging}
+            title="In Progress"
+          />
+          <Column
+            boardId={boardId}
+            cards={cards}
+            column="done"
+            headingColor="text-emerald-300"
+            onMutation={onMutation}
+            setCards={setCards}
+            setErrorMessage={setErrorMessage}
+            setIsDragging={setIsDragging}
+            title="Complete"
+          />
         </div>
-      ) : null}
 
-      <div className="flex h-full w-full gap-4 overflow-x-auto p-6">
-        <Column
-          boardId={boardId}
+        {/* Floating burn barrel — only visible while dragging */}
+        <BurnBarrel
           cards={cards}
-          column="backlog"
-          headingColor="text-neutral-400"
+          isDragging={isDragging}
           onMutation={onMutation}
           setCards={setCards}
           setErrorMessage={setErrorMessage}
           setIsDragging={setIsDragging}
-          title="Backlog"
         />
-        <Column
-          boardId={boardId}
-          cards={cards}
-          column="todo"
-          headingColor="text-yellow-300"
-          onMutation={onMutation}
-          setCards={setCards}
-          setErrorMessage={setErrorMessage}
-          setIsDragging={setIsDragging}
-          title="TODO"
-        />
-        <Column
-          boardId={boardId}
-          cards={cards}
-          column="doing"
-          headingColor="text-blue-300"
-          onMutation={onMutation}
-          setCards={setCards}
-          setErrorMessage={setErrorMessage}
-          setIsDragging={setIsDragging}
-          title="In Progress"
-        />
-        <Column
-          boardId={boardId}
-          cards={cards}
-          column="done"
-          headingColor="text-emerald-300"
-          onMutation={onMutation}
-          setCards={setCards}
-          setErrorMessage={setErrorMessage}
-          setIsDragging={setIsDragging}
-          title="Complete"
-        />
-      </div>
-
-      {/* Floating burn barrel — only visible while dragging */}
-      <BurnBarrel
-        cards={cards}
-        isDragging={isDragging}
-        onMutation={onMutation}
-        setCards={setCards}
-        setErrorMessage={setErrorMessage}
-        setIsDragging={setIsDragging}
-      />
+      </MotionConfig>
     </LazyMotion>
   );
 };

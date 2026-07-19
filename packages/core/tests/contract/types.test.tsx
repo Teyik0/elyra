@@ -13,6 +13,7 @@ import {
   createRoute,
   defer,
   type InferProps,
+  type Route,
   type RouteContext,
 } from "../../src/client";
 import type { CacheTag, InvalidationRule } from "../../src/furin.ts";
@@ -76,7 +77,7 @@ describe("RouteContext types (for loaders)", () => {
     expectTypeOf<LogField>().toEqualTypeOf<RequestLogger>();
   });
 
-  test("params and query default to {} when Unset", () => {
+  test("params and query default to {} when absent", () => {
     type Ctx = RouteContext;
     expectTypeOf<Ctx["params"]>().toEqualTypeOf<{}>();
     expectTypeOf<Ctx["query"]>().toEqualTypeOf<{}>();
@@ -179,7 +180,7 @@ describe("ComponentProps types (for components)", () => {
     expectTypeOf<Props["path"]>().toEqualTypeOf<string>();
   });
 
-  test("params and query default to {} when Unset", () => {
+  test("params and query default to {} when absent", () => {
     type Props = ComponentProps;
     expectTypeOf<Props["params"]>().toEqualTypeOf<{}>();
     expectTypeOf<Props["query"]>().toEqualTypeOf<{}>();
@@ -215,18 +216,34 @@ describe("ComponentProps types (for components)", () => {
 });
 
 describe("createRoute types", () => {
-  test("route and page configs accept cache tags", () => {
+  test("supports named route data without exposing inference metadata", () => {
+    interface RouteData {
+      user: { id: string };
+    }
+
+    expectTypeOf<Route<RouteData, {}, {}>["__type"]>().toEqualTypeOf<"FURIN_ROUTE">();
+
     const route = createRoute({
-      tags: ["boards"],
+      loader: (): RouteData => ({ user: { id: "user-1" } }),
+    });
+    // @ts-expect-error — parent inference metadata is not a public runtime property
+    route.ref;
+  });
+
+  test("route and page configs accept cache tags", () => {
+    const routeTags = ["boards"] as const;
+    const pageTags = ["board"] as const;
+    const route = createRoute({
+      tags: routeTags,
     });
 
     const page = route.page({
       component: () => null,
-      tags: ["board"],
+      tags: pageTags,
     });
 
-    expectTypeOf(route.tags).toEqualTypeOf<string[] | undefined>();
-    expectTypeOf(page.tags).toEqualTypeOf<string[] | undefined>();
+    expectTypeOf(route.tags).toEqualTypeOf<readonly string[] | undefined>();
+    expectTypeOf(page.tags).toEqualTypeOf<readonly string[] | undefined>();
   });
 
   test("simple route — no loader, no layout", () => {
@@ -593,13 +610,40 @@ describe("page-level loader", () => {
 });
 
 describe("defer() page loader", () => {
-  test("the __isDeferred brand does not leak into component props", () => {
+  test("accepts named interfaces without widening their keys", () => {
+    interface BoardPayload {
+      board: string;
+      stats: Promise<{ count: number }>;
+    }
+
+    const payload: BoardPayload = {
+      board: "my board",
+      stats: Promise.resolve({ count: 42 }),
+    };
+    const deferred = defer(payload);
+
+    expectTypeOf(deferred.board).toBeString();
+    expectTypeOf(deferred.stats).toEqualTypeOf<Promise<{ count: number }>>();
+    // @ts-expect-error — inference stays exact; arbitrary keys are not exposed
+    deferred.missing;
+    // @ts-expect-error — the deferred marker is an internal symbol
+    deferred.__isDeferred;
+    const userData = defer({ __isDeferred: false, board: "valid" });
+    expectTypeOf(userData.__isDeferred).toBeBoolean();
+    const rejectAlreadyDeferred = () => {
+      // @ts-expect-error — deferred data cannot be wrapped twice
+      defer(deferred);
+    };
+    expectTypeOf(rejectAlreadyDeferred).toBeFunction();
+  });
+
+  test("defer() does not add a string marker to component props", () => {
     const route = createRoute();
 
     route.page({
       component: (props) => {
         expectTypeOf(props.board).toBeString();
-        // @ts-expect-error — the internal brand must NOT surface as a component prop
+        // @ts-expect-error — defer() must not add a string property to component props
         props.__isDeferred;
         return null;
       },
@@ -624,14 +668,14 @@ describe("defer() page loader", () => {
     });
   });
 
-  test("the __isDeferred brand does not leak into head() ctx", () => {
+  test("defer() does not add a string marker to head() ctx", () => {
     const route = createRoute();
 
     route.page({
       component: () => null,
       head: (ctx) => {
         expectTypeOf(ctx.board).toBeString();
-        // @ts-expect-error — the internal brand must NOT surface in head() ctx
+        // @ts-expect-error — defer() must not add a string property to head() ctx
         ctx.__isDeferred;
         return { meta: [{ title: ctx.board }] };
       },

@@ -4,11 +4,16 @@ import { toCrossJSONAsync } from "seroval";
 import { computeErrorDigest } from "../../shared/digest.ts";
 import { serializeRouteFrames } from "../../shared/route-frame.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
-import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { useLogger } from "../context-logger.ts";
 import { injectSyncRuntimeScript, resolvePath } from "../render/assemble.ts";
 import { handleISR } from "../render/isr.ts";
-import { hasRequestLoader, type LoaderResult, runLoaders } from "../render/loaders.ts";
+import {
+  hasRequestLoader,
+  type LoaderResult,
+  runLoaders,
+  runPublicLoaders,
+  withRequestLoaderData,
+} from "../render/loaders.ts";
 import { renderPprRoute } from "../render/ppr-route.ts";
 import { createDeferredRouteFrameStream } from "../render/route-frame-transport.ts";
 import { extractTitle } from "../render/shell.ts";
@@ -29,6 +34,18 @@ type SyntheticDataContext = Omit<Context, "params" | "query"> & {
   params: DataRouteParamsInput;
   query: SearchParamsInput;
 };
+
+async function runDataEndpointLoaders(route: ResolvedRoute, ctx: Context): Promise<LoaderResult> {
+  if (route.mode !== "isr" && route.mode !== "ssg") {
+    return runLoaders(route, ctx);
+  }
+
+  const result = await runPublicLoaders(route, ctx);
+  if (result.type !== "data" || !hasRequestLoader(route)) {
+    return result;
+  }
+  return withRequestLoaderData(route, ctx, result);
+}
 
 async function createLoaderDataResponse(
   result: LoaderResult,
@@ -239,7 +256,11 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       // Build the synthetic URL from the parsed `pathname + search` only —
       // never from `rawPath` directly — so an attacker cannot smuggle a
       // foreign origin into `syntheticRequest.url`.
-      const syntheticRequest = new Request(new URL(pathname + url.search, ctx.request.url));
+      // Forward the real request headers (cookies, auth) so loaders reading
+      // `request.headers` behave the same during SPA navigation as in SSR.
+      const syntheticRequest = new Request(new URL(pathname + url.search, ctx.request.url), {
+        headers: ctx.request.headers,
+      });
       const syntheticSet = { headers: {} as Record<string, string>, status: 200 as number };
       const syntheticCtx: SyntheticDataContext = {
         cookie: ctx.cookie,
@@ -282,19 +303,10 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       syntheticCtx.params = parsedParams.params;
       syntheticCtx.query = parsedQuery.query as SearchParamsInput;
 
-      const result = await runLoaders(matched.route, syntheticCtx as unknown as Context);
-
-      // Keep the auto-invalidate registry in sync with whatever path was just
-      // served, so subsequent `revalidateTag(...)` calls (e.g. from a mutation
-      // afterHandle) can still find this URL by tag. Without this, a SPA-only
-      // navigation path (which never goes through the full-HTML render that
-      // also registers tags) would silently fall off the registry — the first
-      // mutation invalidates and unregisters via the cache `onDelete` hook,
-      // the next SPA fetch re-loads but does not re-register, and from then
-      // on `revalidateTag` finds no path to invalidate.
-      if (result.type === "data") {
-        autoInvalidateRegistry.registerLoaderTags(pathname, matched.route.tags);
-      }
+      const result = await runDataEndpointLoaders(
+        matched.route,
+        syntheticCtx as unknown as Context
+      );
 
       return createLoaderDataResponse(result, matched.route, syntheticRequest.url);
     },
