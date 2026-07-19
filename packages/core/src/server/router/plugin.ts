@@ -256,7 +256,11 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       // Build the synthetic URL from the parsed `pathname + search` only —
       // never from `rawPath` directly — so an attacker cannot smuggle a
       // foreign origin into `syntheticRequest.url`.
-      const syntheticRequest = new Request(new URL(pathname + url.search, ctx.request.url));
+      // Forward the real request headers (cookies, auth) so loaders reading
+      // `request.headers` behave the same during SPA navigation as in SSR.
+      const syntheticRequest = new Request(new URL(pathname + url.search, ctx.request.url), {
+        headers: ctx.request.headers,
+      });
       const syntheticSet = { headers: {} as Record<string, string>, status: 200 as number };
       const syntheticCtx: SyntheticDataContext = {
         cookie: ctx.cookie,

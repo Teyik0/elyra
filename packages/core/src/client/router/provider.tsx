@@ -695,12 +695,19 @@ export function RouterProvider({
       if (logicalHref === null) {
         return;
       }
+      // Don't capture a link that matches no local route: it may belong to a
+      // sibling furin app mounted under a different basePath. Let the browser
+      // navigate; the server routes it to the correct app.
+      const logicalPathname = new URL(logicalHref, window.location.origin).pathname;
+      if (!routes.some((r) => r.regex.test(logicalPathname))) {
+        return;
+      }
       e.preventDefault();
       navigate(logicalHref, { resetScroll: !logicalHref.includes("#") });
     };
     document.addEventListener("click", handler);
     return () => document.removeEventListener("click", handler);
-  }, [navigate, basePath]);
+  }, [navigate, basePath, routes]);
 
   // Intercept all window.fetch calls to auto-process X-Furin-Revalidate headers.
   useEffect(() => {

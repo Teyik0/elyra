@@ -454,6 +454,38 @@ describe("GET /_furin/data", () => {
     expect(await deferredPromises.requestData).toEqual({ user: "alice" });
   });
 
+  test("forwards request headers to loaders reading request.headers", async () => {
+    const routeDefinition = createRoute({
+      loader: ({ request }) => ({
+        authHeader: request.headers.get("authorization"),
+        cookieHeader: request.headers.get("cookie"),
+      }),
+    });
+    const route = {
+      mode: "ssr",
+      page: runtimePage(routeDefinition.page({ component: () => null })),
+      path: "/protected",
+      pattern: "/protected",
+      routeChain: [runtimeRoute(routeDefinition)],
+      segmentBoundaries: [],
+    } satisfies ResolvedRoute;
+    const app = new Elysia().use(createDataEndpoint([route]));
+
+    const res = await app.handle(
+      new Request("http://localhost/_furin/data?path=%2Fprotected", {
+        headers: { authorization: "Bearer token-123", cookie: "session=alice" },
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const { syncData } = await parseDeferredNdjson(
+      res.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() }),
+      undefined
+    );
+    expect(syncData.cookieHeader).toBe("session=alice");
+    expect(syncData.authHeader).toBe("Bearer token-123");
+  });
+
   test("returns the response before deferred Promises have resolved", async () => {
     const { app, routes } = createDataTestApp();
     const deferRoute = routes.find((r) => r.pattern === "/defer-page");
