@@ -1,4 +1,4 @@
-import type { AnyElysia } from "elysia";
+import { type AnyElysia, Elysia } from "elysia";
 import type { ResolvedRoute } from "../router/types.ts";
 
 interface CacheAccessInput {
@@ -68,7 +68,7 @@ export function createInstrumentationPlugin(
   _routes: ResolvedRoute[],
   _syncStreamPath: string | undefined
 ): AnyElysia {
-  return undefined as unknown as AnyElysia;
+  return new Elysia({ name: "furin-production-instrumentation" });
 }
 
 export function injectInstrumentationClient(html: string, _prefix: string): string {

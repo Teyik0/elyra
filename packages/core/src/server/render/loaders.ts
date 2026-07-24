@@ -247,7 +247,11 @@ export function runRequestLoaderData(
   const requestContext = createRequestLoaderContext(ctx);
   const requestData = Promise.all(
     loaders.map((loader, index) =>
-      observeLoader(() => loader(requestContext), `request:${index}`, ctx.path)
+      observeLoader(
+        () => Promise.resolve().then(() => loader(requestContext)),
+        `request:${index}`,
+        ctx.path
+      )
     )
   ).then((results) => Object.assign({}, ...results));
   requestData.catch(() => {

@@ -1,31 +1,79 @@
 import { expect, test } from "bun:test";
-import type { Context } from "elysia";
-import { mergeStoredResponseHeaders } from "../../../src/server/sync/response.ts";
+import { Elysia } from "elysia";
+import type {
+  BeginMutationResult,
+  StoredResponse,
+  SyncAdapter,
+  SyncNotifier,
+} from "../../../src/server/sync/adapter.ts";
+import { furinSync } from "../../../src/server/sync/index.ts";
 
-test("replay header overrides preserve every configured value", () => {
-  const merged = mergeStoredResponseHeaders(
-    { body: new Uint8Array(), headers: [["x-furin-tag", "stale"]], status: 200 },
-    {
+const notifier: SyncNotifier = {
+  publish: async () => undefined,
+  subscribe: async () => ({ unsubscribe: async () => undefined }),
+};
+
+interface SyncTestApp {
+  handle: (request: Request) => Promise<Response> | Response;
+}
+
+function replayApp(headers: Record<string, string[]>) {
+  let stored: StoredResponse | undefined;
+  const adapter: SyncAdapter = {
+    abortMutation: async () => undefined,
+    beginMutation: async (): Promise<BeginMutationResult> =>
+      stored === undefined
+        ? {
+            kind: "execute",
+            lease: { id: "lease", key: "key", leaseMs: 60_000, principal: "test" },
+          }
+        : { kind: "replay", response: stored },
+    completeMutation: (input) => {
+      stored = input.response;
+      return Promise.resolve({ cursor: undefined, kind: "committed" });
+    },
+    currentCursor: async () => "0",
+    readChanges: async () => ({ changes: [], cursor: "0", hasMore: false, reset: false }),
+    renewMutation: async () => "renewed",
+    scope: "process-local",
+  };
+
+  return new Elysia().use(furinSync({ adapter, notifier, principal: () => "test" })).post(
+    "/mutation",
+    ({ set }) => {
+      Object.assign(set.headers, headers);
+      return "stored";
+    },
+    { sync: { tags: [] } }
+  );
+}
+
+async function executeAndReplay(app: SyncTestApp): Promise<Response> {
+  const request = () =>
+    new Request("http://localhost/mutation", {
+      headers: { "idempotency-key": "same-mutation" },
+      method: "POST",
+    });
+  expect((await app.handle(request())).status).toBe(200);
+  return app.handle(request());
+}
+
+test("furinSync replay preserves every configured header value", async () => {
+  const response = await executeAndReplay(
+    replayApp({
       "x-furin-tag": ["alpha", "beta"],
-    } as unknown as Context["set"]["headers"]
+    })
   );
 
-  const headers = new Headers(
-    merged.headers.map(([name, value]) => [name, value] as [string, string])
-  );
-  expect(headers.get("x-furin-tag")).toBe("alpha, beta");
+  expect(response.headers.get("x-furin-tag")).toBe("alpha, beta");
 });
 
-test("replay header overrides discard configured cookies", () => {
-  const merged = mergeStoredResponseHeaders(
-    { body: new Uint8Array(), headers: [["set-cookie", "old=1"]], status: 200 },
-    {
+test("furinSync replay discards configured cookies", async () => {
+  const response = await executeAndReplay(
+    replayApp({
       "set-cookie": ["session=alpha; Path=/", "theme=dark; Path=/"],
-    } as Context["set"]["headers"]
+    })
   );
 
-  const headers = new Headers(
-    merged.headers.map(([name, value]) => [name, value] as [string, string])
-  );
-  expect(headers.getSetCookie()).toEqual([]);
+  expect(response.headers.getSetCookie()).toEqual([]);
 });

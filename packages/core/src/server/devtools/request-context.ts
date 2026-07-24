@@ -33,7 +33,13 @@ export function runWithDevtoolsRequest<T>(request: Request, fn: () => T): T {
   });
 
   return requestContext.run(context, () => {
-    const result = fn();
+    let result: T;
+    try {
+      result = fn();
+    } catch (error) {
+      appendFinished(undefined, context, path, startedAt, 500);
+      throw error;
+    }
     if (!(result instanceof Promise)) {
       appendFinished(result, context, path, startedAt);
       return result;

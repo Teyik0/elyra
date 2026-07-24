@@ -12,12 +12,14 @@ const runtime =
   });
 const nativeFetch = runtime.fetch;
 const NativeEventSource = runtime.eventSource;
-const browserState = {
-  bundleEntries: [],
-  operations: [],
-  syncEvents: [],
-  syncStatus: "disabled",
-};
+const browserState =
+  runtime.browserState ??
+  (runtime.browserState = {
+    bundleEntries: [],
+    operations: [],
+    syncEvents: [],
+    syncStatus: "disabled",
+  });
 
 function assetUrl(path) {
   const source = new URL(import.meta.url);
@@ -467,7 +469,7 @@ class FurinDevtoolsElement extends HTMLElement {
       return;
     }
     const snapshot = await response.json();
-    if (snapshot.version === PROTOCOL_VERSION) {
+    if (isSnapshot(snapshot)) {
       this.setSnapshot(snapshot);
     }
   }
@@ -478,6 +480,21 @@ class FurinDevtoolsElement extends HTMLElement {
       return;
     }
     const open = this.hasAttribute("data-open");
+    const panel = this.#root.querySelector(".panel");
+    if (open && panel !== null) {
+      for (const button of panel.querySelectorAll("[data-tab]")) {
+        button.classList.toggle("active", button.dataset.tab === this.#activeTab);
+      }
+      const main = panel.querySelector("main");
+      if (main !== null) {
+        main.innerHTML = this.renderTab();
+      }
+      const eventCount = panel.querySelector("footer span");
+      if (eventCount !== null) {
+        eventCount.innerHTML = `${statusDot("live")} Live · ${this.#events.length} events`;
+      }
+      return;
+    }
     const tabs = [
       ["overview", "Overview"],
       ["routes", "Routes"],

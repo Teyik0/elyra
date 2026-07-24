@@ -24,6 +24,36 @@ function createMockLoaderContext(overrides: Partial<Context>): Context {
 }
 
 describe("runLoaders requestLoader", () => {
+  test("starts public loaders before synchronous requestLoader work", async () => {
+    const started: string[] = [];
+    const route = {
+      mode: "ssr",
+      page: {},
+      routeChain: [
+        {
+          __type: "FURIN_ROUTE",
+          loader: () => {
+            started.push("public");
+            return {};
+          },
+          requestLoader: () => {
+            started.push("request");
+            return {};
+          },
+        },
+      ],
+      path: "/parallel.tsx",
+      pattern: "/parallel",
+      segmentBoundaries: [],
+    } as unknown as ResolvedRoute;
+
+    const result = runLoaders(route, createMockLoaderContext({ path: "/parallel" }));
+
+    expect(started).toEqual(["public"]);
+    await result;
+    expect(started).toEqual(["public", "request"]);
+  });
+
   test("rejects loader data that uses framework-reserved keys", async () => {
     const route = {
       mode: "ssr",

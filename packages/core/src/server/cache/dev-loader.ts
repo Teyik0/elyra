@@ -123,7 +123,7 @@ function emitCacheAccess(
   if (entry === undefined) {
     outcome = "miss";
   } else {
-    outcome = isDevLoaderCacheFresh(entry) ? "hit" : "stale";
+    outcome = isDevLoaderCacheValid(entry) ? "hit" : "stale";
   }
   emitInstrumentationCacheAccess({
     cache,

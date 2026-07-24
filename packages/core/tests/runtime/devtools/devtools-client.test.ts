@@ -41,86 +41,118 @@ function cleanupDevtoolsRuntime(): void {
   Reflect.deleteProperty(window, runtimeKey);
 }
 
-test("native DevTools opens in Shadow DOM and the shortcut hides and restores it", async () => {
-  installDom();
-  const originalFetch = window.fetch;
-  const originalEventSource = window.EventSource;
-  const originalGetEntriesByType = performance.getEntriesByType.bind(performance);
-  window.fetch = (() =>
-    Promise.resolve(
-      Response.json({
-        caches: [],
-        events: [],
-        instance: { id: "test-instance", prefix: "" },
-        lastEventId: 0,
-        routes: [],
-        sync: { enabled: false, streamPath: null },
-        version: 1,
-      })
-    )) as unknown as typeof window.fetch;
-  window.EventSource = TestEventSource as unknown as typeof EventSource;
-  performance.getEntriesByType = (() => []) as typeof performance.getEntriesByType;
+test.serial(
+  "native DevTools opens in Shadow DOM and the shortcut hides and restores it",
+  async () => {
+    installDom();
+    const originalFetch = window.fetch;
+    const originalEventSource = window.EventSource;
+    const originalGetEntriesByType = performance.getEntriesByType.bind(performance);
+    window.fetch = (() =>
+      Promise.resolve(
+        Response.json({
+          caches: [],
+          events: [],
+          instance: { id: "test-instance", prefix: "" },
+          lastEventId: 0,
+          routes: [],
+          sync: { enabled: false, streamPath: null },
+          version: 1,
+        })
+      )) as unknown as typeof window.fetch;
+    window.EventSource = TestEventSource as unknown as typeof EventSource;
+    performance.getEntriesByType = (() => []) as typeof performance.getEntriesByType;
 
-  try {
-    await import(`../../../src/devtools/devtools-element.js?test=${Date.now()}`);
-    await waitForDom(() => document.querySelector("furin-devtools") !== null, undefined);
-    const element = document.querySelector("furin-devtools");
-    const root = element?.shadowRoot;
+    try {
+      await import(`../../../src/devtools/devtools-element.js?test=${Date.now()}`);
+      await waitForDom(() => document.querySelector("furin-devtools") !== null, undefined);
+      const element = document.querySelector("furin-devtools");
+      const root = element?.shadowRoot;
 
-    expect(root).not.toBeNull();
-    root?.querySelector<HTMLButtonElement>('[data-action="toggle"]')?.click();
-    expect(root?.textContent).toContain("Runtime overview");
+      expect(root).not.toBeNull();
+      root?.querySelector<HTMLButtonElement>('[data-action="toggle"]')?.click();
+      expect(root?.textContent).toContain("Runtime overview");
 
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        code: "Period",
-        ctrlKey: true,
-        key: ">",
-        shiftKey: true,
-      })
-    );
-    expect(root?.innerHTML).toContain(":host{display:none}");
+      const panel = root?.querySelector(".panel");
+      root?.querySelector<HTMLButtonElement>('[data-tab="routes"]')?.click();
+      expect(root?.querySelector(".panel")).toBe(panel);
+      expect(root?.querySelector("main")?.textContent).toContain(
+        "Discovered files and rendering modes."
+      );
 
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        code: "Period",
-        ctrlKey: true,
-        key: ">",
-        shiftKey: true,
-      })
-    );
-    expect(root?.textContent).toContain("DevTools");
-  } finally {
-    cleanupDevtoolsRuntime();
-    window.fetch = originalFetch;
+      const runtimeState = (
+        window as typeof window & {
+          [key: symbol]: {
+            browserState?: {
+              bundleEntries: Array<{
+                decodedBytes: number;
+                durationMs: number;
+                encodedBytes: number;
+                name: string;
+                transferredBytes: number;
+                type: string;
+              }>;
+            };
+          };
+        }
+      )[Symbol.for("furin.devtools.runtime")];
+      expect(runtimeState?.browserState).toBeDefined();
+      expect(runtimeState?.browserState?.bundleEntries).toEqual([]);
+
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          code: "Period",
+          ctrlKey: true,
+          key: ">",
+          shiftKey: true,
+        })
+      );
+      expect(root?.innerHTML).toContain(":host{display:none}");
+
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          code: "Period",
+          ctrlKey: true,
+          key: ">",
+          shiftKey: true,
+        })
+      );
+      expect(root?.textContent).toContain("DevTools");
+    } finally {
+      cleanupDevtoolsRuntime();
+      window.fetch = originalFetch;
+      window.EventSource = originalEventSource;
+      performance.getEntriesByType = originalGetEntriesByType;
+      await uninstallDom();
+    }
+  }
+);
+
+test.serial(
+  "native DevTools leaves browser globals untouched when startup validation fails",
+  async () => {
+    installDom();
+    const rejectedFetch = (() =>
+      Promise.resolve(new Response(null, { status: 404 }))) as unknown as typeof window.fetch;
+    const originalEventSource = TestEventSource as unknown as typeof EventSource;
+    window.fetch = rejectedFetch;
     window.EventSource = originalEventSource;
-    performance.getEntriesByType = originalGetEntriesByType;
-    await uninstallDom();
+
+    try {
+      await import(`../../../src/devtools/devtools-element.js?failed=${Date.now()}`);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(window.fetch).toBe(rejectedFetch);
+      expect(window.EventSource).toBe(originalEventSource);
+      expect(document.querySelector("furin-devtools")).toBeNull();
+    } finally {
+      cleanupDevtoolsRuntime();
+      await uninstallDom();
+    }
   }
-});
+);
 
-test("native DevTools leaves browser globals untouched when startup validation fails", async () => {
-  installDom();
-  const rejectedFetch = (() =>
-    Promise.resolve(new Response(null, { status: 404 }))) as unknown as typeof window.fetch;
-  const originalEventSource = TestEventSource as unknown as typeof EventSource;
-  window.fetch = rejectedFetch;
-  window.EventSource = originalEventSource;
-
-  try {
-    await import(`../../../src/devtools/devtools-element.js?failed=${Date.now()}`);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(window.fetch).toBe(rejectedFetch);
-    expect(window.EventSource).toBe(originalEventSource);
-    expect(document.querySelector("furin-devtools")).toBeNull();
-  } finally {
-    cleanupDevtoolsRuntime();
-    await uninstallDom();
-  }
-});
-
-test("native DevTools only correlates the exact same-origin data endpoint", async () => {
+test.serial("native DevTools only correlates the exact same-origin data endpoint", async () => {
   installDom();
   const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
   const testFetch = ((input: RequestInfo | URL, init?: RequestInit) => {
@@ -163,43 +195,46 @@ test("native DevTools only correlates the exact same-origin data endpoint", asyn
   }
 });
 
-test("native DevTools rolls back browser patches when startup fails after installation", async () => {
-  installDom();
-  const testFetch = (() =>
-    Promise.resolve(
-      Response.json({
-        caches: [],
-        events: [],
-        instance: { id: "rollback-test", prefix: "" },
-        lastEventId: 0,
-        routes: [],
-        sync: { enabled: false, streamPath: null },
-        version: 1,
-      })
-    )) as unknown as typeof window.fetch;
-  class ThrowingEventSource {
-    constructor() {
-      throw new Error("EventSource unavailable");
+test.serial(
+  "native DevTools rolls back browser patches when startup fails after installation",
+  async () => {
+    installDom();
+    const testFetch = (() =>
+      Promise.resolve(
+        Response.json({
+          caches: [],
+          events: [],
+          instance: { id: "rollback-test", prefix: "" },
+          lastEventId: 0,
+          routes: [],
+          sync: { enabled: false, streamPath: null },
+          version: 1,
+        })
+      )) as unknown as typeof window.fetch;
+    class ThrowingEventSource {
+      constructor() {
+        throw new Error("EventSource unavailable");
+      }
+    }
+    const originalEventSource = ThrowingEventSource as unknown as typeof EventSource;
+    window.fetch = testFetch;
+    window.EventSource = originalEventSource;
+    performance.getEntriesByType = (() => []) as typeof performance.getEntriesByType;
+
+    try {
+      await import(`../../../src/devtools/devtools-element.js?rollback=${Date.now()}`);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(window.fetch).toBe(testFetch);
+      expect(window.EventSource).toBe(originalEventSource);
+    } finally {
+      cleanupDevtoolsRuntime();
+      await uninstallDom();
     }
   }
-  const originalEventSource = ThrowingEventSource as unknown as typeof EventSource;
-  window.fetch = testFetch;
-  window.EventSource = originalEventSource;
-  performance.getEntriesByType = (() => []) as typeof performance.getEntriesByType;
+);
 
-  try {
-    await import(`../../../src/devtools/devtools-element.js?rollback=${Date.now()}`);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(window.fetch).toBe(testFetch);
-    expect(window.EventSource).toBe(originalEventSource);
-  } finally {
-    cleanupDevtoolsRuntime();
-    await uninstallDom();
-  }
-});
-
-test("native DevTools rejects malformed same-origin snapshots and SSE events", async () => {
+test.serial("native DevTools rejects malformed same-origin snapshots and SSE events", async () => {
   installDom();
   TestEventSource.instances.length = 0;
   const snapshot = {
@@ -219,6 +254,7 @@ test("native DevTools rejects malformed same-origin snapshots and SSE events", a
     await import(`../../../src/devtools/devtools-element.js?validation=${Date.now()}`);
     await waitForDom(() => document.querySelector("furin-devtools") !== null, undefined);
     const source = TestEventSource.instances.at(-1);
+    expect(source).toBeDefined();
     const maliciousEvent = new TestRuntimeEvent("furin.devtools");
     Object.defineProperty(maliciousEvent, "data", {
       value: JSON.stringify({

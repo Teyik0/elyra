@@ -1,4 +1,8 @@
-import type { DevtoolsServerEvent, DevtoolsServerEventInput } from "../../devtools/protocol.ts";
+import {
+  DEVTOOLS_PROTOCOL_VERSION,
+  type DevtoolsServerEvent,
+  type DevtoolsServerEventInput,
+} from "../../devtools/protocol.ts";
 import { currentInstance, instanceSlot } from "../instance.ts";
 
 const EVENT_LIMIT = 1000;
@@ -26,16 +30,6 @@ export function devtoolsEventsSnapshot(): {
   return { events: [...hub.events], lastEventId: hub.sequence };
 }
 
-export function subscribeDevtoolsEvents(
-  listener: (event: DevtoolsServerEvent) => void
-): () => void {
-  const hub = instanceDevtoolsHub();
-  hub.listeners.add(listener);
-  return () => {
-    hub.listeners.delete(listener);
-  };
-}
-
 export function subscribeDevtoolsEventsAfter(
   cursor: number,
   listener: (event: DevtoolsServerEvent) => void
@@ -57,7 +51,7 @@ export function appendDevtoolsEvent(event: DevtoolsServerEventInput): DevtoolsSe
     ...event,
     id: hub.sequence,
     instanceId: devtoolsInstanceId(),
-    version: 1,
+    version: DEVTOOLS_PROTOCOL_VERSION,
   } as DevtoolsServerEvent;
   hub.events.push(complete);
   if (hub.events.length > EVENT_LIMIT) {

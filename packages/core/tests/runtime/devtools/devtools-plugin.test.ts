@@ -6,16 +6,27 @@ import {
 } from "../../../src/server/auto-invalidate/index.ts";
 import {
   __resetDevLoaderCacheState,
+  getDevISRLoaderCache,
   invalidateDevLoaderCacheBySource,
   setDevISRLoaderCache,
 } from "../../../src/server/cache/dev-loader.ts";
-import { revalidatePathForInstance } from "../../../src/server/cache/invalidation.ts";
+import {
+  consumePendingInvalidations,
+  revalidatePathForInstance,
+} from "../../../src/server/cache/invalidation.ts";
 import { appendDevtoolsEvent, devtoolsEventsSnapshot } from "../../../src/server/devtools/hub.ts";
 import { createDevtoolsPlugin } from "../../../src/server/devtools/plugin.ts";
+import { runWithDevtoolsRequest } from "../../../src/server/devtools/request-context.ts";
 import { currentInstance } from "../../../src/server/instance.ts";
 import type { ResolvedRoute } from "../../../src/server/router/types.ts";
 
 describe("native DevTools plugin", () => {
+  const resetState = (): void => {
+    __resetDevLoaderCacheState();
+    autoInvalidateRegistry.reset();
+    consumePendingInvalidations();
+  };
+
   test("rejects non-loopback hosts and cross-origin browser requests", async () => {
     const app = new Elysia().use(createDevtoolsPlugin([], undefined));
 
@@ -159,7 +170,49 @@ describe("native DevTools plugin", () => {
     });
     expect(serialized).not.toContain("never expose cached values");
     expect(serialized).not.toContain(process.cwd());
-    __resetDevLoaderCacheState();
+  });
+
+  test("reports a source-invalidated loader entry as stale", async () => {
+    const dependency = import.meta.path;
+    const key = `${dependency}:/changed`;
+    setDevISRLoaderCache(key, {
+      dependencies: [dependency],
+      generatedAt: 0,
+      headers: {},
+      loaderData: {},
+      mode: "isr",
+      revalidate: Number.POSITIVE_INFINITY,
+    });
+
+    runWithDevtoolsRequest(new Request("http://localhost/changed"), () => {
+      getDevISRLoaderCache(key);
+    });
+    const event = devtoolsEventsSnapshot().events.findLast(
+      (candidate) => candidate.type === "cache.access"
+    );
+
+    expect(event).toMatchObject({ outcome: "stale", path: "/changed" });
+    await Promise.resolve();
+  });
+
+  test("finishes the request timeline when a handler throws synchronously", async () => {
+    const cursor = devtoolsEventsSnapshot().lastEventId;
+
+    expect(() =>
+      runWithDevtoolsRequest(new Request("http://localhost/throws"), () => {
+        throw new Error("sync failure");
+      })
+    ).toThrow("sync failure");
+    const events = devtoolsEventsSnapshot().events.filter((event) => event.id > cursor);
+
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ path: "/throws", type: "request.started" });
+    expect(events[1]).toMatchObject({
+      path: "/throws",
+      status: 500,
+      type: "request.finished",
+    });
+    await Promise.resolve();
   });
 
   test("records path invalidations even outside a request", async () => {
@@ -185,7 +238,6 @@ describe("native DevTools plugin", () => {
       reason: "path",
       target: "/posts",
     });
-    __resetDevLoaderCacheState();
   });
 
   test("records source invalidations without absolute file paths", async () => {
@@ -213,33 +265,34 @@ describe("native DevTools plugin", () => {
       target: "src/pages/posts.tsx",
     });
     expect(JSON.stringify(event)).not.toContain(process.cwd());
-    __resetDevLoaderCacheState();
   });
 
   test("records tag invalidations as tag operations", async () => {
-    setDevISRLoaderCache(`${process.cwd()}/src/pages/posts.tsx:/posts`, {
-      dependencies: [],
-      generatedAt: Date.now(),
-      headers: {},
-      loaderData: {},
-      mode: "isr",
-      revalidate: 60,
-    });
-    autoInvalidateRegistry.registerLoaderTags("/posts", ["posts"]);
+    try {
+      setDevISRLoaderCache(`${process.cwd()}/src/pages/posts.tsx:/posts`, {
+        dependencies: [],
+        generatedAt: Date.now(),
+        headers: {},
+        loaderData: {},
+        mode: "isr",
+        revalidate: 60,
+      });
+      autoInvalidateRegistry.registerLoaderTags("/posts", ["posts"]);
 
-    revalidateTag("posts");
-    const event = devtoolsEventsSnapshot().events.findLast(
-      (candidate) => candidate.type === "cache.invalidated"
-    );
+      revalidateTag("posts");
+      const event = devtoolsEventsSnapshot().events.findLast(
+        (candidate) => candidate.type === "cache.invalidated"
+      );
 
-    expect(event).toMatchObject({
-      deleted: true,
-      reason: "tag",
-      target: "posts",
-    });
-    __resetDevLoaderCacheState();
-    autoInvalidateRegistry.reset();
-    await Promise.resolve();
+      expect(event).toMatchObject({
+        deleted: true,
+        reason: "tag",
+        target: "posts",
+      });
+    } finally {
+      resetState();
+      await Promise.resolve();
+    }
   });
 
   test("streams live events after the requested sequence", async () => {

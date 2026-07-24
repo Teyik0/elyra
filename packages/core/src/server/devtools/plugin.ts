@@ -26,7 +26,25 @@ function toRelativePath(path: string): string {
   return projected === ".." || projected.startsWith("../") ? basename(path) : projected;
 }
 
-function forbiddenDevtoolsRequest(request: Request): Response | undefined {
+function isLoopbackAddress(address: string): boolean {
+  return (
+    address === "::1" ||
+    address === "0:0:0:0:0:0:0:1" ||
+    address.startsWith("127.") ||
+    address.startsWith("::ffff:127.")
+  );
+}
+
+function forbiddenDevtoolsRequest(
+  request: Request,
+  server: Bun.Server<unknown> | null
+): Response | undefined {
+  if (server !== null) {
+    const peer = server.requestIP(request);
+    if (peer === null || !isLoopbackAddress(peer.address)) {
+      return new Response("Forbidden", { status: 403 });
+    }
+  }
   const requestUrl = new URL(request.url);
   const host = request.headers.get("host") ?? requestUrl.host;
   let hostname: string;
@@ -115,8 +133,8 @@ export function createDevtoolsPlugin(
 ): AnyElysia {
   let activeEventStreams = 0;
   return new Elysia({ name: "furin-devtools" })
-    .get("/_furin/devtools/client.js", ({ request }) => {
-      const forbidden = forbiddenDevtoolsRequest(request);
+    .get("/_furin/devtools/client.js", ({ request, server }) => {
+      const forbidden = forbiddenDevtoolsRequest(request, server);
       if (forbidden) {
         return forbidden;
       }
@@ -132,8 +150,8 @@ export function createDevtoolsPlugin(
         return new Response("DevTools client build failed", { status: 500 });
       }
     })
-    .get("/_furin/devtools/events", ({ request }) => {
-      const forbidden = forbiddenDevtoolsRequest(request);
+    .get("/_furin/devtools/events", ({ request, server }) => {
+      const forbidden = forbiddenDevtoolsRequest(request, server);
       if (forbidden) {
         return forbidden;
       }
@@ -221,8 +239,8 @@ export function createDevtoolsPlugin(
         },
       });
     })
-    .get("/_furin/devtools/snapshot", ({ request, set }) => {
-      const forbidden = forbiddenDevtoolsRequest(request);
+    .get("/_furin/devtools/snapshot", ({ request, server, set }) => {
+      const forbidden = forbiddenDevtoolsRequest(request, server);
       if (forbidden) {
         return forbidden;
       }
