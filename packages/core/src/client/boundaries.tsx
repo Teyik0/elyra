@@ -17,12 +17,19 @@ const SERVER_RESET_NOOP = () => {
   /* reset is a client-only action; on the server the response is already committed */
 };
 
-function getServerDigest(error: Error): string | undefined {
+function getServerDigest(error: unknown): string | undefined {
   if (isFurinServerError(error)) {
     return error.digest;
   }
+  if ((typeof error !== "object" && typeof error !== "function") || error === null) {
+    return;
+  }
   const digest = (error as Error & { __furinDigest?: unknown }).__furinDigest;
   return typeof digest === "string" ? digest : undefined;
+}
+
+function normalizeCaughtError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 interface ErrorBoundaryProps {
@@ -81,11 +88,14 @@ export class FurinErrorBoundary extends Component<ErrorBoundaryProps, ErrorBound
     error: null,
   };
 
-  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
+  static getDerivedStateFromError(error: unknown): Partial<ErrorBoundaryState> {
     // Preserve server digests carried by SPA error sentinels or deferred
     // rejections. Otherwise compute one right at catch-time so the value is
     // anchored to this specific error instance across re-renders.
-    return { digest: getServerDigest(error) ?? computeErrorDigest(error), error };
+    return {
+      digest: getServerDigest(error) ?? computeErrorDigest(error),
+      error: normalizeCaughtError(error),
+    };
   }
 
   override componentDidUpdate(prevProps: ErrorBoundaryProps) {

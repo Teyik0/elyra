@@ -127,7 +127,9 @@ describeWithRedis("Redis sync", () => {
     if (first.kind !== "execute") {
       throw new Error("Expected an executable mutation");
     }
-    const keys = await client.send("KEYS", [`furin:sync:${namespace}:mutation:*`]);
+    const keys = await client.send("KEYS", [
+      `furin:sync:{${encodeURIComponent(namespace)}}:mutation:*`,
+    ]);
     if (!Array.isArray(keys) || typeof keys[0] !== "string") {
       throw new Error("Expected a mutation key");
     }

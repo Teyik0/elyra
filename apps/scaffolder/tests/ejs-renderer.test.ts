@@ -30,7 +30,7 @@ describe("renderEjsFile — simple template", () => {
   it("renders server.ts.ejs with projectName substituted", async () => {
     const src = resolve(TEMPLATES_DIR, "simple/src/server.ts.ejs");
     const output = await renderEjsFile(src, mockVars);
-    expect(output).toContain("Furin running at");
+    expect(output).toContain("My Test App running at");
     expect(output).not.toContain("<%=");
   });
 

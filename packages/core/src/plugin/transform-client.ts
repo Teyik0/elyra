@@ -170,6 +170,37 @@ function declarationHasName(node: AstNode, name: string): boolean {
   return false;
 }
 
+function functionBodyHasVarName(value: unknown, name: string, root = true): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some((entry) => functionBodyHasVarName(entry, name, false));
+  }
+  const node = value as AstNode;
+  if (
+    !root &&
+    (node.type === "FunctionDeclaration" ||
+      node.type === "FunctionExpression" ||
+      node.type === "ArrowFunctionExpression")
+  ) {
+    return false;
+  }
+  if (
+    node.type === "VariableDeclaration" &&
+    node.kind === "var" &&
+    Array.isArray(node.declarations) &&
+    node.declarations.some((declaration) =>
+      declaration && typeof declaration === "object"
+        ? bindingPatternHasName((declaration as AstNode).id, name)
+        : false
+    )
+  ) {
+    return true;
+  }
+  return Object.values(node).some((entry) => functionBodyHasVarName(entry, name, false));
+}
+
 function functionScopeHasName(scope: AstNode, name: string): boolean {
   if (
     scope.type !== "FunctionDeclaration" &&
@@ -181,7 +212,8 @@ function functionScopeHasName(scope: AstNode, name: string): boolean {
   return (
     (Array.isArray(scope.params) &&
       scope.params.some((param) => bindingPatternHasName(param, name))) ||
-    (scope.type === "FunctionExpression" && bindingPatternHasName(scope.id, name))
+    (scope.type === "FunctionExpression" && bindingPatternHasName(scope.id, name)) ||
+    functionBodyHasVarName(scope.body, name)
   );
 }
 

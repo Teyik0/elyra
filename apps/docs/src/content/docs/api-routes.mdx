@@ -37,6 +37,7 @@ import {
   migrateSqliteSync,
   sqliteSyncAdapter,
 } from "@teyik0/furin/sync/sqlite"
+import { requireUser } from "./auth.ts"
 
 const database = new Database(":memory:")
 migrateSqliteSync(database)

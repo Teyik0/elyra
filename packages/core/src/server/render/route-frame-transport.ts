@@ -42,20 +42,20 @@ export function createDeferredRouteFrameStream(
       );
       let encodedBytes = initialFrame.byteLength;
       controller.enqueue(initialFrame);
-      await Promise.all(
-        Object.entries(deferredPromises).map(async ([key, promise], index) => {
-          const frame = encoder.encode(
-            await serializeDeferredRouteFrame(key, promise, `defer-${index}`)
-          );
-          encodedBytes += frame.byteLength;
-          if (encodedBytes > MAX_ROUTE_FRAME_STREAM_BYTES) {
-            throw new Error(
-              `[furin] route frame stream exceeds the ${MAX_ROUTE_FRAME_STREAM_BYTES}-byte limit`
-            );
-          }
-          controller.enqueue(frame);
-        })
+      const frames = await Promise.all(
+        Object.entries(deferredPromises).map(async ([key, promise], index) =>
+          encoder.encode(await serializeDeferredRouteFrame(key, promise, `defer-${index}`))
+        )
       );
+      for (const frame of frames) {
+        encodedBytes += frame.byteLength;
+        if (encodedBytes > MAX_ROUTE_FRAME_STREAM_BYTES) {
+          throw new Error(
+            `[furin] route frame stream exceeds the ${MAX_ROUTE_FRAME_STREAM_BYTES}-byte limit`
+          );
+        }
+        controller.enqueue(frame);
+      }
       controller.close();
     },
   });

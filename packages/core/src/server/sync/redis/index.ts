@@ -148,7 +148,7 @@ export class RedisSyncAdapter implements SyncAdapter {
   constructor(options: RedisSyncOptions) {
     assertNamespace(options.namespace);
     this.client = options.client;
-    this.prefix = `furin:sync:${options.namespace}`;
+    this.prefix = `furin:sync:{${encodeURIComponent(options.namespace)}}`;
   }
 
   async beginMutation(input: BeginMutationInput): Promise<BeginMutationResult> {

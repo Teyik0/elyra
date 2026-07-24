@@ -47,6 +47,13 @@ describe("FurinErrorBoundary", () => {
     expect(next).toEqual({ digest: computeErrorDigest(err), error: err });
   });
 
+  test("getDerivedStateFromError normalizes a null throw without losing its digest", () => {
+    const next = FurinErrorBoundary.getDerivedStateFromError(null);
+
+    expect(next.digest).toBe(computeErrorDigest(null));
+    expect(next.error).toBeInstanceOf(Error);
+  });
+
   test("getDerivedStateFromError latches onto FurinNotFoundError too (re-thrown in render)", () => {
     const err = new FurinNotFoundError({ message: "gone" });
     // The boundary captures it in state, but render() re-throws it so an

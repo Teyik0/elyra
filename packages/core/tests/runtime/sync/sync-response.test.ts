@@ -17,7 +17,7 @@ interface SyncTestApp {
   handle: (request: Request) => Promise<Response> | Response;
 }
 
-function replayApp(headers: Record<string, string[]>) {
+function replayApp(storedHeaders: HeadersInit, replayHeaders: Record<string, string[]>) {
   let stored: StoredResponse | undefined;
   const adapter: SyncAdapter = {
     abortMutation: async () => undefined,
@@ -41,8 +41,10 @@ function replayApp(headers: Record<string, string[]>) {
   return new Elysia().use(furinSync({ adapter, notifier, principal: () => "test" })).post(
     "/mutation",
     ({ set }) => {
-      Object.assign(set.headers, headers);
-      return "stored";
+      Object.assign(set.headers, replayHeaders);
+      return new Response("stored", {
+        headers: new Headers([["content-length", "6"], ...new Headers(storedHeaders).entries()]),
+      });
     },
     { sync: { tags: [] } }
   );
@@ -60,9 +62,12 @@ async function executeAndReplay(app: SyncTestApp): Promise<Response> {
 
 test("furinSync replay preserves every configured header value", async () => {
   const response = await executeAndReplay(
-    replayApp({
-      "x-furin-tag": ["alpha", "beta"],
-    })
+    replayApp(
+      { "x-furin-tag": "stale" },
+      {
+        "x-furin-tag": ["alpha", "beta"],
+      }
+    )
   );
 
   expect(response.headers.get("x-furin-tag")).toBe("alpha, beta");
@@ -70,9 +75,12 @@ test("furinSync replay preserves every configured header value", async () => {
 
 test("furinSync replay discards configured cookies", async () => {
   const response = await executeAndReplay(
-    replayApp({
-      "set-cookie": ["session=alpha; Path=/", "theme=dark; Path=/"],
-    })
+    replayApp(
+      { "set-cookie": "old=1" },
+      {
+        "set-cookie": ["session=alpha; Path=/", "theme=dark; Path=/"],
+      }
+    )
   );
 
   expect(response.headers.getSetCookie()).toEqual([]);

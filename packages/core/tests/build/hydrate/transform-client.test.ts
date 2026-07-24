@@ -231,6 +231,25 @@ describe("transformForClient — route.page() loader removal", () => {
     expect(result.removedServerCode).toBe(true);
   });
 
+  test("preserves loader properties when a nested var shadows a Furin import", () => {
+    const input = `
+      import { createRoute as defineRoute } from "@teyik0/furin/client";
+      function buildLocalRoute() {
+        if (enabled) {
+          var defineRoute = localFactory;
+        }
+        return defineRoute({
+          loader: () => ({ local: true }),
+          component: () => null,
+        });
+      }
+    `;
+    const result = transformForClient(input, "/app/src/pages/index.tsx");
+
+    expect(result.code).toContain("local: true");
+    expect(result.removedServerCode).toBe(false);
+  });
+
   test("preserves loader properties when a classic for initializer shadows an import", () => {
     const input = `
       import { createRoute as defineRoute } from "@teyik0/furin/client";
