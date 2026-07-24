@@ -5,6 +5,7 @@ import { runBunBuild } from "../build/bun-build.ts";
 import { buildClient } from "../build/client.ts";
 import { generateCompileEntry } from "../build/compile-entry.ts";
 import type { BuildEntryOptions, EntryAppContext } from "../build/entry-template.ts";
+import { productionInstrumentationPlugin } from "../build/production-instrumentation.ts";
 import { generateServerRoutesEntry } from "../build/server-routes-entry.ts";
 import { buildTargetManifest, copyDirRecursive, ensureDir, toPosixPath } from "../build/shared.ts";
 import { buildSSGCacheSnapshot } from "../build/ssg-cache.ts";
@@ -307,7 +308,11 @@ export async function buildBunTarget(
       minify: true,
       sourcemap: "none",
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
-      plugins: [...(options.plugins ?? []), environmentGuardPlugin("ssr")],
+      plugins: [
+        productionInstrumentationPlugin(),
+        ...(options.plugins ?? []),
+        environmentGuardPlugin("ssr"),
+      ],
     });
 
     console.log(`[furin] Server binary: ${outfile}`);
@@ -339,7 +344,11 @@ export async function buildBunTarget(
       target: "bun",
       minify: true,
       sourcemap: "none",
-      plugins: [...(options.plugins ?? []), environmentGuardPlugin("ssr")],
+      plugins: [
+        productionInstrumentationPlugin(),
+        ...(options.plugins ?? []),
+        environmentGuardPlugin("ssr"),
+      ],
     });
     console.log(
       `[furin] Server bundle: ${toPosixPath(join(targetManifest.targetDir, "server.js"))}`

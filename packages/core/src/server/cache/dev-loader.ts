@@ -1,5 +1,11 @@
 import { statSync } from "node:fs";
+import { relative } from "node:path";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry";
+import {
+  currentInstrumentationRequest,
+  emitCacheInvalidated,
+  emitCacheAccess as emitInstrumentationCacheAccess,
+} from "../devtools/instrumentation.ts";
 import {
   allStateBuckets,
   currentInstance,
@@ -103,8 +109,35 @@ const instanceDevLoaderState = instanceSlot((instance): DevLoaderState => {
   };
 });
 
+function emitCacheAccess(
+  cache: "isr-loader" | "ssg-loader",
+  key: string,
+  entry: DevLoaderCacheEntry | undefined
+): void {
+  const request = currentInstrumentationRequest();
+  const path = urlPathFromCacheKey(key);
+  if (request === undefined || path === null) {
+    return;
+  }
+  let outcome: "hit" | "miss" | "stale";
+  if (entry === undefined) {
+    outcome = "miss";
+  } else {
+    outcome = isDevLoaderCacheFresh(entry) ? "hit" : "stale";
+  }
+  emitInstrumentationCacheAccess({
+    cache,
+    operationId: request.operationId,
+    outcome,
+    path,
+    requestId: request.requestId,
+  });
+}
+
 export function getDevISRLoaderCache(key: string): DevLoaderCacheEntry | undefined {
-  return instanceDevLoaderState().isr.cache.get(key);
+  const entry = instanceDevLoaderState().isr.cache.get(key);
+  emitCacheAccess("isr-loader", key, entry);
+  return entry;
 }
 
 export function setDevISRLoaderCache(key: string, entry: DevLoaderCacheEntry): void {
@@ -112,7 +145,9 @@ export function setDevISRLoaderCache(key: string, entry: DevLoaderCacheEntry): v
 }
 
 export function getDevSSGLoaderCache(key: string): DevLoaderCacheEntry | undefined {
-  return instanceDevLoaderState().ssg.cache.get(key);
+  const entry = instanceDevLoaderState().ssg.cache.get(key);
+  emitCacheAccess("ssg-loader", key, entry);
+  return entry;
 }
 
 export function setDevSSGLoaderCache(key: string, entry: DevLoaderCacheEntry): void {
@@ -209,6 +244,17 @@ export function invalidateDevLoaderCacheBySource(filePath: string): InvalidateOu
     }
   }
 
+  const request = currentInstrumentationRequest();
+  const operationId = request === undefined ? null : request.operationId;
+  const requestId = request === undefined ? null : request.requestId;
+  emitCacheInvalidated({
+    deleted: cleared.length > 0,
+    operationId,
+    purgedPaths: cleared.length,
+    reason: "source",
+    requestId,
+    target: relative(process.cwd(), filePath).replaceAll("\\", "/"),
+  });
   return { cleared, isr, ssg };
 }
 

@@ -1,5 +1,5 @@
 import { expect } from "bun:test";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { Elysia } from "elysia";
 import {
   __resetCacheState,
@@ -9,8 +9,8 @@ import {
   invalidateDevLoaderCacheByPath,
   invalidateDevLoaderCacheBySource,
 } from "../../../src/server/cache/index.ts";
-import { createDevInspectorPlugin } from "../../../src/server/dev-inspector.ts";
 import { registerDevPagePlugin } from "../../../src/server/dev-page-plugin.ts";
+import { createDevtoolsPlugin } from "../../../src/server/devtools/plugin.ts";
 import { setProductionTemplateContent } from "../../../src/server/render/template.ts";
 import { scanPages } from "../../../src/server/router/discovery.ts";
 import { createRoutePlugin } from "../../../src/server/router/plugin.ts";
@@ -159,23 +159,26 @@ try {
     __setDevMode(true);
     const app = new Elysia()
       .use(createRoutePlugin(route, result.root))
-      .use(createDevInspectorPlugin());
+      .use(createDevtoolsPlugin([route], undefined));
 
     await requestText(app, "/isr-page");
-    const response = await app.handle(new Request("http://localhost/__furin/_inspect/isr"));
+    const response = await app.handle(new Request("http://localhost/_furin/devtools/snapshot"));
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("application/json");
     const body = await response.json();
 
-    expect(body).toHaveLength(1);
-    const [entry] = body;
-    expect(entry.key).toBe(`${result.root.path}:/isr-page`);
+    expect(body.caches).toHaveLength(1);
+    const [entry] = body.caches;
+    expect(entry.path).toBe("/isr-page");
     expect(entry.mode).toBe("isr");
     expect(entry.isFresh).toBe(true);
-    expect(entry.revalidate).toBe(60);
-    expect(entry.dependencies).toContain(route.path);
-    expect(entry.dependencies).toContain(result.root.path);
-    expect(entry.dataPreview.timestamp).toBeDefined();
+    expect(entry.revalidateSeconds).toBe(60);
+    expect(entry.dependencies).toContain(relative(process.cwd(), route.path).replaceAll("\\", "/"));
+    expect(entry.dependencies).toContain(
+      relative(process.cwd(), result.root.path).replaceAll("\\", "/")
+    );
+    expect(entry.fieldNames).toEqual(["timestamp", "params", "path", "query"]);
+    expect(JSON.stringify(body)).not.toContain(timestampFrom(await requestText(app, "/isr-page")));
   });
 
   await runScenario(async () => {

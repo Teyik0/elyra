@@ -6,7 +6,12 @@ import {
   revalidatePathForInstance,
 } from "../cache/invalidation.ts";
 import { pathWithoutSearch } from "../cache/route-cache.ts";
-import { allInstances } from "../instance.ts";
+import {
+  currentInstrumentationRequest,
+  emitCacheInvalidated,
+} from "../devtools/instrumentation.ts";
+import { allInstances, withInstance } from "../instance.ts";
+import { IS_DEV } from "../runtime-env.ts";
 import { getAutoInvalidateRegistry } from "./registry.ts";
 import type { InvalidationInput, InvalidationRule } from "./types.ts";
 
@@ -127,17 +132,37 @@ export function revalidateTag(tags: string | readonly string[]): boolean {
   let deleted = false;
   const purgedPaths = new Set<string>();
   for (const instance of allInstances()) {
+    let instanceDeleted = false;
+    const instancePurgedPaths = new Set<string>();
     // Registry paths are LOGICAL (unprefixed); the CDN caches the PHYSICAL
     // request URL, so prefix each with the instance's mount prefix before
     // queueing it for purge — otherwise a mounted app's `/admin/x` stays stale.
     for (const path of getAutoInvalidateRegistry(instance).pathsForTags(tagList)) {
       const logicalPath = pathWithoutSearch(path);
-      const result = revalidatePathForInstance(instance, logicalPath, "page");
+      const result = revalidatePathForInstance(instance, logicalPath, "page", false);
       deleted = result.deleted || deleted;
+      instanceDeleted = result.deleted || instanceDeleted;
       purgedPaths.add(`${instance.prefix}${logicalPath}`);
+      instancePurgedPaths.add(logicalPath);
       for (const purged of result.purgedPaths) {
         purgedPaths.add(`${instance.prefix}${purged}`);
+        instancePurgedPaths.add(purged);
       }
+    }
+    if (IS_DEV) {
+      withInstance(instance, () => {
+        const request = currentInstrumentationRequest();
+        const operationId = request === undefined ? null : request.operationId;
+        const requestId = request === undefined ? null : request.requestId;
+        emitCacheInvalidated({
+          deleted: instanceDeleted,
+          operationId,
+          purgedPaths: instancePurgedPaths.size,
+          reason: "tag",
+          requestId,
+          target: tagList.join(","),
+        });
+      });
     }
   }
   // One batched CDN purge — the CDN sits in front of every mounted app, so

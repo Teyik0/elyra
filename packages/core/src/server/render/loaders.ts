@@ -4,6 +4,7 @@ import { isDeferred, type RequestLoaderContext } from "../../client.ts";
 import { computeErrorDigest } from "../../shared/digest.ts";
 import { type FurinNotFoundError, isNotFoundError } from "../../shared/not-found.ts";
 import { useLogger } from "../context-logger.ts";
+import { currentInstrumentationRequest, emitLoaderFinished } from "../devtools/instrumentation.ts";
 import type { ResolvedRoute } from "../router/index.ts";
 import { IS_DEV } from "../runtime-env.ts";
 
@@ -189,6 +190,50 @@ function createRequestLoaderContext(ctx: Context): RequestLoaderContext {
   });
 }
 
+function observeLoader<T extends object>(
+  run: () => T | Promise<T>,
+  loader: string,
+  path: string
+): Promise<T> {
+  const request = currentInstrumentationRequest();
+  const startedAt = performance.now();
+  let promise: Promise<T>;
+  try {
+    promise = Promise.resolve(run());
+  } catch (error) {
+    promise = Promise.reject(error);
+  }
+  if (!(IS_DEV && request)) {
+    return promise;
+  }
+  return promise.then(
+    (value) => {
+      emitLoaderFinished({
+        durationMs: performance.now() - startedAt,
+        fieldNames: Object.keys(value),
+        loader,
+        operationId: request.operationId,
+        path,
+        requestId: request.requestId,
+        status: "fulfilled",
+      });
+      return value;
+    },
+    (error: unknown) => {
+      emitLoaderFinished({
+        durationMs: performance.now() - startedAt,
+        fieldNames: [],
+        loader,
+        operationId: request.operationId,
+        path,
+        requestId: request.requestId,
+        status: "rejected",
+      });
+      throw error;
+    }
+  );
+}
+
 export function runRequestLoaderData(
   route: ResolvedRoute,
   ctx: Context
@@ -201,7 +246,9 @@ export function runRequestLoaderData(
   }
   const requestContext = createRequestLoaderContext(ctx);
   const requestData = Promise.all(
-    loaders.map((loader) => Promise.resolve().then(() => loader(requestContext)))
+    loaders.map((loader, index) =>
+      observeLoader(() => loader(requestContext), `request:${index}`, ctx.path)
+    )
   ).then((results) => Object.assign({}, ...results));
   requestData.catch(() => {
     /* React observes the original rejection through requestData. */
@@ -341,12 +388,18 @@ async function runLoadersInternal(
     // if it never awaits a parent field it runs in full parallel.
     let accumulatedParentPromise: Promise<Record<string, unknown>> = Promise.resolve({});
 
+    let loaderIndex = 0;
     for (const r of route.routeChain) {
       const parentAccum = accumulatedParentPromise; // capture for closure
 
       if (r.loader) {
         const loaderCtx = createLoaderCtx(ctxRecord, parentAccum);
-        const loaderPromise = Promise.resolve(r.loader(loaderCtx)).then((res) => res ?? {});
+        const loaderPromise = observeLoader(
+          async () => (await r.loader?.(loaderCtx)) ?? {},
+          `layout:${loaderIndex}`,
+          ctx.path
+        );
+        loaderIndex += 1;
         loaderMap.set(r, loaderPromise);
 
         // Accumulate: previous ancestors + this loader's result.
@@ -369,7 +422,7 @@ async function runLoadersInternal(
     // Page loader receives all route-chain fields as individual Promises.
     const pageCtx = createLoaderCtx(ctxRecord, accumulatedParentPromise);
     const pagePromise: Promise<Record<string, unknown>> = route.page.loader
-      ? Promise.resolve(route.page.loader(pageCtx)).then((r) => r ?? {})
+      ? observeLoader(async () => (await route.page.loader?.(pageCtx)) ?? {}, "page", ctx.path)
       : Promise.resolve({});
 
     // Await everything in parallel. `results` is ordered layout1 → … → page;

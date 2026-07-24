@@ -1,5 +1,9 @@
 import { createLogger } from "../context-logger";
 import {
+  currentInstrumentationRequest,
+  emitCacheInvalidated,
+} from "../devtools/instrumentation.ts";
+import {
   __clearInstanceRegistry,
   allInstances,
   allStateBuckets,
@@ -10,6 +14,7 @@ import {
   withInstance,
 } from "../instance.ts";
 import { clearPprRouteCache } from "../render/ppr-route.ts";
+import { IS_DEV } from "../runtime-env.ts";
 import { clearDevLoaderCaches } from "./dev-loader";
 import { clearPendingISRRevalidations, isrRouteCache } from "./isr";
 import { getCacheInvalidators } from "./registry";
@@ -106,7 +111,8 @@ export function revalidatePath(path: string, type: RevalidateType): boolean {
 export function revalidatePathForInstance(
   instance: FurinInstance,
   path: string,
-  type: RevalidateType
+  type: RevalidateType,
+  emitPathEvent?: boolean
 ): { deleted: boolean; purgedPaths: string[] } {
   _activeInvalidationSet().add(type === "layout" ? `${path}:layout` : path);
 
@@ -117,6 +123,19 @@ export function revalidatePathForInstance(
       const result = invalidator.invalidatePath(path, type);
       deleted = result.deleted || deleted;
       purgedPaths.push(...result.purgedPaths);
+    }
+    if (IS_DEV && emitPathEvent !== false) {
+      const request = currentInstrumentationRequest();
+      const operationId = request === undefined ? null : request.operationId;
+      const requestId = request === undefined ? null : request.requestId;
+      emitCacheInvalidated({
+        deleted,
+        operationId,
+        purgedPaths: new Set(purgedPaths).size,
+        reason: "path",
+        requestId,
+        target: path,
+      });
     }
   });
   return { deleted, purgedPaths };

@@ -19,10 +19,10 @@ export function buildElement(
   // Directory depth `d` maps 1:1 to routeChain[d] in Furin's model (routeChain
   // is ordered shallow→deep, with index 0 being the root).
   const byDepth = new Map<number, SegmentBoundary>();
-  // Defensive fallback: some legacy callers / tests construct a ResolvedRoute
-  // without the segmentBoundaries field.
-  // biome-ignore lint/suspicious/noUnnecessaryConditions: legacy tests construct ResolvedRoute objects without segmentBoundaries
-  for (const segment of route.segmentBoundaries ?? []) {
+  const legacyRoute = route as ResolvedRoute & {
+    segmentBoundaries?: SegmentBoundary[];
+  };
+  for (const segment of legacyRoute.segmentBoundaries ?? []) {
     byDepth.set(segment.depth, segment);
   }
 

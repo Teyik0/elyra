@@ -82,11 +82,8 @@ describe("parseDeferredNdjson()", () => {
 
     const result = await parsePromise;
     expect(result.syncData).toEqual({ title: "hello" });
-    const dataPromise = result.deferredPromises.data;
+    const dataPromise = result.deferredPromises.data as Promise<unknown>;
     expect(dataPromise).toBeInstanceOf(Promise);
-    if (!dataPromise) {
-      throw new Error("Expected deferred data Promise");
-    }
 
     let settled = false;
     dataPromise.then(() => {

@@ -200,6 +200,26 @@ try {
     const rootUsers = await parent.handle(new Request("http://furin/users"));
     expect(rootUsers.status).toBe(404);
     await rootUsers.text();
+
+    const frontSnapshotResponse = await parent.handle(
+      new Request("http://localhost/_furin/devtools/snapshot")
+    );
+    const adminSnapshotResponse = await parent.handle(
+      new Request("http://localhost/admin/_furin/devtools/snapshot")
+    );
+    expect(frontSnapshotResponse.status).toBe(200);
+    expect(adminSnapshotResponse.status).toBe(200);
+    const frontSnapshot = await frontSnapshotResponse.json();
+    const adminSnapshot = await adminSnapshotResponse.json();
+    expect(frontSnapshot.instance.prefix).toBe("");
+    expect(adminSnapshot.instance.prefix).toBe("/admin");
+    expect(frontSnapshot.instance.id).not.toBe(adminSnapshot.instance.id);
+
+    const adminClient = await parent.handle(
+      new Request("http://localhost/admin/_furin/devtools/client.js")
+    );
+    expect(adminClient.status).toBe(200);
+    expect(await adminClient.text()).toContain("furin-devtools");
   });
 
   await runScenario(async () => {

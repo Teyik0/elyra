@@ -66,10 +66,38 @@ describe.serial("render/template", () => {
       const first = await getDevTemplate(origin);
       const second = await getDevTemplate(origin);
 
-      expect(first).toBe("<html>dev-template</html>");
-      expect(second).toBe("<html>dev-template</html>");
+      expect(first).toBe(
+        '<script type="module" src="/_furin/devtools/client.js"></script><html>dev-template</html>'
+      );
+      expect(second).toBe(first);
       // Second call within 1s TTL should hit the cache
       expect(requestCount).toBe(1);
+    } finally {
+      server.stop(true);
+    }
+  }, 10_000);
+
+  test("getDevTemplate injects the native DevTools client before application scripts", async () => {
+    const server = Bun.serve({
+      fetch() {
+        return new Response(
+          '<html><head></head><body><script type="module" src="/_bun/client/app.js"></script></body></html>'
+        );
+      },
+      port: 0,
+    });
+
+    try {
+      const html = await getDevTemplate(server.url.origin);
+      const devtoolsIndex = html.indexOf(
+        '<script type="module" src="/_furin/devtools/client.js"></script>'
+      );
+      const applicationIndex = html.indexOf(
+        '<script type="module" src="/_bun/client/app.js"></script>'
+      );
+
+      expect(devtoolsIndex).toBeGreaterThan(-1);
+      expect(devtoolsIndex).toBeLessThan(applicationIndex);
     } finally {
       server.stop(true);
     }

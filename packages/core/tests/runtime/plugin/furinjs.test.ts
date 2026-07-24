@@ -108,6 +108,17 @@ test.serial("furin() production plugin starts from built output", async () => {
   const plugin = await furin({
     pagesDir: join(app.path, "src/pages"),
   });
+  const htmlResponse = await plugin.handle(new Request("http://furin/"));
+  const snapshotResponse = await plugin.handle(
+    new Request("http://furin/_furin/devtools/snapshot")
+  );
+  const clientResponse = await plugin.handle(new Request("http://furin/_furin/devtools/client.js"));
+
+  expect(htmlResponse.status).toBe(200);
+  expect(await htmlResponse.text()).not.toContain("furin-devtools");
+  expect(snapshotResponse.status).toBe(404);
+  expect(clientResponse.status).toBe(404);
+
   const server = new Elysia().use(plugin).listen(0);
 
   try {

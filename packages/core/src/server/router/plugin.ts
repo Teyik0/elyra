@@ -2,9 +2,13 @@ import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import type { AnySchema } from "elysia/types";
 import { toCrossJSONAsync } from "seroval";
 import { computeErrorDigest } from "../../shared/digest.ts";
-import { serializeRouteFrames } from "../../shared/route-frame.ts";
+import { containsRscSource, serializeRouteFrames } from "../../shared/route-frame.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
 import { useLogger } from "../context-logger.ts";
+import {
+  currentInstrumentationRequest,
+  emitPayloadSerialized,
+} from "../devtools/instrumentation.ts";
 import { injectSyncRuntimeScript, resolvePath } from "../render/assemble.ts";
 import { handleISR } from "../render/isr.ts";
 import {
@@ -34,6 +38,23 @@ type SyntheticDataContext = Omit<Context, "params" | "query"> & {
   params: DataRouteParamsInput;
   query: SearchParamsInput;
 };
+
+function emitSerializedPayload(body: string, kind: "route-data" | "rsc", requestUrl: string): void {
+  if (!IS_DEV) {
+    return;
+  }
+  const request = currentInstrumentationRequest();
+  if (request === undefined) {
+    return;
+  }
+  emitPayloadSerialized({
+    bytes: new TextEncoder().encode(body).byteLength,
+    kind,
+    operationId: request.operationId,
+    path: new URL(requestUrl).pathname,
+    requestId: request.requestId,
+  });
+}
 
 async function runDataEndpointLoaders(route: ResolvedRoute, ctx: Context): Promise<LoaderResult> {
   if (route.mode !== "isr" && route.mode !== "ssg") {
@@ -97,7 +118,13 @@ async function createLoaderDataResponse(
       }
     );
   }
-  return new Response(serializeRouteFrames(syncDataWithTitle, undefined), {
+  const body = serializeRouteFrames(syncDataWithTitle, undefined);
+  emitSerializedPayload(
+    body,
+    containsRscSource(syncDataWithTitle) ? "rsc" : "route-data",
+    requestUrl
+  );
+  return new Response(body, {
     headers: {
       ...result.headers,
       "content-type": "application/x-furin-route",

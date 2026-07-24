@@ -8,6 +8,11 @@ import { type EvlogElysiaOptions, evlog } from "evlog/elysia";
 import { consumePendingInvalidations } from "./server/cache/invalidation.ts";
 import { setSSGCache } from "./server/cache/ssg.ts";
 import {
+  createInstrumentationPlugin,
+  runWithRequestInstrumentation,
+  shouldInstrumentRequest,
+} from "./server/devtools/instrumentation.ts";
+import {
   assertPrefixAvailable,
   createInstance,
   type FurinInstance,
@@ -332,8 +337,19 @@ function wrapWithRequestScope(app: AnyElysia): Elysia {
     markTraffic();
     const req = request ?? (ctx as { request?: Request } | undefined)?.request;
     const pathname = req ? new URL(req.url).pathname : "/";
-    return runWithInstanceScope(resolveInstanceByPath(pathname), () => handler(ctx));
+    const instance = resolveInstanceByPath(pathname);
+    return runWithInstanceScope(instance, () => {
+      if (!(req && shouldInstrumentRequest(pathname, instance.prefix))) {
+        return handler(ctx);
+      }
+      return runWithRequestInstrumentation(req, () => handler(ctx));
+    });
   });
+}
+
+async function loadDevelopmentRoutes(resolvedPagesDir: string) {
+  const { scanPages } = await import("./server/router/index.ts");
+  return scanPages(resolvedPagesDir);
 }
 
 function hydrateSSGCacheFromCompileContext(ctx: CompileContext): void {
@@ -441,9 +457,7 @@ export async function furin({
     // Lazy import — build pipeline has native deps not available in compiled binaries
     const { registerDevPagePlugin } = await import("./server/dev-page-plugin.ts");
     registerDevPagePlugin();
-
-    const { scanPages } = await import("./server/router/index.ts");
-    const { root, routes } = await scanPages(resolvedPagesDir);
+    const { root, routes } = await loadDevelopmentRoutes(resolvedPagesDir);
     const searchRoutes = createSearchRouteMetadata(routes);
 
     const { writeDevFiles } = await import("./build/hydrate.ts");
@@ -498,6 +512,7 @@ export async function furin({
           ? file(join(publicDir, "favicon.ico"))
           : () => new Response(null, { status: 404 })
       )
+      .use(createInstrumentationPlugin(routes, syncStreamPath))
       .use(sync ? createSyncStreamPlugin(sync) : new Elysia())
       .use(createDataEndpoint(routes))
       .use((app) =>

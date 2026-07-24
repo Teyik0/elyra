@@ -140,11 +140,11 @@
   },
   "dependencies": {
     "@elysiajs/static": "^1.4.10",
-    "@yuku-toolchain/types": "0.6.12",
-    "magic-string": "^1.0.0",
-    "react-server-dom-webpack": "19.2.7",
-    "seroval": "^1.5.5",
-    "yuku-parser": "0.6.12"
+    "@yuku-toolchain/types": "0.8.0",
+    "magic-string": "^1.1.0",
+    "react-server-dom-webpack": "19.2.8",
+    "seroval": "^1.5.6",
+    "yuku-parser": "0.8.0"
   },
   "devDependencies": {
     "@types/react": "catalog:",
