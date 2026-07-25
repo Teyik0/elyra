@@ -12,7 +12,7 @@ import { hasShadowingDeclaration } from "./binding-scope.ts";
 import { deadCodeElimination } from "./dead-code-elimination.ts";
 
 const FURIN_MODULES = new Set(["@teyik0/furin", "furin"]);
-const SCRIPT_FILE_FILTER = /\.(tsx?|jsx?)$/;
+const SCRIPT_FILE_FILTER = /^(?!.*(?:node_modules|[\\/]\.furin[\\/]build[\\/])).*\.(tsx?|jsx?)$/;
 
 export type IsomorphicEnvironment = "client" | "server";
 
@@ -394,14 +394,8 @@ export function isomorphicTransformPlugin(environment: IsomorphicEnvironment): B
     name: `furin-isomorphic-${environment}`,
     setup(build) {
       build.onLoad({ filter: SCRIPT_FILE_FILTER }, async ({ path }) => {
-        if (path.includes("/.furin/build/") || path.includes("\\.furin\\build\\")) {
-          return;
-        }
         const source = await Bun.file(path).text();
         const loader = detectLoaderFromPath(path);
-        if (path.includes("node_modules")) {
-          return { contents: source, loader };
-        }
         const result = transformIsomorphicFunctions(source, path, environment);
         return {
           contents: result.transformed ? result.code : source,
