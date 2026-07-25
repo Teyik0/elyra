@@ -34,6 +34,11 @@ interface IsomorphicCandidate {
   start: number;
 }
 
+interface IsomorphicBuilderBinding {
+  name: string;
+  scope: AstNode;
+}
+
 function importedName(specifier: AstNode): string | undefined {
   const { imported } = specifier;
   if (!(imported && typeof imported === "object")) {
@@ -235,8 +240,24 @@ function sourcePosition(source: string, offset: number): string {
   return `${line}:${offset - lastNewline}`;
 }
 
-function collectBuilderNames(program: Program, bindings: IsomorphicBindings): Set<string> {
-  const builders = new Set<string>();
+function bindingScope(ancestors: AstNode[]): AstNode | undefined {
+  return ancestors.findLast(
+    (ancestor) =>
+      ancestor.type === "Program" ||
+      ancestor.type === "BlockStatement" ||
+      ancestor.type === "SwitchStatement" ||
+      ancestor.type === "ForStatement" ||
+      ancestor.type === "ForInStatement" ||
+      ancestor.type === "ForOfStatement" ||
+      ancestor.type === "StaticBlock"
+  );
+}
+
+function collectBuilderBindings(
+  program: Program,
+  bindings: IsomorphicBindings
+): IsomorphicBuilderBinding[] {
+  const builders: IsomorphicBuilderBinding[] = [];
 
   walk(program, {
     VariableDeclarator(node, context) {
@@ -245,25 +266,42 @@ function collectBuilderNames(program: Program, bindings: IsomorphicBindings): Se
       }
       const identifier = node.id as unknown as AstNode;
       const initializer = unwrapTSExpression(node.init) as AstNode;
+      const ancestors = context.ancestors() as AstNode[];
+      const scope = bindingScope(ancestors);
       if (
+        scope &&
         identifier.type === "Identifier" &&
         typeof identifier.name === "string" &&
-        isCreateIsomorphicCall(initializer, bindings, context.ancestors() as AstNode[])
+        isCreateIsomorphicCall(initializer, bindings, ancestors)
       ) {
-        builders.add(identifier.name);
+        builders.push({ name: identifier.name, scope });
       }
     },
   });
   return builders;
 }
 
+function hasVisibleBuilder(
+  name: string,
+  ancestors: AstNode[],
+  builders: IsomorphicBuilderBinding[]
+): boolean {
+  let scopeIndex = -1;
+  for (const builder of builders) {
+    if (builder.name === name) {
+      scopeIndex = Math.max(scopeIndex, ancestors.lastIndexOf(builder.scope));
+    }
+  }
+  return scopeIndex >= 0 && !hasShadowingDeclaration(name, ancestors.slice(scopeIndex + 1));
+}
+
 function assertNoSplitChains(
   source: string,
   filename: string,
   program: Program,
-  builders: Set<string>
+  builders: IsomorphicBuilderBinding[]
 ): void {
-  if (builders.size === 0) {
+  if (builders.length === 0) {
     return;
   }
 
@@ -273,8 +311,7 @@ function assertNoSplitChains(
         node.computed ||
         node.object.type !== "Identifier" ||
         typeof node.object.name !== "string" ||
-        !builders.has(node.object.name) ||
-        hasShadowingDeclaration(node.object.name, context.ancestors() as AstNode[]) ||
+        !hasVisibleBuilder(node.object.name, context.ancestors() as AstNode[], builders) ||
         node.property.type !== "Identifier" ||
         (node.property.name !== "server" && node.property.name !== "client")
       ) {
@@ -313,7 +350,7 @@ function assertStaticEnvironmentMethods(
   filename: string,
   program: Program,
   bindings: IsomorphicBindings,
-  builders: Set<string>
+  builders: IsomorphicBuilderBinding[]
 ): void {
   walk(program, {
     MemberExpression(node, context) {
@@ -327,8 +364,7 @@ function assertStaticEnvironmentMethods(
       const splitBuilder =
         node.object.type === "Identifier" &&
         typeof node.object.name === "string" &&
-        builders.has(node.object.name) &&
-        !hasShadowingDeclaration(node.object.name, ancestors);
+        hasVisibleBuilder(node.object.name, ancestors, builders);
       if (
         !(
           splitBuilder ||
@@ -361,7 +397,7 @@ export function transformIsomorphicFunctions(
   }
 
   const bindings = collectBindings(program);
-  const builders = collectBuilderNames(program, bindings);
+  const builders = collectBuilderBindings(program, bindings);
   assertStaticEnvironmentMethods(source, filename, program, bindings, builders);
   assertNoSplitChains(source, filename, program, builders);
   const candidates = collectCandidates(source, filename, program, bindings);
