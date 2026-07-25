@@ -53,6 +53,7 @@
 
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { transformIsomorphicFunctions } from "../plugin/transform-isomorphic.ts";
 import { invalidateDevLoaderCacheBySource } from "./cache/dev-loader.ts";
 
 // Matches ?furin-server with an optional &t=<ms> cache-buster.
@@ -314,7 +315,7 @@ function shouldSkipWorkspaceTransform(filePath: string): boolean {
   return normalized.includes("/.furin/");
 }
 
-function transformDevSource(
+export function transformDevSource(
   raw: string,
   filePath: string,
   options: { rewriteBareImports: boolean; rewriteRelativeImports: boolean }
@@ -325,15 +326,16 @@ function transformDevSource(
   }
 
   const dir = dirname(filePath);
+  const serverSource = transformIsomorphicFunctions(raw, filePath, "server").code;
   const sourceForTranspile = options.rewriteRelativeImports
-    ? rewriteRelativeImports(raw, dir)
-    : raw;
+    ? rewriteRelativeImports(serverSource, dir)
+    : serverSource;
   const transpiler = new Bun.Transpiler({ loader });
   const transpiled = transpiler.transformSync(sourceForTranspile, loader);
 
   let result = transpiled;
   if (options.rewriteBareImports) {
-    result = rewriteBareImports(raw, result, dir);
+    result = rewriteBareImports(serverSource, result, dir);
   }
 
   result = rewriteSingletonImports(result);

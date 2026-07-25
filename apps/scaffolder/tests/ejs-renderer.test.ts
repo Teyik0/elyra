@@ -30,8 +30,29 @@ describe("renderEjsFile — simple template", () => {
   it("renders server.ts.ejs with projectName substituted", async () => {
     const src = resolve(TEMPLATES_DIR, "simple/src/server.ts.ejs");
     const output = await renderEjsFile(src, mockVars);
-    expect(output).toContain("My Test App running at");
+    expect(output).toContain(JSON.stringify(mockVars.projectName));
     expect(output).not.toContain("<%=");
+  });
+
+  it("preserves special characters in projectName as generated JavaScript data", async () => {
+    const src = resolve(TEMPLATES_DIR, "simple/src/server.ts.ejs");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: security regression sentinel must remain literal.
+    const projectName = "A&B <app> `${globalThis.compromised = true}`";
+    const output = await renderEjsFile(src, { ...mockVars, projectName });
+    const statement = output.split("\n").find((line) => line.startsWith("console.log("));
+    if (statement === undefined) {
+      throw new Error("Expected the generated server to log its URL");
+    }
+    const messages: string[] = [];
+
+    Function(
+      "app",
+      "console",
+      statement
+    )({ server: { port: 3000 } }, { log: (message: string) => messages.push(message) });
+
+    expect(messages).toEqual([`${projectName} running at http://localhost:3000`]);
+    expect(globalThis).not.toHaveProperty("compromised");
   });
 
   it("renders furin-env.d.ts.ejs without leftover EJS tags", async () => {

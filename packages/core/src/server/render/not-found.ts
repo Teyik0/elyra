@@ -18,13 +18,14 @@ import { getDevTemplate, getProductionTemplate } from "./template.ts";
  */
 export async function renderRootNotFound(
   root: RootLayout,
-  request: Request | undefined
+  request: Request | undefined,
+  listenerOrigin?: string
 ): Promise<Response> {
   const prodTemplate = getProductionTemplate();
   let template: string;
-  if (IS_DEV && request) {
+  if (IS_DEV && listenerOrigin) {
     try {
-      template = await getDevTemplate(new URL(request.url).origin);
+      template = await getDevTemplate(listenerOrigin);
     } catch {
       template = generateIndexHtml();
     }

@@ -10,6 +10,17 @@ const describeWithRedis = redisUrl === undefined ? describe.skip : describe;
 const describeWithBoth =
   redisUrl === undefined || databaseUrl === undefined ? describe.skip : describe;
 
+describe("Redis sync validation", () => {
+  test("rejects namespaces containing an unpaired surrogate with a validation error", () => {
+    const client = new RedisClient("redis://127.0.0.1:1");
+
+    expect(() => redisSyncAdapter({ client, namespace: "\uD800" })).toThrow(
+      "[furin-sync-redis] namespace must contain valid Unicode."
+    );
+    client.close();
+  });
+});
+
 describeWithRedis("Redis sync", () => {
   const client = new RedisClient(redisUrl as string);
   const namespace = "redis-conformance";

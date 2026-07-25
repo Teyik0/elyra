@@ -234,31 +234,53 @@ export const api = new Elysia({ prefix: "/api" })
   })
 ```
 
-## Typed Client Access
+## Isomorphic Eden Client
 
-If you export `typeof app`, you can use Eden Treaty on the client side for end-to-end typing.
+`createIsomorphicFn()` exposes one typed Eden client while keeping the transport environment-specific. The server branch passes the Elysia instance directly to Treaty, so loaders execute the handler in-process without an HTTP request to localhost. The browser branch uses the current origin over HTTP.
 
 ```ts
-// src/client.ts
+// src/lib/api.ts
 import { treaty } from "@elysiajs/eden"
-import type { App } from "./server.ts"
+import { createIsomorphicFn } from "@teyik0/furin"
+import { api as serverApi, type Api } from "../api/index.ts"
 
-export const api = treaty<App>("localhost:3000")
+export const getApi = createIsomorphicFn()
+  .server(() => treaty(serverApi))
+  .client(() => treaty<Api>(window.location.origin))
 ```
+
+Furin loaders remain server-only during SSR, SSG, ISR, and client navigation. The same accessor can therefore be used in a loader and an interactive component without shipping the Elysia application to the browser:
 
 ```tsx
 // src/pages/blog/index.tsx
-import { api } from "@/client"
+import { getApi } from "@/lib/api"
 import { route } from "./_route"
 
 export default route.page({
   loader: async () => {
-    const { data } = await api.api.posts.get()
-    return { posts: data ?? [] }
+    const { data, error } = await getApi().api.posts.get()
+    if (error) throw error.value
+    return { posts: data }
   },
   component: ({ posts }) => <PostList posts={posts} />,
 })
 ```
+
+The Elysia instance passed to `treaty(serverApi)` must contain the guards, auth hooks, logging, and sync plugins required by its routes. Parent hooks mounted only on a different outer Elysia instance are not implicitly included.
+
+Direct Eden execution also does not automatically inherit the incoming Furin request headers or cookies. Forward them when an endpoint depends on request identity:
+
+```ts
+loader: async ({ request }) => {
+  const { data, error } = await getApi().api.account.get({
+    headers: request.headers,
+  })
+  if (error) throw error.value
+  return { account: data }
+}
+```
+
+`createIsomorphicFn()` only selects the environment and transport. Cache invalidation and live synchronization remain declared independently through `sync`, tags, or paths.
 
 ## Middleware And Guards
 

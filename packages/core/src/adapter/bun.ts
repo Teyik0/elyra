@@ -11,6 +11,7 @@ import { buildTargetManifest, copyDirRecursive, ensureDir, toPosixPath } from ".
 import { buildSSGCacheSnapshot } from "../build/ssg-cache.ts";
 import type { BuildAppOptions, TargetBuildManifest } from "../build/types.ts";
 import type { BuildTarget } from "../config.ts";
+import { isomorphicTransformPlugin } from "../plugin/transform-isomorphic.ts";
 import { environmentGuardPlugin } from "../rsc/build/environment.ts";
 import { buildRscGraph } from "../rsc/build/index.ts";
 import { ssgRouteCache } from "../server/cache/ssg.ts";
@@ -311,6 +312,7 @@ export async function buildBunTarget(
       plugins: [
         productionInstrumentationPlugin(),
         ...(options.plugins ?? []),
+        isomorphicTransformPlugin("server"),
         environmentGuardPlugin("ssr"),
       ],
     });
@@ -347,6 +349,7 @@ export async function buildBunTarget(
       plugins: [
         productionInstrumentationPlugin(),
         ...(options.plugins ?? []),
+        isomorphicTransformPlugin("server"),
         environmentGuardPlugin("ssr"),
       ],
     });

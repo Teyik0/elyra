@@ -273,6 +273,34 @@ test("furinSync direct handle completes inside bun:test", async () => {
   }
 }, 1000);
 
+test("furinSync bypasses reads and synchronizes mutations implicitly", async () => {
+  resetSyncTestState();
+  try {
+    let mutationCalls = 0;
+    const app = new Elysia()
+      .use(furinSync(testSync))
+      .get("/boards", () => [{ id: "board-1" }])
+      .post("/boards", () => {
+        mutationCalls += 1;
+        return { id: "board-1" };
+      });
+
+    let response = await app.handle(new Request("http://localhost/boards"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([{ id: "board-1" }]);
+
+    response = await app.handle(
+      new Request("http://localhost/boards", {
+        method: "POST",
+      })
+    );
+    expect(response.status).toBe(428);
+    expect(mutationCalls).toBe(0);
+  } finally {
+    resetSyncTestState();
+  }
+});
+
 test("furinSync enforces idempotent mutation semantics directly", async () => {
   resetSyncTestState();
   try {

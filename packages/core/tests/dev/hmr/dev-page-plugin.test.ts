@@ -4,6 +4,7 @@ import {
   rewriteRelativeImports,
   rewriteSingletonImports,
   toImportSpecifier,
+  transformDevSource,
   WORKSPACE_SOURCE_FILTER,
 } from "../../../src/server/dev-page-plugin.ts";
 
@@ -16,6 +17,26 @@ describe("WORKSPACE_SOURCE_FILTER", () => {
   ])("excludes dependency files on every platform: %s", (filePath) => {
     expect(WORKSPACE_SOURCE_FILTER.test(filePath)).toBe(false);
   });
+});
+
+test("development SSR selects the server isomorphic implementation", () => {
+  const result = transformDevSource(
+    `
+      import { createIsomorphicFn } from "@teyik0/furin";
+      import { serverValue } from "./server";
+      import { clientValue } from "./client";
+
+      export const getValue = createIsomorphicFn()
+        .server(() => serverValue)
+        .client(() => clientValue);
+    `,
+    "/app/src/shared.ts",
+    { rewriteBareImports: false, rewriteRelativeImports: false }
+  );
+
+  expect(result).toContain("serverValue");
+  expect(result).not.toContain("clientValue");
+  expect(result).not.toContain("createIsomorphicFn");
 });
 
 describe("toImportSpecifier", () => {

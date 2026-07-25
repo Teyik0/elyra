@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runBunBuild } from "../../build/bun-build.ts";
+import { isomorphicTransformPlugin } from "../../plugin/transform-isomorphic.ts";
 import type { ResolvedRoute, RootLayout } from "../../server/router/index.ts";
 import { assertInstalledRscVersions } from "../version.ts";
 import { environmentGuardPlugin } from "./environment.ts";
@@ -52,7 +53,12 @@ export async function buildRscGraph(
     splitting: true,
     conditions: ["react-server"],
     naming: { entry: "[dir]/[name]-[hash].[ext]", chunk: "[name]-[hash].[ext]" },
-    plugins: [...(userPlugins ?? []), environmentGuardPlugin("rsc"), aliasPlugin],
+    plugins: [
+      ...(userPlugins ?? []),
+      isomorphicTransformPlugin("server"),
+      environmentGuardPlugin("rsc"),
+      aliasPlugin,
+    ],
     define: { "process.env.NODE_ENV": JSON.stringify("production") },
   });
   if (!result.success) {
@@ -67,7 +73,11 @@ export async function buildRscGraph(
     format: "esm",
     conditions: ["react-server"],
     naming: "server-codec.js",
-    plugins: [...(userPlugins ?? []), environmentGuardPlugin("rsc")],
+    plugins: [
+      ...(userPlugins ?? []),
+      isomorphicTransformPlugin("server"),
+      environmentGuardPlugin("rsc"),
+    ],
     define: { "process.env.NODE_ENV": JSON.stringify("production") },
   });
   if (!codecResult.success) {

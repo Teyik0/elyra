@@ -29,7 +29,14 @@ function getServerDigest(error: unknown): string | undefined {
 }
 
 function normalizeCaughtError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
+  if (error instanceof Error) {
+    return error;
+  }
+  const normalized = new Error(String(error));
+  if ((typeof error === "object" && error !== null) || typeof error === "function") {
+    Object.defineProperties(normalized, Object.getOwnPropertyDescriptors(error));
+  }
+  return normalized;
 }
 
 interface ErrorBoundaryProps {

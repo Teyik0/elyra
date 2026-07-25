@@ -49,6 +49,9 @@ function assertNamespace(namespace: string): void {
   if (namespace.length === 0) {
     throw new Error("[furin-sync-redis] namespace must not be empty.");
   }
+  if (!namespace.isWellFormed()) {
+    throw new Error("[furin-sync-redis] namespace must contain valid Unicode.");
+  }
 }
 
 function mutationDigest(input: Pick<MutationLease, "key" | "principal">): string {

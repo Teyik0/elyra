@@ -39,6 +39,8 @@ interface MutationContext {
   request: Request;
 }
 
+type TransportHook<TContext> = (context: TContext) => Promise<void>;
+
 type CompletionContext = MutationContext &
   Pick<Context, "set"> & {
     response?: unknown;
@@ -48,6 +50,13 @@ type PathInvalidation = Extract<SyncInvalidation, { kind: "path" }>;
 
 const routeMetadata = new WeakMap<Request, RouteSyncMetadata>();
 const activeMutations = new WeakMap<Request, ActiveMutation>();
+
+function hideTransportResponse<TContext>(
+  hook: (context: TContext) => Promise<Response | undefined>
+): TransportHook<TContext> {
+  // Sync responses short-circuit Elysia at runtime; they are not route success payloads for Eden.
+  return hook as TransportHook<TContext>;
+}
 
 function invalidationInputFromSync(input: Exclude<SyncRouteOption, false>): InvalidationInput {
   if (input && typeof input === "object" && "invalidate" in input) {
@@ -261,6 +270,9 @@ export function furinSync(options: SyncRuntimeOptions) {
     }
   }
 
+  const beginMutationHook = hideTransportResponse(beginMutation);
+  const finishMutationHook = hideTransportResponse(finishMutation);
+
   return new Elysia({ name: "furin-sync" })
     .macro({
       sync(input: SyncRouteOption) {
@@ -276,7 +288,7 @@ export function furinSync(options: SyncRuntimeOptions) {
         };
       },
     })
-    .onBeforeHandle({ as: "global" }, beginMutation)
-    .onAfterHandle({ as: "global" }, finishMutation)
+    .onBeforeHandle({ as: "global" }, beginMutationHook)
+    .onAfterHandle({ as: "global" }, finishMutationHook)
     .onError({ as: "global" }, ({ request }) => abortMutation(request));
 }

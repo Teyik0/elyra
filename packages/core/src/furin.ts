@@ -47,6 +47,13 @@ export type CacheTag = keyof FurinCacheTags extends never ? string : keyof Furin
 import { clientDirNameForPrefix } from "./shared/prefix.ts";
 
 // biome-ignore lint/performance/noBarrelFile: furin.ts is the public package entry
+export {
+  type ClientIsomorphicFn,
+  createIsomorphicFn,
+  type IsomorphicFn,
+  type IsomorphicFnBuilder,
+  type ServerIsomorphicFn,
+} from "./isomorphic.ts";
 export { clientDirNameForPrefix } from "./shared/prefix.ts";
 
 const MAX_BROWSER_INGEST_BYTES = 64 * 1024;
@@ -490,9 +497,9 @@ export async function furin({
       .use(loggerPlugin)
       // Local scope (default) — a global hook would leak onto sibling furin
       // instances mounted on the same parent app.
-      .onError(async ({ code, request }) => {
+      .onError(async ({ code, request, server }) => {
         if (code === "NOT_FOUND") {
-          return await renderRootNotFound(root, request);
+          return await renderRootNotFound(root, request, server?.url.origin);
         }
       })
       .onAfterHandle(({ set }) => {
@@ -553,9 +560,9 @@ export async function furin({
     .use(loggerPlugin)
     // Local scope (default) — a global hook would leak onto sibling furin
     // instances mounted on the same parent app.
-    .onError(async ({ code, request }) => {
+    .onError(async ({ code, request, server }) => {
       if (code === "NOT_FOUND") {
-        return await renderRootNotFound(root, request);
+        return await renderRootNotFound(root, request, server?.url.origin);
       }
     })
     .onAfterHandle(({ path, set }) => {
@@ -654,9 +661,9 @@ function createNotFoundHandling(
 ): Elysia {
   const app = new Elysia();
   if (prefix === "") {
-    app.onError({ as: "global" }, async ({ code, request }) => {
+    app.onError({ as: "global" }, async ({ code, request, server }) => {
       if (code === "NOT_FOUND") {
-        return await renderRootNotFound(root, request);
+        return await renderRootNotFound(root, request, server?.url.origin);
       }
     });
     return app;
@@ -664,7 +671,7 @@ function createNotFoundHandling(
   if (routes.some((route) => route.pattern === "/*")) {
     return app;
   }
-  app.get("/*", ({ request }) => renderRootNotFound(root, request));
+  app.get("/*", ({ request, server }) => renderRootNotFound(root, request, server?.url.origin));
   return app;
 }
 

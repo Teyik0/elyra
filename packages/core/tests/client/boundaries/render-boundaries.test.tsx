@@ -54,6 +54,46 @@ describe("FurinErrorBoundary", () => {
     expect(next.error).toBeInstanceOf(Error);
   });
 
+  test("normalizing a branded non-Error not-found preserves its control-flow metadata", () => {
+    const thrown = {
+      __furinBrand: "FURIN_NOT_FOUND",
+      data: { slug: "missing" },
+      message: "gone",
+    };
+    const next = FurinErrorBoundary.getDerivedStateFromError(thrown);
+    const boundary = new FurinErrorBoundary({ children: null });
+    boundary.state = { ...boundary.state, ...next } as typeof boundary.state;
+
+    expect(() => boundary.render()).toThrow(
+      expect.objectContaining({
+        __furinBrand: "FURIN_NOT_FOUND",
+        data: { slug: "missing" },
+        message: "gone",
+      })
+    );
+  });
+
+  test("normalizing a branded non-Error server error preserves status and digest", () => {
+    const Fallback = ({ error }: ErrorProps) => (
+      <div>
+        {error.status}:{error.digest}:{error.message}
+      </div>
+    );
+    const thrown = {
+      __furinBrand: "FURIN_SERVER_ERROR",
+      digest: "server12345",
+      message: "unavailable",
+      status: 503,
+    };
+    const next = FurinErrorBoundary.getDerivedStateFromError(thrown);
+    const boundary = new FurinErrorBoundary({ children: null, fallback: Fallback });
+    boundary.state = { ...boundary.state, ...next } as typeof boundary.state;
+
+    expect(renderToStaticMarkup(boundary.render() as ReactNode)).toContain(
+      "503:server12345:unavailable"
+    );
+  });
+
   test("getDerivedStateFromError latches onto FurinNotFoundError too (re-thrown in render)", () => {
     const err = new FurinNotFoundError({ message: "gone" });
     // The boundary captures it in state, but render() re-throws it so an

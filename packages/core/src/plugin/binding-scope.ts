@@ -1,0 +1,138 @@
+import type { AstNode } from "../shared/utils/ast-walk.ts";
+
+function bindingPatternHasName(pattern: unknown, name: string): boolean {
+  if (!(pattern && typeof pattern === "object")) {
+    return false;
+  }
+  const node = pattern as AstNode;
+  if (node.type === "Identifier") {
+    return node.name === name;
+  }
+  if (node.type === "AssignmentPattern") {
+    return bindingPatternHasName(node.left, name);
+  }
+  if (node.type === "RestElement") {
+    return bindingPatternHasName(node.argument, name);
+  }
+  if (node.type === "ArrayPattern") {
+    return (
+      Array.isArray(node.elements) &&
+      node.elements.some((element) => bindingPatternHasName(element, name))
+    );
+  }
+  if (node.type === "ObjectPattern") {
+    return (
+      Array.isArray(node.properties) &&
+      node.properties.some((property) => {
+        if (!(property && typeof property === "object")) {
+          return false;
+        }
+        const propertyNode = property as AstNode;
+        return bindingPatternHasName(
+          propertyNode.type === "Property" ? propertyNode.value : propertyNode.argument,
+          name
+        );
+      })
+    );
+  }
+  if (node.type === "TSParameterProperty") {
+    return bindingPatternHasName(node.parameter, name);
+  }
+  return false;
+}
+
+function declarationHasName(node: AstNode, name: string): boolean {
+  if (node.type === "VariableDeclaration" && Array.isArray(node.declarations)) {
+    return node.declarations.some((declaration) =>
+      declaration && typeof declaration === "object"
+        ? bindingPatternHasName((declaration as AstNode).id, name)
+        : false
+    );
+  }
+  if (node.type === "FunctionDeclaration" || node.type === "ClassDeclaration") {
+    return bindingPatternHasName(node.id, name);
+  }
+  return false;
+}
+
+function functionBodyHasVarName(value: unknown, name: string, root: boolean): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some((entry) => functionBodyHasVarName(entry, name, false));
+  }
+  const node = value as AstNode;
+  if (
+    !root &&
+    (node.type === "FunctionDeclaration" ||
+      node.type === "FunctionExpression" ||
+      node.type === "ArrowFunctionExpression" ||
+      node.type === "StaticBlock")
+  ) {
+    return false;
+  }
+  if (
+    node.type === "VariableDeclaration" &&
+    node.kind === "var" &&
+    Array.isArray(node.declarations) &&
+    node.declarations.some((declaration) =>
+      declaration && typeof declaration === "object"
+        ? bindingPatternHasName((declaration as AstNode).id, name)
+        : false
+    )
+  ) {
+    return true;
+  }
+  return Object.values(node).some((entry) => functionBodyHasVarName(entry, name, false));
+}
+
+function functionScopeHasName(scope: AstNode, name: string): boolean {
+  if (
+    scope.type !== "FunctionDeclaration" &&
+    scope.type !== "FunctionExpression" &&
+    scope.type !== "ArrowFunctionExpression"
+  ) {
+    return false;
+  }
+  return (
+    (Array.isArray(scope.params) &&
+      scope.params.some((parameter) => bindingPatternHasName(parameter, name))) ||
+    (scope.type === "FunctionExpression" && bindingPatternHasName(scope.id, name)) ||
+    functionBodyHasVarName(scope.body, name, true)
+  );
+}
+
+function blockScopeHasName(scope: AstNode, name: string): boolean {
+  return (
+    scope.type === "BlockStatement" &&
+    Array.isArray(scope.body) &&
+    scope.body.some((statement) =>
+      statement && typeof statement === "object"
+        ? declarationHasName(statement as AstNode, name)
+        : false
+    )
+  );
+}
+
+function loopScopeHasName(scope: AstNode, name: string): boolean {
+  const declaration = scope.type === "ForStatement" ? scope.init : scope.left;
+  return (
+    (scope.type === "ForStatement" ||
+      scope.type === "ForInStatement" ||
+      scope.type === "ForOfStatement") &&
+    !!declaration &&
+    typeof declaration === "object" &&
+    declarationHasName(declaration as AstNode, name)
+  );
+}
+
+export function hasShadowingDeclaration(name: string, ancestors: AstNode[]): boolean {
+  return ancestors.some(
+    (scope) =>
+      functionScopeHasName(scope, name) ||
+      (scope.type === "CatchClause" && bindingPatternHasName(scope.param, name)) ||
+      blockScopeHasName(scope, name) ||
+      loopScopeHasName(scope, name)
+  );
+}

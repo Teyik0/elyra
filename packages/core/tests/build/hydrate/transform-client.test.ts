@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import MagicString from "magic-string";
-import { deadCodeElimination, transformForClient } from "../../../src/plugin/transform-client";
+import { deadCodeElimination } from "../../../src/plugin/dead-code-elimination";
+import { transformForClient } from "../../../src/plugin/transform-client";
 
 // ---------------------------------------------------------------------------
 // Top-level regex constants (satisfies lint/performance/useTopLevelRegex)
@@ -248,6 +249,28 @@ describe("transformForClient — route.page() loader removal", () => {
 
     expect(result.code).toContain("local: true");
     expect(result.removedServerCode).toBe(false);
+  });
+
+  test("ignores var bindings inside class static blocks when resolving an imported factory", () => {
+    const input = `
+      import { createRoute as defineRoute } from "@teyik0/furin/client";
+      function buildRoute() {
+        class Registry {
+          static {
+            var defineRoute = localFactory;
+          }
+        }
+        return defineRoute({
+          loader: () => ({ serverOnly: true }),
+          component: () => null,
+        });
+      }
+    `;
+    const result = transformForClient(input, "/app/src/pages/index.tsx");
+
+    expect(result.code).not.toMatch(LOADER_PROPERTY_RE);
+    expect(result.code).not.toContain("serverOnly");
+    expect(result.removedServerCode).toBe(true);
   });
 
   test("preserves loader properties when a classic for initializer shadows an import", () => {

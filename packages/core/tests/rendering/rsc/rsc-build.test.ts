@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildRscGraph } from "../../../src/rsc/build";
@@ -40,6 +40,36 @@ describe("RSC graph environment guards", () => {
     await buildRscGraph([], { path: rootEntry, route: {} as never }, root, "test-build", undefined);
 
     expect(existsSync(join(root, "server-codec.js"))).toBe(true);
+  });
+
+  test("keeps only the server isomorphic branch in the RSC graph", async () => {
+    const root = mkdtempSync(join(tmpdir(), "furin-rsc-isomorphic-"));
+    paths.push(root);
+    const rootEntry = join(root, "root.tsx");
+    writeFileSync(join(root, "server.ts"), 'export const value = "RSC_SERVER_MARKER";');
+    writeFileSync(join(root, "client.ts"), 'export const value = "RSC_CLIENT_MARKER";');
+    writeFileSync(
+      rootEntry,
+      `
+        import { createIsomorphicFn } from "@teyik0/furin";
+        import { value as serverValue } from "./server";
+        import { value as clientValue } from "./client";
+
+        export const getValue = createIsomorphicFn()
+          .server(() => serverValue)
+          .client(() => clientValue);
+        export default function Root() { return null; }
+      `
+    );
+
+    await buildRscGraph([], { path: rootEntry, route: {} as never }, root, "test-build", undefined);
+    const output = readdirSync(join(root, "rsc"))
+      .filter((file) => file.endsWith(".js"))
+      .map((file) => readFileSync(join(root, "rsc", file), "utf8"))
+      .join("\n");
+
+    expect(output).toContain("RSC_SERVER_MARKER");
+    expect(output).not.toContain("RSC_CLIENT_MARKER");
   });
 
   test("uses an explicitly configured prebuilt Flight codec", () => {
