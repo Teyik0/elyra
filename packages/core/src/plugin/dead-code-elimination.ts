@@ -95,6 +95,18 @@ function collectReferencedNames(program: Program): Set<string> {
   return refs;
 }
 
+function preserveImportSideEffect(
+  transformed: MagicString,
+  code: string,
+  declaration: ImportDeclaration
+): void {
+  transformed.overwrite(
+    declaration.start,
+    declaration.end,
+    `import ${code.slice(declaration.source.start, declaration.source.end)};`
+  );
+}
+
 function removeEntireImport(
   transformed: MagicString,
   code: string,
@@ -132,7 +144,11 @@ function removeUnusedSpecifiers(
   }
 }
 
-export function deadCodeElimination(transformed: MagicString, lang: SourceLang): MagicString {
+export function deadCodeElimination(
+  transformed: MagicString,
+  originalCode: string,
+  lang: SourceLang
+): MagicString {
   const code = transformed.toString();
   const { program, diagnostics } = parseSource(code, lang);
   const firstError = diagnostics.find((diagnostic) => diagnostic.severity === "error");
@@ -143,6 +159,12 @@ export function deadCodeElimination(transformed: MagicString, lang: SourceLang):
 
   const pruned = new MagicString(code);
   const refs = collectReferencedNames(program);
+  const originalParse = parseSource(originalCode, lang);
+  const originalRefs = originalParse.diagnostics.some(
+    (diagnostic) => diagnostic.severity === "error"
+  )
+    ? refs
+    : collectReferencedNames(originalParse.program);
 
   for (let index = program.body.length - 1; index >= 0; index -= 1) {
     const statement = program.body[index];
@@ -158,7 +180,19 @@ export function deadCodeElimination(transformed: MagicString, lang: SourceLang):
       refs.has(specifier.local.name)
     ).length;
     if (usedCount === 0) {
-      removeEntireImport(pruned, code, declaration);
+      const typeOnly =
+        declaration.importKind === "type" ||
+        declaration.specifiers.every(
+          (specifier) => (specifier as unknown as AstNode).importKind === "type"
+        );
+      const wasUsedBeforeTransform = declaration.specifiers.some((specifier) =>
+        originalRefs.has(specifier.local.name)
+      );
+      if (typeOnly || wasUsedBeforeTransform) {
+        removeEntireImport(pruned, code, declaration);
+      } else {
+        preserveImportSideEffect(pruned, code, declaration);
+      }
     } else if (usedCount < declaration.specifiers.length) {
       removeUnusedSpecifiers(pruned, code, declaration, refs);
     }

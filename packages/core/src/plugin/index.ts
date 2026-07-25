@@ -1,9 +1,10 @@
+import { detectLoaderFromPath } from "../server/lang-detect.ts";
 import { transformForClient } from "./transform-client.ts";
 
 const ELYSIA_FILTER = /^elysia$/;
 const BUN_BUILTIN_FILTER = /^bun:/;
 const ANY_FILTER = /.*/;
-const TS_FILE_FILTER = /\.(tsx|ts)$/;
+const SCRIPT_FILE_FILTER = /\.(tsx?|jsx?)$/;
 
 // Minimal browser stub for elysia — `t` is only used for schema definitions
 // in params/query, which the client never validates at runtime.
@@ -52,7 +53,7 @@ const plugin: Bun.BunPlugin = {
     }));
 
     // ── page file stripping ─────────────────────────────────────────────────
-    build.onLoad({ filter: TS_FILE_FILTER }, async (args) => {
+    build.onLoad({ filter: SCRIPT_FILE_FILTER }, async (args) => {
       if (args.path.includes("node_modules")) {
         return;
       }
@@ -65,7 +66,7 @@ const plugin: Bun.BunPlugin = {
       // project tsconfig — including the JSX automatic runtime.
       return {
         contents: result.code,
-        loader: args.path.endsWith(".tsx") ? "tsx" : "ts",
+        loader: detectLoaderFromPath(args.path),
       };
     });
   },

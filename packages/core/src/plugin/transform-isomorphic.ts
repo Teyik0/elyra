@@ -1,14 +1,18 @@
 import MagicString from "magic-string";
 import type { CallExpression, ImportDeclaration, Program } from "yuku-parser";
 import { walk } from "yuku-parser";
-import { detectLangFromPath, unwrapTSExpression } from "../server/lang-detect.ts";
+import {
+  detectLangFromPath,
+  detectLoaderFromPath,
+  unwrapTSExpression,
+} from "../server/lang-detect.ts";
 import { parseSource } from "../shared/parser.ts";
 import type { AstNode } from "../shared/utils/ast-walk.ts";
 import { hasShadowingDeclaration } from "./binding-scope.ts";
 import { deadCodeElimination } from "./dead-code-elimination.ts";
 
 const FURIN_MODULES = new Set(["@teyik0/furin", "furin"]);
-const TYPESCRIPT_FILE_FILTER = /\.(tsx|ts)$/;
+const SCRIPT_FILE_FILTER = /\.(tsx?|jsx?)$/;
 
 export type IsomorphicEnvironment = "client" | "server";
 
@@ -231,12 +235,7 @@ function sourcePosition(source: string, offset: number): string {
   return `${line}:${offset - lastNewline}`;
 }
 
-function assertNoSplitChains(
-  source: string,
-  filename: string,
-  program: Program,
-  bindings: IsomorphicBindings
-): void {
+function collectBuilderNames(program: Program, bindings: IsomorphicBindings): Set<string> {
   const builders = new Set<string>();
 
   walk(program, {
@@ -255,18 +254,27 @@ function assertNoSplitChains(
       }
     },
   });
+  return builders;
+}
 
+function assertNoSplitChains(
+  source: string,
+  filename: string,
+  program: Program,
+  builders: Set<string>
+): void {
   if (builders.size === 0) {
     return;
   }
 
   walk(program, {
-    MemberExpression(node) {
+    MemberExpression(node, context) {
       if (
         node.computed ||
         node.object.type !== "Identifier" ||
         typeof node.object.name !== "string" ||
         !builders.has(node.object.name) ||
+        hasShadowingDeclaration(node.object.name, context.ancestors() as AstNode[]) ||
         node.property.type !== "Identifier" ||
         (node.property.name !== "server" && node.property.name !== "client")
       ) {
@@ -304,7 +312,8 @@ function assertStaticEnvironmentMethods(
   source: string,
   filename: string,
   program: Program,
-  bindings: IsomorphicBindings
+  bindings: IsomorphicBindings,
+  builders: Set<string>
 ): void {
   walk(program, {
     MemberExpression(node, context) {
@@ -314,11 +323,16 @@ function assertStaticEnvironmentMethods(
       if (node.property.value !== "server" && node.property.value !== "client") {
         return;
       }
+      const ancestors = context.ancestors() as AstNode[];
+      const splitBuilder =
+        node.object.type === "Identifier" &&
+        typeof node.object.name === "string" &&
+        builders.has(node.object.name) &&
+        !hasShadowingDeclaration(node.object.name, ancestors);
       if (
-        !chainStartsWithCreateIsomorphicFn(
-          node.object as AstNode,
-          bindings,
-          context.ancestors() as AstNode[]
+        !(
+          splitBuilder ||
+          chainStartsWithCreateIsomorphicFn(node.object as AstNode, bindings, ancestors)
         )
       ) {
         return;
@@ -347,8 +361,9 @@ export function transformIsomorphicFunctions(
   }
 
   const bindings = collectBindings(program);
-  assertStaticEnvironmentMethods(source, filename, program, bindings);
-  assertNoSplitChains(source, filename, program, bindings);
+  const builders = collectBuilderNames(program, bindings);
+  assertStaticEnvironmentMethods(source, filename, program, bindings, builders);
+  assertNoSplitChains(source, filename, program, builders);
   const candidates = collectCandidates(source, filename, program, bindings);
   if (candidates.length === 0) {
     return { code: source, map: null, transformed: false };
@@ -366,7 +381,7 @@ export function transformIsomorphicFunctions(
     );
   }
 
-  const pruned = deadCodeElimination(transformed, lang);
+  const pruned = deadCodeElimination(transformed, source, lang);
   return {
     code: pruned.toString(),
     map: pruned.generateMap({ includeContent: true, source: filename }),
@@ -378,9 +393,12 @@ export function isomorphicTransformPlugin(environment: IsomorphicEnvironment): B
   return {
     name: `furin-isomorphic-${environment}`,
     setup(build) {
-      build.onLoad({ filter: TYPESCRIPT_FILE_FILTER }, async ({ path }) => {
+      build.onLoad({ filter: SCRIPT_FILE_FILTER }, async ({ path }) => {
+        if (path.includes("/.furin/build/") || path.includes("\\.furin\\build\\")) {
+          return;
+        }
         const source = await Bun.file(path).text();
-        const loader = path.endsWith(".tsx") ? "tsx" : "ts";
+        const loader = detectLoaderFromPath(path);
         if (path.includes("node_modules")) {
           return { contents: source, loader };
         }

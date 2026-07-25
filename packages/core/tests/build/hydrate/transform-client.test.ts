@@ -286,6 +286,23 @@ describe("transformForClient — route.page() loader removal", () => {
     expect(result.code).not.toContain("root: true");
     expect(result.code).toContain("local: true");
   });
+
+  test("preserves route calls shadowed by a lexical binding in the same switch", () => {
+    const input = `
+      import { createRoute } from "@teyik0/furin/client";
+      switch (kind) {
+        case "binding":
+          const createRoute = localFactory;
+          break;
+        default:
+          createRoute({ loader: () => ({ local: true }) });
+      }
+    `;
+    const result = transformForClient(input, "/app/src/pages/index.tsx");
+
+    expect(result.code).toContain("local: true");
+    expect(result.removedServerCode).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -293,6 +310,17 @@ describe("transformForClient — route.page() loader removal", () => {
 // ---------------------------------------------------------------------------
 
 describe("transformForClient — dead code elimination", () => {
+  test("preserves module initialization when every named import becomes unused", () => {
+    const transformed = new MagicString(
+      'import { initialize } from "./side-effect";\nexport const value = 1;'
+    );
+
+    const result = deadCodeElimination(transformed, transformed.toString(), "js").toString();
+
+    expect(result).toContain('import "./side-effect";');
+    expect(result).not.toContain("initialize");
+  });
+
   test("import used only by loader is eliminated after loader removal", () => {
     const input = `
       ${FURIN_CLIENT_IMPORT}
@@ -558,7 +586,7 @@ describe("deadCodeElimination — parse error recovery", () => {
   test("returns input unchanged when transformed code is unparseable", () => {
     // Feed deliberately invalid JS to DCE — it must not throw
     const broken = new MagicString("import { x } from 'y'; <<<INVALID>>>");
-    const result = deadCodeElimination(broken, "tsx");
+    const result = deadCodeElimination(broken, broken.toString(), "tsx");
 
     // Returns the same string unchanged (not null, not throws)
     expect(result.toString()).toBe("import { x } from 'y'; <<<INVALID>>>");

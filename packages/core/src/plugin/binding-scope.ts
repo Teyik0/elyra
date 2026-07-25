@@ -127,12 +127,32 @@ function loopScopeHasName(scope: AstNode, name: string): boolean {
   );
 }
 
+function switchScopeHasName(scope: AstNode, name: string): boolean {
+  return (
+    scope.type === "SwitchStatement" &&
+    Array.isArray(scope.cases) &&
+    scope.cases.some(
+      (switchCase) =>
+        switchCase &&
+        typeof switchCase === "object" &&
+        Array.isArray((switchCase as AstNode).consequent) &&
+        ((switchCase as AstNode).consequent as unknown[]).some(
+          (statement) =>
+            statement &&
+            typeof statement === "object" &&
+            declarationHasName(statement as AstNode, name)
+        )
+    )
+  );
+}
+
 export function hasShadowingDeclaration(name: string, ancestors: AstNode[]): boolean {
   return ancestors.some(
     (scope) =>
       functionScopeHasName(scope, name) ||
       (scope.type === "CatchClause" && bindingPatternHasName(scope.param, name)) ||
       blockScopeHasName(scope, name) ||
-      loopScopeHasName(scope, name)
+      loopScopeHasName(scope, name) ||
+      switchScopeHasName(scope, name)
   );
 }

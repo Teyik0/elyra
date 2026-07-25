@@ -2,13 +2,14 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { transformForClient } from "../plugin/transform-client";
 import { environmentGuardPlugin } from "../rsc/build/environment.ts";
+import { detectLoaderFromPath } from "../server/lang-detect.ts";
 import type { ResolvedRoute } from "../server/router/index.ts";
 import { runBunBuild } from "./bun-build.ts";
 import { generateHydrateEntry } from "./hydrate";
 import { CLIENT_MODULE_PATH, LINK_MODULE_PATH, SEARCH_MODULE_PATH } from "./shared";
 import type { BuildClientOptions, BunBuildAliasConfig } from "./types";
 
-const TS_FILE_FILTER = /\.(tsx|ts)$/;
+const SCRIPT_FILE_FILTER = /\.(tsx?|jsx?)$/;
 
 export interface BuildClientResult {
   /** Public paths of all CSS chunks, e.g. `["/_client/chunk-abc.css"]` */
@@ -61,7 +62,7 @@ export async function buildClient(
   const transformPlugin: Bun.BunPlugin = {
     name: "furin-transform-client",
     setup(build) {
-      build.onLoad({ filter: TS_FILE_FILTER }, async (args) => {
+      build.onLoad({ filter: SCRIPT_FILE_FILTER }, async (args) => {
         const { path } = args;
         if (path.includes("node_modules")) {
           return;
@@ -82,7 +83,7 @@ export async function buildClient(
 
         return {
           contents: transformed,
-          loader: path.endsWith(".tsx") ? "tsx" : "ts",
+          loader: detectLoaderFromPath(path),
         };
       });
     },

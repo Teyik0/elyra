@@ -7,7 +7,6 @@ import { buildEntrySource } from "../build/entry-template.ts";
 import { copyDirRecursive, ensureDir, toPosixPath } from "../build/shared.ts";
 import { buildSSGCacheSnapshot } from "../build/ssg-cache.ts";
 import type { BuildAppOptions, PackageTargetBuildManifest } from "../build/types.ts";
-import { isomorphicTransformPlugin } from "../plugin/transform-isomorphic.ts";
 import { ssgRouteCache } from "../server/cache/ssg.ts";
 import { generateProdIndexHtml } from "../server/render/shell.ts";
 import { setProductionTemplateContent } from "../server/render/template.ts";
@@ -50,7 +49,7 @@ export async function buildPackageTarget(
   const { entryChunk, cssChunks } = await buildClient(routes, {
     outDir: targetDir,
     rootLayout: root.path,
-    plugins: [...(options.plugins ?? []), isomorphicTransformPlugin("server")],
+    plugins: options.plugins,
     publicPath: `${prefix}/_client/`,
     basePath: prefix,
     clientLogging: options.clientLogging ?? false,

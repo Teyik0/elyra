@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import stripPlugin from "../../../src/plugin";
 import { transformForClient } from "../../../src/plugin/transform-client";
 import {
   isomorphicTransformPlugin,
@@ -34,7 +35,7 @@ describe("transformIsomorphicFunctions", () => {
     expect(result.code).not.toContain("server-value");
   });
 
-  test("removes imports referenced only by the discarded implementation", () => {
+  test("removes bindings referenced only by the discarded implementation", () => {
     const result = transformIsomorphicFunctions(
       `
         import { createIsomorphicFn } from "@teyik0/furin";
@@ -105,12 +106,43 @@ describe("transformIsomorphicFunctions", () => {
     ).toThrow("must use one fluent chain");
   });
 
+  test("ignores split-chain method calls on a shadowed local binding", () => {
+    const result = transformIsomorphicFunctions(
+      `
+        import { createIsomorphicFn } from "@teyik0/furin";
+
+        const builder = createIsomorphicFn();
+        function useLocal(builder) {
+          return builder.server(() => "local");
+        }
+      `,
+      "shared.ts",
+      "server"
+    );
+
+    expect(result.code).toContain('builder.server(() => "local")');
+  });
+
   test("rejects computed environment methods", () => {
     expect(() =>
       transformIsomorphicFunctions(
         `
           import { createIsomorphicFn } from "@teyik0/furin";
           export const getValue = createIsomorphicFn()["server"](() => "server");
+        `,
+        "shared.ts",
+        "server"
+      )
+    ).toThrow("static .server() and .client() methods");
+  });
+
+  test("rejects computed environment methods on a split builder", () => {
+    expect(() =>
+      transformIsomorphicFunctions(
+        `
+          import { createIsomorphicFn } from "@teyik0/furin";
+          const builder = createIsomorphicFn();
+          export const getValue = builder["server"](() => "server");
         `,
         "shared.ts",
         "server"
@@ -228,13 +260,15 @@ test("transformForClient applies the client isomorphic branch", () => {
   expect(result.code).not.toContain("readServerValue");
 });
 
-test("the server build plugin excludes the client module from the bundle", async () => {
+test.each(["js", "jsx", "ts", "tsx"])(
+  "the server build plugin excludes the client module from a .%s bundle",
+  async (extension) => {
   const root = mkdtempSync(join(tmpdir(), "furin-isomorphic-server-"));
   temporaryDirectories.push(root);
   writeFileSync(join(root, "server.ts"), 'export const value = "SERVER_MARKER";');
   writeFileSync(join(root, "client.ts"), 'export const value = "CLIENT_MARKER";');
   writeFileSync(
-    join(root, "entry.ts"),
+    join(root, `entry.${extension}`),
     `
       import { createIsomorphicFn } from "@teyik0/furin";
       import { value as serverValue } from "./server";
@@ -247,7 +281,8 @@ test("the server build plugin excludes the client module from the bundle", async
   );
 
   const result = await Bun.build({
-    entrypoints: [join(root, "entry.ts")],
+    entrypoints: [join(root, `entry.${extension}`)],
+    external: ["@teyik0/furin"],
     outdir: join(root, "out"),
     plugins: [isomorphicTransformPlugin("server")],
     target: "bun",
@@ -256,4 +291,34 @@ test("the server build plugin excludes the client module from the bundle", async
 
   expect(output).toContain("SERVER_MARKER");
   expect(output).not.toContain("CLIENT_MARKER");
-});
+  }
+);
+
+test.each(["js", "jsx"])(
+  "the browser strip plugin selects the client branch in a .%s route",
+  async (extension) => {
+    const root = mkdtempSync(join(tmpdir(), "furin-isomorphic-client-"));
+    temporaryDirectories.push(root);
+    writeFileSync(
+      join(root, `entry.${extension}`),
+      `
+        import { createIsomorphicFn } from "@teyik0/furin";
+        export const getValue = createIsomorphicFn()
+          .server(() => "SERVER_MARKER")
+          .client(() => "CLIENT_MARKER");
+      `
+    );
+
+    const result = await Bun.build({
+      entrypoints: [join(root, `entry.${extension}`)],
+      external: ["@teyik0/furin"],
+      outdir: join(root, "out"),
+      plugins: [stripPlugin],
+      target: "browser",
+    });
+    const output = readFileSync(result.outputs[0]?.path ?? "", "utf8");
+
+    expect(output).toContain("CLIENT_MARKER");
+    expect(output).not.toContain("SERVER_MARKER");
+  }
+);

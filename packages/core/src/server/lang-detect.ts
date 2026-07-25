@@ -16,6 +16,11 @@ export function detectLangFromPath(filePath: string): SourceLang {
   return "js";
 }
 
+export function detectLoaderFromPath(filePath: string): "js" | "jsx" | "ts" | "tsx" {
+  const lang = detectLangFromPath(filePath);
+  return lang === "dts" ? "ts" : lang;
+}
+
 interface MaybeWrappedNode {
   expression?: unknown;
   type: string;

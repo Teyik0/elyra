@@ -351,7 +351,7 @@ export function transformForClient(code: string, filename: string): TransformRes
   // deadCodeElimination returns a fresh MagicString keyed on the current
   // output so its internal AST offsets remain consistent.
   if (removedServerCode) {
-    s = deadCodeElimination(s, lang);
+    s = deadCodeElimination(s, code, lang);
   }
 
   return {
