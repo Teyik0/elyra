@@ -699,7 +699,10 @@ export function RouterProvider({
       // sibling furin app mounted under a different basePath. Let the browser
       // navigate; the server routes it to the correct app.
       const logicalPathname = new URL(logicalHref, window.location.origin).pathname;
-      if (!routes.some((r) => r.regex.test(logicalPathname))) {
+      const hasConcreteMatch = routes.some(
+        (route) => !route.pattern.split("/").includes("*") && route.regex.test(logicalPathname)
+      );
+      if (!hasConcreteMatch) {
         return;
       }
       e.preventDefault();

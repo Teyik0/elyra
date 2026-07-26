@@ -102,6 +102,11 @@ describe("compareRouteSpecificity", () => {
     expect(moreSpecific("/docs/api/v1", "/docs/*")).toBe(true);
   });
 
+  test("the root route outranks a root catch-all", () => {
+    expect(moreSpecific("/", "/*")).toBe(true);
+    expect(compareRouteSpecificity("/*", "/")).toBeLessThan(0);
+  });
+
   test("returns 0 for identical patterns", () => {
     expect(compareRouteSpecificity("/blog/:id", "/blog/:id")).toBe(0);
   });

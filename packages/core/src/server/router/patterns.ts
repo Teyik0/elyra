@@ -127,10 +127,10 @@ export function compareRouteSpecificity(a: string, b: string): number {
     const bSegment = bSegments[i];
     // The pattern that still has a segment here constrains one more position.
     if (aSegment === undefined) {
-      return -1;
+      return bSegment === "*" ? 1 : -1;
     }
     if (bSegment === undefined) {
-      return 1;
+      return aSegment === "*" ? -1 : 1;
     }
     const diff = segmentSpecificity(aSegment) - segmentSpecificity(bSegment);
     if (diff !== 0) {

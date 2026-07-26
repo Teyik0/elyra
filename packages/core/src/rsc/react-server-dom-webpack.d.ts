@@ -2,7 +2,10 @@ declare module "react-server-dom-webpack/server.edge" {
   export function renderToReadableStream(
     model: unknown,
     clientManifest: object,
-    options?: { signal?: AbortSignal }
+    options?: {
+      onError?: (error: unknown) => string | undefined;
+      signal?: AbortSignal;
+    }
   ): ReadableStream<Uint8Array>;
 }
 

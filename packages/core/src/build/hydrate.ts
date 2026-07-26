@@ -1,7 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateIndexHtml } from "../server/render/shell.ts";
-import { buildRouteRegex } from "../server/router/patterns.ts";
+import {
+  buildRouteRegex,
+  compareRouteSpecificity,
+} from "../server/router/patterns.ts";
 import { mergeRouteSchemas } from "../server/router/schema-merge.ts";
 import type { ResolvedRoute } from "../server/router/types.ts";
 import { collectSearchDefaults } from "../shared/search-params.ts";
@@ -43,7 +46,11 @@ export function generateHydrateEntry(
 
   const routeEntries: string[] = [];
 
-  for (const route of routes) {
+  const clientRoutes = [...routes].sort((a, b) =>
+    compareRouteSpecificity(b.pattern, a.pattern),
+  );
+
+  for (const route of clientRoutes) {
     const resolvedPage = route.path.replace(/\\/g, "/");
     const regexPattern = buildRouteRegex(route.pattern).regex.source;
     const searchDefaults = collectSearchDefaults(

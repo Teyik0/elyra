@@ -50,6 +50,10 @@ export function shouldInstrumentRequest(pathname: string, prefix: string): boole
   return pathname !== internalPath && !pathname.startsWith(`${internalPath}/`);
 }
 
+export function instrumentationLoggerExclusions(prefix: string): string[] {
+  return [`${prefix}/_furin/devtools/**`];
+}
+
 export function createInstrumentationPlugin(
   routes: ResolvedRoute[],
   syncStreamPath: string | undefined

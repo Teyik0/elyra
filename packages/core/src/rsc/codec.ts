@@ -2,11 +2,11 @@ import { existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-
-const MAX_FLIGHT_BYTES = 4 * 1024 * 1024;
+import { drainFlight, type FlightRenderSession } from "./flight-drain.ts";
+import type { RscRenderOperation } from "./render-error.ts";
 
 interface ServerCodec {
-  renderFlight: (model: unknown, signal: AbortSignal | undefined) => ReadableStream<Uint8Array>;
+  renderFlight: (model: unknown, signal: AbortSignal | undefined) => FlightRenderSession;
 }
 
 let serverCodecPromise: Promise<ServerCodec> | undefined;
@@ -75,44 +75,11 @@ function loadServerCodec(): Promise<ServerCodec> {
   return serverCodecPromise;
 }
 
-async function readFlightBytes(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-
-  try {
-    for (;;) {
-      // biome-ignore lint/performance/noAwaitInLoops: stream chunks must be read sequentially.
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      total += value.byteLength;
-      if (total > MAX_FLIGHT_BYTES) {
-        await reader.cancel();
-        throw new Error(
-          `[furin/rsc] Flight payload exceeds the ${MAX_FLIGHT_BYTES}-byte safety limit.`
-        );
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
-}
-
 export async function encodeFlight(
   model: unknown,
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
+  operation: RscRenderOperation
 ): Promise<Uint8Array> {
   const codec = await loadServerCodec();
-  return readFlightBytes(codec.renderFlight(model, signal));
+  return drainFlight(codec.renderFlight(model, signal), operation);
 }

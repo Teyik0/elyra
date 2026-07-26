@@ -40,6 +40,25 @@ describe("RSC graph environment guards", () => {
     await buildRscGraph([], { path: rootEntry, route: {} as never }, root, "test-build", undefined);
 
     expect(existsSync(join(root, "server-codec.js"))).toBe(true);
+    expect(readFileSync(join(root, "server-codec.js"), "utf8")).not.toContain(
+      "Flight payload exceeds"
+    );
+  });
+
+  test("builds the shared Flight drain into the direct react-server graph", async () => {
+    const root = mkdtempSync(join(tmpdir(), "furin-rsc-direct-"));
+    paths.push(root);
+    const result = await Bun.build({
+      conditions: ["react-server"],
+      entrypoints: [join(import.meta.dir, "../../../src/rsc-server.tsx")],
+      outdir: root,
+      target: "bun",
+    });
+
+    expect(result.success).toBe(true);
+    const [output] = result.outputs;
+    expect(output).toBeDefined();
+    expect(await output?.text()).toContain("Flight payload exceeds");
   });
 
   test("keeps only the server isomorphic branch in the RSC graph", async () => {

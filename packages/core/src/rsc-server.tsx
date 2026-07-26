@@ -1,5 +1,7 @@
 import { createElement, type ReactNode } from "react";
-import { renderToReadableStream } from "react-server-dom-webpack/server.edge";
+import { drainFlight } from "./rsc/flight-drain.ts";
+import type { RscRenderOperation } from "./rsc/render-error.ts";
+import { renderFlight } from "./rsc/server-codec.ts";
 import type {
   CompositeComponentSource,
   RenderableServerComponent,
@@ -8,9 +10,11 @@ import type {
 import { decodeFlightBytes } from "./rsc/shared.tsx";
 import { RSC_SOURCE, SLOT_MARKER } from "./rsc/symbols.ts";
 
-async function renderBytes(node: ReactNode): Promise<Uint8Array> {
-  const stream = renderToReadableStream(node, {});
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+// biome-ignore lint/performance/noBarrelFile: react-server condition for the public furin/rsc entrypoint
+export { FurinRscRenderError, isFurinRscRenderError } from "./rsc/render-error.ts";
+
+function renderBytes(node: ReactNode, operation: RscRenderOperation): Promise<Uint8Array> {
+  return drainFlight(renderFlight(node, undefined), operation);
 }
 
 async function RscNode({ state }: { state: RscSourceState }): Promise<ReactNode> {
@@ -38,7 +42,7 @@ function createServerRenderableSource<TNode extends ReactNode>(
 export async function renderServerComponent<TNode extends ReactNode>(
   node: TNode
 ): Promise<RenderableServerComponent<TNode>> {
-  const bytes = await renderBytes(node);
+  const bytes = await renderBytes(node, "renderServerComponent");
   return createServerRenderableSource<TNode>({
     bytes,
     kind: "renderable",
@@ -76,7 +80,7 @@ export async function createCompositeComponent<TProps extends object>(
   function Tree(): ReactNode | Promise<ReactNode> {
     return component(proxy);
   }
-  const bytes = await renderBytes(createElement(Tree));
+  const bytes = await renderBytes(createElement(Tree), "createCompositeComponent");
   return {
     [RSC_SOURCE]: { bytes, kind: "composite", tree: Promise.resolve(null) },
   };

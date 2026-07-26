@@ -8,6 +8,8 @@ import { Link, RouterProvider } from "../../../src/client/link.tsx";
 import type { ClientRoute } from "../../../src/client/router/index.ts";
 import { installDom, resetDomState, uninstallDom } from "../../support/dom.ts";
 
+const CATCH_ALL_ROUTE_RE = /^\/(.*)$/;
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function makePage(linkTo: string): React.ComponentType<Record<string, unknown>> {
@@ -29,6 +31,13 @@ function makeRoute(path: string, linkTo: string): ClientRoute {
     }),
     pattern: path,
     regex: new RegExp(`^${path}$`),
+  };
+}
+
+function makeCatchAllRoute(): ClientRoute {
+  return {
+    ...makeRoute("/*", "/"),
+    regex: CATCH_ALL_ROUTE_RE,
   };
 }
 
@@ -325,10 +334,14 @@ describe("RouterProvider click interception", () => {
     expect(pushStateCalls[0]?.url).toBe("/page-b");
   });
 
-  test("native <a> to a path outside the app's routes is left to the browser", async () => {
-    // Root app (basePath "") whose route table does not include /admin — the
-    // link belongs to a sibling furin app mounted under another prefix.
-    const routes = [makeNativeAnchorRoute("/page-a", "/admin"), makeRoute("/page-b", "/page-a")];
+  test("native <a> to a sibling app bypasses a local catch-all route", async () => {
+    // The root app's catch-all must not claim /admin: that path belongs to a
+    // sibling furin app mounted under another prefix.
+    const routes = [
+      makeNativeAnchorRoute("/page-a", "/admin"),
+      makeRoute("/page-b", "/page-a"),
+      makeCatchAllRoute(),
+    ];
     const { container, cleanup } = await renderRouterWithLink(routes, "/page-a");
     currentCleanup = cleanup;
 

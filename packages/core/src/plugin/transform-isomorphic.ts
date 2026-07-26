@@ -240,7 +240,7 @@ function sourcePosition(source: string, offset: number): string {
   return `${line}:${offset - lastNewline}`;
 }
 
-function bindingScope(ancestors: AstNode[]): AstNode | undefined {
+function lexicalBindingScope(ancestors: AstNode[]): AstNode | undefined {
   return ancestors.findLast(
     (ancestor) =>
       ancestor.type === "Program" ||
@@ -251,6 +251,23 @@ function bindingScope(ancestors: AstNode[]): AstNode | undefined {
       ancestor.type === "ForOfStatement" ||
       ancestor.type === "StaticBlock"
   );
+}
+
+function varBindingScope(ancestors: AstNode[]): AstNode | undefined {
+  return ancestors.findLast((ancestor, index) => {
+    if (ancestor.type === "Program" || ancestor.type === "StaticBlock") {
+      return true;
+    }
+    if (ancestor.type !== "BlockStatement") {
+      return false;
+    }
+    const parent = ancestors[index - 1];
+    return (
+      parent?.type === "FunctionDeclaration" ||
+      parent?.type === "FunctionExpression" ||
+      parent?.type === "ArrowFunctionExpression"
+    );
+  });
 }
 
 function collectBuilderBindings(
@@ -267,7 +284,11 @@ function collectBuilderBindings(
       const identifier = node.id as unknown as AstNode;
       const initializer = unwrapTSExpression(node.init) as AstNode;
       const ancestors = context.ancestors() as AstNode[];
-      const scope = bindingScope(ancestors);
+      const declaration = ancestors.at(-1);
+      const scope =
+        declaration?.type === "VariableDeclaration" && declaration.kind === "var"
+          ? varBindingScope(ancestors)
+          : lexicalBindingScope(ancestors);
       if (
         scope &&
         identifier.type === "Identifier" &&

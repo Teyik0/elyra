@@ -40,6 +40,8 @@ export default route.page({
 
 The server fragment is encoded as Flight and contributes no application JavaScript. Client interactivity enters through `children`, component slots, or render props. Arbitrary client imports from the server fragment are intentionally unsupported in composite v1.
 
+Each encoded RSC source has a 4 MiB safety limit in every runtime and build graph. Furin rejects an oversized source before transport; split large content into smaller sources or load the data separately. This limit is not configurable.
+
 The task-manager example includes equivalent ISR routes for comparison: `/` renders the board list as a conventional client component tree, while `/rsc` keeps the board markup on the server and hydrates only the create form and delete buttons. Build `examples/task-manager` in production mode to compare their route chunks; shared React and Furin runtime chunks are intentionally excluded from that comparison.
 
 With two boards in the example database, the production snapshot is:

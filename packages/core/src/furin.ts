@@ -9,6 +9,7 @@ import { consumePendingInvalidations } from "./server/cache/invalidation.ts";
 import { setSSGCache } from "./server/cache/ssg.ts";
 import {
   createInstrumentationPlugin,
+  instrumentationLoggerExclusions,
   runWithRequestInstrumentation,
   shouldInstrumentRequest,
 } from "./server/devtools/instrumentation.ts";
@@ -261,6 +262,7 @@ function createLoggerPlugin(
         `${prefix}/public/**`,
         `${prefix}/favicon.ico`,
         `${prefix}/_bun_hmr_entry/**`,
+        ...instrumentationLoggerExclusions(prefix),
         ...(syncStreamPath ? [`${prefix}${syncStreamPath}`] : []),
         // Note: /_furin/data is logged with the *logical* path rewritten by
         // createDataEndpoint via useLogger().set({ path }), so SPA navigations

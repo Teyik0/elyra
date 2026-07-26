@@ -139,6 +139,26 @@ describe("generateHydrateEntry", () => {
     expect(code).toContain('new RegExp("^\\\\/v1\\\\.0$")');
   });
 
+  test("emits specific client routes before a catch-all", () => {
+    const code = generateHydrateEntry(
+      [
+        makeRoute("/*", "/app/src/pages/[...rest].tsx"),
+        makeRoute("/", "/app/src/pages/index.tsx"),
+        makeRoute("/contact", "/app/src/pages/contact.tsx"),
+      ],
+      ROOT,
+      "",
+      false,
+    );
+
+    expect(code.indexOf('pattern: "/contact"')).toBeLessThan(
+      code.indexOf('pattern: "/*"'),
+    );
+    expect(code.indexOf('pattern: "/"')).toBeLessThan(
+      code.indexOf('pattern: "/*"'),
+    );
+  });
+
   test("B13c: with basePath — log drain endpoint is prefixed", () => {
     const code = generateHydrateEntry(ROUTES, ROOT, "/furin", true);
     // endpoint should be basePath + "/_furin/ingest"

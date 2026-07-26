@@ -10,6 +10,7 @@ import {
 } from "./rsc/shared.tsx";
 import { RSC_SOURCE, SLOT_MARKER } from "./rsc/symbols.ts";
 
+export { FurinRscRenderError, isFurinRscRenderError } from "./rsc/render-error.ts";
 // react-doctor-disable-next-line react-doctor/only-export-components
 export * from "./rsc/shared.tsx";
 
@@ -24,7 +25,7 @@ type CompositePropsWithSupportedChildren<TProps extends object> = TProps extends
 export async function renderServerComponent<TNode extends ReactNode>(
   node: TNode
 ): Promise<RenderableServerComponent<TNode>> {
-  const bytes = await encodeFlight(node, undefined);
+  const bytes = await encodeFlight(node, undefined, "renderServerComponent");
   return createRenderableSource<TNode>({
     bytes,
     kind: "renderable",
@@ -59,7 +60,11 @@ export async function createCompositeComponent<TProps extends object>(
   function CompositeServerTree(): ReactNode | Promise<ReactNode> {
     return component(proxy);
   }
-  const bytes = await encodeFlight(createElement(CompositeServerTree), undefined);
+  const bytes = await encodeFlight(
+    createElement(CompositeServerTree),
+    undefined,
+    "createCompositeComponent"
+  );
   return {
     [RSC_SOURCE]: {
       bytes,

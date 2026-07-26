@@ -64,6 +64,10 @@ export function shouldInstrumentRequest(_pathname: string, _prefix: string): boo
   return false;
 }
 
+export function instrumentationLoggerExclusions(_prefix: string): string[] {
+  return [];
+}
+
 export function createInstrumentationPlugin(
   _routes: ResolvedRoute[],
   _syncStreamPath: string | undefined

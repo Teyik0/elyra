@@ -33,8 +33,8 @@ export type CompositeComponentProps<TProps extends object> = Omit<TProps, "src">
   src: CompositeComponentSource<TProps>;
 };
 
-async function RscNode({ state }: { state: RscSourceState }): Promise<ReactNode> {
-  return (await state.tree) as ReactNode;
+function RscNode({ state }: { state: RscSourceState }): ReactNode {
+  return use(state.tree) as ReactNode;
 }
 
 export function decodeFlightBytes(bytes: Uint8Array): Promise<unknown> {

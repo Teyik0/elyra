@@ -3,9 +3,11 @@ import "../../setup/evlog-mock";
 
 import type { Context } from "elysia";
 import type { HTTPHeaders } from "elysia/types";
+import { FurinRscRenderError } from "../../../src/rsc/render-error.ts";
 import { runLoaders, runPublicLoaders } from "../../../src/server/render/loaders.ts";
 import type { ResolvedRoute } from "../../../src/server/router/index.ts";
 import { __setDevMode } from "../../../src/server/runtime-env.ts";
+import { evlogErrorMock } from "../../setup/evlog-mock.ts";
 
 const CACHED_PUBLIC_LOADERS_RE = /Cached public loaders/;
 
@@ -157,6 +159,41 @@ describe("runLoaders requestLoader", () => {
       expect(result.error).toBeInstanceOf(Error);
       expect(result.message).toBe("Something went wrong");
       expect((result.error as Error).message).toMatch(CACHED_PUBLIC_LOADERS_RE);
+    }
+  });
+
+  test("logs RSC render errors and preserves their development message", async () => {
+    __setDevMode(true);
+    evlogErrorMock.mockClear();
+    const error = new FurinRscRenderError({
+      cause: new TypeError("null is not an object (evaluating 'dispatcher.useContext')"),
+      component: "PhoneIcon",
+      hook: "useContext",
+      operation: "createCompositeComponent",
+    });
+    const route = {
+      mode: "ssr",
+      page: {
+        loader: () => {
+          throw error;
+        },
+      },
+      path: "/rsc-error.tsx",
+      pattern: "/rsc-error",
+      routeChain: [],
+      segmentBoundaries: [],
+    } as unknown as ResolvedRoute;
+
+    try {
+      const result = await runLoaders(route, createMockLoaderContext({ path: "/rsc-error" }));
+
+      expect(result.type).toBe("error");
+      if (result.type === "error") {
+        expect(result.message).toContain("Component: PhoneIcon");
+      }
+      expect(evlogErrorMock).toHaveBeenCalledWith(error);
+    } finally {
+      __setDevMode(false);
     }
   });
 });

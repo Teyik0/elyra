@@ -1,6 +1,7 @@
 import type { Context } from "elysia";
 import type { RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import { isDeferred, type RequestLoaderContext } from "../../client.ts";
+import { isFurinRscRenderError } from "../../rsc/render-error.ts";
 import { computeErrorDigest } from "../../shared/digest.ts";
 import { type FurinNotFoundError, isNotFoundError } from "../../shared/not-found.ts";
 import { useLogger } from "../context-logger.ts";
@@ -370,6 +371,50 @@ function sanitizedDeferredError(): Error {
   return error;
 }
 
+async function normalizeLoaderError(
+  err: unknown,
+  headers: Record<string, string>
+): Promise<Exclude<LoaderResult, { type: "data" }>> {
+  if (isNotFoundError(err)) {
+    return { error: err, headers, type: "not-found" };
+  }
+  if (err instanceof Response) {
+    if (isHttpRedirect(err)) {
+      return { response: err, type: "redirect" };
+    }
+    // Non-redirect Response → error. Read the body ONCE here so downstream
+    // consumers (digest, logging, error UI) all share the same extracted
+    // message without consuming the stream a second time.
+    //
+    // A *malformed redirect* is a redirect-status code WITHOUT a `Location`
+    // header (we only reach here when `isHttpRedirect` was false) — invalid
+    // HTTP, coerced to 500. Other 3xx codes (304/305/306) are not redirects
+    // at all, so they keep their own status rather than being rewritten.
+    const isMalformedRedirect = REDIRECT_STATUSES.has(err.status);
+    const status = isMalformedRedirect ? 500 : err.status;
+    const body = await readResponseMessage(err);
+    const message = body || "Something went wrong";
+    return { error: err, headers, message, status, type: "error" };
+  }
+  if (isFurinRscRenderError(err)) {
+    useLogger().error(err);
+    return {
+      error: err,
+      headers,
+      message: IS_DEV ? err.message : "Something went wrong",
+      status: 500,
+      type: "error",
+    };
+  }
+  return {
+    error: err,
+    headers,
+    message: "Something went wrong",
+    status: 500,
+    type: "error",
+  };
+}
+
 async function runLoadersInternal(
   route: ResolvedRoute,
   ctx: Context,
@@ -459,34 +504,7 @@ async function runLoadersInternal(
   } catch (err) {
     const headers: Record<string, string> = {};
     Object.assign(headers, ctx.set.headers);
-    if (isNotFoundError(err)) {
-      return { error: err, headers, type: "not-found" };
-    }
-    if (err instanceof Response) {
-      if (isHttpRedirect(err)) {
-        return { response: err, type: "redirect" };
-      }
-      // Non-redirect Response → error. Read the body ONCE here so downstream
-      // consumers (digest, logging, error UI) all share the same extracted
-      // message without consuming the stream a second time.
-      //
-      // A *malformed redirect* is a redirect-status code WITHOUT a `Location`
-      // header (we only reach here when `isHttpRedirect` was false) — invalid
-      // HTTP, coerced to 500. Other 3xx codes (304/305/306) are not redirects
-      // at all, so they keep their own status rather than being rewritten.
-      const isMalformedRedirect = REDIRECT_STATUSES.has(err.status);
-      const status = isMalformedRedirect ? 500 : err.status;
-      const body = await readResponseMessage(err);
-      const message = body || "Something went wrong";
-      return { error: err, headers, message, status, type: "error" };
-    }
-    return {
-      error: err,
-      headers,
-      message: "Something went wrong",
-      status: 500,
-      type: "error",
-    };
+    return normalizeLoaderError(err, headers);
   }
 }
 

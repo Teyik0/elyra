@@ -3,7 +3,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Elysia from "elysia";
 import type { CompileContext } from "../../../src/server/internal";
-import { resetEvlogMock } from "../../setup/evlog-mock";
+import { evlogOptionsMock, resetEvlogMock } from "../../setup/evlog-mock";
 import { createTmpApp, removeAppPath, type TmpApp, writeAppFile } from "../../support/app-fixtures";
 import { runCli } from "../../support/process";
 
@@ -84,6 +84,19 @@ test.serial("furin() writes dev files in development", async () => {
   expect(existsSync(join(app.path, ".furin/index.html"))).toBe(true);
   expect(existsSync(join(app.path, ".furin/_hydrate.tsx"))).toBe(true);
   expect(existsSync(join(app.path, "furin-env.d.ts"))).toBe(true);
+});
+
+test.serial("furin() excludes internal DevTools requests from logging", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
+  __setDevMode(true);
+  process.chdir(app.path);
+
+  await furin({
+    pagesDir: join(app.path, "src/pages"),
+  });
+
+  const loggerOptions = evlogOptionsMock.mock.calls.at(-1)?.[0];
+  expect(loggerOptions?.exclude).toContain("/_furin/devtools/**");
 });
 
 test.serial("furin() production without build output throws", async () => {

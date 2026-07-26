@@ -140,6 +140,23 @@ describe("transformIsomorphicFunctions", () => {
     ).toThrow("must use one fluent chain");
   });
 
+  test("rejects a var split chain used outside its declaring block", () => {
+    expect(() =>
+      transformIsomorphicFunctions(
+        `
+          import { createIsomorphicFn } from "@teyik0/furin";
+
+          if (enabled) {
+            var builder = createIsomorphicFn();
+          }
+          export const getValue = builder.client(() => "client-value");
+        `,
+        "shared.ts",
+        "client"
+      )
+    ).toThrow("must use one fluent chain");
+  });
+
   test("ignores split-chain method calls on a shadowed local binding", () => {
     const result = transformIsomorphicFunctions(
       `
@@ -192,6 +209,25 @@ describe("transformIsomorphicFunctions", () => {
 
           export function createValue() {
             const builder = createIsomorphicFn();
+            return builder["server"](() => "server");
+          }
+        `,
+        "shared.ts",
+        "server"
+      )
+    ).toThrow("static .server() and .client() methods");
+  });
+
+  test("rejects a computed var split chain used outside its declaring block", () => {
+    expect(() =>
+      transformIsomorphicFunctions(
+        `
+          import { createIsomorphicFn } from "@teyik0/furin";
+
+          export function createValue() {
+            if (enabled) {
+              var builder = createIsomorphicFn();
+            }
             return builder["server"](() => "server");
           }
         `,

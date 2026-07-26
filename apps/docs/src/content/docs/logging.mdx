@@ -17,6 +17,7 @@ Internal asset paths are excluded from request logging by default:
 /public/**
 /favicon.ico
 /_bun_hmr_entry/**
+/_furin/devtools/**
 ```
 
 `/_furin/data` is logged intentionally, but its event path is rewritten to the logical route being navigated to. When `clientLogging` is enabled, `/_furin/ingest` is mounted and logged so browser-side events can be re-emitted through the server drain.
