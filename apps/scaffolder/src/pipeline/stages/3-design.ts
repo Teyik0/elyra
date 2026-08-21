@@ -9,13 +9,20 @@ export function stage3Design(ctx: PipelineContext): void {
   }
 
   // ── Build ordered GeneratedFile list from manifest ─────────────────────
-  ctx.fileTree = ctx.manifest.files.map(
-    (f): GeneratedFile => ({
-      relativePath: f.dest,
+  ctx.fileTree = ctx.manifest.files.map((f): GeneratedFile => {
+    if (f.kind === "package-json") {
+      return {
+        kind: f.kind,
+        relativePath: f.dest,
+      };
+    }
+
+    return {
       kind: f.kind,
+      relativePath: f.dest,
       sourcePath: resolveTemplateSrc(f.src),
-    })
-  );
+    };
+  });
 
   // ── Build ASCII tree for the preview (strip .ejs from display names) ───
   const displayPaths = ctx.fileTree.map((f) => f.relativePath);

@@ -16,17 +16,17 @@ const basePath = "/furin";
 const port = 3012;
 
 const MIME: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "application/javascript",
   ".css": "text/css",
-  ".json": "application/json",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
+  ".html": "text/html; charset=utf-8",
   ".ico": "image/x-icon",
-  ".woff2": "font/woff2",
-  ".woff": "font/woff",
+  ".jpg": "image/jpeg",
+  ".js": "application/javascript",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
   ".txt": "text/plain",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
 };
 
 function mime(filePath: string): string {
@@ -36,13 +36,12 @@ function mime(filePath: string): string {
 function serveFile(filePath: string, status: number): Response {
   const file = Bun.file(filePath);
   return new Response(file, {
-    status,
     headers: { "content-type": mime(filePath) },
+    status,
   });
 }
 
 Bun.serve({
-  port,
   async fetch(req) {
     const url = new URL(req.url);
     const { pathname } = url;
@@ -90,6 +89,7 @@ Bun.serve({
     // SPA fallback — serve 404.html shell so client-side router can take over
     return serveFile(join(distDir, "404.html"), 404);
   },
+  port,
 });
 
 console.log("\x1b[32m◆\x1b[0m Preview server ready");

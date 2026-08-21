@@ -1,5 +1,6 @@
 import { renderToReadableStream } from "react-dom/server";
-import { normalizeHref, type RouterContextValue, toLogical } from "../../client/router/index.ts";
+import { normalizeHref, toLogical } from "../../client/router/link-utils.ts";
+import type { RouterContextValue } from "../../client/router/types.ts";
 import { FurinNotFoundError } from "../../shared/not-found.ts";
 import { useLogger } from "../context-logger.ts";
 import { currentInstance } from "../instance.ts";
@@ -17,27 +18,21 @@ import { getDevTemplate, getProductionTemplate } from "./template.ts";
  */
 export async function renderRootNotFound(
   root: RootLayout,
-  request: Request | undefined
+  request: Request | undefined,
+  listenerOrigin?: string
 ): Promise<Response> {
   const prodTemplate = getProductionTemplate();
   let template: string;
-  if (prodTemplate !== null) {
-    template = prodTemplate;
-  } else if (IS_DEV && request !== undefined) {
+  if (IS_DEV && listenerOrigin) {
     try {
-      template = await getDevTemplate(new URL(request.url).origin);
-    } catch (devTemplateErr) {
-      useLogger().set({
-        furin: {
-          render: "not-found",
-          action: "dev_template_fallback",
-          error: devTemplateErr instanceof Error ? devTemplateErr.message : String(devTemplateErr),
-        },
-      });
+      template = await getDevTemplate(listenerOrigin);
+    } catch {
       template = generateIndexHtml();
     }
-  } else {
+  } else if (prodTemplate === null) {
     template = generateIndexHtml();
+  } else {
+    template = prodTemplate;
   }
   const notFoundError = new FurinNotFoundError(undefined);
 

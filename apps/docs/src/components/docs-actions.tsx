@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noJsxPropsBind: docs action buttons call local clipboard state handlers
 import { Check, ChevronDown, Copy, ExternalLink } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -18,11 +19,11 @@ interface DocsActionsProps {
 }
 
 const OPEN_IN_LABELS = {
-  github: "GitHub",
   chatgpt: "ChatGPT",
   claude: "Claude",
-  cursor: "Cursor",
   copilot: "Copilot",
+  cursor: "Cursor",
+  github: "GitHub",
 } as const;
 
 export function DocsActions({ doc, markdownSource }: DocsActionsProps) {

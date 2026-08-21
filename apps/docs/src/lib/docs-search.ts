@@ -23,13 +23,13 @@ const HEADING_2_RE = /^##\s+(.+)$/;
 const HEADING_3_RE = /^###\s+(.+)$/;
 
 const searchSchema = {
-  title: "string",
-  section: "string",
-  description: "string",
   content: "string",
+  description: "string",
   href: "string",
   kind: "string",
   order: "number",
+  section: "string",
+  title: "string",
 } as const;
 
 const searchIndexEntries = buildSearchIndexEntries();
@@ -70,6 +70,7 @@ function clampLimit(limit: number | undefined): number {
   return Math.max(1, Math.min(SEARCH_MAX_LIMIT, Math.floor(limit)));
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: linear markdown section parser keeps heading state in one pass
 export function buildSearchEntriesForDoc(doc: DocNavItem, markdown: string, orderOffset: number) {
   const normalizedMarkdown = normalizeMarkdown(markdown);
   const lines = normalizedMarkdown.split("\n");
@@ -83,6 +84,8 @@ export function buildSearchEntriesForDoc(doc: DocNavItem, markdown: string, orde
 
   function createSection(headingText: string): SearchIndexSection {
     const slug = getUniqueHeadingId(headingText, headingIds);
+    const order = nextOrder;
+    nextOrder += 1;
     const entry: SearchIndexSection = {
       content: "",
       contentParts: [],
@@ -90,7 +93,7 @@ export function buildSearchEntriesForDoc(doc: DocNavItem, markdown: string, orde
       href: `${doc.href}#${slug}`,
       id: `${doc.href}#${slug}`,
       kind: "section",
-      order: nextOrder++,
+      order,
       section: headingText,
       title: doc.title,
     };
@@ -134,21 +137,27 @@ export function buildSearchEntriesForDoc(doc: DocNavItem, markdown: string, orde
     }
 
     pageContentParts.push(text);
-    activeH2?.contentParts.push(text);
-    activeH3?.contentParts.push(text);
+    if (activeH2) {
+      activeH2.contentParts.push(text);
+    }
+    if (activeH3) {
+      activeH3.contentParts.push(text);
+    }
   }
 
   for (const section of sections) {
     section.content = section.contentParts.join(" ").trim();
   }
 
+  const pageOrder = nextOrder;
+  nextOrder += 1;
   const pageEntry: SearchIndexEntry = {
     content: pageContentParts.join(" ").trim(),
     description: doc.description,
     href: doc.href,
     id: `${doc.href}::page`,
     kind: "page",
-    order: nextOrder++,
+    order: pageOrder,
     section: "",
     title: doc.title,
   };
@@ -197,10 +206,10 @@ export async function searchDocs(
   const limit = clampLimit(rawLimit);
   const response = await search(index, {
     boost: {
-      title: 5,
-      section: 3,
-      description: 2,
       content: 1,
+      description: 2,
+      section: 3,
+      title: 5,
     },
     limit: limit * 2,
     properties: ["title", "section", "description", "content"],

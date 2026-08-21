@@ -248,32 +248,24 @@ This setup gives Furin two useful properties in development:
 
 ---
 
-## Dev Inspector
+## Furin DevTools
 
-In development mode, Furin exposes JSON inspection endpoints at `/__furin/_inspect` for debugging cache state.
+Furin mounts its browser DevTools automatically in development. There is no component, provider, import, or configuration option to add: the launcher appears in the bottom-left corner of every page served by `bun run dev`.
 
-### `GET /__furin/_inspect/isr`
+The panel includes:
 
-Lists all dev-mode ISR loader cache entries:
+- an overview of requests, loader activity, cache hit rate, and transferred bytes
+- discovered routes, source files, rendering modes, loaders, and cache tags
+- correlated loader timings and returned field names
+- current ISR/SSG loader cache metadata, hit/miss/stale decisions, and invalidations
+- the application's actual sync `EventSource` state and cursors
+- browser Resource Timing measurements for transferred, encoded, and decoded assets
+- serialized RSC and route-data wire sizes
 
-```json
-{
-  "entries": [
-    {
-      "key": "/Users/me/app/src/pages:/blog/my-post",
-      "mode": "isr",
-      "isFresh": true,
-      "revalidate": 60,
-      "generatedAt": 1714500000000,
-      "dependencies": ["/Users/me/app/src/pages/blog/[slug].tsx"],
-      "dataPreview": { "post": { "title": "Hello" } }
-    }
-  ]
-}
-```
+Loader and cache values are never sent to the browser. DevTools only receives names, timings, sizes, status, and project-relative source paths.
 
-### `GET /__furin/_inspect/ssg`
+Press <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>.</kbd> to hide the launcher and panel. The same shortcut restores them. This preference is local to the current Furin instance and does not stop event collection.
 
-Same format for SSG entries.
+The internal snapshot, event stream, and client asset live under `/_furin/devtools/*` (or the mounted app prefix). They are development-only implementation details. Production builds resolve the instrumentation boundary to an empty implementation before Bun traverses the server graph, so the routes, event hub, request context, client asset, and their marker strings are absent from application bundles and compiled binaries.
 
-These endpoints are intended to back a future browser DevTools panel. They are not a public API and may change without notice.
+For security, the internal endpoints accept loopback hosts and same-origin browser requests only. They are not available when the development server is opened through a remote host or proxy.

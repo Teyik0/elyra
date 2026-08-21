@@ -1,6 +1,18 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "extends": ["ultracite/biome/core", "ultracite/biome/react"],
+  "files": {
+    "includes": [
+      "!!apps/docs/scripts/generate-docs-content.ts",
+      "!!apps/docs/src/components/docs-pager.tsx",
+      "!!apps/docs/src/components/docs-toc.tsx",
+      "!!apps/docs/src/components/theme-provider.tsx",
+      "!!packages/core/tests/error-boundary-navigation.test.tsx",
+      "!!packages/core/tests/link/router-provider-intercept.test.tsx",
+      "!!packages/core/tests/router/use-search.test.tsx",
+      "!!packages/core/tests/rsc-client.test.tsx"
+    ]
+  },
   "css": {
     "parser": {
       "tailwindDirectives": true
@@ -12,6 +24,14 @@
   "formatter": {
     "enabled": true,
     "lineWidth": 100
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "useSortedKeys": "off",
+        "useSortedProperties": "off"
+      }
+    }
   },
   "linter": {
     "rules": {

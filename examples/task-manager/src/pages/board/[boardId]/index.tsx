@@ -6,7 +6,6 @@ import type { KanbanCard } from "@/components/ui/kanban";
 import { route } from "../_route";
 
 export default route.page({
-  tags: ["board", "cards"],
   loader: ({ params }) => {
     const data = getBoardData(params.boardId);
     if (!data) {
@@ -24,9 +23,6 @@ export default route.page({
       }),
     });
   },
-  head: ({ board }) => ({
-    meta: [{ title: `${board.name} | Task Manager` }],
-  }),
   component: ({ board, initialCards, initialStats, renderedAt, params }) => (
     <BoardPageContent
       boardId={params.boardId}
@@ -37,4 +33,8 @@ export default route.page({
       renderedAt={renderedAt}
     />
   ),
+  head: ({ board }) => ({
+    meta: [{ title: `${board.name} | Task Manager` }],
+  }),
+  tags: ["board", "cards"],
 });

@@ -1,4 +1,6 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: readable streams must be consumed sequentially
 import type { toCrossJSON } from "seroval";
+import { containsRscSource, serializeRouteFrames } from "../../shared/route-frame.ts";
 import { getSyncStreamPath } from "../sync/config.ts";
 import type { buildHeadInjection } from "./shell";
 import { safeJson } from "./shell";
@@ -76,7 +78,7 @@ export interface LoaderContext {
 
 export function resolvePath(pattern: string, params: Record<string, string>): string {
   let path = pattern;
-  for (const [key, val] of Object.entries(params ?? {})) {
+  for (const [key, val] of Object.entries(params)) {
     path = path.replace(key === "*" ? "*" : `:${key}`, val);
   }
   return path;
@@ -87,12 +89,16 @@ export async function streamToString(stream: ReadableStream): Promise<string> {
   const decoder = new TextDecoder();
   let html = "";
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      html += decoder.decode(value, { stream: true });
     }
-    html += decoder.decode(value, { stream: true });
+  } finally {
+    reader.releaseLock();
   }
 
   html += decoder.decode();
@@ -108,7 +114,7 @@ interface SplitTemplate {
 export function splitTemplate(template: string): SplitTemplate {
   const [headPre, afterHead = ""] = template.split("<!--ssr-head-->");
   const [bodyPre, bodyPost = ""] = afterHead.split("<!--ssr-outlet-->");
-  return { headPre, bodyPre, bodyPost } as SplitTemplate;
+  return { bodyPost, bodyPre, headPre } as SplitTemplate;
 }
 
 export function assembleHTML(
@@ -119,9 +125,12 @@ export function assembleHTML(
 ): string {
   const { headPre, bodyPre, bodyPost } = splitTemplate(template);
 
-  const dataScript = data
-    ? `<script id="__FURIN_DATA__" type="application/json">${safeJson(data)}</script>`
-    : "";
+  let dataScript = "";
+  if (data !== undefined) {
+    dataScript = containsRscSource(data)
+      ? buildRouteFrameTemplate(serializeRouteFrames(data, undefined))
+      : `<script id="__FURIN_DATA__" type="application/json">${safeJson(data)}</script>`;
+  }
   const syncScript = buildSyncRuntimeScript();
   const runtimeScripts = `${syncScript}${dataScript}`;
 
@@ -133,6 +142,60 @@ export function assembleHTML(
   }
 
   return headPre + headData + bodyPre + reactHtml + injectedBodyPost;
+}
+
+export function buildRouteFrameTemplate(payload: string): string {
+  const escaped = payload.replaceAll("&", "&amp;").replaceAll("<", "&lt;");
+  return `<template id="__FURIN_ROUTE_FRAMES__">${escaped}</template>`;
+}
+
+export function buildRouteFrameStreamScript(): string {
+  return `<script id="__FURIN_ROUTE_FRAME_STREAM__">
+window.__FURIN_ROUTE_FRAME_STREAM__ = {
+  _chunks: [],
+  _closed: false,
+  _controller: undefined,
+  push(chunk) {
+    if (this._controller) {
+      this._controller.enqueue(new TextEncoder().encode(chunk));
+    } else {
+      this._chunks.push(chunk);
+    }
+  },
+  close() {
+    this._closed = true;
+    if (this._controller) {
+      this._controller.close();
+    }
+  },
+  stream(initial) {
+    var self = this;
+    return new ReadableStream({
+      start(controller) {
+        self._controller = controller;
+        if (initial) {
+          controller.enqueue(new TextEncoder().encode(initial));
+        }
+        for (var i = 0; i < self._chunks.length; i++) {
+          controller.enqueue(new TextEncoder().encode(self._chunks[i]));
+        }
+        self._chunks = [];
+        if (self._closed) {
+          controller.close();
+        }
+      }
+    });
+  }
+};
+</script>`;
+}
+
+export function buildRouteFramePushScript(payload: string): string {
+  return `<script>window.__FURIN_ROUTE_FRAME_STREAM__.push(${safeJson(payload)})</script>`;
+}
+
+export function buildRouteFrameCloseScript(): string {
+  return "<script>window.__FURIN_ROUTE_FRAME_STREAM__.close()</script>";
 }
 
 export function buildSyncRuntimeScript(): string {

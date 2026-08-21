@@ -6,9 +6,8 @@
   <a href="https://www.npmjs.com/package/@teyik0/furin"><img src="https://img.shields.io/npm/v/%40teyik0%2Ffurin?style=flat-square&logo=npm&color=orange" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/@teyik0/furin"><img src="https://img.shields.io/npm/dm/%40teyik0%2Ffurin?style=flat-square&color=orange" alt="npm downloads" /></a>
   <a href="https://github.com/teyik0/furin/blob/main/LICENSE"><img src="https://img.shields.io/github/license/teyik0/furin?style=flat-square" alt="License" /></a>
-  <a href="https://bun.sh"><img src="https://img.shields.io/badge/bun-%3E%3D1.3.0-f5d147?style=flat-square&logo=bun&logoColor=black" alt="Bun" /></a>
+  <a href="https://bun.sh"><img src="https://img.shields.io/badge/bun-%3E%3D1.4.0-f5d147?style=flat-square&logo=bun&logoColor=black" alt="Bun" /></a>
   <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
-  <a href="https://react.review/repo/Teyik0/furin"><img src="https://react.review/api/badge/Teyik0/furin" alt="React Review" /></a>
 </div>
 
 ---
@@ -34,4 +33,4 @@ Full API reference, rendering modes, routing, and deployment guides at **[teyik0
 
 ## Replayable mutations
 
-Install `furinSync()` on an Elysia API plugin to make mutations idempotent and replayable by default. Send an `Idempotency-Key` on every mutation handled by `furinSync()`; routes using `sync: false` or `furinInvalidate()` without `furinSync()` do not require one. Use `sync: false` for payments, uploads, streams, and other non-replayable effects. The built-in adapter is process-local memory and does not survive restarts or span across replicas.
+Install `furinSync(sync)` on an Elysia API plugin to make mutations idempotent and replayable by default, and pass the same explicit runtime to `furin({ sync })`. Send an `Idempotency-Key` on every mutation handled by `furinSync()`; routes using `sync: false` or `furinInvalidate()` without `furinSync()` do not require one. Use `sync: false` for payments, uploads, streams, and other non-replayable effects. SQLite `:memory:` is available for development and tests but rejected in production. Use file-backed SQLite for one host, or PostgreSQL/Redis for multi-host replicas. Adapters ship as isolated `@teyik0/furin/sync/*` subpaths.

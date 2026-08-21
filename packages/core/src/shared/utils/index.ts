@@ -1,4 +1,5 @@
-import type { RuntimePage, RuntimeRoute } from "../../client";
+// biome-ignore-all lint/performance/noAwaitInLoops: polling helpers intentionally await each retry before the next attempt
+import type { RuntimePage, RuntimeRoute } from "../../client/internal/runtime-types.ts";
 
 export function isFurinPage(value: unknown): value is RuntimePage {
   return (
@@ -64,8 +65,9 @@ export async function mapWithConcurrency<T, R>(
   const workerCount = Math.min(Math.max(concurrency, 1), items.length);
   await Promise.all(
     Array.from({ length: workerCount }, async () => {
-      while (true) {
-        const index = cursor++;
+      for (;;) {
+        const index = cursor;
+        cursor += 1;
         if (index >= items.length) {
           return;
         }

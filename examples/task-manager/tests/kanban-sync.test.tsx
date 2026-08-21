@@ -1,14 +1,17 @@
 import { expect, mock, test } from "bun:test";
+import {
+  installDom,
+  resetDomState,
+  useDomTests as setupDomTests,
+} from "../../../packages/core/tests/support/dom.ts";
 
-if (typeof document === "undefined") {
-  await import("../../../tests/setup");
-}
+installDom();
+resetDomState();
 
 const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+setupDomTests();
 
 interface MutationResult {
   data: { column: "backlog"; id: string; title: string } | null;
@@ -80,7 +83,7 @@ function setTextareaValue(element: HTMLTextAreaElement, value: string): void {
   const InputEventConstructor = document.defaultView?.InputEvent;
   element.dispatchEvent(
     InputEventConstructor
-      ? new InputEventConstructor("input", { bubbles: true, inputType: "insertText", data: value })
+      ? new InputEventConstructor("input", { bubbles: true, data: value, inputType: "insertText" })
       : new EventConstructor("input", { bubbles: true })
   );
   element.dispatchEvent(new EventConstructor("change", { bubbles: true }));
@@ -184,6 +187,45 @@ test("applies remote create, move, and delete loader refreshes", async () => {
       );
     });
     expect(container.textContent).not.toContain("Remote task");
+  } finally {
+    await act(() => root.unmount());
+    container.remove();
+  }
+});
+
+test("does not restore an optimistic board when loader data returns to an earlier reference", async () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  document.body.appendChild(container);
+  const initialCards = [{ column: "backlog" as const, id: "card-1", title: "Move me" }];
+  const refreshedCards = [{ column: "backlog" as const, id: "card-1", title: "Refreshed" }];
+
+  try {
+    await act(() => {
+      root.render(createElement(Kanban, { boardId: "board-1", initialCards }));
+    });
+    const card = container.querySelector('[draggable="true"]');
+    const todoColumn = container.querySelectorAll("ul").item(1);
+    const dataTransfer = createDataTransfer();
+
+    await act(() => {
+      if (card) {
+        dispatchDrag(card, "dragstart", dataTransfer);
+        dispatchDrag(todoColumn, "drop", dataTransfer);
+      }
+    });
+    expect(todoColumn.textContent).toContain("Move me");
+
+    await act(() => {
+      root.render(createElement(Kanban, { boardId: "board-1", initialCards: refreshedCards }));
+    });
+    expect(container.querySelectorAll("ul").item(0).textContent).toContain("Refreshed");
+
+    await act(() => {
+      root.render(createElement(Kanban, { boardId: "board-1", initialCards }));
+    });
+    expect(container.querySelectorAll("ul").item(0).textContent).toContain("Move me");
+    expect(container.querySelectorAll("ul").item(1).textContent).not.toContain("Move me");
   } finally {
     await act(() => root.unmount());
     container.remove();

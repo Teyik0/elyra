@@ -14,12 +14,16 @@ import {
 import { route } from "./root";
 
 const FILES = {
-  "server.ts": `import { Elysia } from "elysia"
-import { furin } from "@teyik0/furin"
+  "pages/index.tsx": `import { route } from "./root"
 
-const app = new Elysia()
-  .use(await furin({ pagesDir: "./pages" }))
-  .listen(3000)`,
+export default route.page({
+  loader: async () => ({
+    message: "Hello from Furin!",
+  }),
+  component: ({ message }) => (
+    <h1>{message}</h1>
+  ),
+})`,
   "pages/root.tsx": `import { createRoute } from "@teyik0/furin/client"
 import { Link } from "@teyik0/furin/link"
 import "./styles/globals.css"
@@ -39,35 +43,17 @@ function RootLayout({ children }: { children: React.ReactNode }) {
 export const route = createRoute({
   layout: ({ children }) => <RootLayout>{children}</RootLayout>,
 })`,
-  "pages/index.tsx": `import { route } from "./root"
+  "server.ts": `import { Elysia } from "elysia"
+import { furin } from "@teyik0/furin"
 
-export default route.page({
-  loader: async () => ({
-    message: "Hello from Furin!",
-  }),
-  component: ({ message }) => (
-    <h1>{message}</h1>
-  ),
-})`,
+const app = new Elysia()
+  .use(await furin({ pagesDir: "./pages" }))
+  .listen(3000)`,
 } as const;
 
 type FileName = keyof typeof FILES;
 
 export default route.page({
-  head: () => ({
-    meta: [{ title: "Furin — The Fast, Minimal React Framework for Bun" }],
-    links: [{ rel: "canonical", href: "/" }],
-  }),
-  loader: async () => {
-    const entries = Object.entries(FILES) as [FileName, string][];
-    const codeHtmlMap = Promise.all(
-      entries.map(async ([name, code]) => [
-        name,
-        await codeToHtml(code, { lang: "tsx", theme: "github-dark" }),
-      ])
-    ).then((resolvedEntries) => Object.fromEntries(resolvedEntries) as Record<FileName, string>);
-    return { codeHtmlMap: await codeHtmlMap };
-  },
   component: ({ codeHtmlMap }) => (
     <div>
       {/* Hero */}
@@ -203,4 +189,18 @@ export default route.page({
       </section>
     </div>
   ),
+  head: () => ({
+    links: [{ href: "/", rel: "canonical" }],
+    meta: [{ title: "Furin — The Fast, Minimal React Framework for Bun" }],
+  }),
+  loader: async () => {
+    const entries = Object.entries(FILES) as [FileName, string][];
+    const codeHtmlMap = Promise.all(
+      entries.map(async ([name, code]) => [
+        name,
+        await codeToHtml(code, { lang: "tsx", theme: "github-dark" }),
+      ])
+    ).then((resolvedEntries) => Object.fromEntries(resolvedEntries) as Record<FileName, string>);
+    return { codeHtmlMap: await codeHtmlMap };
+  },
 });

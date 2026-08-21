@@ -1,0 +1,64 @@
+import {
+  DEVTOOLS_PROTOCOL_VERSION,
+  type DevtoolsServerEvent,
+  type DevtoolsServerEventInput,
+} from "../../devtools/protocol.ts";
+import { currentInstance, instanceSlot } from "../instance.ts";
+
+const EVENT_LIMIT = 1000;
+
+interface DevtoolsHub {
+  events: DevtoolsServerEvent[];
+  listeners: Set<(event: DevtoolsServerEvent) => void>;
+  sequence: number;
+}
+
+const instanceDevtoolsHub = instanceSlot(
+  (): DevtoolsHub => ({ events: [], listeners: new Set(), sequence: 0 })
+);
+
+export function devtoolsInstanceId(): string {
+  const instance = currentInstance();
+  return Bun.hash(`${instance.prefix}\0${instance.pagesDir}`).toString(16);
+}
+
+export function devtoolsEventsSnapshot(): {
+  events: DevtoolsServerEvent[];
+  lastEventId: number;
+} {
+  const hub = instanceDevtoolsHub();
+  return { events: [...hub.events], lastEventId: hub.sequence };
+}
+
+export function subscribeDevtoolsEventsAfter(
+  cursor: number,
+  listener: (event: DevtoolsServerEvent) => void
+): { replay: DevtoolsServerEvent[]; unsubscribe: () => void } {
+  const hub = instanceDevtoolsHub();
+  hub.listeners.add(listener);
+  return {
+    replay: hub.events.filter((event) => event.id > cursor),
+    unsubscribe: () => {
+      hub.listeners.delete(listener);
+    },
+  };
+}
+
+export function appendDevtoolsEvent(event: DevtoolsServerEventInput): DevtoolsServerEvent {
+  const hub = instanceDevtoolsHub();
+  hub.sequence += 1;
+  const complete = {
+    ...event,
+    id: hub.sequence,
+    instanceId: devtoolsInstanceId(),
+    version: DEVTOOLS_PROTOCOL_VERSION,
+  } as DevtoolsServerEvent;
+  hub.events.push(complete);
+  if (hub.events.length > EVENT_LIMIT) {
+    hub.events.shift();
+  }
+  for (const listener of hub.listeners) {
+    listener(complete);
+  }
+  return complete;
+}

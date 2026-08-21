@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 // ── Template manifest types ────────────────────────────────────────────────
 
@@ -7,15 +7,23 @@ export type TemplateId = "simple" | "full";
 
 /** All valid template identifiers — single source of truth used by arg parsing and the pipeline. */
 export const TEMPLATE_IDS = ["simple", "full"] as const satisfies readonly TemplateId[];
-export type FileKind = "ejs" | "static";
+export type TemplateFileKind = "ejs" | "static";
 
-export interface ManifestFile {
+export interface TemplateBackedManifestFile {
   /** Destination path relative to project root, e.g. "package.json" */
   dest: string;
-  kind: FileKind;
-  /** Path relative to templates/ dir, e.g. "simple/package.json.ejs" */
+  kind: TemplateFileKind;
+  /** Path relative to templates/ dir, e.g. "simple/src/server.ts.ejs" */
   src: string;
 }
+
+export interface PackageJsonManifestFile {
+  /** Destination path relative to project root, e.g. "package.json" */
+  dest: string;
+  kind: "package-json";
+}
+
+export type ManifestFile = PackageJsonManifestFile | TemplateBackedManifestFile;
 
 export interface TemplateDefinition {
   dependencies: Record<string, string>;
@@ -35,15 +43,25 @@ export interface ManifestRegistry {
 
 // ── Generated file descriptor ──────────────────────────────────────────────
 
-export interface GeneratedFile {
+export interface TemplateBackedGeneratedFile {
   /** Rendered content for EJS files (populated in Stage 5) */
   content?: string;
-  kind: FileKind;
+  kind: TemplateFileKind;
   /** Destination path relative to targetDir, e.g. "src/pages/index.tsx" */
   relativePath: string;
   /** Absolute source path in the scaffolder's template directory */
   sourcePath: string;
 }
+
+export interface PackageJsonGeneratedFile {
+  /** Rendered content populated in Stage 5 */
+  content?: string;
+  kind: "package-json";
+  /** Destination path relative to targetDir, e.g. "package.json" */
+  relativePath: string;
+}
+
+export type GeneratedFile = PackageJsonGeneratedFile | TemplateBackedGeneratedFile;
 
 // ── EJS template variables ─────────────────────────────────────────────────
 
@@ -98,25 +116,25 @@ export interface PipelineContext {
 export function createContext(overrides?: Partial<PipelineContext>): PipelineContext {
   const normalizedOverrides = overrides ?? {};
   return {
+    dependencies: {},
+    devDependencies: {},
+    diskSpaceOk: false,
+    features: [],
+    fileTree: [],
+    furinVersion: "latest",
+    gitInitRan: false,
+    install: true,
+    installRan: false,
+    manifest: null,
     projectName: "",
     projectNameKebab: "",
     projectNamePascal: "",
     targetDir: "",
-    diskSpaceOk: false,
     templateId: null,
-    manifest: null,
-    fileTree: [],
     treePreviewLines: [],
-    dependencies: {},
-    devDependencies: {},
-    writtenFiles: [],
     validationPassed: false,
-    installRan: false,
-    gitInitRan: false,
-    install: true,
+    writtenFiles: [],
     yes: false,
-    furinVersion: "latest",
-    features: [],
     ...normalizedOverrides,
   };
 }
@@ -142,6 +160,25 @@ function findTemplatesDir(): string {
 
 export const TEMPLATES_DIR = findTemplatesDir();
 
+export function assertPathInsideDirectory(
+  rootDir: string,
+  candidatePath: string,
+  errorMessage: string
+): void {
+  const relativePath = relative(rootDir, candidatePath);
+  const isParentPath = relativePath === ".." || relativePath.startsWith(`..${sep}`);
+  if (relativePath === "" || !(isParentPath || isAbsolute(relativePath))) {
+    return;
+  }
+  throw new Error(errorMessage);
+}
+
 export function resolveTemplateSrc(srcRelative: string): string {
-  return resolve(TEMPLATES_DIR, srcRelative);
+  const sourcePath = resolve(TEMPLATES_DIR, srcRelative);
+  assertPathInsideDirectory(
+    TEMPLATES_DIR,
+    sourcePath,
+    `Template source "${srcRelative}" escapes the templates directory.`
+  );
+  return sourcePath;
 }

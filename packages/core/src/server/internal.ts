@@ -19,6 +19,8 @@ export interface CompileContextRoute {
 
 export interface CompileContext {
   buildId?: string;
+  /** Whether the emitted hydration client sends browser log batches. */
+  clientLogging?: boolean;
   embedded?: EmbeddedAppData;
   modules: Record<string, unknown>;
   /** Mount prefix this app was built for (`""` = root). */

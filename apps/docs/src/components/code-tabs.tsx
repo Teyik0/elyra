@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noJsxPropsBind: tab controls depend on local active state and child indices
 import { useState } from "react";
 
 interface CodeTabProps {
@@ -27,59 +28,59 @@ export function CodeTabs({ children }: CodeTabsProps) {
       {/* Title bar with dots + tabs */}
       <div
         style={{
-          display: "flex",
           alignItems: "center",
           background: "#161b22",
           borderBottom: "1px solid rgba(99,102,241,0.15)",
+          display: "flex",
         }}
       >
         {/* macOS dots */}
-        <div style={{ display: "flex", gap: 6, padding: "10px 16px", flexShrink: 0 }}>
+        <div style={{ display: "flex", flexShrink: 0, gap: 6, padding: "10px 16px" }}>
           <span
             style={{
-              display: "inline-block",
-              width: 12,
-              height: 12,
-              borderRadius: "9999px",
               background: "rgba(239,68,68,0.8)",
+              borderRadius: "9999px",
+              display: "inline-block",
+              height: 12,
+              width: 12,
             }}
           />
           <span
             style={{
-              display: "inline-block",
-              width: 12,
-              height: 12,
-              borderRadius: "9999px",
               background: "rgba(234,179,8,0.8)",
+              borderRadius: "9999px",
+              display: "inline-block",
+              height: 12,
+              width: 12,
             }}
           />
           <span
             style={{
-              display: "inline-block",
-              width: 12,
-              height: 12,
-              borderRadius: "9999px",
               background: "rgba(34,197,94,0.8)",
+              borderRadius: "9999px",
+              display: "inline-block",
+              height: 12,
+              width: 12,
             }}
           />
         </div>
 
         {/* File tabs */}
-        <div style={{ display: "flex", borderLeft: "1px solid rgba(99,102,241,0.15)" }}>
+        <div style={{ borderLeft: "1px solid rgba(99,102,241,0.15)", display: "flex" }}>
           {tabs.map((tab, i) => (
             // react-doctor-disable-next-line react-doctor/no-inline-exhaustive-style
             <button
               key={tab.props.title}
               onClick={() => setActive(i)}
               style={{
-                padding: "8px 16px",
+                background: i === active ? "rgba(255,255,255,0.05)" : "transparent",
+                borderBottom: i === active ? "1px solid #161b22" : "none",
+                borderRight: "1px solid rgba(99,102,241,0.15)",
+                color: i === active ? "#e2e8f0" : "#64748b",
+                cursor: "pointer",
                 fontFamily: "ui-monospace, monospace",
                 fontSize: "0.75rem",
-                color: i === active ? "#e2e8f0" : "#64748b",
-                background: i === active ? "rgba(255,255,255,0.05)" : "transparent",
-                borderRight: "1px solid rgba(99,102,241,0.15)",
-                borderBottom: i === active ? "1px solid #161b22" : "none",
-                cursor: "pointer",
+                padding: "8px 16px",
                 transition: "color 0.15s",
               }}
               type="button"

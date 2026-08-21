@@ -147,22 +147,22 @@ const ACTIONS_STYLE: CSSProperties = {
 };
 
 const BUTTON_BASE: CSSProperties = {
+  alignItems: "center",
+  appearance: "none",
   border: 0,
+  boxSizing: "border-box",
   cursor: "pointer",
   display: "inline-flex",
   fontFamily: FONT_SANS,
   fontSize: "14px",
   fontWeight: 500,
+  justifyContent: "center",
   lineHeight: 1,
   minWidth: "120px",
   padding: "10px 16px",
   textAlign: "center",
   textDecoration: "none",
   transition: "background-color 120ms ease, color 120ms ease, opacity 120ms ease",
-  appearance: "none",
-  alignItems: "center",
-  justifyContent: "center",
-  boxSizing: "border-box",
 };
 
 // Outlined buttons: thin neutral border, no fill — discreet enough to blend

@@ -10,39 +10,40 @@ export interface BeginMutationInput {
   principal: string;
 }
 
-export type BeginMutationResult =
-  | { kind: "execute"; mutationId: string }
-  | { kind: "replay"; response: StoredResponse }
-  | { kind: "conflict"; reason: "in-progress" | "payload-mismatch" }
-  | { kind: "unavailable" };
+export interface MutationLease {
+  id: string;
+  key: string;
+  leaseMs: number;
+  principal: string;
+}
 
-export interface CommitMutationInput {
-  mutationId: string;
+export type BeginMutationResult =
+  | { kind: "execute"; lease: MutationLease }
+  | { kind: "replay"; response: StoredResponse }
+  | { kind: "conflict"; reason: "in-progress" | "payload-mismatch" };
+
+export type SyncInvalidation =
+  | { kind: "path"; path: string; type: "layout" | "page" }
+  | { kind: "tags"; tags: readonly string[] };
+
+export interface CompleteMutationInput {
+  invalidations: readonly SyncInvalidation[];
+  lease: MutationLease;
   response: StoredResponse;
 }
 
-export interface AbortMutationInput {
-  mutationId: string;
-}
+export type CompleteMutationResult =
+  | { cursor: string | undefined; kind: "committed" }
+  | { kind: "lost" };
 
 export interface SyncChange {
   cursor: string;
-  invalidations: readonly string[];
-}
-
-export interface AppendChangesInput {
-  invalidations: readonly string[];
-  path: string;
-}
-
-export interface AppendChangesResult {
-  change: SyncChange;
+  invalidations: readonly SyncInvalidation[];
 }
 
 export interface ReadChangesInput {
   after: string | undefined;
   limit: number;
-  path: string;
 }
 
 export interface ChangePage {
@@ -52,14 +53,29 @@ export interface ChangePage {
   reset: boolean;
 }
 
-export type SyncChangeListener = (change: SyncChange) => void;
-type MaybePromise<T> = Promise<T> | T;
-
 export interface SyncAdapter {
-  abortMutation(input: AbortMutationInput): MaybePromise<void>;
-  appendChanges(input: AppendChangesInput): MaybePromise<AppendChangesResult>;
-  beginMutation(input: BeginMutationInput): MaybePromise<BeginMutationResult>;
-  commitMutation(input: CommitMutationInput): MaybePromise<void>;
-  readChanges(input: ReadChangesInput): MaybePromise<ChangePage>;
-  subscribe(path: string, listener: SyncChangeListener): () => void;
+  abortMutation: (lease: MutationLease) => Promise<void>;
+  beginMutation: (input: BeginMutationInput) => Promise<BeginMutationResult>;
+  completeMutation: (input: CompleteMutationInput) => Promise<CompleteMutationResult>;
+  currentCursor: () => Promise<string>;
+  readChanges: (input: ReadChangesInput) => Promise<ChangePage>;
+  renewMutation: (lease: MutationLease) => Promise<"lost" | "renewed">;
+  readonly scope: "distributed" | "host-local" | "process-local";
 }
+
+export interface SyncSubscription {
+  unsubscribe: () => Promise<void>;
+}
+
+export interface SyncNotifier {
+  publish: (cursor: string) => Promise<void>;
+  subscribe: (listener: (cursor: string) => void) => Promise<SyncSubscription>;
+}
+
+export interface SyncRuntimeOptions {
+  adapter: SyncAdapter;
+  notifier?: SyncNotifier;
+  principal: (context: Context) => Promise<string> | string;
+}
+
+import type { Context } from "elysia";

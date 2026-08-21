@@ -5,13 +5,6 @@ import { getDocSourceText } from "@/lib/docs-server";
 import { route } from "./_route";
 
 export default route.page({
-  head: () => ({
-    meta: [{ title: "Error Handling — Furin" }],
-  }),
-  loader: () => {
-    const doc = DOCS_BY_PATH["/docs/error-handling"];
-    return { markdownSource: getDocSourceText(doc.sourcePath) };
-  },
   component: ({ markdownSource }) => (
     <DocPage
       Content={ErrorHandling}
@@ -19,4 +12,11 @@ export default route.page({
       markdownSource={markdownSource}
     />
   ),
+  head: () => ({
+    meta: [{ title: "Error Handling — Furin" }],
+  }),
+  loader: () => {
+    const doc = DOCS_BY_PATH["/docs/error-handling"];
+    return { markdownSource: getDocSourceText(doc.sourcePath) };
+  },
 });

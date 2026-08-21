@@ -10,10 +10,10 @@ const mdxPlugin: Bun.BunPlugin = {
     build.onLoad({ filter: MDX_FILTER }, async (args) => {
       const source = await Bun.file(args.path).text();
       const compiled = await compile(source, {
-        outputFormat: "program",
         development: false,
-        remarkPlugins: [remarkGfm],
+        outputFormat: "program",
         rehypePlugins: [rehypeShiki],
+        remarkPlugins: [remarkGfm],
       });
       return {
         contents: String(compiled),

@@ -4,20 +4,17 @@ import type { Context } from "elysia";
 import { createElement, type ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
 import { toCrossJSON, toCrossJSONAsync } from "seroval";
-import {
-  normalizeHref,
-  RouterContext,
-  type RouterContextValue,
-  SearchStoreContext,
-  toLogical,
-} from "../../client/router/index.ts";
+import { RouterContext } from "../../client/router/context.ts";
+import { normalizeHref, toLogical } from "../../client/router/link-utils.ts";
 import {
   createSearchStore,
+  SearchStoreContext,
   searchSnapshotFromRouterContext,
 } from "../../client/router/search-store.ts";
+import type { RouterContextValue } from "../../client/router/types.ts";
 import { computeErrorDigest } from "../../shared/digest.ts";
+import { containsRscSource, serializeRouteFrames } from "../../shared/route-frame.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
-import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { runInSyntheticRenderScope, useLogger } from "../context-logger.ts";
 import { currentInstance } from "../instance.ts";
 // FurinNotFoundError is used indirectly via buildNotFoundElement in element.tsx
@@ -27,13 +24,23 @@ import {
   assembleHTML,
   buildDeferredResolution,
   buildDeferredScript,
+  buildRouteFrameCloseScript,
+  buildRouteFramePushScript,
+  buildRouteFrameStreamScript,
+  buildRouteFrameTemplate,
   buildSyncRuntimeScript,
   resolvePath,
   splitTemplate,
   streamToString,
 } from "./assemble.ts";
 import { buildElement, buildErrorElement, buildNotFoundElement } from "./element.tsx";
-import { type LoaderResult, runLoaders, serializeDeferredRejection } from "./loaders.ts";
+import {
+  type LoaderResult,
+  runLoaders,
+  runPublicLoaders,
+  serializeDeferredRejection,
+} from "./loaders.ts";
+import { serializeDeferredRouteFrame } from "./route-frame-transport.ts";
 import { buildHeadInjection, generateIndexHtml, safeJson } from "./shell.ts";
 import { getDevTemplate, getProductionTemplate } from "./template.ts";
 
@@ -163,7 +170,8 @@ export function assertDeferredModeAllowed(
   route: ResolvedRoute,
   deferredPromises: Record<string, Promise<unknown>> | undefined
 ): void {
-  if (deferredPromises !== undefined && route.mode !== "ssr") {
+  const deferredKeys = Object.keys(deferredPromises ?? {}).filter((key) => key !== "requestData");
+  if (deferredKeys.length > 0 && route.mode !== "ssr") {
     throw new Error(
       `[furin] page "${route.pattern}" returned defer() but the route is rendered in "${route.mode}" mode. ` +
         "defer() streams data progressively and is only supported in SSR. " +
@@ -199,7 +207,7 @@ function buildSuccessRender(
   throwOnFailure: boolean
 ): { element: ReactNode; headData: string; errorDigest: string | undefined; status: number } {
   try {
-    const headData = buildHeadInjection(route.page?.head?.(componentProps));
+    const headData = buildHeadInjection(route.page.head?.(componentProps));
     const element = buildElement(route, componentProps, root.route);
     return { element, headData, errorDigest: undefined, status: 200 };
   } catch (headError) {
@@ -216,6 +224,18 @@ function buildSuccessRender(
     );
     return { element, headData: "", errorDigest, status: 500 };
   }
+}
+
+async function resolveRenderTemplate(ctx: Context): Promise<string> {
+  const productionTemplate = getProductionTemplate();
+  if (productionTemplate !== null) {
+    return productionTemplate;
+  }
+  if (IS_DEV && ctx.server) {
+    const template = await getDevTemplate(ctx.server.url.origin);
+    return template;
+  }
+  return generateIndexHtml();
 }
 
 /**
@@ -257,7 +277,7 @@ export async function prepareRender(
     !isFallback && loaderResult.type === "data" ? loaderResult.deferredPromises : undefined;
   assertDeferredModeAllowed(route, deferredPromises);
 
-  const headers = loaderResult.headers;
+  const { headers } = loaderResult;
   const componentProps = {
     ...syncData,
     ...(deferredPromises ?? {}),
@@ -266,10 +286,7 @@ export async function prepareRender(
     path: ctx.path,
   };
 
-  const prodTemplate = getProductionTemplate();
-  const template =
-    prodTemplate ??
-    (IS_DEV ? await getDevTemplate(new URL(ctx.request.url).origin) : generateIndexHtml());
+  const template = await resolveRenderTemplate(ctx);
 
   let element: ReactNode;
   let headData = "";
@@ -281,21 +298,23 @@ export async function prepareRender(
     status = 404;
     notFoundError = { message: loaderResult.error.message, data: loaderResult.error.data };
   } else if (loaderResult.type === "error") {
+    const { status: errorStatus } = loaderResult;
     errorDigest = computeErrorDigest(loaderResult.error);
     element = buildErrorElement(
       route.error ?? root.error,
       loaderResult.error,
       errorDigest,
       loaderResult.message,
-      loaderResult.status
+      errorStatus
     );
-    status = loaderResult.status;
+    status = errorStatus;
   } else {
-    const success = buildSuccessRender(route, root, componentProps, throwOnFailure);
-    element = success.element;
-    headData = success.headData;
-    errorDigest = success.errorDigest;
-    status = success.status;
+    ({ element, errorDigest, headData, status } = buildSuccessRender(
+      route,
+      root,
+      componentProps,
+      throwOnFailure
+    ));
   }
 
   // Explicit basePath (static export) wins; otherwise resolve the mount
@@ -347,30 +366,44 @@ export function renderForPath(
   origin: string,
   mode: "ssg" | "isr",
   basePath?: string,
-  searchRoutes?: SearchRouteMetadata[]
+  searchRoutes?: SearchRouteMetadata[],
+  search?: string
 ): Promise<RenderResult | Response> {
   return runInSyntheticRenderScope(
     async () => {
       const resolvedPath = resolvePath(route.pattern, params);
+      const requestUrl = new URL(`${resolvedPath}${search ?? ""}`, origin);
+      const query: { [key: string]: string | string[] } = Object.create(null);
+      for (const [key, value] of requestUrl.searchParams) {
+        const previous = query[key];
+        if (previous === undefined) {
+          query[key] = value;
+        } else if (Array.isArray(previous)) {
+          previous.push(value);
+        } else {
+          query[key] = [previous, value];
+        }
+      }
       const ctx: Context = {
         params,
-        query: {},
-        request: new Request(`${origin}${resolvedPath}`),
+        query,
+        request: new Request(requestUrl),
         headers: {},
         cookie: {},
-        redirect: (url: string, status: number | undefined) =>
-          new Response(null, { status: status ?? 302, headers: { Location: url } }),
+        redirect: (url: string, redirectStatus: number | undefined) =>
+          new Response(null, { status: redirectStatus ?? 302, headers: { Location: url } }),
         set: { headers: {} },
         path: resolvedPath,
       } as Context;
 
+      const loaderResult = await runPublicLoaders(route, ctx);
       const prepared = await prepareRender(
         route,
         ctx,
         root,
         basePath,
         true,
-        undefined,
+        loaderResult,
         searchRoutes
       );
       if (prepared instanceof Response) {
@@ -402,6 +435,77 @@ export function renderForPath(
   );
 }
 
+interface SsrTransportScripts {
+  deferredSetupScript: string;
+  runtimeScripts: string;
+  usesRouteFrames: boolean;
+}
+
+function buildSsrTransportScripts(
+  dataPayload: Record<string, unknown>,
+  deferredKeys: string[],
+  hasDeferred: boolean,
+  shellErrored: boolean
+): SsrTransportScripts {
+  const usesRouteFrames = !shellErrored && (containsRscSource(dataPayload) || hasDeferred);
+  const deferredSetupScript =
+    hasDeferred && !usesRouteFrames ? buildDeferredScript(deferredKeys) : "";
+  const dataScript = usesRouteFrames
+    ? buildRouteFrameTemplate(
+        serializeRouteFrames(dataPayload, hasDeferred ? deferredKeys : undefined)
+      )
+    : `<script id="__FURIN_DATA__" type="application/json">${safeJson(dataPayload)}</script>`;
+  const routeFrameStreamScript =
+    hasDeferred && usesRouteFrames ? buildRouteFrameStreamScript() : "";
+
+  return {
+    deferredSetupScript,
+    runtimeScripts: `${buildSyncRuntimeScript()}${routeFrameStreamScript}${dataScript}`,
+    usesRouteFrames,
+  };
+}
+
+async function writeDeferredSsrChunk(
+  writer: WritableStreamDefaultWriter<Uint8Array>,
+  enc: TextEncoder,
+  key: string,
+  promise: Promise<unknown>,
+  index: number,
+  usesRouteFrames: boolean
+): Promise<void> {
+  if (usesRouteFrames) {
+    const frames = await serializeDeferredRouteFrame(key, promise, `defer-${index}`);
+    await writer.write(enc.encode(buildRouteFramePushScript(frames)));
+    return;
+  }
+
+  try {
+    const resolvedValue = await promise;
+    const chunk = toCrossJSON(resolvedValue);
+    await writer.write(enc.encode(buildDeferredResolution(key, chunk, "resolve")));
+  } catch (err) {
+    const normalized = await serializeDeferredRejection(err);
+    const chunk = toCrossJSON(normalized);
+    await writer.write(enc.encode(buildDeferredResolution(key, chunk, "reject")));
+  }
+}
+
+async function writeDeferredSsrChunks(
+  writer: WritableStreamDefaultWriter<Uint8Array>,
+  enc: TextEncoder,
+  deferredPromises: Record<string, Promise<unknown>>,
+  usesRouteFrames: boolean
+): Promise<void> {
+  await Promise.all(
+    Object.entries(deferredPromises).map(([key, promise], index) =>
+      writeDeferredSsrChunk(writer, enc, key, promise, index, usesRouteFrames)
+    )
+  );
+  if (usesRouteFrames) {
+    await writer.write(enc.encode(buildRouteFrameCloseScript()));
+  }
+}
+
 /**
  * Serialises a loader's `syncData` + `deferredPromises` into the same one-line
  * NDJSON shape the live `/_furin/data` endpoint emits.
@@ -414,6 +518,19 @@ export async function serializeLoaderDataNdjson(
     ...syncData,
     ...(deferredPromises ?? {}),
   };
+  if (containsRscSource(payload) || deferredPromises !== undefined) {
+    const deferredEntries = Object.entries(deferredPromises ?? {});
+    let ndjson = serializeRouteFrames(
+      syncData,
+      deferredEntries.length > 0 ? deferredEntries.map(([key]) => key) : undefined
+    );
+    await Promise.all(
+      deferredEntries.map(async ([key, promise], index) => {
+        ndjson += await serializeDeferredRouteFrame(key, promise, `defer-${index}`);
+      })
+    );
+    return ndjson;
+  }
   const serialized = await toCrossJSONAsync(payload);
   return `${JSON.stringify(serialized)}\n`;
 }
@@ -446,18 +563,6 @@ export async function renderToHTML(
   };
 }
 
-export async function renderToStream(
-  route: ResolvedRoute,
-  ctx: Context,
-  root: RootLayout
-): Promise<ReadableStream | Response> {
-  const response = await renderSSR(route, ctx, root, undefined);
-  if (!response.ok) {
-    return response;
-  }
-  return response.body ?? new ReadableStream();
-}
-
 export async function renderSSR(
   route: ResolvedRoute,
   ctx: Context,
@@ -479,11 +584,6 @@ export async function renderSSR(
     return prepared;
   }
 
-  autoInvalidateRegistry.registerLoaderTags(
-    resolvePath(route.pattern, ctx.params ?? {}),
-    route.tags
-  );
-
   useLogger().set({
     furin: {
       render: route.mode,
@@ -503,8 +603,7 @@ export async function renderSSR(
     prepared.ssrContext
   );
   const shellErrored = shellError !== undefined;
-  let status = prepared.status;
-  let finalDigest = prepared.errorDigest;
+  let { errorDigest: finalDigest, status } = prepared;
   if (shellError) {
     status = 500;
     finalDigest = shellError.digest;
@@ -536,12 +635,12 @@ export async function renderSSR(
   const hasDeferred = !shellErrored && deferredPromises !== undefined;
 
   const deferredKeys = hasDeferred ? Object.keys(deferredPromises) : [];
-  const deferredSetupScript = hasDeferred ? buildDeferredScript(deferredKeys) : "";
-
-  const dataScript = `<script id="__FURIN_DATA__" type="application/json">${safeJson(
-    dataPayload
-  )}</script>`;
-  const runtimeScripts = `${buildSyncRuntimeScript()}${dataScript}`;
+  const { deferredSetupScript, runtimeScripts, usesRouteFrames } = buildSsrTransportScripts(
+    dataPayload,
+    deferredKeys,
+    hasDeferred,
+    shellErrored
+  );
 
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
   const writer = writable.getWriter();
@@ -552,6 +651,7 @@ export async function renderSSR(
 
     const reader = reactStream.getReader();
     for (;;) {
+      // biome-ignore lint/performance/noAwaitInLoops: ReadableStream chunks must be consumed in order.
       const { done, value } = await reader.read();
       if (done) {
         break;
@@ -565,19 +665,7 @@ export async function renderSSR(
     await writer.write(enc.encode(runtimeScripts + earlyBodyPost));
 
     if (hasDeferred) {
-      await Promise.all(
-        Object.entries(deferredPromises).map(async ([key, promise]) => {
-          try {
-            const resolvedValue = await promise;
-            const chunk = toCrossJSON(resolvedValue);
-            await writer.write(enc.encode(buildDeferredResolution(key, chunk, "resolve")));
-          } catch (err) {
-            const normalized = await serializeDeferredRejection(err);
-            const chunk = toCrossJSON(normalized);
-            await writer.write(enc.encode(buildDeferredResolution(key, chunk, "reject")));
-          }
-        })
-      );
+      await writeDeferredSsrChunks(writer, enc, deferredPromises, usesRouteFrames);
     }
 
     await writer.write(enc.encode(finalBodyPost));

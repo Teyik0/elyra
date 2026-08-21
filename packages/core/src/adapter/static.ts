@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: static build emits routes in sequence to keep output deterministic
 import { cpSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { buildClient } from "../build/client.ts";
@@ -5,14 +6,11 @@ import { ensureDir, toPosixPath } from "../build/shared.ts";
 import type { BuildAppOptions, StaticTargetBuildManifest } from "../build/types.ts";
 import type { StaticExportConfig } from "../config.ts";
 import { resolvePath } from "../server/render/assemble.ts";
-import { prerenderSSG } from "../server/render/index.ts";
 import { generateProdIndexHtml } from "../server/render/shell.ts";
+import { prerenderSSG } from "../server/render/ssg.ts";
 import { setProductionTemplateContent } from "../server/render/template.ts";
-import {
-  createSearchRouteMetadata,
-  type ResolvedRoute,
-  type RootLayout,
-} from "../server/router/index.ts";
+import { createSearchRouteMetadata } from "../server/router/schemas.ts";
+import type { ResolvedRoute, RootLayout } from "../server/router/types.ts";
 import type { SearchRouteMetadata } from "../shared/search-params.ts";
 import { mapWithConcurrency } from "../shared/utils/index.ts";
 
@@ -49,6 +47,38 @@ function pathToOutputFile(urlPath: string, outDir: string, fileName: string): st
     );
   }
   return resolved;
+}
+
+function sortRouteList(routes: string[]): string[] {
+  return routes.toSorted((a, b) => (a < b ? -1 : Number(a > b)));
+}
+
+function assertNoStaticExportSkips(onSSR: "error" | "skip", skippedRoutes: string[]): void {
+  if (onSSR !== "error" || skippedRoutes.length === 0) {
+    return;
+  }
+  const failed = sortRouteList(skippedRoutes);
+  const list = failed.map((r) => `  • ${r}`).join("\n");
+  throw new Error(
+    `[furin] static: ${failed.length} route(s) cannot be statically exported:\n${list}\n` +
+      `Define \`staticParams()\` for dynamic SSG routes or set \`onSSR: "skip"\` in your static config.`
+  );
+}
+
+function assertNoPrerenderSkips(
+  onSSR: "error" | "skip",
+  skippedRoutes: string[],
+  afterQueueCount: number
+): void {
+  if (onSSR !== "error" || skippedRoutes.length <= afterQueueCount) {
+    return;
+  }
+  const failed = sortRouteList(skippedRoutes.slice(afterQueueCount));
+  const list = failed.map((r) => `  • ${r}`).join("\n");
+  throw new Error(
+    `[furin] static: ${failed.length} route(s) failed to pre-render:\n${list}\n` +
+      `Set \`onSSR: "skip"\` in your static config to suppress this error.`
+  );
 }
 
 // ── Pre-render worker ─────────────────────────────────────────────────────────
@@ -165,18 +195,18 @@ async function buildTaskQueue(
     STATIC_CONCURRENCY,
     async (route) => {
       if (!DYNAMIC_SEGMENT_RE.test(route.pattern)) {
-        return { route, paramSets: [{}] };
+        return { paramSets: [{}], route };
       }
       if (!route.page.staticParams) {
         console.warn(
           `[furin] static: skipping dynamic route "${route.pattern}" — no staticParams() defined.`
         );
         skippedRoutes.push(route.pattern);
-        return { route, paramSets: null };
+        return { paramSets: null, route };
       }
       try {
         const paramSets = (await route.page.staticParams()) ?? [];
-        return { route, paramSets };
+        return { paramSets, route };
       } catch (err) {
         return { error: err, paramSets: null, route };
       }
@@ -184,12 +214,10 @@ async function buildTaskQueue(
   );
 
   for (const result of staticParamsResults) {
+    const { pattern } = result.route;
     if ("error" in result) {
-      console.error(
-        `[furin] static: staticParams() failed for "${result.route.pattern}":`,
-        result.error
-      );
-      skippedRoutes.push(result.route.pattern);
+      console.error(`[furin] static: staticParams() failed for "${pattern}":`, result.error);
+      skippedRoutes.push(pattern);
       continue;
     }
     if (result.paramSets === null) {
@@ -206,6 +234,8 @@ async function buildTaskQueue(
       continue;
     }
     for (const params of result.paramSets) {
+      const urlPath = resolvePath(result.route.pattern, params);
+      pathToOutputFile(urlPath, outDir, "index.html");
       tasks.push(() =>
         prerenderAndWrite(
           result.route,
@@ -243,6 +273,24 @@ async function runWithConcurrency(
 
 // ── Main adapter ──────────────────────────────────────────────────────────────
 
+function assertNoRequestLoaders(routes: ResolvedRoute[], root: RootLayout): void {
+  const offenders: string[] = [];
+  if (root.route.requestLoader !== undefined) {
+    offenders.push("  • <root layout>");
+  }
+  const requestScopedRoutes = routes.filter((route) =>
+    route.routeChain.some((entry) => entry.requestLoader !== undefined)
+  );
+  offenders.push(...requestScopedRoutes.map((route) => `  • ${route.pattern}`));
+  if (offenders.length === 0) {
+    return;
+  }
+  throw new Error(
+    "[furin] requestLoader requires a Bun server and is incompatible with a pure static export.\n" +
+      offenders.join("\n")
+  );
+}
+
 export async function buildStaticTarget(
   routes: ResolvedRoute[],
   rootDir: string,
@@ -250,6 +298,8 @@ export async function buildStaticTarget(
   root: RootLayout,
   options: BuildAppOptions
 ): Promise<StaticTargetBuildManifest> {
+  assertNoRequestLoaders(routes, root);
+
   const staticConfig: StaticExportConfig = options.staticConfig ?? {};
 
   // Normalize basePath: treat "" and "/" identically as no prefix; strip any
@@ -311,50 +361,7 @@ export async function buildStaticTarget(
   const ssgRoutes = collectSsgRoutes(routes, onSSR, skippedRoutes);
   const searchRoutes = createSearchRouteMetadata(ssgRoutes);
 
-  // ── 2. Clean & create output directories ─────────────────────────────────
-  rmSync(outDir, { force: true, recursive: true });
-  ensureDir(outDir);
-
-  const targetDir = join(buildRoot, "static");
-  rmSync(targetDir, { force: true, recursive: true });
-  ensureDir(targetDir);
-
-  // ── 3. Build client bundle ────────────────────────────────────────────────
-  const { entryChunk, cssChunks } = await buildClient(ssgRoutes, {
-    outDir: targetDir,
-    rootLayout: root.path,
-    plugins: options.plugins,
-    publicPath,
-    basePath,
-    clientLogging: Boolean(options.clientLogging),
-  });
-
-  // ── 4. Generate HTML shell template ──────────────────────────────────────
-  // Emit a <link rel="icon"> only when a favicon.ico exists in the public dir.
-  // This ensures the browser finds it even when the site is served from a sub-path.
-  const publicFavicon = join(rootDir, "public", "favicon.ico");
-  const faviconHref = existsSync(publicFavicon) ? `${basePath}/favicon.ico` : undefined;
-  const shellHtml = generateProdIndexHtml(entryChunk, cssChunks, undefined, faviconHref, true);
-
-  // ── 5. Prime the renderer with the production shell ──────────────────────
-  // Must be called before any prerenderSSG invocation.
-  // prepareRender() checks getProductionTemplate() first (before IS_DEV), so
-  // setting the content here is sufficient — no need to flip IS_DEV globally.
-  setProductionTemplateContent(shellHtml);
-
-  // ── 6. Copy public/ → outDir/ ─────────────────────────────────────────────
-  const publicSrcDir = join(rootDir, "public");
-  if (existsSync(publicSrcDir)) {
-    cpSync(publicSrcDir, outDir, { recursive: true });
-  }
-
-  // ── 7. Copy _client/ chunks → outDir/_client/ ────────────────────────────
-  const clientSrcDir = join(targetDir, "client");
-  if (existsSync(clientSrcDir)) {
-    cpSync(clientSrcDir, join(outDir, "_client"), { recursive: true });
-  }
-
-  // ── 8. Pre-render SSG routes ──────────────────────────────────────────────
+  // ── 2. Resolve and validate every output path before writing artifacts ────
   const tasks = await buildTaskQueue(
     ssgRoutes,
     root,
@@ -364,26 +371,65 @@ export async function buildStaticTarget(
     basePath,
     searchRoutes
   );
+  assertNoStaticExportSkips(onSSR, skippedRoutes);
   // Snapshot after queue-building: routes skipped due to missing staticParams() are
   // already recorded; only routes added during task execution are prerender failures.
   const afterQueueCount = skippedRoutes.length;
+
+  // ── 3. Clean & create output directories ─────────────────────────────────
+  rmSync(outDir, { force: true, recursive: true });
+  ensureDir(outDir);
+
+  const targetDir = join(buildRoot, "static");
+  rmSync(targetDir, { force: true, recursive: true });
+  ensureDir(targetDir);
+
+  // ── 4. Build client bundle ────────────────────────────────────────────────
+  const { entryChunk, cssChunks } = await buildClient(ssgRoutes, {
+    basePath,
+    clientLogging: Boolean(options.clientLogging),
+    outDir: targetDir,
+    plugins: options.plugins,
+    publicPath,
+    rootLayout: root.path,
+  });
+
+  // ── 5. Generate HTML shell template ──────────────────────────────────────
+  // Emit a <link rel="icon"> only when a favicon.ico exists in the public dir.
+  // This ensures the browser finds it even when the site is served from a sub-path.
+  const publicFavicon = join(rootDir, "public", "favicon.ico");
+  const faviconHref = existsSync(publicFavicon) ? `${basePath}/favicon.ico` : undefined;
+  const shellHtml = generateProdIndexHtml(entryChunk, cssChunks, undefined, faviconHref, true);
+
+  // ── 6. Prime the renderer with the production shell ──────────────────────
+  // Must be called before any prerenderSSG invocation.
+  // prepareRender() checks getProductionTemplate() first (before IS_DEV), so
+  // setting the content here is sufficient — no need to flip IS_DEV globally.
+  setProductionTemplateContent(shellHtml);
+
+  // ── 7. Copy public/ → outDir/ ─────────────────────────────────────────────
+  const publicSrcDir = join(rootDir, "public");
+  if (existsSync(publicSrcDir)) {
+    cpSync(publicSrcDir, outDir, { recursive: true });
+  }
+
+  // ── 8. Copy _client/ chunks → outDir/_client/ ────────────────────────────
+  const clientSrcDir = join(targetDir, "client");
+  if (existsSync(clientSrcDir)) {
+    cpSync(clientSrcDir, join(outDir, "_client"), { recursive: true });
+  }
+
+  // ── 9. Pre-render SSG routes ──────────────────────────────────────────────
   await runWithConcurrency(tasks, STATIC_CONCURRENCY);
 
   // Fail the build when onSSR="error" and any prerender task was recorded as skipped.
-  if (onSSR === "error" && skippedRoutes.length > afterQueueCount) {
-    const failed = skippedRoutes.slice(afterQueueCount);
-    const list = failed.map((r) => `  • ${r}`).join("\n");
-    throw new Error(
-      `[furin] static: ${failed.length} route(s) failed to pre-render:\n${list}\n` +
-        `Set \`onSSR: "skip"\` in your static config to suppress this error.`
-    );
-  }
+  assertNoPrerenderSkips(onSSR, skippedRoutes, afterQueueCount);
 
-  // ── 9. Write 404.html (SPA fallback for GitHub Pages) ───────────────────
+  // ── 10. Write 404.html (SPA fallback for GitHub Pages) ──────────────────
   writeFileSync(join(outDir, "404.html"), shellHtml);
   console.log("[furin] static: wrote 404.html (SPA shell fallback)");
 
-  // ── 10. Clean up intermediate build artifacts ────────────────────────────
+  // ── 11. Clean up intermediate build artifacts ───────────────────────────
   rmSync(targetDir, { force: true, recursive: true });
 
   console.log(
@@ -395,7 +441,7 @@ export async function buildStaticTarget(
     basePath,
     generatedAt: new Date().toISOString(),
     outDir: toPosixPath(outDir),
-    renderedRoutes,
-    skippedRoutes,
+    renderedRoutes: sortRouteList(renderedRoutes),
+    skippedRoutes: sortRouteList(skippedRoutes),
   };
 }

@@ -1,6 +1,7 @@
 // ── HTML template state (per furin instance) ────────────────────────────────
 
 import { readFileSync } from "node:fs";
+import { injectInstrumentationClient } from "../devtools/instrumentation.ts";
 import {
   allStateBuckets,
   currentInstance,
@@ -33,7 +34,7 @@ export async function getDevTemplate(origin: string): Promise<string> {
   if (!r.ok) {
     throw new Error(`${entryPath} returned ${r.status}`);
   }
-  const html = await r.text();
+  const html = injectInstrumentationClient(await r.text(), instance.prefix);
   state.devCache = { html, ts: Date.now() };
   return html;
 }

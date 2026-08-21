@@ -53,8 +53,8 @@ function getResolvedError(result: unknown): unknown | undefined {
     return;
   }
 
-  const error = (result as EdenErrorResult).error;
-  return error == null ? undefined : error;
+  const { error } = result as EdenErrorResult;
+  return error === null ? undefined : error;
 }
 
 export function useSync<TInput, TResult>(
@@ -91,6 +91,7 @@ export function useSync<TInput, TResult>(
       await onSuccess?.({ idempotencyKey, input, result });
       return result;
     },
+    // react-doctor-disable-next-line react-doctor/exhaustive-deps
     [mutation, optimistic, onError, onSuccess]
   );
 

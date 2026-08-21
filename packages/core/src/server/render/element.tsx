@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { wrapSegmentBoundaries } from "../../client/boundaries.tsx";
 import { DefaultErrorFallback, DefaultNotFoundFallback } from "../../client/default-screens.tsx";
-import type { RuntimeRoute } from "../../client.ts";
+import type { RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import type { ErrorComponent } from "../../shared/error.ts";
 import type { FurinNotFoundError, NotFoundComponent } from "../../shared/not-found.ts";
 import type { ResolvedRoute, SegmentBoundary } from "../router/index.ts";
@@ -19,16 +19,17 @@ export function buildElement(
   // Directory depth `d` maps 1:1 to routeChain[d] in Furin's model (routeChain
   // is ordered shallow→deep, with index 0 being the root).
   const byDepth = new Map<number, SegmentBoundary>();
-  // Defensive fallback: some legacy callers / tests construct a ResolvedRoute
-  // without the segmentBoundaries field.
-  for (const segment of route.segmentBoundaries ?? []) {
+  const legacyRoute = route as ResolvedRoute & {
+    segmentBoundaries?: SegmentBoundary[];
+  };
+  for (const segment of legacyRoute.segmentBoundaries ?? []) {
     byDepth.set(segment.depth, segment);
   }
 
   // Build inside-out. At each level we first wrap the accumulated subtree
   // with the boundary declared at this depth (so the boundary sits INSIDE
   // the layout at the same depth), THEN wrap with the layout itself.
-  for (let i = route.routeChain.length - 1; i >= 1; i--) {
+  for (let i = route.routeChain.length - 1; i >= 1; i -= 1) {
     element = wrapSegmentBoundaries(element, byDepth.get(i), undefined);
     const routeEntry = route.routeChain[i];
     if (routeEntry?.layout) {
@@ -54,7 +55,7 @@ export function buildNotFoundElement(
   error: FurinNotFoundError
 ): ReactNode {
   const NotFound = component ?? DefaultNotFoundFallback;
-  return <NotFound error={{ message: error.message, data: error.data }} />;
+  return <NotFound error={{ data: error.data, message: error.message }} />;
 }
 
 function errorMessageOf(err: unknown): string {
@@ -98,8 +99,10 @@ export function buildErrorElement(
 ): ReactNode {
   const ErrorView = component ?? DefaultErrorFallback;
   let message: string;
-  if (component) {
+  if (component && IS_DEV) {
     message = messageOverride ?? errorMessageOf(error);
+  } else if (component) {
+    message = messageOverride ?? GENERIC_ERROR_MESSAGE;
   } else if (IS_DEV) {
     // No user error.tsx: in dev, surface the real error message so the
     // developer can see what actually broke instead of a generic placeholder.
@@ -109,5 +112,5 @@ export function buildErrorElement(
   } else {
     message = GENERIC_ERROR_MESSAGE;
   }
-  return <ErrorView error={{ message, digest, status }} reset={SERVER_RESET_NOOP} />;
+  return <ErrorView error={{ digest, message, status }} reset={SERVER_RESET_NOOP} />;
 }

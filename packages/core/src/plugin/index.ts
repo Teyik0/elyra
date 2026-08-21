@@ -1,9 +1,10 @@
+import { detectLoaderFromPath } from "../server/lang-detect.ts";
 import { transformForClient } from "./transform-client.ts";
 
 const ELYSIA_FILTER = /^elysia$/;
 const BUN_BUILTIN_FILTER = /^bun:/;
 const ANY_FILTER = /.*/;
-const TS_FILE_FILTER = /\.(tsx|ts)$/;
+const SCRIPT_FILE_FILTER = /\.(tsx?|jsx?)$/;
 
 // Minimal browser stub for elysia — `t` is only used for schema definitions
 // in params/query, which the client never validates at runtime.
@@ -37,41 +38,36 @@ const plugin: Bun.BunPlugin = {
   setup(build) {
     // ── browser stubs ───────────────────────────────────────────────────────
     build.onResolve({ filter: ELYSIA_FILTER }, () => ({
-      path: "elysia-stub",
       namespace: "furin-stubs",
+      path: "elysia-stub",
     }));
 
     build.onResolve({ filter: BUN_BUILTIN_FILTER }, () => ({
-      path: "bun-builtin-stub",
       namespace: "furin-stubs",
+      path: "bun-builtin-stub",
     }));
 
-    build.onLoad({ namespace: "furin-stubs", filter: ANY_FILTER }, (args) => ({
+    build.onLoad({ filter: ANY_FILTER, namespace: "furin-stubs" }, (args) => ({
       contents: args.path === "elysia-stub" ? ELYSIA_STUB : "",
       loader: "js",
     }));
 
     // ── page file stripping ─────────────────────────────────────────────────
-    build.onLoad({ filter: TS_FILE_FILTER }, async (args) => {
+    build.onLoad({ filter: SCRIPT_FILE_FILTER }, async (args) => {
       if (args.path.includes("node_modules")) {
         return;
       }
 
       const source = await Bun.file(args.path).text();
 
-      try {
-        const result = transformForClient(source, args.path);
-        // Output is TS/TSX (yuku parses directly, no pre-transpile). Bun's
-        // bundler picks the loader from the file extension and applies the
-        // project tsconfig — including the JSX automatic runtime.
-        return {
-          contents: result.code,
-          loader: args.path.endsWith(".tsx") ? "tsx" : "ts",
-        };
-      } catch (err) {
-        console.error(`[furin] strip-plugin transform error for ${args.path}:`, err);
-        return;
-      }
+      const result = transformForClient(source, args.path);
+      // Output is TS/TSX (yuku parses directly, no pre-transpile). Bun's
+      // bundler picks the loader from the file extension and applies the
+      // project tsconfig — including the JSX automatic runtime.
+      return {
+        contents: result.code,
+        loader: detectLoaderFromPath(args.path),
+      };
     });
   },
 };

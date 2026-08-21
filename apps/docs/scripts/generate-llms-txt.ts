@@ -1,19 +1,6 @@
-/**
- * Generate /llms.txt and /llms-full.txt for AI-friendly documentation.
- *
- * Run:  bun run scripts/generate-llms-txt.ts
- *
- * Reads DOCS_NAV from src/lib/docs.ts, reads each MDX source file,
- * strips MDX-specific syntax, and writes two files into public/.
- */
-
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { stripMdxToMarkdown } from "../src/lib/strip-mdx";
-
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
 
 const BASE_URL = "https://furin.dev";
 const PROJECT_NAME = "Furin";
@@ -24,10 +11,6 @@ const PROJECT_LONG_DESCRIPTION =
 
 const DOCS_DIR = resolve(import.meta.dir, "..");
 const PUBLIC_DIR = resolve(DOCS_DIR, "public");
-
-// ---------------------------------------------------------------------------
-// Navigation structure (mirrored from src/lib/docs.ts to avoid import issues)
-// ---------------------------------------------------------------------------
 
 interface NavItem {
   description: string;
@@ -44,91 +27,91 @@ interface NavSection {
 
 const DOCS_NAV: NavSection[] = [
   {
-    title: "Getting Started",
     items: [
       {
-        label: "Introduction",
-        href: "/docs",
         description: "Overview of Furin and where to go next.",
+        href: "/docs",
+        label: "Introduction",
         sourcePath: "src/content/docs/introduction.mdx",
       },
       {
-        label: "Comparison",
-        href: "/docs/comparison",
         description: "Compare Furin with Next.js and TanStack Start across every dimension.",
+        href: "/docs/comparison",
+        label: "Comparison",
         sourcePath: "src/content/docs/comparison.mdx",
       },
       {
-        label: "Getting Started",
-        href: "/docs/getting-started",
         description: "Install Furin, pick a starter, and boot your first app.",
+        href: "/docs/getting-started",
+        label: "Getting Started",
         sourcePath: "src/content/docs/getting-started.mdx",
       },
     ],
+    title: "Getting Started",
   },
   {
-    title: "Core Concepts",
     items: [
       {
-        label: "File-Based Routing",
-        href: "/docs/routing",
         description: "How pages, params, catch-all routes, and typed links work.",
+        href: "/docs/routing",
+        label: "File-Based Routing",
         sourcePath: "src/content/docs/routing.mdx",
       },
       {
-        label: "Data Loading",
-        href: "/docs/data-loading",
         description: "Server loaders, typed params/query, and data flow across routes.",
+        href: "/docs/data-loading",
+        label: "Data Loading",
         sourcePath: "src/content/docs/data-loading.mdx",
       },
       {
-        label: "Rendering Modes",
-        href: "/docs/rendering",
         description: "Use SSR, SSG, and ISR from createRoute().",
+        href: "/docs/rendering",
+        label: "Rendering Modes",
         sourcePath: "src/content/docs/rendering.mdx",
       },
       {
-        label: "Nested Layouts",
-        href: "/docs/layouts",
         description: "Compose shared UI and loaders with _route.tsx files.",
+        href: "/docs/layouts",
+        label: "Nested Layouts",
         sourcePath: "src/content/docs/layouts.mdx",
       },
     ],
+    title: "Core Concepts",
   },
   {
-    title: "Advanced",
     items: [
       {
-        label: "API Routes",
-        href: "/docs/api-routes",
         description: "Run Elysia API routes alongside your pages in one process.",
+        href: "/docs/api-routes",
+        label: "API Routes",
         sourcePath: "src/content/docs/api-routes.mdx",
       },
       {
-        label: "Plugins",
-        href: "/docs/plugins",
         description: "Pass Bun plugins through Furin for assets and transforms.",
+        href: "/docs/plugins",
+        label: "Plugins",
         sourcePath: "src/content/docs/plugins.mdx",
       },
       {
-        label: "Deployment",
-        href: "/docs/deployment",
         description: "Build for Bun today, with planned targets called out clearly.",
+        href: "/docs/deployment",
+        label: "Deployment",
         sourcePath: "src/content/docs/deployment.mdx",
       },
     ],
+    title: "Advanced",
   },
   {
-    title: "Internal",
     items: [
       {
-        label: "Dev Mode HMR",
-        href: "/docs/dev-hmr",
         description: "How Bun HMR and Furin SSR stay aligned in development.",
-        sourcePath: "src/content/docs/dev-hmr.mdx",
+        href: "/docs/dev-hmr",
+        label: "Dev Mode HMR",
         optional: true,
+        sourcePath: "src/content/docs/dev-hmr.mdx",
       },
     ],
+    title: "Internal",
   },
 ];
 

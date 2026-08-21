@@ -4,16 +4,9 @@ import {
   findSearchDefaultsForRouteTarget,
   type SearchParamsInput,
 } from "../shared/search-params.ts";
-import {
-  buildHref,
-  CLIENT_FALLBACK_ROUTER,
-  type LinkProps,
-  normalizeHref,
-  RouterContext,
-  type RouterContextValue,
-  type RouteTo,
-  useRouter,
-} from "./router/index.ts";
+import { CLIENT_FALLBACK_ROUTER, RouterContext, useRouter } from "./router/context.ts";
+import { buildHref, navigationHrefPolicy, normalizeHref } from "./router/link-utils.ts";
+import type { LinkProps, RouterContextValue, RouteTo } from "./router/types.ts";
 
 // biome-ignore lint/performance/noBarrelFile: re-exporting router symbols preserves backward compatibility for @teyik0/furin/link consumers
 export * from "./router/index.ts";
@@ -60,14 +53,19 @@ function computeLinkView<To extends RouteTo>(
     logicalHref.startsWith("http://") ||
     logicalHref.startsWith("https://") ||
     logicalHref.startsWith("//");
-  const href = isAbsolute ? logicalHref : router.basePath + logicalHref;
+  const candidateHref = isAbsolute ? logicalHref : router.basePath + logicalHref;
+  const href = navigationHrefPolicy(candidateHref, undefined) === "blocked" ? "#" : candidateHref;
   const isActive = !isAbsolute && router.currentHref === normalizeHref(logicalHrefWithoutHash);
   const resolvedChildren = typeof children === "function" ? children({ isActive }) : children;
   const extraProps: React.AnchorHTMLAttributes<HTMLAnchorElement> = {
     ...(inactiveProps && !isActive ? inactiveProps() : {}),
     ...(activeProps ? activeProps({ isActive }) : {}),
   };
-  return { logicalHref, href, isActive, resolvedChildren, extraProps };
+  return { extraProps, href, isActive, logicalHref, resolvedChildren };
+}
+
+function isSameOriginUrl(url: string): boolean {
+  return navigationHrefPolicy(url, window.location.origin) === "internal";
 }
 
 /**
@@ -104,7 +102,7 @@ function LinkInteractive<To extends RouteTo>({
   // logicalHref: route-relative path (no basePath), used for navigation + active state.
   // physicalHref (href): what the browser sees — basePath + logicalHref.
   const { logicalHref, href, isActive, resolvedChildren, extraProps } = computeLinkView(
-    { to, search, hash, children, activeProps, inactiveProps },
+    { activeProps, children, hash, inactiveProps, search, to },
     router
   );
   const effectivePreload = preload ?? router.defaultPreload;
@@ -115,6 +113,7 @@ function LinkInteractive<To extends RouteTo>({
   const triggerPrefetch = useCallback(() => {
     // prefetch() expects the logical href (no basePath prefix).
     prefetch(logicalHref, { staleTime: effectiveStaleTime });
+    // react-doctor-disable-next-line react-doctor/exhaustive-deps
   }, [prefetch, logicalHref, effectiveStaleTime]);
 
   // "render": preload immediately on mount
@@ -122,6 +121,7 @@ function LinkInteractive<To extends RouteTo>({
     if (effectivePreload === "render") {
       triggerPrefetch();
     }
+    // react-doctor-disable-next-line react-doctor/exhaustive-deps
   }, [effectivePreload, triggerPrefetch]);
 
   // "viewport": preload when link enters viewport
@@ -140,6 +140,7 @@ function LinkInteractive<To extends RouteTo>({
     );
     observer.observe(anchorRef.current);
     return () => observer.disconnect();
+    // react-doctor-disable-next-line react-doctor/exhaustive-deps
   }, [effectivePreload, triggerPrefetch]);
 
   // Clear any pending intent prefetch timer on unmount to avoid leaking
@@ -153,14 +154,6 @@ function LinkInteractive<To extends RouteTo>({
     },
     []
   );
-
-  const isInternal = (url: string): boolean => {
-    try {
-      return new URL(url, window.location.origin).origin === window.location.origin;
-    } catch {
-      return false;
-    }
-  };
 
   const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e);
@@ -179,8 +172,12 @@ function LinkInteractive<To extends RouteTo>({
     if (anchorProps.target && anchorProps.target !== "_self") {
       return;
     }
+    if (navigationHrefPolicy(logicalHref, window.location.origin) === "blocked") {
+      e.preventDefault();
+      return;
+    }
     // Let browser handle external links
-    if (!isInternal(href)) {
+    if (!isSameOriginUrl(href)) {
       return;
     }
     e.preventDefault();
@@ -196,7 +193,7 @@ function LinkInteractive<To extends RouteTo>({
 
   const handleMouseEnter = (e: React.MouseEvent<HTMLAnchorElement>) => {
     onMouseEnter?.(e);
-    if (!disabled && effectivePreload === "intent" && isInternal(href)) {
+    if (!disabled && effectivePreload === "intent" && isSameOriginUrl(href)) {
       intentTimerRef.current = setTimeout(triggerPrefetch, effectiveDelay);
     }
   };
@@ -211,7 +208,7 @@ function LinkInteractive<To extends RouteTo>({
 
   const handleFocus = (e: React.FocusEvent<HTMLAnchorElement>) => {
     onFocus?.(e);
-    if (!disabled && effectivePreload === "intent" && isInternal(href)) {
+    if (!disabled && effectivePreload === "intent" && isSameOriginUrl(href)) {
       triggerPrefetch();
     }
   };
@@ -219,13 +216,13 @@ function LinkInteractive<To extends RouteTo>({
   return createElement(
     "a",
     {
-      ref: anchorRef,
-      href,
       "data-furin-link": true,
+      href,
       onClick: handleClick,
+      onFocus: handleFocus,
       onMouseEnter: handleMouseEnter,
       onMouseLeave: handleMouseLeave,
-      onFocus: handleFocus,
+      ref: anchorRef,
       ...(isActive ? { "data-status": "active" } : {}),
       ...anchorProps,
       ...extraProps,
@@ -245,20 +242,20 @@ function LinkInteractive<To extends RouteTo>({
 export const SSR_FALLBACK_ROUTER: RouterContextValue = {
   basePath: "",
   currentHref: "/",
-  search: {},
-  searchRoutes: [],
+  defaultPreload: "intent",
+  defaultPreloadDelay: 50,
+  defaultPreloadStaleTime: 30_000,
+  invalidatePrefetch: (_path, _type) => {
+    /* noop */
+  },
+  isNavigating: false,
   navigate: (_href, _opts) => Promise.resolve(),
   prefetch: (_href, _opts) => {
     /* noop */
   },
-  invalidatePrefetch: (_path, _type) => {
-    /* noop */
-  },
   refresh: (_opts) => Promise.resolve(),
-  isNavigating: false,
-  defaultPreload: "intent",
-  defaultPreloadDelay: 50,
-  defaultPreloadStaleTime: 30_000,
+  search: {},
+  searchRoutes: [],
 };
 
 /**
@@ -298,8 +295,8 @@ function renderLinkElement<To extends RouteTo>(
   return createElement(
     "a",
     {
-      href,
       "data-furin-link": true,
+      href,
       ...(isActive ? { "data-status": "active" } : {}),
       ...anchorProps,
       ...extraProps,
@@ -345,3 +342,4 @@ export function Link<To extends RouteTo>(props: LinkProps<To>): React.ReactEleme
 // `@teyik0/furin/link` (already a client-only bundle entry) without requiring
 // apps to add "seroval" as a direct dependency.
 export { fromCrossJSON } from "seroval";
+export { parseDeferredNdjson } from "../shared/deferred-ndjson.ts";

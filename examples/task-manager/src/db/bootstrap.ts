@@ -6,7 +6,7 @@ import { boards, cards } from "./schema";
 interface RuntimeSQLiteColumn extends SQLiteColumn {
   default: unknown;
   enumValues: string[] | undefined;
-  getSQLType(): string;
+  getSQLType: () => string;
   hasDefault: boolean;
   name: string;
   notNull: boolean;

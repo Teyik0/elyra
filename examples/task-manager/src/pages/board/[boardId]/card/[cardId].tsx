@@ -5,7 +5,6 @@ import { CardDetailPage } from "@/components/card-detail-page";
 import { route } from "./_route";
 
 export default route.page({
-  tags: ["cards"],
   loader: ({ params }) => {
     const board = getBoard(params.boardId);
     const card = getCard(params.cardId);
@@ -27,21 +26,18 @@ export default route.page({
     });
 
     const formattedCreatedAt = new Date(card.createdAt).toLocaleDateString("en-US", {
-      month: "long",
       day: "numeric",
+      month: "long",
       year: "numeric",
     });
 
     return {
       boardName: board.name,
       card,
-      renderedAt,
       formattedCreatedAt,
+      renderedAt,
     };
   },
-  head: ({ card, boardName }) => ({
-    meta: [{ title: `${card.title} | ${boardName} | Task Manager` }],
-  }),
   component: ({ params, card, boardName, renderedAt, formattedCreatedAt }) => (
     <CardDetailPage
       boardName={boardName}
@@ -51,4 +47,8 @@ export default route.page({
       renderedAt={renderedAt}
     />
   ),
+  head: ({ card, boardName }) => ({
+    meta: [{ title: `${card.title} | ${boardName} | Task Manager` }],
+  }),
+  tags: ["cards"],
 });

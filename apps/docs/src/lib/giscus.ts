@@ -27,16 +27,16 @@ const DEFAULT_GISCUS_CONFIG = {
 
 export function getGiscusConfig(): GiscusConfig {
   return {
-    repo: "teyik0/furin",
-    repoId: "R_kgDORRsvuw",
     category: "Q&A",
     categoryId: "DIC_kwDORRsvu84C5bWC",
-    mapping: DEFAULT_GISCUS_CONFIG.mapping,
-    strict: DEFAULT_GISCUS_CONFIG.strict,
-    reactionsEnabled: DEFAULT_GISCUS_CONFIG.reactionsEnabled,
     emitMetadata: DEFAULT_GISCUS_CONFIG.emitMetadata,
     inputPosition: DEFAULT_GISCUS_CONFIG.inputPosition,
     lang: DEFAULT_GISCUS_CONFIG.lang,
+    mapping: DEFAULT_GISCUS_CONFIG.mapping,
+    reactionsEnabled: DEFAULT_GISCUS_CONFIG.reactionsEnabled,
+    repo: "teyik0/furin",
+    repoId: "R_kgDORRsvuw",
+    strict: DEFAULT_GISCUS_CONFIG.strict,
   };
 }
 

@@ -1,14 +1,15 @@
-import { t } from "elysia";
 import { parseQueryFromURL, parseQueryStandardSchema } from "elysia/parse-query";
 import { getSchemaValidator } from "elysia/schema";
 import type { AnySchema } from "elysia/types";
-import type { RuntimeRoute } from "../../client.ts";
+import type { RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import {
   collectSearchDefaults,
   type SearchParamsInput,
   type SearchRouteMetadata,
 } from "../../shared/search-params.ts";
 import { buildRouteRegex } from "./patterns.ts";
+
+import { mergeRouteSchemas } from "./schema-merge.ts";
 
 interface UnknownObject {
   [key: string]: unknown;
@@ -44,7 +45,7 @@ export function parseDataEndpointPath(rawPath: string): { url: URL; pathname: st
   if (url.origin !== "http://localhost") {
     return;
   }
-  return { url, pathname: url.pathname };
+  return { pathname: url.pathname, url };
 }
 
 function isObjectSchema(schema: unknown): schema is UnknownObject {
@@ -129,6 +130,42 @@ export type ParseRouteQueryResult =
   | { ok: true; query: SearchParamsInput }
   | { errors: unknown; ok: false };
 
+export type ParseRouteParamsResult =
+  | { ok: true; params: UnknownObject }
+  | { errors: unknown; ok: false };
+
+type RouteInputValidationResult =
+  | { ok: true; value: UnknownObject }
+  | { errors: unknown; ok: false };
+
+async function validateRouteInput(
+  input: UnknownObject,
+  schema: AnySchema
+): Promise<RouteInputValidationResult> {
+  if (isStandardSchema(schema)) {
+    const validator = getSchemaValidator(schema, { dynamic: true });
+    const checked = await validator?.Check(input);
+    if (checked && typeof checked === "object" && "issues" in checked) {
+      return { errors: checked.issues, ok: false };
+    }
+    if (checked && typeof checked === "object" && "value" in checked) {
+      return { ok: true, value: checked.value as UnknownObject };
+    }
+    return { ok: true, value: input };
+  }
+
+  const inputWithDefaults = applySchemaDefaults(schema as UnknownObject, input);
+  const validator = getSchemaValidator(schema, { coerce: true, dynamic: true });
+  if (validator?.Check(inputWithDefaults) === false) {
+    return { errors: [...(validator?.Errors(inputWithDefaults) ?? [])], ok: false };
+  }
+
+  return {
+    ok: true,
+    value: (validator?.parse(inputWithDefaults) ?? inputWithDefaults) as UnknownObject,
+  };
+}
+
 /**
  * Parses and validates a logical route URL's search string for the synthetic
  * `/_furin/data` request path. This keeps SPA navigations aligned with the
@@ -144,88 +181,33 @@ export async function parseRouteQuery(
     return { ok: true, query: parseQueryFromURL(url.search, 1) as SearchParamsInput };
   }
 
-  if (isStandardSchema(schema)) {
-    const rawQuery = parseQueryStandardSchema(url.search, 1) as UnknownObject;
-    const validator = getSchemaValidator(schema, { dynamic: true });
-    const checked = await validator?.Check(rawQuery);
-    if (checked && typeof checked === "object" && "issues" in checked) {
-      return { errors: checked.issues, ok: false };
-    }
-    if (checked && typeof checked === "object" && "value" in checked) {
-      return { ok: true, query: checked.value as SearchParamsInput };
-    }
-    return { ok: true, query: rawQuery as SearchParamsInput };
-  }
-
-  const rawQuery = parseJsonQueryObjects(
-    parseQueryFromURL(url.search, 1, collectQueryArrayKeys(schema)) as UnknownObject,
-    collectQueryObjectKeys(schema)
-  );
-  const queryWithDefaults = applySchemaDefaults(schema as UnknownObject, rawQuery);
-  const validator = getSchemaValidator(schema, { coerce: true, dynamic: true });
-  if (validator?.Check(queryWithDefaults) === false) {
-    return { errors: [...(validator?.Errors(queryWithDefaults) ?? [])], ok: false };
-  }
-
-  return {
-    ok: true,
-    query: (validator?.parse(queryWithDefaults) ?? queryWithDefaults) as SearchParamsInput,
-  };
-}
-
-// Standard structural keys on a TObject — everything else is a user-supplied option
-// (e.g. additionalProperties, $id, description, title) and must be preserved.
-const TOBJECT_STRUCTURAL_KEYS = new Set(["type", "properties", "required"]);
-const TYPEBOX_KIND = Symbol.for("TypeBox.Kind");
-
-function isTypeBoxObjectSchema(schema: unknown): schema is UnknownObject {
-  return (
-    isObjectSchema(schema) &&
-    (schema as UnknownObject & { [key: symbol]: unknown })[TYPEBOX_KIND] === "Object"
-  );
+  const rawQuery = isStandardSchema(schema)
+    ? (parseQueryStandardSchema(url.search, 1) as UnknownObject)
+    : parseJsonQueryObjects(
+        parseQueryFromURL(url.search, 1, collectQueryArrayKeys(schema)) as UnknownObject,
+        collectQueryObjectKeys(schema)
+      );
+  const result = await validateRouteInput(rawQuery, schema);
+  return result.ok ? { ok: true, query: result.value as SearchParamsInput } : result;
 }
 
 /**
- * Merges TObject schemas from all routeChain entries for a given key.
- * Properties are spread left-to-right (leaf wins on key conflict).
- * Object-level options (additionalProperties, $id, description, …) are also
- * merged with the same leaf-wins semantics so they are not silently dropped.
- * Returns undefined when no entry in the chain defines the key.
+ * Validates and coerces path params for the synthetic `/_furin/data` request
+ * path. This mirrors the params schema installed by createRoutePlugin's Elysia
+ * guard so SPA loaders receive the same values as full SSR loaders.
  *
  * @internal Exported for unit testing.
  */
-export function mergeRouteSchemas(
-  routeChain: RuntimeRoute[],
-  key: "params" | "query"
-): AnySchema | undefined {
-  const schemas = routeChain.flatMap((r) => (r[key] ? [r[key]] : [])) as Record<string, unknown>[];
-
-  if (schemas.length === 0) {
-    return;
-  }
-  if (schemas.length === 1) {
-    return schemas[0] as AnySchema;
+export async function parseRouteParams(
+  params: UnknownObject,
+  schema: AnySchema | undefined
+): Promise<ParseRouteParamsResult> {
+  if (!schema) {
+    return { ok: true, params };
   }
 
-  if (schemas.some((s) => !isTypeBoxObjectSchema(s))) {
-    throw new Error(
-      `[furin] Merging ${key} schemas across the route chain requires TypeBox in V1. Use TypeBox for parent/child ${key}, or define ${key} only on leaf routes.`
-    );
-  }
-
-  const mergedProperties = Object.assign(
-    {},
-    ...schemas.map((s) => (s.properties as Record<string, unknown>) ?? {})
-  );
-
-  const mergedOptions = Object.assign(
-    {},
-    ...schemas.map((s) =>
-      Object.fromEntries(Object.entries(s).filter(([k]) => !TOBJECT_STRUCTURAL_KEYS.has(k)))
-    )
-  );
-
-  return t.Object(mergedProperties, mergedOptions) as AnySchema;
+  const result = await validateRouteInput(params, schema);
+  return result.ok ? { ok: true, params: result.value } : result;
 }
 
 export function createSearchRouteMetadata(

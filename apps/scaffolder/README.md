@@ -4,7 +4,7 @@ Official scaffolder for [Furin](https://github.com/Teyik0/furin) — the React m
 
 ## Prerequisites
 
-- [Bun](https://bun.sh) ≥ 1.0
+- [Bun](https://bun.sh) ≥ 1.4.0
 
 ---
 
@@ -84,7 +84,7 @@ my-app/
         └── index.tsx
 ```
 
-Dependencies: `@teyik0/furin`, `elysia`, `react`, `react-dom`, `bun-plugin-tailwind`, `tailwindcss`
+Dependencies: `@teyik0/furin`, `@sinclair/typebox`, `elysia`, `react`, `react-dom`, `bun-plugin-tailwind`, `tailwindcss`
 
 ---
 
@@ -165,4 +165,4 @@ Edit `src/generated/package-catalog.json` — templates automatically pick up ne
 
 1. Create the `templates/<id>/` folder with the desired files
 2. Add the entry to `templates/manifest.json` (schema v2)
-3. `.ejs` files are rendered via EJS — others are copied byte-for-byte
+3. Use `kind: "package-json"` for generated `package.json`, `kind: "ejs"` for rendered templates, and `kind: "static"` for byte-for-byte copies

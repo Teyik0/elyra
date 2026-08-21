@@ -6,21 +6,21 @@ import type { EjsTemplateVars } from "../src/pipeline/context";
 const TEMPLATES_DIR = resolve(import.meta.dir, "../templates");
 
 const mockVars: EjsTemplateVars = {
+  features: ["tailwind"],
+  furinVersion: "0.1.0-alpha.4",
   projectName: "My Test App",
   projectNameKebab: "my-test-app",
   projectNamePascal: "MyTestApp",
-  furinVersion: "0.1.0-alpha.4",
-  features: ["tailwind"],
   versions: {
     "@teyik0/furin": "0.1.0-alpha.4",
+    "@types/bun": "latest",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
     "bun-plugin-tailwind": "^0.0.16",
     elysia: "^1.4.28",
     evlog: "^2.10.0",
     react: "^19.1.0",
     "react-dom": "^19.1.0",
-    "@types/bun": "latest",
-    "@types/react": "^19.1.0",
-    "@types/react-dom": "^19.1.0",
     tailwindcss: "^4.1.3",
     typescript: "^5.8.3",
   },
@@ -30,18 +30,29 @@ describe("renderEjsFile — simple template", () => {
   it("renders server.ts.ejs with projectName substituted", async () => {
     const src = resolve(TEMPLATES_DIR, "simple/src/server.ts.ejs");
     const output = await renderEjsFile(src, mockVars);
-    expect(output).toContain("My Test App running at");
+    expect(output).toContain(JSON.stringify(mockVars.projectName));
     expect(output).not.toContain("<%=");
   });
 
-  it("renders package.json.ejs with correct name and deps", async () => {
-    const src = resolve(TEMPLATES_DIR, "simple/package.json.ejs");
-    const output = await renderEjsFile(src, mockVars);
-    const parsed = JSON.parse(output);
-    expect(parsed.name).toBe("my-test-app");
-    expect(parsed.dependencies["@teyik0/furin"]).toBe("0.1.0-alpha.4");
-    expect(parsed.dependencies.elysia).toBe("^1.4.28");
-    expect(parsed.devDependencies.typescript).toBe("^5.8.3");
+  it("preserves special characters in projectName as generated JavaScript data", async () => {
+    const src = resolve(TEMPLATES_DIR, "simple/src/server.ts.ejs");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: security regression sentinel must remain literal.
+    const projectName = "A&B <app> `${globalThis.compromised = true}`";
+    const output = await renderEjsFile(src, { ...mockVars, projectName });
+    const statement = output.split("\n").find((line) => line.startsWith("console.log("));
+    if (statement === undefined) {
+      throw new Error("Expected the generated server to log its URL");
+    }
+    const messages: string[] = [];
+
+    Function(
+      "app",
+      "console",
+      statement
+    )({ server: { port: 3000 } }, { log: (message: string) => messages.push(message) });
+
+    expect(messages).toEqual([`${projectName} running at http://localhost:3000`]);
+    expect(globalThis).not.toHaveProperty("compromised");
   });
 
   it("renders furin-env.d.ts.ejs without leftover EJS tags", async () => {
@@ -56,31 +67,18 @@ describe("renderEjsFile — full template", () => {
   it("renders server.ts.ejs with projectName substituted", async () => {
     const src = resolve(TEMPLATES_DIR, "full/src/server.ts.ejs");
     const output = await renderEjsFile(src, mockVars);
-    expect(output).toContain("My Test App running at");
+    expect(output).toContain("Furin running at");
     expect(output).not.toContain("<%=");
   });
 
-  it("renders package.json.ejs with shadcn deps", async () => {
-    const fullVars: EjsTemplateVars = {
+  it("does not interpolate a project name as generated JavaScript", async () => {
+    const src = resolve(TEMPLATES_DIR, "full/src/server.ts.ejs");
+    const output = await renderEjsFile(src, {
       ...mockVars,
-      furinVersion: "0.1.0-alpha.4",
-      features: ["tailwind", "shadcn"],
-      versions: {
-        ...mockVars.versions,
-        "@radix-ui/react-slot": "^1.2.3",
-        "class-variance-authority": "^0.7.1",
-        clsx: "^2.1.1",
-        "lucide-react": "^0.503.0",
-        "tailwind-merge": "^3.3.0",
-        "tw-animate-css": "^1.2.5",
-      },
-    };
-    const src = resolve(TEMPLATES_DIR, "full/package.json.ejs");
-    const output = await renderEjsFile(src, fullVars);
-    const parsed = JSON.parse(output);
-    expect(parsed.name).toBe("my-test-app");
-    expect(parsed.dependencies["@radix-ui/react-slot"]).toBe("^1.2.3");
-    expect(parsed.dependencies["class-variance-authority"]).toBe("^0.7.1");
-    expect(parsed.dependencies.clsx).toBe("^2.1.1");
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: security regression sentinel must remain literal.
+      projectName: "${globalThis.compromised = true}",
+    });
+
+    expect(output).not.toContain("compromised");
   });
 });

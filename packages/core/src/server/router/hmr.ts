@@ -1,6 +1,7 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: HMR polling and invalidation are intentionally sequential
 import { existsSync } from "node:fs";
 import type { Context } from "elysia";
-import type { RuntimePage, RuntimeRoute } from "../../client.ts";
+import type { RuntimePage, RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import type { SearchRouteMetadata } from "../../shared/search-params.ts";
 import { collectRouteChainFromRoute, isFurinPage, isFurinRoute } from "../../shared/utils/index.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
@@ -12,9 +13,11 @@ import {
   setDevISRLoaderCache,
   setDevSSGLoaderCache,
 } from "../cache/dev-loader.ts";
+import { pathWithRequestSearch } from "../cache/route-cache.ts";
 import { type CompileContext, getCompileContext } from "../internal.ts";
 import { resolvePath } from "../render/assemble.ts";
-import { type LoaderResult, renderSSR, runLoaders } from "../render/index.ts";
+import { type LoaderResult, runLoaders } from "../render/loaders.ts";
+import { renderSSR } from "../render/ssr.ts";
 import { collectRouteTags, getSourceModuleCandidates, isModuleNotFoundError } from "./discovery.ts";
 import { collectIntermediateLayoutDirs, resolveMode } from "./patterns.ts";
 import type { ResolvedRoute, RootLayout } from "./types.ts";
@@ -78,8 +81,6 @@ async function importFreshLayoutRouteModule(
       return freshMod;
     }
   }
-
-  return;
 }
 
 function patchRouteEntryFromFreshModule(
@@ -147,7 +148,7 @@ export async function refreshLayoutChain(
     // whether the export is currently a valid route (the chain entry was
     // populated by the initial import and should be revisited on the next
     // successful HMR cycle).
-    chainIdx++;
+    chainIdx += 1;
   }
 }
 
@@ -173,9 +174,9 @@ export function rebuildDevRoute(
 ): ResolvedRoute {
   return {
     ...base,
+    mode: resolveMode(page, chain),
     page,
     routeChain: chain,
-    mode: resolveMode(page, chain),
     tags: collectRouteTags(chain, page),
   };
 }
@@ -255,7 +256,7 @@ export async function handleDevRequest(
   // delegating to renderSSR with an undefined page.
   return new Response(
     `<!doctype html><html><body><h1>Page load error</h1><p>Could not load ${route.path}. Check the server console for details.</p></body></html>`,
-    { status: 500, headers: { "Content-Type": "text/html; charset=utf-8" } }
+    { headers: { "Content-Type": "text/html; charset=utf-8" }, status: 500 }
   );
 }
 
@@ -271,15 +272,16 @@ export async function renderDevISRWithLoaderCache(
   root: RootLayout,
   searchRoutes?: SearchRouteMetadata[]
 ): Promise<Response> {
-  const cacheKey = `${root.path}:${resolvePath(route.pattern, ctx.params ?? {})}`;
+  const resolvedPath = resolvePath(route.pattern, ctx.params ?? {});
+  const cacheKey = `${root.path}:${pathWithRequestSearch(resolvedPath, ctx.request.url)}`;
   const cached = getDevISRLoaderCache(cacheKey);
 
   if (cached && isDevLoaderCacheValid(cached)) {
     const precomputed: LoaderResult = {
-      type: "data",
-      syncData: cached.loaderData,
       deferredPromises: undefined,
       headers: cached.headers,
+      syncData: cached.loaderData,
+      type: "data",
     };
     return renderSSR(route, ctx, root, precomputed, searchRoutes);
   }
@@ -297,7 +299,7 @@ export async function renderDevISRWithLoaderCache(
     };
     setDevISRLoaderCache(cacheKey, entry);
     autoInvalidateRegistry.registerLoaderTags(
-      resolvePath(route.pattern, ctx.params ?? {}),
+      pathWithRequestSearch(resolvedPath, ctx.request.url),
       route.tags
     );
   }
@@ -322,10 +324,10 @@ export async function renderDevSSGWithLoaderCache(
 
   if (cached && isDevLoaderCacheValid(cached)) {
     const precomputed: LoaderResult = {
-      type: "data",
-      syncData: cached.loaderData,
       deferredPromises: undefined,
       headers: cached.headers,
+      syncData: cached.loaderData,
+      type: "data",
     };
     return renderSSR(route, ctx, root, precomputed, searchRoutes);
   }

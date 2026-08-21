@@ -5,13 +5,6 @@ import { getDocSourceText } from "@/lib/docs-server";
 import { route } from "./_route";
 
 export default route.page({
-  head: () => ({
-    meta: [{ title: "File-Based Routing — Furin" }],
-  }),
-  loader: () => {
-    const doc = DOCS_BY_PATH["/docs/routing"];
-    return { markdownSource: getDocSourceText(doc.sourcePath) };
-  },
   component: ({ markdownSource }) => (
     <DocPage
       Content={Routing}
@@ -19,4 +12,11 @@ export default route.page({
       markdownSource={markdownSource}
     />
   ),
+  head: () => ({
+    meta: [{ title: "File-Based Routing — Furin" }],
+  }),
+  loader: () => {
+    const doc = DOCS_BY_PATH["/docs/routing"];
+    return { markdownSource: getDocSourceText(doc.sourcePath) };
+  },
 });

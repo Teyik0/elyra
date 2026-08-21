@@ -1,5 +1,5 @@
 import { parse } from "node:path";
-import type { RuntimePage, RuntimeRoute } from "../../client.ts";
+import type { RuntimePage, RuntimeRoute } from "../../client/internal/runtime-types.ts";
 
 export function collectIntermediateLayoutDirs(pagePath: string, rootPath: string): string[] {
   const pageDir = pagePath.slice(0, pagePath.lastIndexOf("/"));
@@ -17,11 +17,11 @@ export function collectIntermediateLayoutDirs(pagePath: string, rootPath: string
 
 export function resolveMode(page: RuntimePage, routeChain: RuntimeRoute[]): "ssr" | "ssg" | "isr" {
   const routeConfig = page._route;
-  const mode = routeConfig.mode ?? (page as { mode?: string }).mode;
-  const revalidate = routeConfig.revalidate ?? (page as { revalidate?: number }).revalidate;
+  const mode = routeConfig.mode ?? page.mode;
+  const revalidate = routeConfig.revalidate ?? page.revalidate;
 
   if (mode) {
-    return mode as "ssr" | "ssg" | "isr";
+    return mode;
   }
 
   const hasLoader = routeChain.some((r) => r.loader) || !!page.loader;
@@ -47,7 +47,7 @@ export function filePathToPattern(path: string): string {
   const segments: string[] = [];
   const lastIndex = parts.length - 1;
 
-  for (let idx = 0; idx < parts.length; idx++) {
+  for (let idx = 0; idx < parts.length; idx += 1) {
     const part = parts[idx];
     if (part === undefined || part.length === 0) {
       continue;
@@ -122,15 +122,15 @@ export function compareRouteSpecificity(a: string, b: string): number {
   const aSegments = a.split("/").filter((segment) => segment.length > 0);
   const bSegments = b.split("/").filter((segment) => segment.length > 0);
   const length = Math.max(aSegments.length, bSegments.length);
-  for (let i = 0; i < length; i++) {
+  for (let i = 0; i < length; i += 1) {
     const aSegment = aSegments[i];
     const bSegment = bSegments[i];
     // The pattern that still has a segment here constrains one more position.
     if (aSegment === undefined) {
-      return -1;
+      return bSegment === "*" ? 1 : -1;
     }
     if (bSegment === undefined) {
-      return 1;
+      return aSegment === "*" ? -1 : 1;
     }
     const diff = segmentSpecificity(aSegment) - segmentSpecificity(bSegment);
     if (diff !== 0) {
@@ -153,25 +153,26 @@ export function buildRouteRegex(pattern: string): { regex: RegExp; paramNames: s
   let i = 0;
   while (i < pattern.length) {
     if (pattern[i] === ":") {
-      const start = ++i;
+      i += 1;
+      const start = i;
       while (i < pattern.length && pattern[i] !== "/") {
-        i++;
+        i += 1;
       }
       paramNames.push(pattern.slice(start, i));
       source += "([^/]+)";
     } else if (pattern[i] === "*") {
       paramNames.push("*");
       source += "(.*)";
-      i++;
+      i += 1;
     } else {
       const ch = pattern[i];
       if (ch !== undefined) {
         source += escapeRegExpChar(ch);
       }
-      i++;
+      i += 1;
     }
   }
-  return { regex: new RegExp(`^${source}$`), paramNames };
+  return { paramNames, regex: new RegExp(`^${source}$`) };
 }
 
 export interface RoutePatternLike {
@@ -206,13 +207,13 @@ export function buildRouteMatcher<TRoute extends RoutePatternLike>(
         continue;
       }
       const params: Record<string, string> = {};
-      for (let i = 0; i < candidate.paramNames.length; i++) {
+      for (let i = 0; i < candidate.paramNames.length; i += 1) {
         const name = candidate.paramNames[i];
         if (name !== undefined) {
           params[name] = match[i + 1] ?? "";
         }
       }
-      return { route: candidate.route, params };
+      return { params, route: candidate.route };
     }
     return null;
   };

@@ -1,14 +1,19 @@
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runBunBuild } from "../build/bun-build.ts";
 import { buildClient } from "../build/client.ts";
 import { generateCompileEntry } from "../build/compile-entry.ts";
 import type { BuildEntryOptions, EntryAppContext } from "../build/entry-template.ts";
+import { productionInstrumentationPlugin } from "../build/production-instrumentation.ts";
 import { generateServerRoutesEntry } from "../build/server-routes-entry.ts";
 import { buildTargetManifest, copyDirRecursive, ensureDir, toPosixPath } from "../build/shared.ts";
 import { buildSSGCacheSnapshot } from "../build/ssg-cache.ts";
 import type { BuildAppOptions, TargetBuildManifest } from "../build/types.ts";
 import type { BuildTarget } from "../config.ts";
+import { isomorphicTransformPlugin } from "../plugin/transform-isomorphic.ts";
+import { environmentGuardPlugin } from "../rsc/build/environment.ts";
+import { buildRscGraph } from "../rsc/build/index.ts";
 import { ssgRouteCache } from "../server/cache/ssg.ts";
 import { generateProdIndexHtml } from "../server/render/shell.ts";
 import { setProductionTemplateContent } from "../server/render/template.ts";
@@ -37,6 +42,16 @@ const BUILD_ID_INPUT_PATHS = [
   `${_pkgSrcDir}/server/render/shell${_ext}`,
   `${_pkgSrcDir}/server/router/index${_ext}`,
 ];
+
+function compareCodeUnits(a: string, b: string): number {
+  if (a < b) {
+    return -1;
+  }
+  if (a > b) {
+    return 1;
+  }
+  return 0;
+}
 
 /**
  * Deterministic build-ID input covering everything that can change rendered
@@ -96,7 +111,7 @@ export async function createBuildFingerprint(
     .map((route) =>
       JSON.stringify({ mode: route.mode, path: toPosixPath(route.path), pattern: route.pattern })
     )
-    .sort();
+    .sort(compareCodeUnits);
 
   return [entryChunk, ...[...cssChunks].toSorted(), ...routeParts, ...fileParts].join("\n");
 }
@@ -166,6 +181,9 @@ async function buildOneApp(
     serverEntry
   );
   const buildId = Bun.hash(buildFingerprint).toString(16).slice(0, 12);
+  if (serverEntry) {
+    await buildRscGraph(routes, root, targetDir, buildId, options.plugins);
+  }
 
   // Write index.html with the buildId meta tag injected so the client can
   // detect stale deploys via X-Furin-Build-ID header comparison.
@@ -190,6 +208,7 @@ async function buildOneApp(
     buildId,
     entryApp: {
       buildId,
+      clientLogging: options.clientLogging ?? false,
       prefix,
       rootPath: root.path,
       routes: routes.map((r) => ({ pattern: r.pattern, path: r.path, mode: r.mode })),
@@ -201,6 +220,34 @@ async function buildOneApp(
     hydrateIntermediate:
       clientDirName === "client" ? "_hydrate.tsx" : `_hydrate-${clientDirName}.tsx`,
   };
+}
+
+async function buildAppsSequentially(
+  apps: BunTargetApp[],
+  targetDir: string,
+  serverEntry: string | null,
+  options: BuildAppOptions
+): Promise<{
+  entryApps: BuildEntryOptions["apps"];
+  headlineBuildId: string;
+  hydrateIntermediates: string[];
+}> {
+  const entryApps: BuildEntryOptions["apps"] = [];
+  const hydrateIntermediates: string[] = [];
+  let headlineBuildId = "";
+
+  for (const app of apps) {
+    // biome-ignore lint/performance/noAwaitInLoops: each app installs a build-time template before SSG snapshotting, so this must remain ordered.
+    const built = await buildOneApp(app, targetDir, serverEntry, options);
+    entryApps.push(built.entryApp);
+    hydrateIntermediates.push(built.hydrateIntermediate);
+    // The ROOT app's buildId is the manifest's headline id (back-compat).
+    if (app.prefix === "" || headlineBuildId === "") {
+      headlineBuildId = built.buildId;
+    }
+  }
+
+  return { entryApps, headlineBuildId, hydrateIntermediates };
 }
 
 export async function buildBunTarget(
@@ -228,17 +275,17 @@ export async function buildBunTarget(
   ensureDir(targetDir);
 
   const publicDir = existsSync(join(rootDir, "public")) ? join(rootDir, "public") : undefined;
-  const entryApps: BuildEntryOptions["apps"] = [];
-  const hydrateIntermediates: string[] = [];
-
-  for (const app of apps) {
-    const built = await buildOneApp(app, targetDir, serverEntry, options);
-    entryApps.push(built.entryApp);
-    hydrateIntermediates.push(built.hydrateIntermediate);
-    // The ROOT app's buildId is the manifest's headline id (back-compat).
-    if (app.prefix === "" || targetManifest.buildId === "") {
-      targetManifest.buildId = built.buildId;
-    }
+  const { entryApps, headlineBuildId, hydrateIntermediates } = await buildAppsSequentially(
+    apps,
+    targetDir,
+    serverEntry,
+    options
+  );
+  targetManifest.buildId = headlineBuildId;
+  if (serverEntry) {
+    targetManifest.rscManifestPath = toPosixPath(
+      join(targetManifest.targetDir, "rsc", "manifest.json")
+    );
   }
 
   const targetPublicDir = publicDir ? join(targetDir, "public") : undefined;
@@ -256,13 +303,18 @@ export async function buildBunTarget(
       publicDir,
     });
 
-    await Bun.build({
+    await runBunBuild({
       entrypoints: [entryPath],
       compile: { outfile },
       minify: true,
       sourcemap: "none",
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
-      plugins: options.plugins,
+      plugins: [
+        productionInstrumentationPlugin(),
+        ...(options.plugins ?? []),
+        isomorphicTransformPlugin("server"),
+        environmentGuardPlugin("ssr"),
+      ],
     });
 
     console.log(`[furin] Server binary: ${outfile}`);
@@ -288,13 +340,18 @@ export async function buildBunTarget(
       outDir: targetDir,
     });
 
-    await Bun.build({
+    await runBunBuild({
       entrypoints: [entryPath],
       outdir: targetDir,
       target: "bun",
       minify: true,
       sourcemap: "none",
-      plugins: options.plugins,
+      plugins: [
+        productionInstrumentationPlugin(),
+        ...(options.plugins ?? []),
+        isomorphicTransformPlugin("server"),
+        environmentGuardPlugin("ssr"),
+      ],
     });
     console.log(
       `[furin] Server bundle: ${toPosixPath(join(targetManifest.targetDir, "server.js"))}`

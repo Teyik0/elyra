@@ -46,6 +46,7 @@ export interface TargetBuildManifest {
   buildId: string;
   clientDir: string | null;
   generatedAt: string;
+  rscManifestPath?: string;
   serverEntry: string | null;
   serverPath: string | null;
   targetDir: string;

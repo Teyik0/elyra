@@ -4,9 +4,9 @@ on:
   push:
     branches: [main]
     paths:
-      - 'apps/docs/**'
-      - 'packages/core/src/**'
-      - '.github/workflows/pages.yaml'
+      - "apps/docs/**"
+      - "packages/core/src/**"
+      - ".github/workflows/pages.yaml"
 
 defaults:
   run:

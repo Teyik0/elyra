@@ -35,8 +35,14 @@ export function DocsToc() {
   useEffect(() => {
     let observer: IntersectionObserver | null = null;
     let cancelled = false;
+    let scrollRafId: number | null = null;
+    let retryFrameId: number | null = null;
 
     function scrollToHashTarget(): void {
+      if (cancelled) {
+        return;
+      }
+
       const raw = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
       let hash: string;
       try {
@@ -89,7 +95,8 @@ export function DocsToc() {
       }
 
       dispatch({ headings: nextHeadings, type: "register" });
-      window.requestAnimationFrame(() => {
+      scrollRafId = window.requestAnimationFrame(() => {
+        scrollRafId = null;
         scrollToHashTarget();
       });
 
@@ -127,32 +134,31 @@ export function DocsToc() {
       // blocking layout or triggering excessive work.
       let attempts = 0;
       const MAX_ATTEMPTS = 5;
-      let frameId: number;
-
       const retry = () => {
         if (cancelled || attempts >= MAX_ATTEMPTS) {
           return;
         }
         attempts++;
         if (!registerHeadings()) {
-          frameId = window.requestAnimationFrame(retry);
+          retryFrameId = window.requestAnimationFrame(retry);
         }
       };
 
-      frameId = window.requestAnimationFrame(retry);
-
-      return () => {
-        cancelled = true;
-        window.cancelAnimationFrame(frameId);
-        window.removeEventListener("hashchange", scrollToHashTarget);
-        observer?.disconnect();
-      };
+      retryFrameId = window.requestAnimationFrame(retry);
     }
 
     return () => {
       cancelled = true;
+      if (scrollRafId !== null) {
+        window.cancelAnimationFrame(scrollRafId);
+      }
+      if (retryFrameId !== null) {
+        window.cancelAnimationFrame(retryFrameId);
+      }
       window.removeEventListener("hashchange", scrollToHashTarget);
-      observer?.disconnect();
+      if (observer !== null) {
+        observer.disconnect();
+      }
     };
   }, []);
 

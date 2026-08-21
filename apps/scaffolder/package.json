@@ -3,6 +3,9 @@
   "version": "0.3.3",
   "description": "Official scaffolder for Furin — the React meta-framework on Elysia + Bun",
   "type": "module",
+  "engines": {
+    "bun": ">=1.4.0"
+  },
   "bin": {
     "create-furin": "./dist/index.js"
   },

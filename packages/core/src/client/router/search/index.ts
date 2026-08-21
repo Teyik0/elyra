@@ -1,5 +1,5 @@
 import type { RouteManifest as LinkRouteManifest, RouteSearch, RouteTo } from "@teyik0/furin/link";
-import { useCallback, useContext, useRef, useSyncExternalStore } from "react";
+import { useCallback, useContext, useSyncExternalStore } from "react";
 import {
   findSearchDefaultsForRouteTarget,
   type SearchParamsInput,
@@ -50,16 +50,14 @@ function useSearchSelection<To extends SearchRouteTo, TSelected>(
   selector: (search: ResolvedRouteSearch<To>) => TSelected
 ): TSelected {
   const store = useContext(SearchStoreContext) ?? FALLBACK_SEARCH_STORE;
-  const selectorRef = useRef(selector);
-  selectorRef.current = selector;
 
   const getSnapshot = useCallback(
-    () => selectorRef.current(store.getSnapshot().search as ResolvedRouteSearch<To>),
-    [store]
+    () => selector(store.getSnapshot().search as ResolvedRouteSearch<To>),
+    [selector, store]
   );
   const getServerSnapshot = useCallback(
-    () => selectorRef.current(store.getServerSnapshot().search as ResolvedRouteSearch<To>),
-    [store]
+    () => selector(store.getServerSnapshot().search as ResolvedRouteSearch<To>),
+    [selector, store]
   );
 
   return useSyncExternalStore(store.subscribe, getSnapshot, getServerSnapshot);

@@ -1,9 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateIndexHtml } from "../server/render/shell.ts";
-import { mergeRouteSchemas } from "../server/router/index.ts";
-import { buildRouteRegex } from "../server/router/patterns.ts";
-import type { ResolvedRoute } from "../server/router/index.ts";
+import {
+  buildRouteRegex,
+  compareRouteSpecificity,
+} from "../server/router/patterns.ts";
+import { mergeRouteSchemas } from "../server/router/schema-merge.ts";
+import type { ResolvedRoute } from "../server/router/types.ts";
 import { collectSearchDefaults } from "../shared/search-params.ts";
 import { writeRouteTypes } from "./route-types";
 import type { BuildClientOptions } from "./types";
@@ -43,10 +46,16 @@ export function generateHydrateEntry(
 
   const routeEntries: string[] = [];
 
-  for (const route of routes) {
+  const clientRoutes = [...routes].sort((a, b) =>
+    compareRouteSpecificity(b.pattern, a.pattern),
+  );
+
+  for (const route of clientRoutes) {
     const resolvedPage = route.path.replace(/\\/g, "/");
     const regexPattern = buildRouteRegex(route.pattern).regex.source;
-    const searchDefaults = collectSearchDefaults(mergeRouteSchemas(route.routeChain ?? [], "query"));
+    const searchDefaults = collectSearchDefaults(
+      mergeRouteSchemas(route.routeChain ?? [], "query")
+    );
     const boundaryIdents = new Map<string, string>();
 
     // Emit one boundary literal per segment that actually carries a convention
@@ -77,7 +86,9 @@ export function generateHydrateEntry(
       boundaryLiterals.length > 0
         ? `Promise.all([${lazyImports.join(", ")}]).then(([__furin_page, ${[
             ...boundaryIdents.values(),
-          ].join(", ")}]) => ({ default: __furin_page.default, segmentBoundaries: [${boundaryLiterals.join(", ")}] }))`
+          ].join(
+            ", "
+          )}]) => ({ default: __furin_page.default, segmentBoundaries: [${boundaryLiterals.join(", ")}] }))`
         : `import("${resolvedPage}")`;
 
     const searchDefaultsEntry = searchDefaults
@@ -121,7 +132,7 @@ export function generateHydrateEntry(
   return `import { hydrateRoot, createRoot } from "react-dom/client";
 import { createElement } from "react";
 ${loggingImports}import { RouterProvider } from "@teyik0/furin/link";
-import { fromCrossJSON } from "@teyik0/furin/link";
+import { fromCrossJSON, parseDeferredNdjson } from "@teyik0/furin/link";
 import type { SerovalNode } from "seroval";
 import { route as root } from "${rootLayout.replace(/\\/g, "/")}";
 
@@ -142,7 +153,7 @@ const _match = routes.find((r) => r.regex.test(pathname));
 //     a matched loader threw notFound(). The latter still has a _match; the
 //     former does not — so the two cases fork on _match below.
 const dataEl = document.getElementById("__FURIN_DATA__");
-const loaderData = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
+let loaderData = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
 const syncEl = document.getElementById("__FURIN_SYNC__");
 const syncConfig = syncEl ? JSON.parse(syncEl.textContent || "{}") : {};
 const syncStream = typeof syncConfig.stream === "string" ? syncConfig.stream : undefined;
@@ -165,6 +176,9 @@ interface FurinDeferredRegistry {
   getPromise: (key: string) => Promise<unknown>;
   reject: (key: string, chunk: SerovalNode) => void;
   resolve: (key: string, chunk: SerovalNode) => void;
+}
+interface FurinRouteFrameStream {
+  stream: (initial: string) => ReadableStream<Uint8Array>;
 }
 const __deferred = (window as unknown as { __FURIN_DEFERRED__?: FurinDeferredRegistry })
   .__FURIN_DEFERRED__;
@@ -217,6 +231,17 @@ const rootEl = document.getElementById("root") as HTMLElement;
 // Wrapped in an async IIFE to avoid top-level await, which causes Bun's HTML
 // bundler to misidentify which chunk to reference as the entry in index.html.
 (async () => {
+  const frameTemplate = document.getElementById("__FURIN_ROUTE_FRAMES__") as HTMLTemplateElement | null;
+  if (frameTemplate) {
+    const payload = frameTemplate.content.textContent || "";
+    const routeFrameStream = (window as unknown as { __FURIN_ROUTE_FRAME_STREAM__?: FurinRouteFrameStream })
+      .__FURIN_ROUTE_FRAME_STREAM__;
+    const parsed = await parseDeferredNdjson(
+      routeFrameStream ? routeFrameStream.stream(payload) : new Blob([payload]).stream(),
+      undefined
+    );
+    loaderData = { ...parsed.syncData, ...parsed.deferredPromises };
+  }
   let app;
   if (_match) {
     const _mod = await _match.load();

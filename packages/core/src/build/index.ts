@@ -1,9 +1,11 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: build phases run in sequence because later phases consume prior artifacts
 import { existsSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { buildBunTarget, type BunTargetApp } from "../adapter/bun";
 import { buildPackageTarget } from "../adapter/package";
 import { buildStaticTarget } from "../adapter/static";
 import { BUILD_TARGETS, type BuildTarget, type FurinPlugin } from "../config";
+import { isomorphicTransformPlugin } from "../plugin/transform-isomorphic.ts";
 import { normalizePrefix } from "../server/instance.ts";
 import { scanPages } from "../server/router/index.ts";
 import { assertNoPrefixSlugCollisions } from "../shared/prefix.ts";
@@ -29,6 +31,15 @@ export type {
 // alternative packaging of ONE app, not an additional deploy target.
 const IMPLEMENTED_TARGETS = ["bun", "static"] as const satisfies BuildTarget[];
 export const BUILD_OUTPUT_DIR = ".furin/build";
+let isomorphicRuntimePluginRegistered = false;
+
+function registerIsomorphicRuntimePlugin(): void {
+  if (isomorphicRuntimePluginRegistered) {
+    return;
+  }
+  Bun.plugin(isomorphicTransformPlugin("server"));
+  isomorphicRuntimePluginRegistered = true;
+}
 
 /**
  * Resolves the list of apps to build, in priority order:
@@ -109,6 +120,7 @@ export async function buildApp(options: BuildAppOptions): Promise<BuildAppResult
       console.debug("[furin] Skipped plugin at runtime:", err);
     }
   }
+  registerIsomorphicRuntimePlugin();
 
   const appSpecs = resolveAppSpecs(options, serverEntry, rootDir);
   const duplicatePrefix = appSpecs.find(

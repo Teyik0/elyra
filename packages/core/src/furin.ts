@@ -8,6 +8,12 @@ import { type EvlogElysiaOptions, evlog } from "evlog/elysia";
 import { consumePendingInvalidations } from "./server/cache/invalidation.ts";
 import { setSSGCache } from "./server/cache/ssg.ts";
 import {
+  createInstrumentationPlugin,
+  instrumentationLoggerExclusions,
+  runWithRequestInstrumentation,
+  shouldInstrumentRequest,
+} from "./server/devtools/instrumentation.ts";
+import {
   assertPrefixAvailable,
   createInstance,
   type FurinInstance,
@@ -21,23 +27,18 @@ import {
 } from "./server/instance.ts";
 import type { CompileContext, EmbeddedAppData } from "./server/internal.ts";
 import { getCompileContext } from "./server/internal.ts";
-import { renderRootNotFound, warmSSGCache } from "./server/render/index.ts";
+import { renderRootNotFound } from "./server/render/not-found.ts";
+import { warmSSGCache } from "./server/render/ssg.ts";
 import {
   setProductionTemplateContent,
   setProductionTemplatePath,
 } from "./server/render/template.ts";
-import {
-  createDataEndpoint,
-  createRoutePlugin,
-  createSearchRouteMetadata,
-  loadProdRoutes,
-} from "./server/router/index.ts";
+import { loadProdRoutes } from "./server/router/discovery.ts";
+import { createDataEndpoint, createRoutePlugin } from "./server/router/plugin.ts";
+import { createSearchRouteMetadata } from "./server/router/schemas.ts";
 import { IS_DEV } from "./server/runtime-env.ts";
-import {
-  createSyncStreamPlugin,
-  type FurinSyncOption,
-  resolveSyncStreamPath,
-} from "./server/sync/index.ts";
+import { type FurinSyncOption, resolveSyncStreamPath } from "./server/sync/config.ts";
+import { createSyncStreamPlugin } from "./server/sync/stream.ts";
 
 // biome-ignore lint/suspicious/noEmptyInterface: intentionally augmentable via furin-env.d.ts
 export interface FurinCacheTags {}
@@ -47,7 +48,17 @@ export type CacheTag = keyof FurinCacheTags extends never ? string : keyof Furin
 import { clientDirNameForPrefix } from "./shared/prefix.ts";
 
 // biome-ignore lint/performance/noBarrelFile: furin.ts is the public package entry
+export {
+  type ClientIsomorphicFn,
+  createIsomorphicFn,
+  type IsomorphicFn,
+  type IsomorphicFnBuilder,
+  type ServerIsomorphicFn,
+} from "./isomorphic.ts";
 export { clientDirNameForPrefix } from "./shared/prefix.ts";
+
+const MAX_BROWSER_INGEST_BYTES = 64 * 1024;
+const MAX_BROWSER_INGEST_EVENTS = 100;
 
 function resolveClientDirFromArgv(prefix: string): string {
   const dirName = clientDirNameForPrefix(prefix);
@@ -176,72 +187,137 @@ async function setupProdTemplate(
  * browser `environment` which must not overwrite the server's); everything
  * else is forwarded as-is.
  */
-type FurinBrowserEvent = {
+interface FurinBrowserEvent {
   __proto__?: unknown;
   constructor?: unknown;
-  prototype?: unknown;
   environment?: unknown;
-} & Record<string, unknown>;
+  prototype?: unknown;
+  [key: string]: unknown;
+}
+
+type BrowserIngestRead =
+  | { body: unknown; kind: "ok" }
+  | { kind: "invalid" }
+  | { kind: "oversized" };
+
+async function readBrowserIngest(request: Request): Promise<BrowserIngestRead> {
+  const contentLength = request.headers.get("content-length");
+  if (contentLength) {
+    const declaredBytes = Number(contentLength);
+    if (Number.isFinite(declaredBytes) && declaredBytes > MAX_BROWSER_INGEST_BYTES) {
+      await request.body?.cancel();
+      return { kind: "oversized" };
+    }
+  }
+  if (request.body === null) {
+    return { kind: "invalid" };
+  }
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      // biome-ignore lint/performance/noAwaitInLoops: request body chunks must be read sequentially.
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      total += value.byteLength;
+      if (total > MAX_BROWSER_INGEST_BYTES) {
+        await reader.cancel();
+        return { kind: "oversized" };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return { body: JSON.parse(new TextDecoder().decode(bytes)), kind: "ok" };
+  } catch {
+    return { kind: "invalid" };
+  }
+}
 
 /** Evlog wide-event plugin + browser log ingest endpoint for one instance. */
 function createLoggerPlugin(
   prefix: string,
   syncStreamPath: string | undefined,
-  logger: EvlogElysiaOptions | undefined
+  logger: EvlogElysiaOptions | undefined,
+  clientLogging: boolean
 ): Elysia {
   const { exclude: userExclude, ...evlogOptions } = logger ?? {};
-  return new Elysia()
-    .use(
-      evlog({
-        ...evlogOptions,
-        // Exclude patterns match the PHYSICAL request path — prefix them.
-        exclude: [
-          `${prefix}/_client/**`,
-          `${prefix}/public/**`,
-          `${prefix}/favicon.ico`,
-          `${prefix}/_bun_hmr_entry/**`,
-          ...(syncStreamPath ? [`${prefix}${syncStreamPath}`] : []),
-          // Note: /_furin/data is logged with the *logical* path rewritten by
-          // createDataEndpoint via useLogger().set({ path }), so SPA navigations
-          // appear as "GET /board/123 200" — same shape as a normal SSR nav.
-          // /_furin/ingest is kept loggable so browser-side events show up.
-          // evlog's `matchesPattern` only supports `*`, `**`, `?` — extglob
-          // like `!(...)` matches nothing, so don't add patterns relying on it.
-          ...(userExclude ?? []),
-        ],
-      })
-    )
-    .post(
-      "/_furin/ingest",
-      ({ body, log, status }) => {
-        if (!Array.isArray(body)) {
-          return status("Bad Request");
+  const app = new Elysia().use(
+    evlog({
+      ...evlogOptions,
+      // Exclude patterns match the PHYSICAL request path — prefix them.
+      exclude: [
+        `${prefix}/_client/**`,
+        `${prefix}/public/**`,
+        `${prefix}/favicon.ico`,
+        `${prefix}/_bun_hmr_entry/**`,
+        ...instrumentationLoggerExclusions(prefix),
+        ...(syncStreamPath ? [`${prefix}${syncStreamPath}`] : []),
+        // Note: /_furin/data is logged with the *logical* path rewritten by
+        // createDataEndpoint via useLogger().set({ path }), so SPA navigations
+        // appear as "GET /board/123 200" — same shape as a normal SSR nav.
+        // /_furin/ingest remains loggable when browser logging is explicitly
+        // enabled so browser-side events show up.
+        // evlog's `matchesPattern` only supports `*`, `**`, `?` — extglob
+        // like `!(...)` matches nothing, so don't add patterns relying on it.
+        ...(userExclude ?? []),
+      ],
+    })
+  );
+
+  if (!clientLogging) {
+    return app as unknown as Elysia;
+  }
+
+  return app.post(
+    "/_furin/ingest",
+    async ({ log, request, status }) => {
+      const parsed = await readBrowserIngest(request);
+      if (parsed.kind === "oversized") {
+        return status(413);
+      }
+      if (parsed.kind === "invalid") {
+        return status("Bad Request");
+      }
+      const { body } = parsed;
+      if (!Array.isArray(body)) {
+        return status("Bad Request");
+      }
+      const batch = (body as DrainContext[]).slice(0, MAX_BROWSER_INGEST_EVENTS);
+      for (const entry of batch) {
+        if (!entry || typeof entry !== "object" || !("event" in entry)) {
+          log.set({ msg: "[furin] ingest: skipping malformed entry" });
+          continue;
         }
-        // Cap batch size to prevent abuse
-        const batch = (body as DrainContext[]).slice(0, 100);
-        for (const entry of batch) {
-          if (!entry || typeof entry !== "object" || !("event" in entry)) {
-            log.set({ msg: "[furin] ingest: skipping malformed entry" });
-            continue;
-          }
-          // Pick only safe, known fields from the event to prevent prototype pollution
-          const event = entry.event as FurinBrowserEvent | undefined;
-          if (!event || typeof event !== "object") {
-            continue;
-          }
-          const {
-            __proto__,
-            constructor: _ctor,
-            prototype,
-            environment: _browserEnv,
-            ...safeEvent
-          } = event;
-          log.set({ ...safeEvent, service: "furin:browser" });
+        // Pick only safe, known fields from the event to prevent prototype pollution
+        const event = entry.event as FurinBrowserEvent | undefined;
+        if (!event || typeof event !== "object") {
+          continue;
         }
-        return status("No Content");
-      },
-      { parse: "json" }
-    ) as unknown as Elysia;
+        const {
+          __proto__,
+          constructor: _ctor,
+          prototype,
+          environment: _browserEnv,
+          ...safeEvent
+        } = event;
+        log.set({ ...safeEvent, service: "furin:browser" });
+      }
+      return status("No Content");
+    },
+    { parse: "none" }
+  ) as unknown as Elysia;
 }
 
 /**
@@ -270,8 +346,19 @@ function wrapWithRequestScope(app: AnyElysia): Elysia {
     markTraffic();
     const req = request ?? (ctx as { request?: Request } | undefined)?.request;
     const pathname = req ? new URL(req.url).pathname : "/";
-    return runWithInstanceScope(resolveInstanceByPath(pathname), () => handler(ctx));
+    const instance = resolveInstanceByPath(pathname);
+    return runWithInstanceScope(instance, () => {
+      if (!(req && shouldInstrumentRequest(pathname, instance.prefix))) {
+        return handler(ctx);
+      }
+      return runWithRequestInstrumentation(req, () => handler(ctx));
+    });
   });
+}
+
+async function loadDevelopmentRoutes(resolvedPagesDir: string) {
+  const { scanPages } = await import("./server/router/index.ts");
+  return scanPages(resolvedPagesDir);
 }
 
 function hydrateSSGCacheFromCompileContext(ctx: CompileContext): void {
@@ -309,9 +396,9 @@ export interface FurinOptions {
    */
   prefix?: string;
   /**
-   * Enables Furin's built-in sync event stream. The opinionated default mounts
-   * Server-Sent Events at `/_furin/sync`; pass an object only for constrained
-   * reverse-proxy deployments that need a custom internal path.
+   * Configures Furin's sync event stream with the required adapter. The
+   * optional `streamPath` defaults to `/_furin/sync`. Omit this option or pass
+   * `false` to disable sync.
    */
   sync?: FurinSyncOption;
 }
@@ -342,7 +429,6 @@ export async function furin({
   const prefix = normalizePrefix(rawPrefix);
   const syncStreamPath = resolveSyncStreamPath(sync);
   initLogger({ env: { service: "furin" } });
-  const loggerPlugin = createLoggerPlugin(prefix, syncStreamPath, logger);
 
   const cwd = process.cwd();
   // The pagesDir param drives which compile context this instance loads. In a
@@ -350,6 +436,12 @@ export async function furin({
   // lookup then falls back to the (stable) prefix, then to the sole context.
   const paramPagesDir = resolve(cwd, pagesDir ?? "src/pages");
   const ctx = getCompileContext(paramPagesDir, prefix);
+  const loggerPlugin = createLoggerPlugin(
+    prefix,
+    syncStreamPath,
+    logger,
+    clientLogging === true || ctx?.clientLogging === true
+  );
   const resolvedPagesDir = ctx?.rootPath ? dirname(ctx.rootPath) : paramPagesDir;
 
   // Unique name per pagesDir to avoid Elysia's name-based plugin dedup.
@@ -374,11 +466,7 @@ export async function furin({
     // Lazy import — build pipeline has native deps not available in compiled binaries
     const { registerDevPagePlugin } = await import("./server/dev-page-plugin.ts");
     registerDevPagePlugin();
-
-    const { createDevInspectorPlugin } = await import("./server/dev-inspector.ts");
-
-    const { scanPages } = await import("./server/router/index.ts");
-    const { root, routes } = await scanPages(resolvedPagesDir);
+    const { root, routes } = await loadDevelopmentRoutes(resolvedPagesDir);
     const searchRoutes = createSearchRouteMetadata(routes);
 
     const { writeDevFiles } = await import("./build/hydrate.ts");
@@ -411,9 +499,9 @@ export async function furin({
       .use(loggerPlugin)
       // Local scope (default) — a global hook would leak onto sibling furin
       // instances mounted on the same parent app.
-      .onError(async ({ code, request }) => {
+      .onError(async ({ code, request, server }) => {
         if (code === "NOT_FOUND") {
-          return await renderRootNotFound(root, request);
+          return await renderRootNotFound(root, request, server?.url.origin);
         }
       })
       .onAfterHandle(({ set }) => {
@@ -433,12 +521,8 @@ export async function furin({
           ? file(join(publicDir, "favicon.ico"))
           : () => new Response(null, { status: 404 })
       )
-      .use(createDevInspectorPlugin())
-      .use(
-        syncStreamPath
-          ? createSyncStreamPlugin(syncStreamPath, `${prefix}${syncStreamPath}`)
-          : new Elysia()
-      )
+      .use(createInstrumentationPlugin(routes, syncStreamPath))
+      .use(sync ? createSyncStreamPlugin(sync) : new Elysia())
       .use(createDataEndpoint(routes))
       .use((app) =>
         routes.reduce(
@@ -478,9 +562,9 @@ export async function furin({
     .use(loggerPlugin)
     // Local scope (default) — a global hook would leak onto sibling furin
     // instances mounted on the same parent app.
-    .onError(async ({ code, request }) => {
+    .onError(async ({ code, request, server }) => {
       if (code === "NOT_FOUND") {
-        return await renderRootNotFound(root, request);
+        return await renderRootNotFound(root, request, server?.url.origin);
       }
     })
     .onAfterHandle(({ path, set }) => {
@@ -545,11 +629,7 @@ export async function furin({
         return app;
       })()
     )
-    .use(
-      syncStreamPath
-        ? createSyncStreamPlugin(syncStreamPath, `${prefix}${syncStreamPath}`)
-        : new Elysia()
-    )
+    .use(sync ? createSyncStreamPlugin(sync) : new Elysia())
     .use(createDataEndpoint(routes))
     .use((app) =>
       routes.reduce(
@@ -583,9 +663,9 @@ function createNotFoundHandling(
 ): Elysia {
   const app = new Elysia();
   if (prefix === "") {
-    app.onError({ as: "global" }, async ({ code, request }) => {
+    app.onError({ as: "global" }, async ({ code, request, server }) => {
       if (code === "NOT_FOUND") {
-        return await renderRootNotFound(root, request);
+        return await renderRootNotFound(root, request, server?.url.origin);
       }
     });
     return app;
@@ -593,21 +673,30 @@ function createNotFoundHandling(
   if (routes.some((route) => route.pattern === "/*")) {
     return app;
   }
-  app.get("/*", ({ request }) => renderRootNotFound(root, request));
+  app.get("/*", ({ request, server }) => renderRootNotFound(root, request, server?.url.origin));
   return app;
 }
 
 export { FurinErrorBoundary, FurinNotFoundBoundary } from "./client/boundaries.tsx";
 // ── Public API re-export ──────────────────────────────────────────────────────
 // biome-ignore-start lint/performance/noBarrelFile: intentional — furin.ts is the public package entry
-export type { DeferredData, RuntimePage, RuntimeRoute } from "./client.ts";
+export type { DeferredData } from "./client.ts";
 export { defer, isDeferred } from "./client.ts";
 export type { InvalidationInput, InvalidationRule } from "./server/auto-invalidate/index.ts";
 export { furinInvalidate, revalidateTag } from "./server/auto-invalidate/index.ts";
 export { revalidatePath, setCachePurger } from "./server/cache/invalidation.ts";
 export { buildElement, buildErrorElement, renderRootNotFound } from "./server/render/index.ts";
 export type { ResolvedRoute, SegmentBoundary } from "./server/router/index.ts";
-export { furinSync, type SyncInput, type SyncRouteOption } from "./server/sync/index.ts";
+export {
+  type FurinSyncOption,
+  type FurinSyncOptions,
+  furinSync,
+  type SyncAdapter,
+  type SyncInput,
+  type SyncNotifier,
+  type SyncRouteOption,
+  type SyncRuntimeOptions,
+} from "./server/sync/index.ts";
 export { Await, useAsyncError, useAsyncValue } from "./shared/await.tsx";
 export type { ErrorComponent, ErrorProps } from "./shared/error.ts";
 export type {

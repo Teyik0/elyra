@@ -1,13 +1,13 @@
 {
   "name": "@teyik0/furin",
-  "version": "0.2.0-alpha.5",
+  "version": "0.3.0-alpha.1",
   "description": "React meta-framework powered by Elysia and Bun with file-based routing, SSR, SSG, and ISR.",
   "license": "MIT",
   "author": "teyik0",
   "sideEffects": false,
   "type": "module",
   "engines": {
-    "bun": ">=1.3.0"
+    "bun": ">=1.4.0"
   },
   "keywords": [
     "react",
@@ -38,7 +38,8 @@
   "module": "./dist/furin.js",
   "types": "./dist/furin.d.ts",
   "bin": {
-    "furin": "./src/cli/index.ts"
+    "furin": "./src/cli/index.ts",
+    "furin-sync-postgres-migrate": "./dist/server/sync/postgres/migrate.js"
   },
   "exports": {
     ".": {
@@ -50,6 +51,12 @@
       "types": "./dist/client.d.ts",
       "bun": "./src/client.ts",
       "import": "./dist/client.js"
+    },
+    "./rsc": {
+      "types": "./dist/rsc.d.ts",
+      "browser": "./src/rsc-client.ts",
+      "bun": "./src/rsc.tsx",
+      "import": "./dist/rsc.js"
     },
     "./build": {
       "types": "./dist/build/index.d.ts",
@@ -66,6 +73,28 @@
       "bun": "./src/server/router/index.ts",
       "import": "./dist/server/router/index.js"
     },
+    "./sync": {
+      "types": "./dist/server/sync/index.d.ts",
+      "bun": "./src/server/sync/index.ts",
+      "import": "./dist/server/sync/index.js"
+    },
+    "./sync/postgres": {
+      "types": "./dist/server/sync/postgres/index.d.ts",
+      "bun": "./src/server/sync/postgres/index.ts",
+      "import": "./dist/server/sync/postgres/index.js"
+    },
+    "./sync/postgres/migration.sql": "./src/server/sync/postgres/migration.sql",
+    "./sync/redis": {
+      "types": "./dist/server/sync/redis/index.d.ts",
+      "bun": "./src/server/sync/redis/index.ts",
+      "import": "./dist/server/sync/redis/index.js"
+    },
+    "./sync/sqlite": {
+      "types": "./dist/server/sync/sqlite/index.d.ts",
+      "bun": "./src/server/sync/sqlite/index.ts",
+      "import": "./dist/server/sync/sqlite/index.js"
+    },
+    "./sync/sqlite/migration.sql": "./src/server/sync/sqlite/migration.sql",
     "./strip-plugin": {
       "types": "./dist/plugin/index.d.ts",
       "bun": "./src/plugin/index.ts",
@@ -89,20 +118,33 @@
       "types": "./dist/server/internal.d.ts",
       "bun": "./src/server/internal.ts",
       "import": "./dist/server/internal.js"
+    },
+    "./server-only": {
+      "types": "./dist/server-only.d.ts",
+      "bun": "./src/server-only.ts",
+      "import": "./dist/server-only.js"
+    },
+    "./client-only": {
+      "types": "./dist/client-only.d.ts",
+      "bun": "./src/client-only.ts",
+      "import": "./dist/client-only.js"
     }
   },
   "scripts": {
     "fix": "ultracite fix",
-    "test": "bun test --parallel --isolate --bail --preload ../../tests/setup.ts",
-    "test:dev": "bun test --changed --parallel --isolate --bail --preload ../../tests/setup.ts",
+    "test": "bun test --parallel --isolate --bail",
+    "test:dev": "bun test --changed --parallel --isolate --bail",
     "tscheck": "tsc --noEmit",
-    "build": "bun run build.ts"
+    "build": "bun run build.ts",
+    "benchmark:rsc": "bun scripts/benchmark-rsc-transport.ts"
   },
   "dependencies": {
     "@elysiajs/static": "^1.4.10",
-    "magic-string": "^0.30.21",
-    "seroval": "^1.5.4",
-    "yuku-parser": "^0.5.43"
+    "@yuku-toolchain/types": "0.8.0",
+    "magic-string": "^1.1.0",
+    "react-server-dom-webpack": "19.2.8",
+    "seroval": "^1.5.6",
+    "yuku-parser": "0.8.0"
   },
   "devDependencies": {
     "@types/react": "catalog:",

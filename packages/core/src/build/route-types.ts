@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { mergeRouteSchemas, type ResolvedRoute } from "../server/router/index.ts";
+import { mergeRouteSchemas } from "../server/router/schema-merge.ts";
+import type { ResolvedRoute } from "../server/router/types.ts";
 
 /** @internal Exported for unit testing only. */
 export function patternToTypeString(pattern: string): string {
@@ -29,7 +30,9 @@ function schemaToTypeStringWithDefaults(schema: unknown, defaultsAreRequired: bo
     const parts: string[] = [];
     for (const item of s.anyOf as unknown[]) {
       const t = schemaToTypeStringWithDefaults(item, defaultsAreRequired);
-      if (t !== "null") parts.push(t);
+      if (t !== "null") {
+        parts.push(t);
+      }
     }
     return parts.join(" | ") || "unknown";
   }
@@ -54,8 +57,7 @@ function schemaToTypeStringWithDefaults(schema: unknown, defaultsAreRequired: bo
       const required = new Set<string>(Array.isArray(s.required) ? (s.required as string[]) : []);
       const props = Object.entries(s.properties as Record<string, unknown>)
         .map(([k, v]) => {
-          const isPresent =
-            required.has(k) || (defaultsAreRequired && hasNonNullSchemaDefault(v));
+          const isPresent = required.has(k) || (defaultsAreRequired && hasNonNullSchemaDefault(v));
           return `${k}${isPresent ? "" : "?"}: ${schemaToTypeStringWithDefaults(v, defaultsAreRequired)}`;
         })
         .join("; ");
@@ -76,10 +78,7 @@ function hasNonNullSchemaDefault(schema: unknown): boolean {
     return false;
   }
   const s = schema as Record<string, unknown>;
-  return (
-    "default" in s &&
-    s.default != null
-  );
+  return "default" in s && s.default !== null;
 }
 
 function tagKeyToPropertyName(tag: string): string {

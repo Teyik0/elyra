@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noJsxPropsBind: card form handlers depend on local form and mutation state
 import { useSync } from "@teyik0/furin/client";
 import { Link, useRouter } from "@teyik0/furin/link";
 import { ArrowLeft, ChevronRight, Trash2 } from "lucide-react";
@@ -30,8 +31,8 @@ export function CardDetailPage({
     const data = new FormData(formRef.current);
     try {
       const { error } = await updateCard({
-        title: data.get("title") as string,
         description: data.get("description") as string,
+        title: data.get("title") as string,
       });
 
       if (error) {

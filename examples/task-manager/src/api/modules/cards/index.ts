@@ -1,10 +1,11 @@
 import { furinSync } from "@teyik0/furin";
 import { Elysia, t } from "elysia";
+import { taskManagerSync } from "../../../sync";
 import { columnType } from "../shared";
 import { createCard, deleteCard, getCard, updateCard } from "./service";
 
 export const cardPlugin = new Elysia()
-  .use(furinSync())
+  .use(furinSync(taskManagerSync))
   .get("/cards/:id", ({ params, status }) => {
     const card = getCard(params.id);
     if (!card) {
@@ -17,8 +18,8 @@ export const cardPlugin = new Elysia()
     ({ params, body }) => createCard(params.boardId, body.title, body.column),
     {
       body: t.Object({
-        title: t.String({ minLength: 1 }),
         column: columnType,
+        title: t.String({ minLength: 1 }),
       }),
       sync: { invalidate: { tags: ["cards"] } },
     }
@@ -38,8 +39,8 @@ export const cardPlugin = new Elysia()
     },
     {
       body: t.Object({
-        title: t.Optional(t.String()),
         description: t.Optional(t.String()),
+        title: t.Optional(t.String()),
       }),
       sync: { invalidate: { tags: ["cards"] } },
     }
@@ -59,10 +60,10 @@ export const cardPlugin = new Elysia()
     },
     {
       body: t.Object({
-        title: t.Optional(t.String()),
-        description: t.Optional(t.String()),
         column: t.Optional(columnType),
+        description: t.Optional(t.String()),
         position: t.Optional(t.Number()),
+        title: t.Optional(t.String()),
       }),
       sync: { invalidate: { tags: ["cards"] } },
     }

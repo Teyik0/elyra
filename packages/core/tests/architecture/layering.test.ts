@@ -17,7 +17,7 @@ import { Glob } from "bun";
  * right granularity: type-only edges are erased at build time and cannot leak
  * code into a bundle, whereas a value/dynamic import is a real dependency.
  *
- * `client.ts` (the public contracts barrel: RouteContext, RuntimeRoute, defer,
+ * `client.ts` (the public contracts barrel: RouteContext, createRoute, defer,
  * …) is browser-safe — it pulls in only `shared/` and `elysia`/`evlog` *types*
  * — so both `shared/` and `client/` may depend on it.
  */
@@ -53,6 +53,8 @@ function locationOf(fromDir: string, specifier: string): string {
 }
 
 const FORBIDDEN_TARGETS: Record<"shared" | "client", Set<string>> = {
+  // client may use shared + the contracts barrel, but never server runtime.
+  client: new Set(["server", "furin.ts", "config.ts", "build", "plugin", "cli", "adapter"]),
   // shared is the isomorphic leaf: no client- or server-only code, no tooling.
   shared: new Set([
     "client",
@@ -64,8 +66,6 @@ const FORBIDDEN_TARGETS: Record<"shared" | "client", Set<string>> = {
     "cli",
     "adapter",
   ]),
-  // client may use shared + the contracts barrel, but never server runtime.
-  client: new Set(["server", "furin.ts", "config.ts", "build", "plugin", "cli", "adapter"]),
 };
 
 function collectViolations(layer: "shared" | "client"): string[] {

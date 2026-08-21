@@ -1,14 +1,17 @@
 import { expect, mock, test } from "bun:test";
+import {
+  installDom,
+  resetDomState,
+  useDomTests as setupDomTests,
+} from "../../../packages/core/tests/support/dom.ts";
 
-if (typeof document === "undefined") {
-  await import("../../../tests/setup");
-}
+installDom();
+resetDomState();
 
 const { act, createElement } = await import("react");
 const { createRoot } = await import("react-dom/client");
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-  true;
+setupDomTests();
 
 const createCalls: unknown[][] = [];
 

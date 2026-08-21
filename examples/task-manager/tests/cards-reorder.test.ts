@@ -9,13 +9,13 @@ const BOARD_ID = "test-board-reorder";
 function insertCard(id: string, column: "backlog" | "todo" | "doing" | "done", position: number) {
   db.insert(cards)
     .values({
-      id,
       boardId: BOARD_ID,
       column,
-      title: id,
-      description: "",
-      position,
       createdAt: "2026-06-10T00:00:00.000Z",
+      description: "",
+      id,
+      position,
+      title: id,
     })
     .run();
 }
@@ -47,9 +47,9 @@ describe("cards reorder service", () => {
     db.delete(boards).where(eq(boards.id, BOARD_ID)).run();
     db.insert(boards)
       .values({
+        createdAt: "2026-06-10T00:00:00.000Z",
         id: BOARD_ID,
         name: "Reorder test",
-        createdAt: "2026-06-10T00:00:00.000Z",
       })
       .run();
 

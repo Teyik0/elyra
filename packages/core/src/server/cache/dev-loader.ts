@@ -1,5 +1,11 @@
 import { statSync } from "node:fs";
+import { relative } from "node:path";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry";
+import {
+  currentInstrumentationRequest,
+  emitCacheInvalidated,
+  emitCacheAccess as emitInstrumentationCacheAccess,
+} from "../devtools/instrumentation.ts";
 import {
   allStateBuckets,
   currentInstance,
@@ -73,7 +79,7 @@ function createDevLoaderCache(name: string, index: Map<string, Set<string>>) {
     name,
     onDelete: (key, entry) => {
       unindexEntryDependencies(index, key, entry.dependencies);
-      const urlPath = urlPathFromCacheKey(key);
+      const urlPath = urlPathWithSearchFromCacheKey(key);
       if (urlPath) {
         autoInvalidateRegistry.unregisterPath(urlPath);
       }
@@ -103,8 +109,35 @@ const instanceDevLoaderState = instanceSlot((instance): DevLoaderState => {
   };
 });
 
+function emitCacheAccess(
+  cache: "isr-loader" | "ssg-loader",
+  key: string,
+  entry: DevLoaderCacheEntry | undefined
+): void {
+  const request = currentInstrumentationRequest();
+  const path = urlPathFromCacheKey(key);
+  if (request === undefined || path === null) {
+    return;
+  }
+  let outcome: "hit" | "miss" | "stale";
+  if (entry === undefined) {
+    outcome = "miss";
+  } else {
+    outcome = isDevLoaderCacheValid(entry) ? "hit" : "stale";
+  }
+  emitInstrumentationCacheAccess({
+    cache,
+    operationId: request.operationId,
+    outcome,
+    path,
+    requestId: request.requestId,
+  });
+}
+
 export function getDevISRLoaderCache(key: string): DevLoaderCacheEntry | undefined {
-  return instanceDevLoaderState().isr.cache.get(key);
+  const entry = instanceDevLoaderState().isr.cache.get(key);
+  emitCacheAccess("isr-loader", key, entry);
+  return entry;
 }
 
 export function setDevISRLoaderCache(key: string, entry: DevLoaderCacheEntry): void {
@@ -112,7 +145,9 @@ export function setDevISRLoaderCache(key: string, entry: DevLoaderCacheEntry): v
 }
 
 export function getDevSSGLoaderCache(key: string): DevLoaderCacheEntry | undefined {
-  return instanceDevLoaderState().ssg.cache.get(key);
+  const entry = instanceDevLoaderState().ssg.cache.get(key);
+  emitCacheAccess("ssg-loader", key, entry);
+  return entry;
 }
 
 export function setDevSSGLoaderCache(key: string, entry: DevLoaderCacheEntry): void {
@@ -120,11 +155,25 @@ export function setDevSSGLoaderCache(key: string, entry: DevLoaderCacheEntry): v
 }
 
 export function urlPathFromCacheKey(key: string): string | null {
-  const sep = key.lastIndexOf(":/");
+  const searchStart = key.indexOf("?");
+  const keyWithoutSearch = searchStart === -1 ? key : key.slice(0, searchStart);
+  const sep = keyWithoutSearch.lastIndexOf(":/");
   if (sep === -1) {
     return null;
   }
-  return key.slice(sep + 1);
+  return keyWithoutSearch.slice(sep + 1);
+}
+
+function urlPathWithSearchFromCacheKey(key: string): string | null {
+  const urlPath = urlPathFromCacheKey(key);
+  if (urlPath === null) {
+    return null;
+  }
+  const searchStart = key.indexOf("?");
+  if (searchStart === -1) {
+    return urlPath;
+  }
+  return `${urlPath}${key.slice(searchStart)}`;
 }
 
 export function invalidateDevLoaderCacheByPath(
@@ -157,9 +206,9 @@ export function invalidateDevLoaderCacheByPath(
       handle.cache.delete(key);
       cleared.push(key);
       if (handle.kind === "isr") {
-        isr++;
+        isr += 1;
       } else {
-        ssg++;
+        ssg += 1;
       }
     }
   }
@@ -184,17 +233,28 @@ export function invalidateDevLoaderCacheBySource(filePath: string): InvalidateOu
     if (isrEntry) {
       state.isr.cache.delete(key);
       cleared.push(key);
-      isr++;
+      isr += 1;
       continue;
     }
     const ssgEntry = state.ssg.cache.get(key);
     if (ssgEntry) {
       state.ssg.cache.delete(key);
       cleared.push(key);
-      ssg++;
+      ssg += 1;
     }
   }
 
+  const request = currentInstrumentationRequest();
+  const operationId = request === undefined ? null : request.operationId;
+  const requestId = request === undefined ? null : request.requestId;
+  emitCacheInvalidated({
+    deleted: cleared.length > 0,
+    operationId,
+    purgedPaths: cleared.length,
+    reason: "source",
+    requestId,
+    target: relative(process.cwd(), filePath).replaceAll("\\", "/"),
+  });
   return { cleared, isr, ssg };
 }
 
@@ -209,7 +269,7 @@ export function isDevLoaderCacheValid(entry: DevLoaderCacheEntry): boolean {
   for (const dep of entry.dependencies) {
     let mtimeMs: number;
     try {
-      mtimeMs = statSync(dep).mtimeMs;
+      ({ mtimeMs } = statSync(dep));
     } catch {
       return false;
     }

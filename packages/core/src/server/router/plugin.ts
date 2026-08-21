@@ -1,34 +1,136 @@
 import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import type { AnySchema } from "elysia/types";
-import { toCrossJSON, toCrossJSONAsync } from "seroval";
+import { toCrossJSONAsync } from "seroval";
 import { computeErrorDigest } from "../../shared/digest.ts";
+import { containsRscSource, serializeRouteFrames } from "../../shared/route-frame.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
-import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import { useLogger } from "../context-logger.ts";
-import { injectSyncRuntimeScript, resolvePath } from "../render/assemble.ts";
 import {
-  handleISR,
-  prerenderSSG,
-  renderSSR,
+  currentInstrumentationRequest,
+  emitPayloadSerialized,
+} from "../devtools/instrumentation.ts";
+import { injectSyncRuntimeScript, resolvePath } from "../render/assemble.ts";
+import { handleISR } from "../render/isr.ts";
+import {
+  hasRequestLoader,
+  type LoaderResult,
   runLoaders,
-  serializeDeferredRejection,
-} from "../render/index.ts";
+  runPublicLoaders,
+  withRequestLoaderData,
+} from "../render/loaders.ts";
+import { renderPprRoute } from "../render/ppr-route.ts";
+import { createDeferredRouteFrameStream } from "../render/route-frame-transport.ts";
 import { extractTitle } from "../render/shell.ts";
+import { prerenderSSG } from "../render/ssg.ts";
+import { renderSSR } from "../render/ssr.ts";
 import { IS_DEV } from "../runtime-env.ts";
 import { handleDevRequest } from "./hmr.ts";
 import { buildRouteMatcher } from "./patterns.ts";
-import {
-  applySchemaDefaults,
-  mergeRouteSchemas,
-  parseDataEndpointPath,
-  parseRouteQuery,
-} from "./schemas.ts";
+import { mergeRouteSchemas } from "./schema-merge.ts";
+import { parseDataEndpointPath, parseRouteParams, parseRouteQuery } from "./schemas.ts";
 import type { ResolvedRoute, RootLayout } from "./types.ts";
 
+interface DataRouteParamsInput {
+  [key: string]: unknown;
+}
+
 type SyntheticDataContext = Omit<Context, "params" | "query"> & {
-  params: Record<string, string>;
+  params: DataRouteParamsInput;
   query: SearchParamsInput;
 };
+
+function emitSerializedPayload(body: string, kind: "route-data" | "rsc", requestUrl: string): void {
+  if (!IS_DEV) {
+    return;
+  }
+  const request = currentInstrumentationRequest();
+  if (request === undefined) {
+    return;
+  }
+  emitPayloadSerialized({
+    bytes: new TextEncoder().encode(body).byteLength,
+    kind,
+    operationId: request.operationId,
+    path: new URL(requestUrl).pathname,
+    requestId: request.requestId,
+  });
+}
+
+async function runDataEndpointLoaders(route: ResolvedRoute, ctx: Context): Promise<LoaderResult> {
+  if (route.mode !== "isr" && route.mode !== "ssg") {
+    return runLoaders(route, ctx);
+  }
+
+  const result = await runPublicLoaders(route, ctx);
+  if (result.type !== "data" || !hasRequestLoader(route)) {
+    return result;
+  }
+  return withRequestLoaderData(route, ctx, result);
+}
+
+async function createLoaderDataResponse(
+  result: LoaderResult,
+  route: ResolvedRoute,
+  requestUrl: string
+): Promise<Response> {
+  if (result.type === "redirect") {
+    const redirectUrl = new URL(result.response.headers.get("location") ?? "/", requestUrl);
+    const serialized = await toCrossJSONAsync({
+      __furinRedirect: redirectUrl.pathname + redirectUrl.search,
+    });
+    return new Response(`${JSON.stringify(serialized)}\n`, {
+      headers: { "content-type": "application/x-ndjson" },
+    });
+  }
+  if (result.type === "not-found") {
+    const serialized = await toCrossJSONAsync({
+      __furinNotFound: { data: result.error.data, message: result.error.message },
+      __furinStatus: 404,
+    });
+    return new Response(`${JSON.stringify(serialized)}\n`, {
+      headers: { "content-type": "application/x-ndjson" },
+      status: 200,
+    });
+  }
+  if (result.type === "error") {
+    const serialized = await toCrossJSONAsync({
+      __furinError: {
+        digest: computeErrorDigest(result.error),
+        message: result.message,
+        status: result.status,
+      },
+    });
+    return new Response(`${JSON.stringify(serialized)}\n`, {
+      headers: { "content-type": "application/x-ndjson" },
+      status: result.status,
+    });
+  }
+
+  const syncDataWithTitle = withResolvedTitle(route, result.syncData);
+  if (result.deferredPromises !== undefined) {
+    return new Response(
+      createDeferredRouteFrameStream(syncDataWithTitle, result.deferredPromises),
+      {
+        headers: {
+          ...result.headers,
+          "content-type": "application/x-furin-route",
+        },
+      }
+    );
+  }
+  const body = serializeRouteFrames(syncDataWithTitle, undefined);
+  emitSerializedPayload(
+    body,
+    containsRscSource(syncDataWithTitle) ? "rsc" : "route-data",
+    requestUrl
+  );
+  return new Response(body, {
+    headers: {
+      ...result.headers,
+      "content-type": "application/x-furin-route",
+    },
+  });
+}
 
 /** @internal Handles a production SSG route — sets ETags, Cache-Control, and Cache-Tag. */
 async function handleSSGRequest(
@@ -38,8 +140,8 @@ async function handleSSGRequest(
   buildId: string,
   searchRoutes: SearchRouteMetadata[] | undefined
 ): Promise<unknown> {
-  const origin = new URL(ctx.request.url).origin;
-  const entry = await prerenderSSG(route, ctx.params, root, origin, undefined, searchRoutes);
+  const { origin } = new URL(ctx.request.url);
+  const entry = await prerenderSSG(route, ctx.params ?? {}, root, origin, undefined, searchRoutes);
 
   // Loader issued a redirect — forward it directly to the client.
   if (entry instanceof Response) {
@@ -106,6 +208,10 @@ export function createRoutePlugin(
       return handleDevRequest(route, ctx, root, searchRoutes);
     }
 
+    if ((route.mode === "ssg" || route.mode === "isr") && hasRequestLoader(route)) {
+      return renderPprRoute(route, ctx, root, resolvedBuildId, searchRoutes);
+    }
+
     if (route.mode === "ssg") {
       return handleSSGRequest(route, ctx, root, resolvedBuildId, searchRoutes);
     }
@@ -124,13 +230,10 @@ export function createRoutePlugin(
 /**
  * Elysia plugin that handles `GET /_furin/data?path=<logicalHref>`.
  *
- * Returns an NDJSON stream (one-line, v1) produced by `toCrossJSONAsync`:
- *   Line 0 — CrossJSON serialisation of `{ ...syncData, ...deferredPromises }`
- *
- * The `deferredPromises` values are awaited by `toCrossJSONAsync` before
- * serialising, so the client receives all data resolved in one round-trip.
- * SPA navigation calls this endpoint via `parseDeferredNdjson` in
- * `router-provider.tsx`.
+ * Returns route-frame loader data for successful routes. Deferred routes stream
+ * the initial sync frame first, then append one frame batch per settled Promise.
+ * SPA navigation calls this endpoint via `parseDeferredNdjson`, which supports
+ * both route frames and legacy NDJSON sentinels.
  *
  * Special fields emitted alongside data:
  *   - `__furinStatus: 404` — when the loader called `notFound()`
@@ -180,21 +283,25 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       // Build the synthetic URL from the parsed `pathname + search` only —
       // never from `rawPath` directly — so an attacker cannot smuggle a
       // foreign origin into `syntheticRequest.url`.
-      const syntheticRequest = new Request(new URL(pathname + url.search, ctx.request.url));
+      // Forward the real request headers (cookies, auth) so loaders reading
+      // `request.headers` behave the same during SPA navigation as in SSR.
+      const syntheticRequest = new Request(new URL(pathname + url.search, ctx.request.url), {
+        headers: ctx.request.headers,
+      });
       const syntheticSet = { headers: {} as Record<string, string>, status: 200 as number };
       const syntheticCtx: SyntheticDataContext = {
-        request: syntheticRequest,
-        params: matched.params,
-        query: Object.fromEntries(url.searchParams),
-        set: syntheticSet,
-        headers: ctx.headers,
         cookie: ctx.cookie,
+        headers: ctx.headers,
+        params: matched.params,
         path: pathname,
+        query: Object.fromEntries(url.searchParams),
         // Loader-emitted redirects flow through `runLoaders` → `result.type
         // === "redirect"` and are converted to NDJSON below. The Response we
         // return here only has to be detectable by that pipeline.
         redirect: (location: string, status?: number) =>
-          new Response(null, { status: status ?? 302, headers: { location } }),
+          new Response(null, { headers: { location }, status: status ?? 302 }),
+        request: syntheticRequest,
+        set: syntheticSet,
         // Synthetic `status` helper: numeric codes only. Callers that reach
         // this endpoint never dispatch a string-keyed status; rejecting them
         // is safer than coercing via `Number(code)` and silently producing
@@ -206,6 +313,13 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       // createRoutePlugin so loaders see identical typed/defaulted inputs.
       const mergedParams = mergeRouteSchemas(matched.route.routeChain, "params");
       const mergedQuery = mergeRouteSchemas(matched.route.routeChain, "query");
+      const parsedParams = await parseRouteParams(matched.params, mergedParams);
+      if (!parsedParams.ok) {
+        return Response.json(
+          { errors: parsedParams.errors, message: "Invalid params", type: "validation" },
+          { status: 422 }
+        );
+      }
       const parsedQuery = await parseRouteQuery(url, mergedQuery);
       if (!parsedQuery.ok) {
         return Response.json(
@@ -213,100 +327,15 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
           { status: 422 }
         );
       }
-      syntheticCtx.params = applySchemaDefaults(
-        mergedParams as Record<string, unknown> | undefined,
-        syntheticCtx.params as Record<string, unknown>
-      ) as Record<string, string>;
+      syntheticCtx.params = parsedParams.params;
       syntheticCtx.query = parsedQuery.query as SearchParamsInput;
 
-      const result = await runLoaders(matched.route, syntheticCtx as unknown as Context);
+      const result = await runDataEndpointLoaders(
+        matched.route,
+        syntheticCtx as unknown as Context
+      );
 
-      // Keep the auto-invalidate registry in sync with whatever path was just
-      // served, so subsequent `revalidateTag(...)` calls (e.g. from a mutation
-      // afterHandle) can still find this URL by tag. Without this, a SPA-only
-      // navigation path (which never goes through the full-HTML render that
-      // also registers tags) would silently fall off the registry — the first
-      // mutation invalidates and unregisters via the cache `onDelete` hook,
-      // the next SPA fetch re-loads but does not re-register, and from then
-      // on `revalidateTag` finds no path to invalidate.
-      if (result.type === "data") {
-        autoInvalidateRegistry.registerLoaderTags(pathname, matched.route.tags);
-      }
-
-      if (result.type === "redirect") {
-        // Encode the redirect target as a special field for the client to follow
-        const redirectUrl = new URL(
-          result.response.headers.get("location") ?? "/",
-          ctx.request.url
-        );
-        const serialized = await toCrossJSONAsync({
-          __furinRedirect: redirectUrl.pathname + redirectUrl.search,
-        });
-        return new Response(`${JSON.stringify(serialized)}\n`, {
-          headers: { "content-type": "application/x-ndjson" },
-        });
-      }
-
-      if (result.type === "not-found") {
-        const serialized = await toCrossJSONAsync({
-          __furinStatus: 404,
-          __furinNotFound: { message: result.error.message, data: result.error.data },
-        });
-        return new Response(`${JSON.stringify(serialized)}\n`, {
-          status: 200,
-          headers: { "content-type": "application/x-ndjson" },
-        });
-      }
-
-      if (result.type === "error") {
-        // Compute the digest server-side ONCE so:
-        //   1. The HTTP response body carries it (client error UI displays the
-        //      same id the server logs).
-        //   2. The server-log line below uses the SAME digest a user would see
-        //      on screen, enabling support correlation.
-        // Recomputing client-side from a synthetic message + stack would yield
-        // a different hash — see boundaries.tsx for the digest precedence.
-        const digest = computeErrorDigest(result.error);
-        const serialized = await toCrossJSONAsync({
-          __furinError: {
-            digest,
-            message: result.message,
-            status: result.status,
-          },
-        });
-        return new Response(`${JSON.stringify(serialized)}\n`, {
-          status: result.status,
-          headers: { "content-type": "application/x-ndjson" },
-        });
-      }
-
-      // Resolve the page title server-side: head() never runs in the browser,
-      // so SPA navigation depends on the endpoint shipping it as __furinTitle.
-      const syncDataWithTitle = withResolvedTitle(matched.route, result.syncData);
-
-      if (result.deferredPromises) {
-        return new Response(
-          createDeferredNdjsonStream(syncDataWithTitle, result.deferredPromises),
-          {
-            // Loader headers first so custom headers survive; the NDJSON
-            // content-type is framework-owned and must win — a loader cannot be
-            // allowed to mislabel the data-endpoint payload.
-            headers: {
-              ...result.headers,
-              "content-type": "application/x-ndjson",
-            },
-          }
-        );
-      }
-
-      // No deferred fields: emit the single-line payload used by the legacy path.
-      const serialized = await toCrossJSONAsync(syncDataWithTitle);
-      return new Response(`${JSON.stringify(serialized)}\n`, {
-        headers: {
-          ...result.headers,
-          "content-type": "application/x-ndjson",
-        },
-      });
+      return createLoaderDataResponse(result, matched.route, syntheticRequest.url);
     },
     {
       query: t.Object({ path: t.Optional(t.String()) }),
@@ -331,7 +360,7 @@ function withResolvedTitle(
   route: ResolvedRoute,
   syncData: Record<string, unknown>
 ): Record<string, unknown> {
-  const head = route.page.head;
+  const { head } = route.page;
   if (!head) {
     return syncData;
   }
@@ -345,40 +374,4 @@ function withResolvedTitle(
     return syncData;
   }
   return { ...syncData, __furinTitle: title };
-}
-
-function createDeferredNdjsonStream(
-  syncData: Record<string, unknown>,
-  deferredPromises: Record<string, Promise<unknown>>
-): ReadableStream<Uint8Array> {
-  const enc = new TextEncoder();
-  const entries = Object.entries(deferredPromises);
-
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const initial = toCrossJSON({
-        ...syncData,
-        __furinDeferredKeys: entries.map(([key]) => key),
-      });
-      controller.enqueue(enc.encode(`${JSON.stringify(initial)}\n`));
-
-      await Promise.all(
-        entries.map(async ([key, promise]) => {
-          try {
-            const value = await promise;
-            controller.enqueue(
-              enc.encode(
-                `${JSON.stringify({ key, action: "resolve", value: toCrossJSON(value) })}\n`
-              )
-            );
-          } catch (err) {
-            const normalized = await serializeDeferredRejection(err);
-            const value = toCrossJSON(normalized);
-            controller.enqueue(enc.encode(`${JSON.stringify({ key, action: "reject", value })}\n`));
-          }
-        })
-      );
-      controller.close();
-    },
-  });
 }

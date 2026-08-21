@@ -2,6 +2,80 @@
 
 Furin configures rendering mode at the route level with `createRoute()`. The page itself still comes from `route.page()`.
 
+## Composite React Server Components
+
+RSC is a value returned by a loader, not a fourth rendering mode. Import the explicit API from `furin/rsc`; no `use client` or `use server` directive is required.
+
+```tsx
+import { createCompositeComponent, CompositeComponent } from "furin/rsc"
+
+const route = createRoute({
+  loader: async () => ({
+    card: await createCompositeComponent<{
+      Action: React.ComponentType<{ productId: string }>
+      children?: React.ReactNode
+      renderMeta?: (value: { updatedAt: string }) => React.ReactNode
+    }>(({ Action, children, renderMeta }) => (
+      <article>
+        <Action productId="product-1" />
+        {renderMeta?.({ updatedAt: "today" })}
+        {children}
+      </article>
+    )),
+  }),
+})
+
+export default route.page({
+  component: ({ card }) => (
+    <CompositeComponent
+      src={card}
+      Action={({ productId }) => <button>Add {productId}</button>}
+      renderMeta={({ updatedAt }) => <small>{updatedAt}</small>}
+    >
+      <p>Client-owned composition</p>
+    </CompositeComponent>
+  ),
+})
+```
+
+The server fragment is encoded as Flight and contributes no application JavaScript. Client interactivity enters through `children`, component slots, or render props. Arbitrary client imports from the server fragment are intentionally unsupported in composite v1.
+
+Each encoded RSC source has a 4 MiB safety limit in every runtime and build graph. Furin rejects an oversized source before transport; split large content into smaller sources or load the data separately. This limit is not configurable.
+
+The task-manager example includes equivalent ISR routes for comparison: `/` renders the board list as a conventional client component tree, while `/rsc` keeps the board markup on the server and hydrates only the create form and delete buttons. Build `examples/task-manager` in production mode to compare their route chunks; shared React and Furin runtime chunks are intentionally excluded from that comparison.
+
+With two boards in the example database, the production snapshot is:
+
+| Transfer | Conventional ISR | Composite RSC | Difference |
+| --- | ---: | ---: | ---: |
+| Route JavaScript (gzip) | 1,999 B | 675 B | -66.2% |
+| Initial HTML + route JavaScript (gzip) | 4,385 B | 3,526 B | -19.6% |
+| SPA data + route JavaScript (gzip) | 2,456 B | 2,304 B | -6.2% |
+
+Flight increases the HTML or navigation payload, so the JavaScript reduction is not a direct total-transfer reduction. The larger runtime benefit is that React does not hydrate the server-owned card markup. Treat these numbers as an example-specific snapshot, not a framework-wide benchmark.
+
+Use `import "furin/server-only"` or `import "furin/client-only"` as optional build-time assertions. These imports validate graph boundaries; they do not classify components.
+
+### Personalized cached routes
+
+For an SSG or ISR route, keep shared data in `loader` and request-specific data in `requestLoader`:
+
+```tsx
+const route = createRoute({
+  mode: "isr",
+  loader: async () => ({ catalog: await getPublicCatalog() }),
+  requestLoader: ({ cookies }) => ({
+    user: getUser(cookies.get("session")),
+  }),
+})
+```
+
+The component receives `requestData` as a Promise. Read it below an explicit `<Suspense>` boundary. Furin caches only the public React 19.2 prerender shell and resumes the private section once per request. Pure static export rejects `requestLoader` because no request runtime exists.
+
+Public `loader` functions on these cached routes cannot read `request`, `cookie`, or request `headers`; Furin rejects that access to prevent user-specific data from entering a shared shell. Move all request-specific work to `requestLoader`.
+
+Mutations remain Elysia/Eden Treaty endpoints. Furin does not expose React Server Functions or accept incoming Flight payloads.
+
 ## SSR
 
 SSR is the default mode when you omit `mode`.

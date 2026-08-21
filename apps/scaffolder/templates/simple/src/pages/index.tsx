@@ -15,9 +15,6 @@ export default route.page({
       apiSource: payload.source,
     };
   },
-  head: () => ({
-    meta: [{ title: "My Furin App" }],
-  }),
   component: ({ apiMessage, apiSource }) => (
     <section className="w-full rounded-[2rem] border border-white/10 bg-white/5 p-8 shadow-2xl shadow-slate-950/40 backdrop-blur">
       <div className="mb-6 inline-flex rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 font-medium text-emerald-200 text-xs uppercase tracking-[0.24em]">
@@ -47,4 +44,7 @@ export default route.page({
       </div>
     </section>
   ),
+  head: () => ({
+    meta: [{ title: "My Furin App" }],
+  }),
 });

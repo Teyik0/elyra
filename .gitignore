@@ -45,3 +45,4 @@ generated**
 .tmp*
 **/public/llms*
 **/public/search-entries.json
+/packages/core/furin-env.d.ts

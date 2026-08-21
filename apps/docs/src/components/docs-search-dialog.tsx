@@ -1,9 +1,11 @@
+// biome-ignore-all lint/performance/noJsxPropsBind: search dialog handlers are stateful and tied to local query/navigation state
 import type { AnyOrama } from "@orama/orama";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useRouter } from "@teyik0/furin/link";
 import { Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogRoot,
@@ -167,7 +169,9 @@ export function DocsSearchDialog() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const triggerButtonRef = useRef<HTMLButtonElement>(null);
 
   const debouncedQuery = useDebouncedValue(query, SEARCH_DEBOUNCE_MS);
   const trimmedQuery = query.trim();
@@ -181,7 +185,6 @@ export function DocsSearchDialog() {
     isSuccess: isIndexReady,
     isError: isIndexError,
     isLoading: isIndexLoading,
-    refetch: refetchIndex,
   } = useQuery({
     enabled: open,
     queryFn: () => loadSearchIndex(router.basePath),
@@ -230,42 +233,21 @@ export function DocsSearchDialog() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setOpen((current) => !current);
+        if (open) {
+          closeButtonRef.current?.click();
+          return;
+        }
+        triggerButtonRef.current?.click();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, []);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const timeout = window.setTimeout(() => {
-      inputRef.current?.focus();
-    }, 0);
-    return () => {
-      window.clearTimeout(timeout);
-    };
   }, [open]);
 
-  const handleOpenChange = (nextOpen: boolean): void => {
-    setOpen(nextOpen);
-    if (nextOpen) {
-      // A previous load may have failed permanently — retry on re-open.
-      if (isIndexError) {
-        refetchIndex();
-      }
-      return;
-    }
-    setQuery("");
-    setActiveIndex(0);
-  };
-
   const selectResult = (href: string): void => {
-    setOpen(false);
+    closeButtonRef.current?.click();
     navigateToResult(href);
   };
 
@@ -295,10 +277,14 @@ export function DocsSearchDialog() {
   const shortcutLabel = getShortcutLabel();
 
   return (
-    <DialogRoot onOpenChange={handleOpenChange} open={open}>
+    <DialogRoot>
       <DialogTrigger asChild>
         <button
           className="flex h-8 w-full max-w-xs items-center gap-2 rounded-full border border-border bg-muted/40 px-3 text-muted-foreground transition-colors hover:border-border/80 hover:bg-muted/60"
+          onClick={() => {
+            setOpen(true);
+          }}
+          ref={triggerButtonRef}
           type="button"
         >
           <Search className="size-3.5 shrink-0" />
@@ -309,7 +295,23 @@ export function DocsSearchDialog() {
         </button>
       </DialogTrigger>
 
-      <DialogContent className="gap-0 p-0">
+      <DialogContent
+        className="gap-0 p-0"
+        onCloseAutoFocus={() => {
+          setOpen(false);
+          setQuery("");
+          setActiveIndex(0);
+        }}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          inputRef.current?.focus();
+        }}
+      >
+        <DialogClose asChild>
+          <button className="sr-only" ref={closeButtonRef} tabIndex={-1} type="button">
+            Close search
+          </button>
+        </DialogClose>
         <div className="border-border border-b p-4">
           <DialogTitle className="sr-only">Search the docs</DialogTitle>
           <DialogDescription className="sr-only">

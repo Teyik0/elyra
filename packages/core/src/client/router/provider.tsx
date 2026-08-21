@@ -15,6 +15,8 @@ import {
 import {
   applyRevalidateEntries,
   applyRevalidateHeader,
+  decodeHashFragment,
+  isSameOriginFetchResult,
   normalizeHref,
   shouldAutoRefreshPath,
   shouldInterceptClick,
@@ -22,7 +24,7 @@ import {
   stripHashFromHref,
   toLogical,
 } from "./link-utils.ts";
-import { createSearchStore, type SearchStore, SearchStoreContext } from "./search-store.ts";
+import { createSearchStore, SearchStoreContext } from "./search-store.ts";
 import {
   buildDataEndpoint,
   buildNotFoundPageElement,
@@ -44,6 +46,11 @@ import type {
 } from "./types.ts";
 
 const EMPTY_SEARCH: SearchParamsInput = {};
+
+function getHistoryStateObject(): object {
+  const value = history.state;
+  return value !== null && typeof value === "object" ? value : {};
+}
 
 export function setPrefetchCacheEntry(
   cache: Map<string, CacheEntry>,
@@ -81,8 +88,8 @@ export function RouterProvider({
   // Initial state. When `initialMatch` is `null`, `initialNotFound` MUST be set —
   // the provider boots into the inline not-found UI.
   const [state, setState] = useState<RouterState>(() => ({
-    match: initialMatch,
     data: initialData,
+    match: initialMatch,
     notFound: initialNotFound,
   }));
   const [isNavigating, setIsNavigating] = useState(false);
@@ -124,9 +131,8 @@ export function RouterProvider({
    * fetch URL: runtime `/_furin/data` for SSR/ISR/dev, per-route
    * `__furin_data.ndjson` for static exports.
    */
-  const staticModeRef = useRef<boolean>(detectStaticMode());
+  const [staticMode] = useState(detectStaticMode);
   const resolvedSearch = (state.data.query as SearchParamsInput | undefined) ?? EMPTY_SEARCH;
-  const searchStoreRef = useRef<SearchStore | null>(null);
 
   /**
    * Depth-0 boundary (pagesDir root level) for the "no client route matched" 404
@@ -141,7 +147,6 @@ export function RouterProvider({
         return [depth0];
       }
     }
-    return;
   }, [routes]);
 
   /**
@@ -164,12 +169,12 @@ export function RouterProvider({
       }
       const { __furinStatus: _s, __furinNotFound: _n, ...cleanData } = data ?? {};
       return {
-        match: currentMatchRef.current,
         data: cleanData,
-        title,
         finalHref,
+        match: currentMatchRef.current,
         notFound: kind.error,
         notFoundBoundaries: rootBoundaries,
+        title,
       };
     },
     [basePath, rootBoundaries]
@@ -198,7 +203,7 @@ export function RouterProvider({
         }
 
         // ── NDJSON data endpoint + JS chunk load (parallel) ──────────────────
-        const dataEndpoint = buildDataEndpoint(basePath, logicalHref, staticModeRef.current);
+        const dataEndpoint = buildDataEndpoint(basePath, logicalHref, staticMode);
         const [res, loadedMod] = await Promise.all([fetch(dataEndpoint, { signal }), match.load()]);
 
         // Stale-deploy detection: force a full page reload to pick up the new bundle.
@@ -217,9 +222,9 @@ export function RouterProvider({
         } catch (parseErr) {
           log.warn({
             action: "navigate_server_error",
+            error: String(parseErr),
             href: physicalHref,
             status: res.status,
-            error: String(parseErr),
           });
           return null;
         }
@@ -265,11 +270,11 @@ export function RouterProvider({
         // Loader threw a non-redirect Response (or an Error).
         if (__furinError) {
           return {
-            match: loadedMatch,
             data: {},
-            title,
-            finalHref,
             error: __furinError,
+            finalHref,
+            match: loadedMatch,
+            title,
           };
         }
 
@@ -280,27 +285,31 @@ export function RouterProvider({
         }
 
         if (__furinStatus === 404) {
+          const notFound =
+            __furinNotFound !== null && typeof __furinNotFound === "object"
+              ? (__furinNotFound as { data?: unknown; message?: string })
+              : {};
           return {
-            match: loadedMatch,
             data,
-            title,
             finalHref,
-            notFound: (__furinNotFound as { data?: unknown; message?: string }) ?? {},
+            match: loadedMatch,
+            notFound,
+            title,
           };
         }
 
         // Server-side redirect: do not mount the pre-redirect route.
         if (finalHref) {
-          return { match: null, data, title, finalHref };
+          return { data, finalHref, match: null, title };
         }
 
-        return { match: loadedMatch, data, title, finalHref };
+        return { data, finalHref, match: loadedMatch, title };
       } catch (err: unknown) {
         if (!isAbortError(err)) {
           log.error({
             action: "navigate_failed",
-            href: basePath + logicalHref,
             error: String(err),
+            href: basePath + logicalHref,
           });
         }
         return null;
@@ -345,8 +354,8 @@ export function RouterProvider({
         prefetchCache.current,
         href,
         {
-          promise: fetchPageState(href, undefined),
           createdAt: Date.now(),
+          promise: fetchPageState(href, undefined),
           staleTime,
         },
         prefetchCacheSize
@@ -362,14 +371,14 @@ export function RouterProvider({
     signal: AbortSignal | undefined
   ): Promise<RouterState | null> {
     const cached = prefetchCache.current.get(redirectLogical);
-    const state =
+    const redirectState =
       cached && !shouldRefetch(cached)
         ? await cached.promise
         : await fetchPageState(redirectLogical, signal);
     if (navVersion.current !== myVersion) {
       return null;
     }
-    return state;
+    return redirectState;
   }
 
   const navigate = useCallback(
@@ -379,7 +388,8 @@ export function RouterProvider({
       opts: { replace?: boolean; resetScroll?: boolean } | undefined
     ) {
       const logicalHref = normalizeHref(rawLogicalHref);
-      const myVersion = ++navVersion.current;
+      navVersion.current += 1;
+      const myVersion = navVersion.current;
       navAbortRef.current?.abort();
       const navAbort = new AbortController();
       navAbortRef.current = navAbort;
@@ -399,8 +409,8 @@ export function RouterProvider({
             prefetchCache.current,
             logicalHref,
             {
-              promise: Promise.resolve(newState),
               createdAt: Date.now(),
+              promise: Promise.resolve(newState),
               staleTime: defaultPreloadStaleTime,
             },
             prefetchCacheSize
@@ -423,7 +433,7 @@ export function RouterProvider({
           const redirectPhysical = basePath + redirectLogical;
           window.history.replaceState(
             {
-              ...((history.state as object) ?? {}),
+              ...getHistoryStateObject(),
               _furinKey: getHistoryKey(history.state) ?? generateHistoryKey(),
             },
             "",
@@ -450,7 +460,7 @@ export function RouterProvider({
         if (opts?.replace) {
           window.history.replaceState(
             {
-              ...((history.state as object) ?? {}),
+              ...getHistoryStateObject(),
               _furinKey: getHistoryKey(history.state) ?? generateHistoryKey(),
             },
             "",
@@ -467,7 +477,7 @@ export function RouterProvider({
         const logicalPath = normalizeHref(toLogical(effectiveUrl.pathname, basePath));
         setCurrentHref(logicalPath + effectiveUrl.search);
         if (opts?.resetScroll ?? true) {
-          pendingScrollRef.current = { type: "reset", href: physicalEffective };
+          pendingScrollRef.current = { href: physicalEffective, type: "reset" };
         }
       } finally {
         if (navVersion.current === myVersion) {
@@ -478,15 +488,14 @@ export function RouterProvider({
     [basePath, fetchPageState, defaultPreloadStaleTime, prefetchCacheSize]
   );
 
-  if (searchStoreRef.current === null) {
-    searchStoreRef.current = createSearchStore({
+  const [searchStore] = useState(() =>
+    createSearchStore({
       currentHref,
       navigate,
       search: resolvedSearch,
       searchRoutes: routes,
-    });
-  }
-  const searchStore = searchStoreRef.current;
+    })
+  );
   const searchSnapshot = useMemo(
     () => ({
       currentHref,
@@ -540,7 +549,8 @@ export function RouterProvider({
     const destKey = getHistoryKey(history.state);
     const logicalPath = normalizeHref(toLogical(window.location.pathname, basePath));
     const logicalHref = logicalPath + window.location.search;
-    const myVersion = ++navVersion.current;
+    navVersion.current += 1;
+    const myVersion = navVersion.current;
     navAbortRef.current?.abort();
     const navAbort = new AbortController();
     navAbortRef.current = navAbort;
@@ -597,9 +607,9 @@ export function RouterProvider({
         }
         setCurrentHref(normalizeHref(effectiveLogical));
         if (destKey) {
-          pendingScrollRef.current = { type: "restore", key: destKey };
+          pendingScrollRef.current = { key: destKey, type: "restore" };
         } else {
-          window.scrollTo({ top: 0, behavior: "instant" });
+          window.scrollTo({ behavior: "instant", top: 0 });
         }
       } finally {
         if (navVersion.current === myVersion) {
@@ -613,10 +623,7 @@ export function RouterProvider({
   useEffect(() => {
     history.scrollRestoration = "manual";
     if (!getHistoryKey(history.state)) {
-      history.replaceState(
-        { ...((history.state as object) ?? {}), _furinKey: generateHistoryKey() },
-        ""
-      );
+      history.replaceState({ ...getHistoryStateObject(), _furinKey: generateHistoryKey() }, "");
     }
   }, []);
 
@@ -633,22 +640,22 @@ export function RouterProvider({
         const raw = sessionStorage.getItem(SCROLL_STORAGE_KEY);
         const positions: Record<string, number> = raw ? JSON.parse(raw) : {};
         const y = positions[instruction.key] ?? 0;
-        window.scrollTo({ top: y, behavior: "instant" });
+        window.scrollTo({ behavior: "instant", top: y });
       } catch {
-        window.scrollTo({ top: 0, behavior: "instant" });
+        window.scrollTo({ behavior: "instant", top: 0 });
       }
       return;
     }
 
     const destUrl = new URL(instruction.href, window.location.origin);
     if (destUrl.hash) {
-      const id = decodeURIComponent(destUrl.hash.slice(1));
+      const id = decodeHashFragment(destUrl.hash.slice(1));
       const element = document.getElementById(id);
       if (element) {
         element.scrollIntoView({ behavior: "instant", block: "start" });
       }
     } else {
-      window.scrollTo({ top: 0, behavior: "instant" });
+      window.scrollTo({ behavior: "instant", top: 0 });
     }
   }, [currentHref]);
 
@@ -688,12 +695,22 @@ export function RouterProvider({
       if (logicalHref === null) {
         return;
       }
+      // Don't capture a link that matches no local route: it may belong to a
+      // sibling furin app mounted under a different basePath. Let the browser
+      // navigate; the server routes it to the correct app.
+      const logicalPathname = new URL(logicalHref, window.location.origin).pathname;
+      const hasConcreteMatch = routes.some(
+        (route) => !route.pattern.split("/").includes("*") && route.regex.test(logicalPathname)
+      );
+      if (!hasConcreteMatch) {
+        return;
+      }
       e.preventDefault();
       navigate(logicalHref, { resetScroll: !logicalHref.includes("#") });
     };
     document.addEventListener("click", handler);
     return () => document.removeEventListener("click", handler);
-  }, [navigate, basePath]);
+  }, [navigate, basePath, routes]);
 
   // Intercept all window.fetch calls to auto-process X-Furin-Revalidate headers.
   useEffect(() => {
@@ -703,6 +720,9 @@ export function RouterProvider({
     const originalFetch = window.fetch;
     const wrapped = async (...args: Parameters<typeof fetch>): Promise<Response> => {
       const response = await originalFetch.apply(window, args);
+      if (!isSameOriginFetchResult(args[0], response.url, window.location.origin)) {
+        return response;
+      }
       const invalidated: Array<{ path: string; type: "page" | "layout" }> = [];
       applyRevalidateHeader(response.headers, (path, type) => {
         const resolvedType = type ?? "page";
@@ -729,6 +749,7 @@ export function RouterProvider({
   }, [invalidatePrefetch, invalidationRefresh, autoRefresh, basePath]);
 
   // Listen for sync cursor notifications and recover changes over HTTP.
+  // react-doctor-disable-next-line react-doctor/effect-needs-cleanup
   useEffect(() => {
     if (!syncStream || typeof window === "undefined" || typeof EventSource === "undefined") {
       return;
@@ -782,6 +803,7 @@ export function RouterProvider({
         }
       });
     };
+    const onOpen = () => recover();
     const onSync = (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data) as { cursor?: unknown };
@@ -799,6 +821,7 @@ export function RouterProvider({
         return;
       }
       source = new EventSource(streamUrl);
+      source.addEventListener("open", onOpen);
       source.addEventListener("furin.sync", onSync);
     };
 
@@ -809,8 +832,6 @@ export function RouterProvider({
           return;
         }
         connect();
-        // Close the initialization/SSE race using the durable change log.
-        recover();
       })
       .catch((error: unknown) => {
         if (disposed) {
@@ -822,6 +843,7 @@ export function RouterProvider({
       });
     return () => {
       disposed = true;
+      source?.removeEventListener("open", onOpen);
       source?.removeEventListener("furin.sync", onSync);
       source?.close();
     };
@@ -856,16 +878,16 @@ export function RouterProvider({
         {
           basePath,
           currentHref,
-          search: resolvedSearch,
-          searchRoutes: routes,
-          navigate,
-          prefetch,
-          refresh,
-          invalidatePrefetch,
-          isNavigating,
           defaultPreload,
           defaultPreloadDelay,
           defaultPreloadStaleTime,
+          invalidatePrefetch,
+          isNavigating,
+          navigate,
+          prefetch,
+          refresh,
+          search: resolvedSearch,
+          searchRoutes: routes,
         },
         pageElement,
         {

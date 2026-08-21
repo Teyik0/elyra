@@ -1,8 +1,13 @@
 import type { Context } from "elysia";
-import { isDeferred, type RuntimeRoute } from "../../client.ts";
+import type { RuntimeRoute } from "../../client/internal/runtime-types.ts";
+import { isDeferred, type RequestLoaderContext } from "../../client.ts";
+import { isFurinRscRenderError } from "../../rsc/render-error.ts";
+import { computeErrorDigest } from "../../shared/digest.ts";
 import { type FurinNotFoundError, isNotFoundError } from "../../shared/not-found.ts";
 import { useLogger } from "../context-logger.ts";
+import { currentInstrumentationRequest, emitLoaderFinished } from "../devtools/instrumentation.ts";
 import type { ResolvedRoute } from "../router/index.ts";
+import { IS_DEV } from "../runtime-env.ts";
 
 export type LoaderResult =
   | {
@@ -50,6 +55,15 @@ export type LoaderResult =
  * must not be treated as one even when they carry a `Location` header.
  */
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const FURIN_RESERVED_KEY_PREFIX = "__furin";
+
+function assertPublicLoaderKey(key: string): void {
+  if (key.startsWith(FURIN_RESERVED_KEY_PREFIX)) {
+    throw new Error(
+      `[furin] Loader data key "${key}" is reserved for framework metadata. Rename this field to avoid conflicts.`
+    );
+  }
+}
 
 /**
  * `true` only for HTTP responses that are syntactically valid redirects:
@@ -125,7 +139,7 @@ function createLoaderCtx(
  * Splits a single loader result into sync scalars and deferred Promises.
  *
  * A loader result is considered "deferred" only when wrapped with `defer()`
- * (i.e. carries the `__isDeferred` brand). A loader that returned a plain
+ * (i.e. carries the internal deferred brand). A loader that returned a plain
  * object keeps all its values in sync — even if some happen to be Promises —
  * preserving the long-standing semantic that only an explicit `defer()` opts
  * into streaming.
@@ -138,16 +152,14 @@ function splitOneLoaderResult(result: Record<string, unknown>): {
   const deferred: Record<string, Promise<unknown>> = {};
   const isDef = isDeferred(result);
   for (const [key, value] of Object.entries(result)) {
-    if (key === "__isDeferred") {
-      continue;
-    }
+    assertPublicLoaderKey(key);
     if (isDef && isPromiseLike(value)) {
       deferred[key] = Promise.resolve(value);
     } else {
       sync[key] = value;
     }
   }
-  return { sync, deferred };
+  return { deferred, sync };
 }
 
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
@@ -156,6 +168,117 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
     value !== null &&
     typeof (value as { then?: unknown }).then === "function"
   );
+}
+
+function createRequestLoaderContext(ctx: Context): RequestLoaderContext {
+  const headers = new Headers(ctx.request.headers);
+  return Object.freeze({
+    cookies: Object.freeze({
+      get(name: string): unknown {
+        return ctx.cookie[name]?.value;
+      },
+    }),
+    headers: Object.freeze({
+      entries: () => headers.entries(),
+      get: (name: string) => headers.get(name),
+      has: (name: string) => headers.has(name),
+    }),
+    log: useLogger(),
+    params: ctx.params,
+    path: ctx.path,
+    query: ctx.query,
+    request: ctx.request,
+  });
+}
+
+function observeLoader<T extends object>(
+  run: () => T | Promise<T>,
+  loader: string,
+  path: string
+): Promise<T> {
+  const request = currentInstrumentationRequest();
+  const startedAt = performance.now();
+  let promise: Promise<T>;
+  try {
+    promise = Promise.resolve(run());
+  } catch (error) {
+    promise = Promise.reject(error);
+  }
+  if (!(IS_DEV && request)) {
+    return promise;
+  }
+  return promise.then(
+    (value) => {
+      emitLoaderFinished({
+        durationMs: performance.now() - startedAt,
+        fieldNames: Object.keys(value),
+        loader,
+        operationId: request.operationId,
+        path,
+        requestId: request.requestId,
+        status: "fulfilled",
+      });
+      return value;
+    },
+    (error: unknown) => {
+      emitLoaderFinished({
+        durationMs: performance.now() - startedAt,
+        fieldNames: [],
+        loader,
+        operationId: request.operationId,
+        path,
+        requestId: request.requestId,
+        status: "rejected",
+      });
+      throw error;
+    }
+  );
+}
+
+export function runRequestLoaderData(
+  route: ResolvedRoute,
+  ctx: Context
+): Promise<object> | undefined {
+  const loaders = route.routeChain
+    .map((entry) => entry.requestLoader)
+    .filter((loader) => loader !== undefined);
+  if (loaders.length === 0) {
+    return;
+  }
+  const requestContext = createRequestLoaderContext(ctx);
+  const requestData = Promise.all(
+    loaders.map((loader, index) =>
+      observeLoader(
+        () => Promise.resolve().then(() => loader(requestContext)),
+        `request:${index}`,
+        ctx.path
+      )
+    )
+  ).then((results) => Object.assign({}, ...results));
+  requestData.catch(() => {
+    /* React observes the original rejection through requestData. */
+  });
+  return requestData;
+}
+
+export function withRequestLoaderData(
+  route: ResolvedRoute,
+  ctx: Context,
+  publicResult: Extract<LoaderResult, { type: "data" }>
+): Extract<LoaderResult, { type: "data" }> {
+  const requestData = runRequestLoaderData(route, ctx);
+  if (requestData === undefined) {
+    throw new Error(
+      "[furin] internal invariant: requestLoader data requested for a route without requestLoader"
+    );
+  }
+  return {
+    ...publicResult,
+    deferredPromises: {
+      ...(publicResult.deferredPromises ?? {}),
+      requestData,
+    },
+  };
 }
 
 /**
@@ -185,7 +308,7 @@ function mergeLoaderResults(results: unknown[]): {
     Object.assign(allSync, sync);
     Object.assign(allDeferred, deferred);
   }
-  return { allSync, allDeferred };
+  return { allDeferred, allSync };
 }
 
 /**
@@ -218,18 +341,94 @@ export async function serializeDeferredRejection(err: unknown): Promise<unknown>
     return wrapped;
   }
   if (err instanceof Error) {
-    return err;
+    if (IS_DEV) {
+      return err;
+    }
+    const wrapped = sanitizedDeferredError();
+    Object.assign(wrapped, { __furinDigest: computeErrorDigest(err) });
+    return wrapped;
   }
-  return new Error(String(err));
+  if (IS_DEV) {
+    return new Error(String(err));
+  }
+  const wrapped = sanitizedDeferredError();
+  Object.assign(wrapped, { __furinDigest: computeErrorDigest(err) });
+  return wrapped;
 }
 
-export async function runLoaders(route: ResolvedRoute, ctx: Context): Promise<LoaderResult> {
+function sanitizedDeferredError(): Error {
+  const error = new Error("An unexpected error occurred.");
+  for (const property of [
+    "column",
+    "line",
+    "originalColumn",
+    "originalLine",
+    "sourceURL",
+    "stack",
+  ]) {
+    Reflect.deleteProperty(error, property);
+  }
+  return error;
+}
+
+async function normalizeLoaderError(
+  err: unknown,
+  headers: Record<string, string>
+): Promise<Exclude<LoaderResult, { type: "data" }>> {
+  if (isNotFoundError(err)) {
+    return { error: err, headers, type: "not-found" };
+  }
+  if (err instanceof Response) {
+    if (isHttpRedirect(err)) {
+      return { response: err, type: "redirect" };
+    }
+    // Non-redirect Response → error. Read the body ONCE here so downstream
+    // consumers (digest, logging, error UI) all share the same extracted
+    // message without consuming the stream a second time.
+    //
+    // A *malformed redirect* is a redirect-status code WITHOUT a `Location`
+    // header (we only reach here when `isHttpRedirect` was false) — invalid
+    // HTTP, coerced to 500. Other 3xx codes (304/305/306) are not redirects
+    // at all, so they keep their own status rather than being rewritten.
+    const isMalformedRedirect = REDIRECT_STATUSES.has(err.status);
+    const status = isMalformedRedirect ? 500 : err.status;
+    const body = await readResponseMessage(err);
+    const message = body || "Something went wrong";
+    return { error: err, headers, message, status, type: "error" };
+  }
+  if (isFurinRscRenderError(err)) {
+    useLogger().error(err);
+    return {
+      error: err,
+      headers,
+      message: IS_DEV ? err.message : "Something went wrong",
+      status: 500,
+      type: "error",
+    };
+  }
+  return {
+    error: err,
+    headers,
+    message: "Something went wrong",
+    status: 500,
+    type: "error",
+  };
+}
+
+async function runLoadersInternal(
+  route: ResolvedRoute,
+  ctx: Context,
+  includeRequestData: boolean
+): Promise<LoaderResult> {
   try {
+    const requestData = includeRequestData ? runRequestLoaderData(route, ctx) : undefined;
     // Inject `log` so loaders can destructure it directly as `({ log })`.
     // useLogger() resolves the correct logger for every rendering context:
     // live request → evlog request-scoped logger, synthetic render → detached
     // createLogger() from runInSyntheticRenderScope, outside any context → no-op.
-    const ctxRecord = { ...(ctx as Record<string, unknown>), log: useLogger() };
+    const ctxRecord = includeRequestData
+      ? { ...(ctx as Record<string, unknown>), log: useLogger() }
+      : createPublicLoaderContext(ctx);
     const loaderMap = new Map<RuntimeRoute, Promise<Record<string, unknown>>>();
 
     // All loaders in the chain start immediately. Each receives a Proxy where
@@ -238,12 +437,18 @@ export async function runLoaders(route: ResolvedRoute, ctx: Context): Promise<Lo
     // if it never awaits a parent field it runs in full parallel.
     let accumulatedParentPromise: Promise<Record<string, unknown>> = Promise.resolve({});
 
+    let loaderIndex = 0;
     for (const r of route.routeChain) {
       const parentAccum = accumulatedParentPromise; // capture for closure
 
       if (r.loader) {
         const loaderCtx = createLoaderCtx(ctxRecord, parentAccum);
-        const loaderPromise = Promise.resolve(r.loader(loaderCtx)).then((res) => res ?? {});
+        const loaderPromise = observeLoader(
+          async () => (await r.loader?.(loaderCtx)) ?? {},
+          `layout:${loaderIndex}`,
+          ctx.path
+        );
+        loaderIndex += 1;
         loaderMap.set(r, loaderPromise);
 
         // Accumulate: previous ancestors + this loader's result.
@@ -265,8 +470,8 @@ export async function runLoaders(route: ResolvedRoute, ctx: Context): Promise<Lo
 
     // Page loader receives all route-chain fields as individual Promises.
     const pageCtx = createLoaderCtx(ctxRecord, accumulatedParentPromise);
-    const pagePromise: Promise<Record<string, unknown>> = route.page?.loader
-      ? Promise.resolve(route.page.loader(pageCtx)).then((r) => r ?? {})
+    const pagePromise: Promise<Record<string, unknown>> = route.page.loader
+      ? observeLoader(async () => (await route.page.loader?.(pageCtx)) ?? {}, "page", ctx.path)
       : Promise.resolve({});
 
     // Await everything in parallel. `results` is ordered layout1 → … → page;
@@ -282,47 +487,56 @@ export async function runLoaders(route: ResolvedRoute, ctx: Context): Promise<Lo
     // Non-deferred loaders keep everything in `allSync` — even Promise values,
     // since only an explicit `defer()` opts into streaming.
     const { allSync, allDeferred } = mergeLoaderResults(results);
+    if (requestData !== undefined) {
+      allDeferred.requestData = requestData;
+    }
 
     // Route context is always injected into syncData so components receive
     // params, query and path regardless of the serialisation path (SSR, SPA
     // nav, dev cache).
-    const routeCtx = { params: ctx.params, query: ctx.query, path: ctx.path };
+    const routeCtx = { params: ctx.params, path: ctx.path, query: ctx.query };
     return {
-      type: "data",
-      syncData: { ...allSync, ...routeCtx },
       deferredPromises: Object.keys(allDeferred).length > 0 ? allDeferred : undefined,
       headers,
+      syncData: { ...allSync, ...routeCtx },
+      type: "data",
     };
   } catch (err) {
     const headers: Record<string, string> = {};
     Object.assign(headers, ctx.set.headers);
-    if (isNotFoundError(err)) {
-      return { type: "not-found", error: err, headers };
-    }
-    if (err instanceof Response) {
-      if (isHttpRedirect(err)) {
-        return { type: "redirect", response: err };
-      }
-      // Non-redirect Response → error. Read the body ONCE here so downstream
-      // consumers (digest, logging, error UI) all share the same extracted
-      // message without consuming the stream a second time.
-      //
-      // A *malformed redirect* is a redirect-status code WITHOUT a `Location`
-      // header (we only reach here when `isHttpRedirect` was false) — invalid
-      // HTTP, coerced to 500. Other 3xx codes (304/305/306) are not redirects
-      // at all, so they keep their own status rather than being rewritten.
-      const isMalformedRedirect = REDIRECT_STATUSES.has(err.status);
-      const status = isMalformedRedirect ? 500 : err.status;
-      const body = await readResponseMessage(err);
-      const message = body || "Something went wrong";
-      return { type: "error", error: err, status, message, headers };
-    }
-    return {
-      type: "error",
-      error: err,
-      status: 500,
-      message: "Something went wrong",
-      headers,
-    };
+    return normalizeLoaderError(err, headers);
   }
+}
+
+function createPublicLoaderContext(ctx: Context): { [key: string]: unknown } {
+  const publicContext = {} as { [key: string]: unknown };
+  const fail = (): never => {
+    throw new Error(
+      "[furin] Cached public loaders cannot access request, cookie, headers, or set. Move request-specific work to requestLoader."
+    );
+  };
+  Object.defineProperties(publicContext, {
+    cookie: { enumerable: true, get: fail },
+    headers: { enumerable: true, get: fail },
+    log: { enumerable: true, value: useLogger() },
+    params: { enumerable: true, value: ctx.params },
+    path: { enumerable: true, value: ctx.path },
+    query: { enumerable: true, value: ctx.query },
+    redirect: { enumerable: true, value: ctx.redirect },
+    request: { enumerable: true, get: fail },
+    set: { enumerable: true, get: fail },
+  });
+  return publicContext;
+}
+
+export function runLoaders(route: ResolvedRoute, ctx: Context): Promise<LoaderResult> {
+  return runLoadersInternal(route, ctx, true);
+}
+
+export function runPublicLoaders(route: ResolvedRoute, ctx: Context): Promise<LoaderResult> {
+  return runLoadersInternal(route, ctx, false);
+}
+
+export function hasRequestLoader(route: ResolvedRoute): boolean {
+  return route.routeChain.some((entry) => entry.requestLoader !== undefined);
 }

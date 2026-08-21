@@ -11,6 +11,9 @@ export {
 export {
   applyRevalidateHeader,
   buildHref,
+  decodeHashFragment,
+  isSameOriginFetchResult,
+  navigationHrefPolicy,
   normalizeHref,
   normalizePath,
   shouldAutoRefreshPath,

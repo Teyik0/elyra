@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noJsxPropsBind: board content passes mutation callbacks tied to local refresh state
 import { Await } from "@teyik0/furin/client";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { BoardStats } from "@/api/modules/boards/service";
@@ -32,9 +33,9 @@ export function StatsBarSkeleton() {
 
 const COLUMN_COLORS = {
   backlog: "text-zinc-400",
-  todo: "text-blue-400",
   doing: "text-amber-400",
   done: "text-emerald-400",
+  todo: "text-blue-400",
 } as const;
 
 export function StatsBar({ stats }: { stats: BoardStats }) {

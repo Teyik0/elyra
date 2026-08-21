@@ -24,8 +24,8 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 | **SSR** | ✅ | ✅ | ✅ |
 | **Streaming** | ✅ | ✅ | ✅ |
 | **Deferred data streaming** | ❌ | ✅ (`defer` + `<Await>`) | ✅ (`defer()` + `<Await>`) |
-| **RSC** | ✅ | ⚠️ Experimental | ❌ |
-| **PPR** | ⚠️ Experimental | ❌ | ❌ |
+| **RSC** | ✅ | ⚠️ Experimental | ✅ Composite RSC |
+| **PPR** | ✅ Cache Components | ❌ | ✅ (`requestLoader` + Suspense) |
 | **Binary compile** | ❌ | ❌ | ✅ |
 | **ISR in dev** | ❌ | ❌ | ⚠️ Partial (loader cache, no background revalidation, deferred Promises not cached) |
 
@@ -80,8 +80,8 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 | **SSG** | ✅ | ✅ | ✅ |
 | **ISR** | ✅ (`revalidate`, `revalidatePath`) | ❌ (caching via `staleTime` + TanStack Query only) | ✅ (`revalidate` on route, `revalidatePath()`) |
 | **Streaming SSR** | ✅ (React 18 `renderToReadableStream`) | ✅ | ✅ (React 18 `renderToReadableStream`) |
-| **RSC (React Server Components)** | ✅ | ⚠️ Experimental | ❌ |
-| **PPR (Partial Prerendering)** | ⚠️ Experimental | ❌ | ❌ |
+| **RSC (React Server Components)** | ✅ | ⚠️ Experimental | ✅ Composite RSC |
+| **PPR (Partial Prerendering)** | ✅ Cache Components | ❌ | ✅ (`requestLoader` + Suspense) |
 | **Server Actions** | ✅ | ✅ (`createServerFn()`) | ❌ |
 | **Suspense boundaries** | ✅ | ✅ | ✅ |
 | **Error boundaries** | ✅ (`error.js`) | ✅ (React ErrorBoundary) | ✅ (`error.tsx` per segment) |
@@ -89,9 +89,9 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 
 > 💡 **Furin advantage** — ISR is implemented with `stale-while-revalidate` semantics, ETags, and `Cache-Tag` headers out of the box. No platform-specific adapter required.
 >
-> ⚠️ **Furin limitation** — No RSC means every component in the tree is shipped to the client. For apps with heavy server-only logic (data transforms, heavy libraries), this increases bundle size compared to Next.js App Router.
+> ⚠️ **Furin limitation** — Furin's composite RSC model is explicit: server-owned markup is returned by a loader and client interactivity enters through typed slots. Unlike Next.js App Router, components are not server components by default and Furin does not provide Server Actions.
 >
-> 💡 **Furin note** — `defer()` is optimized for SSR. SSG and ISR routes support it, but deferred Promises resolve synchronously during the render pass (no streaming benefit).
+> 💡 **Furin note** — `defer()` is supported on SSR routes. For SSG and ISR personalization, use `requestLoader` below an explicit Suspense boundary.
 
 ---
 
@@ -139,6 +139,24 @@ Choosing a React meta-framework is not about picking the "best" one — it is ab
 > ⚠️ **Furin limitation** — No data cache means ISR background revalidations re-run all loaders from scratch, even if the underlying data has not changed. Next.js `unstable_cache` can avoid this. A data cache layer is planned.
 >
 > ⚠️ **Furin limitation** — In-memory cache is lost on process restart. For Docker deployments, this means every deploy or crash wipes the ISR cache. A filesystem-backed cache adapter is planned.
+
+---
+
+## Mutations & Multi-replica Sync
+
+| Dimension | Next.js | TanStack Start | Furin |
+|---|---|---|---|
+| **Mutation contract** | Server Actions or route handlers | Server Functions or server routes | Elysia HTTP routes + Eden Treaty |
+| **On-demand cache invalidation** | `revalidatePath`, `revalidateTag`, `updateTag` | Coordinate router/query cache in application code | `revalidatePath`, `revalidateTag`, path/tag invalidation rules |
+| **Durable idempotency journal** | Application responsibility | Application responsibility | SQLite, PostgreSQL, or Redis adapter |
+| **Missed-event catch-up** | Application responsibility | Application/query-library responsibility | Ordered cursor journal + SSE wake-up |
+| **Optional backend isolation** | Deployment/runtime dependent | Environment code is build-time separated | Independent side-effect-free package subpaths |
+
+Next.js has the broadest integrated cache revalidation API. TanStack Start emphasizes typed same-origin Server Functions and deliberate client-cache integration. Furin keeps standard HTTP routes as the public mutation contract and adds an optional durable replay/change journal around them. The recommended production topology is PostgreSQL for correctness, with Redis only as an optional low-latency notifier.
+
+Furin adopts the immediately useful local-first behavior described in the [Linear performance analysis](https://performance.dev/how-is-linear-so-fast-a-technical-breakdown): `useSync()` applies optimistic state synchronously, SSE carries only a cursor, and catch-up is coalesced. It deliberately does not pretend that a server journal is a browser database. IndexedDB outbox, offline mutation replay, and conflict resolution remain a separate opt-in project.
+
+Sources: [Next.js revalidation](https://nextjs.org/docs/app/getting-started/revalidating), [TanStack Start Server Functions](https://tanstack.com/start/latest/docs/framework/react/guide/server-functions), and [TanStack environment tree-shaking](https://tanstack.com/start/latest/docs/framework/react/guide/environment-functions).
 
 ---
 

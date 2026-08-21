@@ -20,6 +20,8 @@ const RUNTIME_ENV_MODULE_PATH = `${_pkgSrcDir}/server/runtime-env${_ext}`;
 /** One app's compile context payload — the generated entry can carry several. */
 export interface EntryAppContext {
   buildId?: string;
+  /** Whether the emitted hydration client sends browser log batches. */
+  clientLogging?: boolean;
   /** Extra lines injected inside this app's `__setCompileContext({...})` call. */
   extraContext?: string[];
   /** Extra import lines this app needs (embedded asset imports). */
@@ -140,6 +142,7 @@ function buildAppContextBlock(
   const contextLines = [
     "__setCompileContext({",
     `  buildId: ${JSON.stringify(app.buildId ?? "")},`,
+    `  clientLogging: ${JSON.stringify(app.clientLogging ?? false)},`,
     `  prefix: ${JSON.stringify(app.prefix ?? "")},`,
     `  rootPath: ${JSON.stringify(app.rootPath.replace(/\\/g, "/"))},`,
     rootConventionsLine,

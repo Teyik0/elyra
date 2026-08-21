@@ -32,9 +32,9 @@ describe("initGitRepo", () => {
       const isCommit = gitArgs[0] === "commit";
       return {
         exitCode: isCommit ? 1 : 0,
-        success: !isCommit,
         stderr: isCommit ? encoder.encode("Author identity unknown") : new Uint8Array(),
         stdout: new Uint8Array(),
+        success: !isCommit,
       } as ReturnType<typeof Bun.spawnSync>;
     }) as typeof Bun.spawnSync;
 

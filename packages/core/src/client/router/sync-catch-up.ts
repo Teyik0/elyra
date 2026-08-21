@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: sync catch-up pages must be fetched sequentially by cursor
 export interface SyncChangePayload {
   cursor: string;
   invalidations: readonly string[];
@@ -16,9 +17,9 @@ interface SyncCatchUpOptions {
 }
 
 export interface SyncCatchUp {
-  catchUp(): Promise<void>;
-  cursor(): string | undefined;
-  initialize(): Promise<void>;
+  catchUp: () => Promise<void>;
+  cursor: () => string | undefined;
+  initialize: () => Promise<void>;
 }
 
 interface InvalidationRefreshOptions {
@@ -27,7 +28,7 @@ interface InvalidationRefreshOptions {
 }
 
 export interface InvalidationRefresh {
-  run(): Promise<void>;
+  run: () => Promise<void>;
 }
 
 export function createInvalidationRefresh(
@@ -93,10 +94,6 @@ export function createSyncCatchUp(options: SyncCatchUpOptions): SyncCatchUp {
   };
 
   return {
-    async initialize() {
-      const page = await options.fetchPage(undefined);
-      currentCursor = page.cursor;
-    },
     catchUp() {
       requested = true;
       if (!running) {
@@ -107,6 +104,10 @@ export function createSyncCatchUp(options: SyncCatchUpOptions): SyncCatchUp {
       return running;
     },
     cursor: () => currentCursor,
+    async initialize() {
+      const page = await options.fetchPage(undefined);
+      currentCursor = page.cursor;
+    },
   };
 }
 

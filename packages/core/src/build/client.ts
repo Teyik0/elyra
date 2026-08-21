@@ -1,12 +1,15 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { transformForClient } from "../plugin/transform-client";
+import { environmentGuardPlugin } from "../rsc/build/environment.ts";
+import { detectLoaderFromPath } from "../server/lang-detect.ts";
 import type { ResolvedRoute } from "../server/router/index.ts";
+import { runBunBuild } from "./bun-build.ts";
 import { generateHydrateEntry } from "./hydrate";
 import { CLIENT_MODULE_PATH, LINK_MODULE_PATH, SEARCH_MODULE_PATH } from "./shared";
 import type { BuildClientOptions, BunBuildAliasConfig } from "./types";
 
-const TS_FILE_FILTER = /\.(tsx|ts)$/;
+const SCRIPT_FILE_FILTER = /\.(tsx?|jsx?)$/;
 
 export interface BuildClientResult {
   /** Public paths of all CSS chunks, e.g. `["/_client/chunk-abc.css"]` */
@@ -59,34 +62,29 @@ export async function buildClient(
   const transformPlugin: Bun.BunPlugin = {
     name: "furin-transform-client",
     setup(build) {
-      build.onLoad({ filter: TS_FILE_FILTER }, async (args) => {
+      build.onLoad({ filter: SCRIPT_FILE_FILTER }, async (args) => {
         const { path } = args;
         if (path.includes("node_modules")) {
           return;
         }
 
         const code = await Bun.file(path).text();
-        try {
-          const result = transformForClient(code, path);
-          // transformForClient now emits TS/TSX directly (no pre-transpile),
-          // so JSX → React handling is delegated to Bun.build's loader, which
-          // applies the project tsconfig's automatic runtime by default.
-          const transformed = result.code
-            .replaceAll(`"@teyik0/furin/client"`, JSON.stringify(CLIENT_MODULE_PATH))
-            .replaceAll(`'furin/client'`, JSON.stringify(CLIENT_MODULE_PATH))
-            .replaceAll(`"@teyik0/furin/link"`, JSON.stringify(LINK_MODULE_PATH))
-            .replaceAll(`'furin/link'`, JSON.stringify(LINK_MODULE_PATH))
-            .replaceAll(`"@teyik0/furin/search"`, JSON.stringify(SEARCH_MODULE_PATH))
-            .replaceAll(`'furin/search'`, JSON.stringify(SEARCH_MODULE_PATH));
+        const result = transformForClient(code, path);
+        // transformForClient now emits TS/TSX directly (no pre-transpile),
+        // so JSX → React handling is delegated to Bun.build's loader, which
+        // applies the project tsconfig's automatic runtime by default.
+        const transformed = result.code
+          .replaceAll(`"@teyik0/furin/client"`, JSON.stringify(CLIENT_MODULE_PATH))
+          .replaceAll(`'furin/client'`, JSON.stringify(CLIENT_MODULE_PATH))
+          .replaceAll(`"@teyik0/furin/link"`, JSON.stringify(LINK_MODULE_PATH))
+          .replaceAll(`'furin/link'`, JSON.stringify(LINK_MODULE_PATH))
+          .replaceAll(`"@teyik0/furin/search"`, JSON.stringify(SEARCH_MODULE_PATH))
+          .replaceAll(`'furin/search'`, JSON.stringify(SEARCH_MODULE_PATH));
 
-          return {
-            contents: transformed,
-            loader: path.endsWith(".tsx") ? "tsx" : "ts",
-          };
-        } catch (error) {
-          console.error(`[furin] Transform error for ${path}:`, error);
-          return;
-        }
+        return {
+          contents: transformed,
+          loader: detectLoaderFromPath(path),
+        };
       });
     },
   };
@@ -114,7 +112,7 @@ export async function buildClient(
     // Overridable via the `publicPath` option (e.g. "/furin/_client/" for basePath builds).
     publicPath,
     // User plugins run before the internal transform so they pre-process files first
-    plugins: plugins ? [...plugins, transformPlugin] : [transformPlugin],
+    plugins: [...(plugins ?? []), environmentGuardPlugin("client"), transformPlugin],
     alias: {
       "@teyik0/furin/client": CLIENT_MODULE_PATH,
       "@teyik0/furin/link": LINK_MODULE_PATH,
@@ -125,7 +123,7 @@ export async function buildClient(
     },
   };
 
-  const result = await Bun.build(clientBuildConfig);
+  const result = await runBunBuild(clientBuildConfig);
   for (const output of result.outputs) {
     console.log(`[furin]   ${output.path} (${(output.size / 1024).toFixed(1)} KB)`);
   }

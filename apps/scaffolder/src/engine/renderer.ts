@@ -19,11 +19,11 @@ export async function renderEjsFile(sourcePath: string, vars: EjsTemplateVars): 
  */
 export function buildEjsVars(ctx: PipelineContext): EjsTemplateVars {
   return {
+    features: ctx.features,
+    furinVersion: ctx.furinVersion,
     projectName: ctx.projectName,
     projectNameKebab: ctx.projectNameKebab,
     projectNamePascal: ctx.projectNamePascal,
-    furinVersion: ctx.furinVersion,
-    features: ctx.features,
     versions: {
       ...ctx.dependencies,
       ...ctx.devDependencies,

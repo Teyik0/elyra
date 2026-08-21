@@ -1,5 +1,9 @@
 import { createLogger } from "../context-logger";
 import {
+  currentInstrumentationRequest,
+  emitCacheInvalidated,
+} from "../devtools/instrumentation.ts";
+import {
   __clearInstanceRegistry,
   allInstances,
   allStateBuckets,
@@ -9,22 +13,13 @@ import {
   runWithInstanceScope,
   withInstance,
 } from "../instance.ts";
+import { clearPprRouteCache } from "../render/ppr-route.ts";
+import { IS_DEV } from "../runtime-env.ts";
 import { clearDevLoaderCaches } from "./dev-loader";
-import { isrRouteCache } from "./isr";
+import { clearPendingISRRevalidations, isrRouteCache } from "./isr";
 import { getCacheInvalidators } from "./registry";
 import type { RevalidateType } from "./route-cache";
 import { ssgRouteCache } from "./ssg";
-
-// ── Build ID ─────────────────────────────────────────────────────────────────
-// Lives on the furin instance — each mounted app reports its own build ID.
-
-export function setBuildId(id: string): void {
-  currentInstance().buildId = id;
-}
-
-export function getBuildId(): string {
-  return currentInstance().buildId;
-}
 
 // ── Pending invalidations (server → client bridge) ───────────────────────────
 // The per-request set lives in the instance request scope (see instance.ts);
@@ -48,6 +43,10 @@ export function consumePendingInvalidations(): string[] {
   const paths = [...set];
   set.clear();
   return paths;
+}
+
+export function peekPendingInvalidations(): string[] {
+  return [..._activeInvalidationSet()];
 }
 
 // ── CDN purger hook ───────────────────────────────────────────────────────────
@@ -92,10 +91,13 @@ export function revalidatePath(path: string, type: RevalidateType): boolean {
   for (const instance of allInstances()) {
     const result = revalidatePathForInstance(instance, path, type);
     deleted = result.deleted || deleted;
-    purgedPaths.push(...result.purgedPaths);
+    purgedPaths.push(`${instance.prefix}${path}`);
+    for (const purged of result.purgedPaths) {
+      purgedPaths.push(`${instance.prefix}${purged}`);
+    }
   }
 
-  callCachePurger(dedupePaths([...purgedPaths, path]));
+  callCachePurger(dedupePaths(purgedPaths));
   return deleted;
 }
 
@@ -109,7 +111,8 @@ export function revalidatePath(path: string, type: RevalidateType): boolean {
 export function revalidatePathForInstance(
   instance: FurinInstance,
   path: string,
-  type: RevalidateType
+  type: RevalidateType,
+  emitPathEvent?: boolean
 ): { deleted: boolean; purgedPaths: string[] } {
   _activeInvalidationSet().add(type === "layout" ? `${path}:layout` : path);
 
@@ -120,6 +123,19 @@ export function revalidatePathForInstance(
       const result = invalidator.invalidatePath(path, type);
       deleted = result.deleted || deleted;
       purgedPaths.push(...result.purgedPaths);
+    }
+    if (IS_DEV && emitPathEvent !== false) {
+      const request = currentInstrumentationRequest();
+      const operationId = request === undefined ? null : request.operationId;
+      const requestId = request === undefined ? null : request.requestId;
+      emitCacheInvalidated({
+        deleted,
+        operationId,
+        purgedPaths: new Set(purgedPaths).size,
+        reason: "path",
+        requestId,
+        target: path,
+      });
     }
   });
   return { deleted, purgedPaths };
@@ -140,6 +156,8 @@ export function __resetCacheState(): void {
       isrRouteCache(instance).clear();
       ssgRouteCache(instance).clear();
       clearDevLoaderCaches(instance);
+      clearPprRouteCache(instance);
+      clearPendingISRRevalidations(instance);
     });
     instance.buildId = "";
   }

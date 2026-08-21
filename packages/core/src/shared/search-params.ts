@@ -31,7 +31,7 @@ function compareSearchRouteSpecificity(a: string, b: string): number {
   const aSegments = a.split("/").filter((segment) => segment.length > 0);
   const bSegments = b.split("/").filter((segment) => segment.length > 0);
   const length = Math.max(aSegments.length, bSegments.length);
-  for (let i = 0; i < length; i++) {
+  for (let i = 0; i < length; i += 1) {
     const aSegment = aSegments[i];
     const bSegment = bSegments[i];
     if (aSegment === undefined) {
@@ -56,7 +56,7 @@ function arraysDeepEqual(a: unknown[], b: unknown[]): boolean {
   if (a.length !== b.length) {
     return false;
   }
-  for (let i = 0; i < a.length; i++) {
+  for (let i = 0; i < a.length; i += 1) {
     if (!deepEqual(a[i], b[i])) {
       return false;
     }
@@ -108,13 +108,13 @@ export function stripSearchDefaults(
 }
 
 export function appendSearchParamValue(params: URLSearchParams, key: string, value: unknown): void {
-  if (value == null) {
+  if (value === null || value === undefined) {
     return;
   }
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      if (item != null) {
+      if (item !== null && item !== undefined) {
         params.append(key, typeof item === "object" ? JSON.stringify(item) : String(item));
       }
     }
@@ -142,7 +142,7 @@ export function collectSearchDefaults(schema: unknown): SearchParamsInput | unde
 
   const defaults: SearchParamsInput = {};
   for (const [key, value] of Object.entries(schema.properties)) {
-    if (isObject(value) && Object.hasOwn(value, "default") && value.default != null) {
+    if (isObject(value) && Object.hasOwn(value, "default") && value.default !== null) {
       defaults[key] = value.default as SearchParamValue;
     }
   }
@@ -174,9 +174,9 @@ export function findSearchDefaultsForRouteTarget(
     return;
   }
   try {
-    const pathname = new URL(to, "http://furin.local").pathname;
+    const { pathname } = new URL(to, "http://furin.local");
     return findSearchDefaults(pathname, routes);
   } catch {
-    return;
+    // Invalid route targets have no search defaults.
   }
 }

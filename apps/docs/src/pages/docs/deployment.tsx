@@ -5,13 +5,6 @@ import { getDocSourceText } from "@/lib/docs-server";
 import { route } from "./_route";
 
 export default route.page({
-  head: () => ({
-    meta: [{ title: "Deployment — Furin" }],
-  }),
-  loader: () => {
-    const doc = DOCS_BY_PATH["/docs/deployment"];
-    return { markdownSource: getDocSourceText(doc.sourcePath) };
-  },
   component: ({ markdownSource }) => (
     <DocPage
       Content={Deployment}
@@ -19,4 +12,11 @@ export default route.page({
       markdownSource={markdownSource}
     />
   ),
+  head: () => ({
+    meta: [{ title: "Deployment — Furin" }],
+  }),
+  loader: () => {
+    const doc = DOCS_BY_PATH["/docs/deployment"];
+    return { markdownSource: getDocSourceText(doc.sourcePath) };
+  },
 });

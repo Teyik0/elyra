@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs";
-import { parse, type CallExpression, type ObjectExpression, type ObjectProperty } from "yuku-parser";
+import type { CallExpression, ObjectExpression, ObjectProperty } from "@yuku-toolchain/types";
 import { normalizePrefix } from "../server/instance.ts";
 import { detectLangFromPath, unwrapTSExpression } from "../server/lang-detect.ts";
 import { walkAST } from "../shared/utils/ast-walk.ts";
+import { parseSource } from "../shared/parser.ts";
 
 export interface ScannedFurinInstance {
   pagesDir: string;
@@ -27,7 +28,7 @@ export function scanFurinInstances(serverEntryPath: string): ScannedFurinInstanc
     return [];
   }
 
-  const { program, diagnostics } = parse(code, { sourceType: "module", lang });
+  const { program, diagnostics } = parseSource(code, lang);
   const firstError = diagnostics.find((d) => d.severity === "error");
   if (firstError) {
     console.error("[furin] scan-server: parse error:", firstError.message, "in", serverEntryPath);

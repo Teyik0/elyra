@@ -5,6 +5,9 @@ import { getDocSourceText } from "@/lib/docs-server";
 import { route } from "./_route";
 
 export default route.page({
+  component: ({ markdownSource }) => (
+    <DocPage Content={Defer} doc={DOCS_BY_PATH["/docs/defer"]} markdownSource={markdownSource} />
+  ),
   head: () => ({
     meta: [{ title: "Deferred Data — Furin" }],
   }),
@@ -12,7 +15,4 @@ export default route.page({
     const doc = DOCS_BY_PATH["/docs/defer"];
     return { markdownSource: getDocSourceText(doc.sourcePath) };
   },
-  component: ({ markdownSource }) => (
-    <DocPage Content={Defer} doc={DOCS_BY_PATH["/docs/defer"]} markdownSource={markdownSource} />
-  ),
 });

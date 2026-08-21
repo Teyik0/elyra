@@ -8,7 +8,7 @@ import { normalizePrefix } from "../server/instance.ts";
 import { loadCliConfig } from "./config.ts";
 
 const argv = process.argv.slice(2);
-const command = argv[0];
+const [command] = argv;
 
 function log(msg: string): void {
   console.log(`\x1b[32m◆\x1b[0m ${msg}`);
@@ -35,17 +35,59 @@ function resolveCompileMode(
   return configCompile;
 }
 
+function extractCompileFlag(args: string[]): {
+  compileFlag: string | boolean | undefined;
+  parseableArgs: string[];
+} {
+  const parseableArgs: string[] = [];
+  let compileFlag: string | boolean | undefined;
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--") {
+      parseableArgs.push(...args.slice(index));
+      break;
+    }
+    if (arg === "--compile") {
+      const next = args[index + 1];
+      if (next && !next.startsWith("-")) {
+        compileFlag = next;
+        index += 1;
+      } else {
+        compileFlag = true;
+      }
+      continue;
+    }
+    if (arg?.startsWith("--compile=")) {
+      compileFlag = arg.slice("--compile=".length);
+      continue;
+    }
+    if (arg) {
+      parseableArgs.push(arg);
+    }
+  }
+
+  return { compileFlag, parseableArgs };
+}
+
 if (command === "build") {
-  const { values: rawValues } = parseArgs({
-    args: argv.slice(1),
-    options: {
-      target: { type: "string" },
-      pagesDir: { type: "string" },
-      prefix: { type: "string" },
-      config: { type: "string" },
-    },
-    strict: false,
-  });
+  const buildArgv = argv.slice(1);
+  const { compileFlag, parseableArgs } = extractCompileFlag(buildArgv);
+  let rawValues: ReturnType<typeof parseArgs>["values"];
+  try {
+    rawValues = parseArgs({
+      args: parseableArgs,
+      options: {
+        target: { type: "string" },
+        pagesDir: { type: "string" },
+        prefix: { type: "string" },
+        config: { type: "string" },
+      },
+      strict: true,
+    }).values;
+  } catch (error) {
+    bail(error instanceof Error ? error.message : String(error));
+  }
 
   const values = rawValues as {
     target?: string;
@@ -53,17 +95,6 @@ if (command === "build") {
     prefix?: string;
     config?: string;
   };
-
-  // --compile has an optional value: absent → undefined, present alone → true, present with "embed" → "embed"
-  const buildArgv = argv.slice(1);
-  const compileIdx = buildArgv.indexOf("--compile");
-  let compileFlag: string | boolean | undefined;
-  if (compileIdx < 0) {
-    compileFlag = undefined;
-  } else {
-    const next = buildArgv[compileIdx + 1];
-    compileFlag = next && !next.startsWith("-") ? next : true;
-  }
 
   const target = values.target ?? "bun";
 

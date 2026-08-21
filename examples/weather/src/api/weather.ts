@@ -43,10 +43,10 @@ async function geocode(city: string): Promise<GeoResult | null> {
   }
 
   return {
-    name: result.name,
     country: result.country,
     latitude: result.latitude,
     longitude: result.longitude,
+    name: result.name,
   };
 }
 

@@ -62,7 +62,7 @@ let _trafficEpoch = 0;
 
 /** @internal Called by the request wrap for every served request. */
 export function markTraffic(): void {
-  _trafficEpoch++;
+  _trafficEpoch += 1;
 }
 
 function defaultInstance(): FurinInstance {

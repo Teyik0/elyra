@@ -53,6 +53,7 @@
 
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { transformIsomorphicFunctions } from "../plugin/transform-isomorphic.ts";
 import { invalidateDevLoaderCacheBySource } from "./cache/dev-loader.ts";
 
 // Matches ?furin-server with an optional &t=<ms> cache-buster.
@@ -314,7 +315,7 @@ function shouldSkipWorkspaceTransform(filePath: string): boolean {
   return normalized.includes("/.furin/");
 }
 
-function transformDevSource(
+export function transformDevSource(
   raw: string,
   filePath: string,
   options: { rewriteBareImports: boolean; rewriteRelativeImports: boolean }
@@ -325,15 +326,16 @@ function transformDevSource(
   }
 
   const dir = dirname(filePath);
+  const serverSource = transformIsomorphicFunctions(raw, filePath, "server").code;
   const sourceForTranspile = options.rewriteRelativeImports
-    ? rewriteRelativeImports(raw, dir)
-    : raw;
+    ? rewriteRelativeImports(serverSource, dir)
+    : serverSource;
   const transpiler = new Bun.Transpiler({ loader });
   const transpiled = transpiler.transformSync(sourceForTranspile, loader);
 
   let result = transpiled;
   if (options.rewriteBareImports) {
-    result = rewriteBareImports(raw, result, dir);
+    result = rewriteBareImports(serverSource, result, dir);
   }
 
   result = rewriteSingletonImports(result);
@@ -356,7 +358,7 @@ export function registerDevPagePlugin(): void {
         const tMatch = T_PARAM_RE.exec(args.path);
         const filePath = args.path.replace(STRIP_FURIN_SERVER_RE, "");
         const resolvedPath = tMatch ? `${filePath}?t=${tMatch[1]}` : filePath;
-        return { path: resolvedPath, namespace: "furin-dev-page" };
+        return { namespace: "furin-dev-page", path: resolvedPath };
       });
 
       /**
@@ -436,7 +438,7 @@ export function registerDevPagePlugin(): void {
        *  • `injectJsxHelperImports` → adds the JSX helper imports that
        *    `Bun.Transpiler` emits as free variables without corresponding imports.
        */
-      build.onLoad({ namespace: "furin-dev-page", filter: ANY_FILTER }, async (args) => {
+      build.onLoad({ filter: ANY_FILTER, namespace: "furin-dev-page" }, async (args) => {
         const filePath = args.path.replace(STRIP_T_PARAM_RE, "");
         const raw = await Bun.file(filePath).text();
         const contents = transformDevSource(raw, filePath, {

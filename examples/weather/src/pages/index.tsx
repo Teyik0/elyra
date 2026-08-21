@@ -8,13 +8,13 @@ const POPULAR_CITIES = ["Paris", "Tokyo", "New York", "London", "Sydney", "Dubai
 
 export default route.page({
   loader: async ({ query, request }) => {
-    const city = query.city;
+    const { city } = query;
     const url = new URL(`/api/weather?city=${encodeURIComponent(city)}`, request.url);
     const res = await fetch(url);
     const data = (await res.json()) as WeatherResponse | null;
 
     if (!data) {
-      return { weather: null, city, error: `City not found: "${city}"` };
+      return { city, error: `City not found: "${city}"`, weather: null };
     }
 
     const dailyWithDayName = data.daily.map((day) => ({
@@ -22,11 +22,8 @@ export default route.page({
       dayName: new Date(day.date).toLocaleDateString("en", { weekday: "short" }),
     }));
 
-    return { weather: { ...data, daily: dailyWithDayName }, city, error: null };
+    return { city, error: null, weather: { ...data, daily: dailyWithDayName } };
   },
-  head: ({ query }) => ({
-    meta: [{ title: `Weather in ${query.city ?? "Paris"}` }],
-  }),
   component: ({ weather, city, error }) => {
     return (
       <div className="space-y-8">
@@ -78,19 +75,22 @@ export default route.page({
         </div>
 
         {/* Error state */}
-        {error && (
+        {error ? (
           <div className="rounded-2xl border border-red-400/20 bg-red-400/10 p-6 text-center">
             <p className="text-lg text-red-200">{error}</p>
             <p className="mt-2 text-red-300/70 text-sm">Try a different city name</p>
           </div>
-        )}
+        ) : null}
 
         {/* Current weather */}
-        {weather && <CurrentWeatherCard weather={weather} />}
+        {weather ? <CurrentWeatherCard weather={weather} /> : null}
 
         {/* 7-day forecast */}
-        {weather && <ForecastGrid daily={weather.daily} />}
+        {weather ? <ForecastGrid daily={weather.daily} /> : null}
       </div>
     );
   },
+  head: ({ query }) => ({
+    meta: [{ title: `Weather in ${query.city ?? "Paris"}` }],
+  }),
 });

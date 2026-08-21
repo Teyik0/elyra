@@ -1,5 +1,7 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: NDJSON stream chunks must be read sequentially
 import type { SerovalNode } from "seroval";
 import { fromCrossJSON } from "seroval";
+import { isRouteFrameLine, parseRouteFrameLines } from "./route-frame.ts";
 
 /**
  * Result returned by `parseDeferredNdjson`.
@@ -67,7 +69,7 @@ export async function parseDeferredNdjson(
     } catch {
       /* already released */
     }
-    return { syncData: {}, deferredPromises: {} };
+    return { deferredPromises: {}, syncData: {} };
   }
 
   if (signal !== undefined && !signal.aborted) {
@@ -114,7 +116,33 @@ export async function parseDeferredNdjson(
     } catch {
       /* already released */
     }
-    return { syncData: {}, deferredPromises: {} };
+    return { deferredPromises: {}, syncData: {} };
+  }
+
+  if (isRouteFrameLine(firstLine)) {
+    const result = await parseRouteFrameLines(firstLine, readLine);
+    if (signal !== undefined) {
+      cleanupAbortHandler();
+      abortHandler = () => {
+        const error = makeAbortError(signal.reason);
+        result.abort(error);
+        cancelReader(error);
+      };
+      if (signal.aborted) {
+        abortHandler();
+      } else {
+        signal.addEventListener("abort", abortHandler, { once: true });
+      }
+    }
+    result.completion.finally(() => {
+      cleanupAbortHandler();
+      try {
+        reader.releaseLock();
+      } catch {
+        /* already released via reader.cancel() in the abort path */
+      }
+    });
+    return { deferredPromises: result.deferredPromises, syncData: result.syncData };
   }
 
   const node = JSON.parse(firstLine) as SerovalNode;
@@ -144,7 +172,7 @@ export async function parseDeferredNdjson(
   for (const key of deferredKeys) {
     if (!(key in deferredPromises)) {
       deferredPromises[key] = new Promise((resolve, reject) => {
-        resolvers[key] = { resolve, reject };
+        resolvers[key] = { reject, resolve };
       });
     }
   }
@@ -163,7 +191,7 @@ export async function parseDeferredNdjson(
     } catch {
       /* already released */
     }
-    return { syncData, deferredPromises };
+    return { deferredPromises, syncData };
   }
 
   // Reject every still-pending resolver and cancel the underlying reader. Used
@@ -179,7 +207,7 @@ export async function parseDeferredNdjson(
   if (signal !== undefined) {
     if (signal.aborted) {
       rejectAllPending(makeAbortError(signal.reason));
-      return { syncData, deferredPromises };
+      return { deferredPromises, syncData };
     }
     cleanupAbortHandler();
     abortHandler = () => {
@@ -213,7 +241,7 @@ export async function parseDeferredNdjson(
       }
     });
 
-  return { syncData, deferredPromises };
+  return { deferredPromises, syncData };
 }
 
 async function readDeferredLines(

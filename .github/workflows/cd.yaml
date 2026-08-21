@@ -13,8 +13,13 @@ permissions:
   id-token: write
 
 jobs:
+  distributed-sync:
+    name: Distributed sync validation
+    uses: ./.github/workflows/distributed-sync-validation.yaml
+
   publish-npm:
     name: Workflow - CD
+    needs: distributed-sync
     runs-on: ubuntu-latest
 
     steps:
@@ -25,7 +30,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lockb') }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
 
       - name: "Setup Bun"
         uses: oven-sh/setup-bun@v2
@@ -54,12 +59,11 @@ jobs:
         run: bunx react-doctor --diff false
 
       - name: Setup auth for Bun
-        working-directory: packages/core
         run: |
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > .npmrc
           echo "registry=https://registry.npmjs.org/" >> .npmrc
 
-      - name: Publish
+      - name: Publish core
         working-directory: packages/core
         run: bun publish --access public
         env:

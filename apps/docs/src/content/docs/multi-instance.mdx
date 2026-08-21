@@ -31,7 +31,7 @@ src/
 ## Prefixes
 
 - `prefix` defaults to `""` (root). It must start with `/` and have no trailing slash (`/admin`, `/admin/v2`).
-- Everything the app serves lives under it: pages, `/_furin/data`, `/_furin/sync`, `/_furin/ingest`, `/_client/*` assets, `/public/*`.
+- Everything the app serves lives under it: pages, `/_furin/data`, `/_furin/sync`, optional `/_furin/ingest` browser-log intake, `/_client/*` assets, `/public/*`.
 - Mounting **two different apps on the same prefix throws** at startup — prefixes are the collision guard.
 
 ## Write pages as if you were at the root
@@ -46,7 +46,7 @@ Inside a mounted app, paths are **logical** — the prefix is invisible:
 
 Each app's client bundle is built with its own `basePath`, so `Link`, prefetching, SPA navigation, the sync stream, and browser logging all resolve under the right mount automatically. Moving an app from `/admin` to `/back-office` is a one-line change in `server.ts` — pages don't change.
 
-To link **across** apps, use a plain absolute anchor (`<a href="/admin">`): the apps are separate bundles.
+To link **across** apps, use a plain absolute anchor (`<a href="/admin">`): the apps are separate bundles. Furin leaves the anchor to the browser for a full-document navigation, even when the current app declares a catch-all route.
 
 ## Isolation semantics
 
@@ -55,7 +55,7 @@ To link **across** apps, use a plain absolute anchor (`<a href="/admin">`): the 
 | Caches (SSG/ISR/dev loaders) | Per instance — same logical path in two apps never collides |
 | `revalidatePath(path)` | Invalidates that logical path in **every** mounted app (shared-data semantics) |
 | `revalidateTag(tag)` | Cross-app by design — a mutation on a shared API invalidates pages in any app using the tag |
-| Sync stream (`sync: true`) | Per instance: own SSE channel, own cursor sequence, mounted at `{prefix}/_furin/sync` |
+| Sync stream | Mounted at `{prefix}/_furin/sync`; adapter identity and namespace control journal isolation |
 | `x-furin-build-id` | Each app reports its own build ID |
 | 404 | Root app keeps the historical global handler (a parent `.onError` registered before `.use(furin)` still wins); prefixed apps render their own not-found via an instance catch-all |
 

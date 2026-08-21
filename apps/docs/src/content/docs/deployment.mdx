@@ -101,6 +101,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
       - run: bun install
       - run: bun run build:static
       - uses: actions/upload-pages-artifact@v3
@@ -173,6 +175,66 @@ For disk-based builds:
 ```bash
 FURIN_CLIENT_DIR=/absolute/path/to/client bun ./.furin/build/bun/server.js
 ```
+
+### Multi-replica sync
+
+Sync always requires an explicit runtime shared by `furinSync(sync)` and `furin({ sync })`. Production rejects process-local adapters, including SQLite `:memory:`. Configure one durable namespace shared by every replica. PostgreSQL is the recommended default because mutation completion and the change journal commit in one transaction.
+
+For a durable single-host deployment, `@teyik0/furin/sync/sqlite` can share the application's `bun:sqlite` database. Enable WAL and a busy timeout, run `migrateSqliteSync(database)`, and pass the same adapter instance to both plugins. Its `host-local` scope coordinates processes sharing one local file but does not support replicas on different hosts or a network filesystem. The task-manager example is the executable reference.
+
+```sh
+bun add @teyik0/furin
+bunx --package @teyik0/furin furin-sync-postgres-migrate
+```
+
+Set `FURIN_SYNC_POSTGRES_URL` in the server environment before running the command. The idempotent schema bootstrap at `@teyik0/furin/sync/postgres/migration.sql` creates only the `furin_sync` schema and is safe to run through your existing migration system. It is not a versioned migration history and is never applied implicitly at application startup.
+
+Construct the adapter on the server and pass the same runtime object to the mutation and page plugins. Keep the namespace stable across every replica:
+
+```ts
+import { SQL } from "bun"
+import { Elysia } from "elysia"
+import { furin, furinSync } from "@teyik0/furin"
+import { postgresSyncAdapter } from "@teyik0/furin/sync/postgres"
+
+const databaseUrl = process.env.FURIN_SYNC_POSTGRES_URL
+if (databaseUrl === undefined) {
+  throw new Error("FURIN_SYNC_POSTGRES_URL is required")
+}
+const namespace = "task-manager"
+const adapter = postgresSyncAdapter({
+  namespace,
+  sql: new SQL(databaseUrl),
+})
+const sync = { adapter, principal: ({ request }) => requireUser(request).id }
+
+new Elysia()
+  .use(furinSync(sync))
+  .use(await furin({ pagesDir: "./src/pages", sync }))
+  .listen(3000)
+```
+
+For low-latency cross-replica wake-ups, import the Redis notifier subpath and use the same namespace. Create the Redis client once and replace the `sync` declaration above with:
+
+```ts
+import { RedisClient } from "bun"
+import { redisSyncNotifier } from "@teyik0/furin/sync/redis"
+
+const redisUrl = process.env.FURIN_SYNC_REDIS_URL
+if (redisUrl === undefined) {
+  throw new Error("FURIN_SYNC_REDIS_URL is required")
+}
+const client = new RedisClient(redisUrl)
+const sync = {
+  adapter,
+  notifier: redisSyncNotifier({ client, namespace }),
+  principal: ({ request }) => requireUser(request).id,
+}
+```
+
+Redis is not a correctness dependency in this hybrid: clients catch up from PostgreSQL after a missed notification, and the SSE coordinator also polls the current cursor as a safety net.
+
+Use a stable, application-specific `namespace` in every replica. Changing it creates a separate replay and change history. Keep database and Redis URLs in server-only environment variables; adapters are backend-only and never belong in route components or the browser entry.
 
 ---
 

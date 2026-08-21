@@ -13,13 +13,16 @@ describe("docs search index", () => {
     const pageEntries = entries.filter((entry) => entry.kind === "page");
 
     expect(pageEntries).toHaveLength(DOCS_CARDS.length);
-    expect(pageEntries.map((entry) => entry.href).sort()).toEqual(
-      DOCS_CARDS.map((doc) => doc.href).sort()
+    expect(pageEntries.map((entry) => entry.href).sort((a, b) => a.localeCompare(b))).toEqual(
+      DOCS_CARDS.map((doc) => doc.href).sort((a, b) => a.localeCompare(b))
     );
   });
 
   test("extracts h2 and h3 sections with TOC-compatible anchors", () => {
-    const doc = DOCS_CARDS[0];
+    const [doc] = DOCS_CARDS;
+    if (!doc) {
+      throw new Error("Expected docs cards fixture");
+    }
     const { entries } = buildSearchEntriesForDoc(
       doc,
       `
@@ -39,7 +42,10 @@ Ship the first page.
   });
 
   test("ignores fenced code blocks in indexed content", () => {
-    const doc = DOCS_CARDS[0];
+    const [doc] = DOCS_CARDS;
+    if (!doc) {
+      throw new Error("Expected docs cards fixture");
+    }
     const { entries } = buildSearchEntriesForDoc(
       doc,
       `

@@ -8,9 +8,9 @@ export async function run(args: ParsedArgs): Promise<void> {
   intro(pc.bgCyan(pc.black(" create-furin ")));
 
   const ctx = createContext({
+    install: args.install,
     projectName: args.targetDir ?? "",
     templateId: args.template,
-    install: args.install,
     yes: args.yes,
   });
 

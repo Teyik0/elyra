@@ -1,16 +1,9 @@
 import { treaty } from "@elysiajs/eden";
-import type { Api } from "@/api";
+import { createIsomorphicFn } from "@teyik0/furin";
+import { type Api, api as serverApi } from "@/api";
 
-function getOrigin(): string {
-  if (typeof window !== "undefined") {
-    return window.location.origin;
-  }
+export const client = createIsomorphicFn()
+  .server(() => treaty(serverApi).api)
+  .client(() => treaty<Api>(window.location.origin).api)();
 
-  if (typeof process !== "undefined") {
-    return process.env.API_ORIGIN ?? "http://localhost:3002";
-  }
-
-  return "http://localhost:3002";
-}
-
-export const apiClient = treaty<Api>(getOrigin());
+export const apiClient = { api: client };

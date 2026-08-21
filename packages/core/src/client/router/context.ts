@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import { navigationHrefPolicy } from "./link-utils.ts";
 import type { RouterContextValue } from "./types.ts";
 
 export const RouterContext = createContext<RouterContextValue | null>(null);
@@ -8,26 +9,29 @@ export const CLIENT_FALLBACK_ROUTER: RouterContextValue = {
   // Use the same "/" as SSR_FALLBACK_ROUTER so SSR and client render the
   // same active-state when no RouterProvider is present, avoiding hydration mismatches.
   currentHref: "/",
-  search: {},
-  searchRoutes: [],
+  defaultPreload: "intent",
+  defaultPreloadDelay: 50,
+  defaultPreloadStaleTime: 30_000,
+  invalidatePrefetch: (_path, _type) => {
+    /* noop fallback */
+  },
+  isNavigating: false,
   navigate: (href, _opts) => {
+    if (navigationHrefPolicy(href, window.location.origin) === "blocked") {
+      return Promise.reject(new Error("[furin] Unsafe navigation URL."));
+    }
     window.location.href = href;
     return Promise.resolve();
   },
   prefetch: (_href, _opts) => {
     /* noop fallback */
   },
-  invalidatePrefetch: (_path, _type) => {
-    /* noop fallback */
-  },
   refresh: (_opts) => {
     window.location.reload();
     return Promise.resolve();
   },
-  isNavigating: false,
-  defaultPreload: "intent",
-  defaultPreloadDelay: 50,
-  defaultPreloadStaleTime: 30_000,
+  search: {},
+  searchRoutes: [],
 };
 
 /**

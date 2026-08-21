@@ -17,6 +17,28 @@ const SERVER_RESET_NOOP = () => {
   /* reset is a client-only action; on the server the response is already committed */
 };
 
+function getServerDigest(error: unknown): string | undefined {
+  if (isFurinServerError(error)) {
+    return error.digest;
+  }
+  if ((typeof error !== "object" && typeof error !== "function") || error === null) {
+    return;
+  }
+  const digest = (error as Error & { __furinDigest?: unknown }).__furinDigest;
+  return typeof digest === "string" ? digest : undefined;
+}
+
+function normalizeCaughtError(error: unknown): Error {
+  if (error instanceof Error) {
+    return error;
+  }
+  const normalized = new Error(String(error));
+  if ((typeof error === "object" && error !== null) || typeof error === "function") {
+    Object.defineProperties(normalized, Object.getOwnPropertyDescriptors(error));
+  }
+  return normalized;
+}
+
 interface ErrorBoundaryProps {
   children: ReactNode;
   /**
@@ -46,9 +68,9 @@ interface ErrorBoundaryProps {
 
 interface ErrorBoundaryState {
   /**
-   * Digest computed at the moment the error was latched. Stored in state so
-   * each distinct caught error gets its own ID, instead of all of them
-   * inheriting the server-provided `digest` prop.
+   * Digest preserved from a server error or computed when the error was
+   * latched. Stored in state so each distinct caught error gets its own ID,
+   * instead of all of them inheriting the server-provided `digest` prop.
    */
   digest: string | null;
   /** Unmount/remount counter — bumped on reset to force React to discard
@@ -73,11 +95,14 @@ export class FurinErrorBoundary extends Component<ErrorBoundaryProps, ErrorBound
     error: null,
   };
 
-  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
-    // Compute the digest right at catch-time so the value is anchored to THIS
-    // specific error instance. Doing it here (vs. lazily in render) also means
-    // a re-render with the same latched error keeps the same ID.
-    return { digest: computeErrorDigest(error), error };
+  static getDerivedStateFromError(error: unknown): Partial<ErrorBoundaryState> {
+    // Preserve server digests carried by SPA error sentinels or deferred
+    // rejections. Otherwise compute one right at catch-time so the value is
+    // anchored to this specific error instance across re-renders.
+    return {
+      digest: getServerDigest(error) ?? computeErrorDigest(error),
+      error: normalizeCaughtError(error),
+    };
   }
 
   override componentDidUpdate(prevProps: ErrorBoundaryProps) {
@@ -109,18 +134,17 @@ export class FurinErrorBoundary extends Component<ErrorBoundaryProps, ErrorBound
       }
       const Fallback = this.props.fallback ?? DefaultErrorFallback;
       // Digest precedence:
-      //   1. FurinServerError.digest — when the server emitted an error
-      //      sentinel through the SPA-nav payload, the synthesized error
-      //      carries the server's own digest so logs correlate without
-      //      recomputing a different hash from a synthetic stack.
-      //   2. state.digest — computed at catch time, always correct for the
-      //      ACTUAL caught error.
+      //   1. A server digest — carried by an SPA error sentinel or serialized
+      //      deferred rejection so logs correlate without recomputing a
+      //      different hash from a sanitized error and synthetic stack.
+      //   2. state.digest — preserved or computed at catch time for the
+      //      actual caught error.
       //   3. props.digest — the server-rendered digest, only meaningful for
       //      the very first error post-hydration; we still honour it as a
       //      last-resort fallback in case state.digest is somehow missing
       //      (e.g. tests that inject state by hand).
       //   4. recompute on the spot — defensive, should never be reached.
-      const serverDigest = isFurinServerError(error) ? error.digest : undefined;
+      const serverDigest = getServerDigest(error);
       const finalDigest = serverDigest ?? digest ?? this.props.digest ?? computeErrorDigest(error);
       const message = this.props.fallback ? error.message : getPublicErrorMessage(error);
       // Status precedence: FurinServerError carries the original Response.status
@@ -129,7 +153,7 @@ export class FurinErrorBoundary extends Component<ErrorBoundaryProps, ErrorBound
       const status = isFurinServerError(error) ? error.status : DEFAULT_ERROR_STATUS;
       return (
         <Fallback
-          error={{ message, digest: finalDigest, status }}
+          error={{ digest: finalDigest, message, status }}
           reset={typeof window === "undefined" ? SERVER_RESET_NOOP : this.reset}
         />
       );
@@ -168,7 +192,7 @@ export class FurinNotFoundBoundary extends Component<NotFoundBoundaryProps, NotF
 
   override componentDidUpdate(prevProps: NotFoundBoundaryProps) {
     if (prevProps.resetKey !== this.props.resetKey && this.state.error) {
-      this.setState((s) => ({ error: null, epoch: s.epoch + 1 }));
+      this.setState((s) => ({ epoch: s.epoch + 1, error: null }));
     }
   }
 
@@ -179,7 +203,7 @@ export class FurinNotFoundBoundary extends Component<NotFoundBoundaryProps, NotF
         throw error;
       }
       const Fallback = this.props.fallback ?? DefaultNotFoundFallback;
-      return <Fallback error={{ message: error.message, data: error.data }} />;
+      return <Fallback error={{ data: error.data, message: error.message }} />;
     }
     return <Fragment key={epoch}>{this.props.children}</Fragment>;
   }

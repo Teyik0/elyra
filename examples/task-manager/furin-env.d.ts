@@ -5,6 +5,7 @@ import "@teyik0/furin/link";
 declare module "@teyik0/furin/link" {
   interface RouteManifest {
     "/": { search?: never; searchInput?: never };
+    "/rsc": { search?: never; searchInput?: never };
     [key: `/board/${string}`]: { search?: never; searchInput?: never };
     [key: `/board/${string}/card/${string}`]: { search?: never; searchInput?: never };
   }

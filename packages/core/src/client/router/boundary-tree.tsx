@@ -1,7 +1,7 @@
 import type React from "react";
 import { createElement } from "react";
-import type { RuntimeRoute } from "../../client.ts";
 import { type BoundaryOptions, FurinErrorBoundary, wrapSegmentBoundaries } from "../boundaries.tsx";
+import type { RuntimeRoute } from "../internal/runtime-types.ts";
 import { FurinServerError } from "../server-error.ts";
 import { RouterContext } from "./context.ts";
 import type {
@@ -94,7 +94,7 @@ export function buildPageElement(
   // Inside-out: at each non-root depth wrap the subtree with its same-depth
   // boundary (so the boundary sits INSIDE the layout), then wrap with the
   // layout itself when this route declares one.
-  for (let i = chain.length - 1; i >= rootOffset; i--) {
+  for (let i = chain.length - 1; i >= rootOffset; i -= 1) {
     element = wrapSegmentBoundaries(element, byDepth.get(i), options);
     const Layout = chain[i]?.layout;
     if (Layout) {

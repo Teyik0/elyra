@@ -1,3 +1,4 @@
+// biome-ignore-all lint/performance/noJsxPropsBind: mobile nav links close local sheet state on selection
 import { Link } from "@teyik0/furin/link";
 import { Menu } from "lucide-react";
 import { useState } from "react";

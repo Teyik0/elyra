@@ -4,17 +4,21 @@ export function detectLangFromPath(filePath: string): SourceLang {
   if (filePath.endsWith(".d.ts")) {
     return "dts";
   }
-  const ext = filePath.split(".").pop()?.toLowerCase();
-  switch (ext) {
-    case "ts":
-      return "ts";
-    case "tsx":
-      return "tsx";
-    case "jsx":
-      return "jsx";
-    default:
-      return "js";
+  if (filePath.endsWith(".tsx")) {
+    return "tsx";
   }
+  if (filePath.endsWith(".ts")) {
+    return "ts";
+  }
+  if (filePath.endsWith(".jsx")) {
+    return "jsx";
+  }
+  return "js";
+}
+
+export function detectLoaderFromPath(filePath: string): "js" | "jsx" | "ts" | "tsx" {
+  const lang = detectLangFromPath(filePath);
+  return lang === "dts" ? "ts" : lang;
 }
 
 interface MaybeWrappedNode {

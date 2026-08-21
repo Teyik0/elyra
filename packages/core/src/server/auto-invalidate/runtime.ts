@@ -5,7 +5,13 @@ import {
   revalidatePath,
   revalidatePathForInstance,
 } from "../cache/invalidation.ts";
-import { allInstances } from "../instance.ts";
+import { pathWithoutSearch } from "../cache/route-cache.ts";
+import {
+  currentInstrumentationRequest,
+  emitCacheInvalidated,
+} from "../devtools/instrumentation.ts";
+import { allInstances, withInstance } from "../instance.ts";
+import { IS_DEV } from "../runtime-env.ts";
 import { getAutoInvalidateRegistry } from "./registry.ts";
 import type { InvalidationInput, InvalidationRule } from "./types.ts";
 
@@ -18,18 +24,17 @@ function statusFromResponseValue(responseValue: unknown): number | undefined {
     return responseValue.status;
   }
   if (responseValue && typeof responseValue === "object" && "status" in responseValue) {
-    const status = (responseValue as { status?: unknown }).status;
+    const { status } = responseValue as { status?: unknown };
     if (typeof status === "number") {
       return status;
     }
   }
   if (responseValue && typeof responseValue === "object" && "code" in responseValue) {
-    const code = (responseValue as { code?: unknown }).code;
+    const { code } = responseValue as { code?: unknown };
     if (typeof code === "number") {
       return code;
     }
   }
-  return;
 }
 
 export function isSuccessfulMutationResponse(
@@ -127,16 +132,37 @@ export function revalidateTag(tags: string | readonly string[]): boolean {
   let deleted = false;
   const purgedPaths = new Set<string>();
   for (const instance of allInstances()) {
+    let instanceDeleted = false;
+    const instancePurgedPaths = new Set<string>();
     // Registry paths are LOGICAL (unprefixed); the CDN caches the PHYSICAL
     // request URL, so prefix each with the instance's mount prefix before
     // queueing it for purge — otherwise a mounted app's `/admin/x` stays stale.
     for (const path of getAutoInvalidateRegistry(instance).pathsForTags(tagList)) {
-      const result = revalidatePathForInstance(instance, path, "page");
+      const logicalPath = pathWithoutSearch(path);
+      const result = revalidatePathForInstance(instance, logicalPath, "page", false);
       deleted = result.deleted || deleted;
-      purgedPaths.add(`${instance.prefix}${path}`);
+      instanceDeleted = result.deleted || instanceDeleted;
+      purgedPaths.add(`${instance.prefix}${logicalPath}`);
+      instancePurgedPaths.add(logicalPath);
       for (const purged of result.purgedPaths) {
         purgedPaths.add(`${instance.prefix}${purged}`);
+        instancePurgedPaths.add(purged);
       }
+    }
+    if (IS_DEV) {
+      withInstance(instance, () => {
+        const request = currentInstrumentationRequest();
+        const operationId = request === undefined ? null : request.operationId;
+        const requestId = request === undefined ? null : request.requestId;
+        emitCacheInvalidated({
+          deleted: instanceDeleted,
+          operationId,
+          purgedPaths: instancePurgedPaths.size,
+          reason: "tag",
+          requestId,
+          target: tagList.join(","),
+        });
+      });
     }
   }
   // One batched CDN purge — the CDN sits in front of every mounted app, so

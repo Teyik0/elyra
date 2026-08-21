@@ -28,14 +28,37 @@ export const api = new Elysia({ prefix: "/api" })
 
 ## Mount It After Furin
 
+Create the runtime once and share it with the page and API plugins. SQLite memory is convenient for local development and tests:
+
+```ts
+// src/sync.ts
+import { Database } from "bun:sqlite"
+import {
+  migrateSqliteSync,
+  sqliteSyncAdapter,
+} from "@teyik0/furin/sync/sqlite"
+import { requireUser } from "./auth.ts"
+
+const database = new Database(":memory:")
+migrateSqliteSync(database)
+
+export const sync = {
+  adapter: sqliteSyncAdapter({ database, namespace: "my-app" }),
+  principal: ({ request }) => requireUser(request).id,
+}
+```
+
+Production rejects this process-local database. Use a file-backed SQLite database on one host or a distributed adapter for multiple replicas.
+
 ```ts
 // src/server.ts
 import { Elysia } from "elysia"
 import { furin } from "@teyik0/furin"
 import { api } from "./api/index.ts"
+import { sync } from "./sync.ts"
 
 const app = new Elysia()
-  .use(await furin({ pagesDir: "./src/pages", sync: true }))
+  .use(await furin({ pagesDir: "./src/pages", sync }))
   .use(api)
   .listen(3000)
 
@@ -46,14 +69,15 @@ Elysia instance order matters. Mount Furin first so it can install the page runt
 
 ## Sync Mutations
 
-Use `furinSync()` in the same Elysia plugin that declares mutation routes. Every non-GET/HEAD/OPTIONS route is synchronized by default: Furin requires an idempotency key, stores successful responses for replay, and publishes any resulting cache invalidations.
+Use `furinSync(sync)` in the same Elysia plugin that declares mutation routes. Every non-GET/HEAD/OPTIONS route is synchronized by default: Furin requires an idempotency key, stores successful responses for replay, and publishes any resulting cache invalidations. The runtime is always explicit and must be shared with `furin({ sync })`.
 
 ```ts
 import { furinSync } from "@teyik0/furin"
 import { Elysia, t } from "elysia"
+import { sync } from "../sync.ts"
 
 export const api = new Elysia({ prefix: "/api" })
-  .use(furinSync())
+  .use(furinSync(sync))
   .post(
     "/posts",
     async ({ body }) => {
@@ -101,15 +125,84 @@ await api.api.posts.post(
 )
 ```
 
-Repeating the same request with the same key returns the original response without executing the handler again. Reusing a key with a different payload returns `409`. Disable synchronization for payments, uploads, streams, or other non-replayable effects:
+Repeating the same request with the same key returns the original response without executing the handler again. Reusing a key with a different payload returns `409`. The sync replay layer only accepts small bounded responses: serialized bodies are capped at 1 MB, and returned `Response` objects must include a valid `Content-Length`. Disable synchronization for payments, uploads, streams, downloads, or other non-replayable effects:
 
 ```ts
 .post("/payments", createPayment, { sync: false })
 ```
 
-The sync stream endpoint is internal and opinionated: `/_furin/sync`. SSE only announces the latest cursor; the client recovers ordered invalidations through `/_furin/sync/changes`. Enabling `sync: true` in `furin()` injects this runtime automatically, so you do not need a React provider or application wrapper.
+The sync stream endpoint is internal and opinionated: `/_furin/sync`. SSE only announces the latest cursor; the client recovers ordered invalidations through `/_furin/sync/changes`. Passing the explicit runtime to `furin({ sync })` injects the client configuration automatically, so you do not need a React provider or application wrapper.
 
-The built-in implementation is process-local and intentionally non-durable. Responses and change history are lost when the process restarts, and replicas do not share state. Offline persistence and a distributed adapter are not included yet.
+### Production adapters
+
+All adapters ship as isolated subpaths of the main package. Install Furin once:
+
+```sh
+bun add @teyik0/furin
+```
+
+Before configuring the PostgreSQL adapter, apply its bundled idempotent schema bootstrap.
+It is not a versioned migration history. You can run the package CLI directly or apply
+`@teyik0/furin/sync/postgres/migration.sql` through your existing migration system:
+
+```sh
+FURIN_SYNC_POSTGRES_URL=postgres://... bunx --package @teyik0/furin furin-sync-postgres-migrate
+```
+
+PostgreSQL is the recommended source of truth for most multi-replica applications. Pass the same runtime to the mutation plugin and the Furin page plugin:
+
+```ts
+import { SQL } from "bun"
+import { Elysia } from "elysia"
+import { furin, furinSync } from "@teyik0/furin"
+import { postgresSyncAdapter } from "@teyik0/furin/sync/postgres"
+
+const sql = new SQL(databaseUrl) // read from server-only configuration
+const sync = {
+  adapter: postgresSyncAdapter({ namespace: "task-manager", sql }),
+  principal: ({ request }) => requireUser(request).id,
+}
+
+new Elysia()
+  .use(furinSync(sync))
+  .use(await furin({ pagesDir: "./src/pages", sync }))
+  .post("/api/cards", updateCard, {
+    sync: { invalidate: { tags: ["cards"] } },
+  })
+  .listen(3000)
+```
+
+Without a notifier, Furin polls `currentCursor()` as a correctness-preserving wake-up. Add the independent Redis notifier when lower cross-replica wake-up latency matters:
+
+```ts
+import { RedisClient, SQL } from "bun"
+import { postgresSyncAdapter } from "@teyik0/furin/sync/postgres"
+import { redisSyncNotifier } from "@teyik0/furin/sync/redis"
+
+const sync = {
+  adapter: postgresSyncAdapter({
+    namespace: "task-manager",
+    sql: new SQL(databaseUrl),
+  }),
+  notifier: redisSyncNotifier({
+    client: new RedisClient(redisUrl),
+    namespace: "task-manager",
+  }),
+  principal: ({ request }) => requireUser(request).id,
+}
+```
+
+| Deployment | Choice |
+|---|---|
+| Local development or one disposable process | SQLite `:memory:` |
+| Durable deployment on one host | SQLite adapter |
+| Multi-replica with an application PostgreSQL database | PostgreSQL adapter (recommended) |
+| Redis is already the durable sync source | Redis adapter |
+| PostgreSQL durability with faster wake-ups | PostgreSQL adapter + Redis notifier |
+
+The notifier only sends a small cursor and is best-effort. The durable adapter owns response replay and ordered catch-up, so a Redis outage or missed SSE event delays refresh but does not lose changes. Completion atomically stores the replay response and its invalidations. This is not a claim of exactly-once execution for arbitrary domain writes: Furin cannot put an external API call or an application database transaction inside the adapter transaction.
+
+The main package declares `sideEffects: false`, and each adapter has an independent entrypoint. SQLite, PostgreSQL, and Redis remain isolated from one another and no backend is present in the browser bundle. The task-manager example uses file-backed SQLite for its application data and sync journal. SQLite `:memory:` is process-local and development-only; file-backed SQLite is `host-local`. Use PostgreSQL or Redis instead when replicas run on separate hosts. IndexedDB outbox/offline replay is tracked separately and is not part of this server contract.
 
 For client-side mutations with a body, `useSync()` is the optional ergonomic layer. It keeps the Eden Treaty route as the source of truth, adds the mandatory `Idempotency-Key`, and gives you one place to attach optimistic updates:
 
@@ -122,6 +215,8 @@ const updateCard = useSync(api.api.cards({ cardId }).patch, {
 
 await updateCard({ title: "Renamed" })
 ```
+
+`optimistic` runs synchronously before the mutation starts. The network confirms or rolls back the update in the background; it does not gate the initial UI response.
 
 ## Auto-Invalidate Only
 
@@ -139,31 +234,53 @@ export const api = new Elysia({ prefix: "/api" })
   })
 ```
 
-## Typed Client Access
+## Isomorphic Eden Client
 
-If you export `typeof app`, you can use Eden Treaty on the client side for end-to-end typing.
+`createIsomorphicFn()` exposes one typed Eden client while keeping the transport environment-specific. The server branch passes the Elysia instance directly to Treaty, so loaders execute the handler in-process without an HTTP request to localhost. The browser branch uses the current origin over HTTP.
 
 ```ts
-// src/client.ts
+// src/lib/api.ts
 import { treaty } from "@elysiajs/eden"
-import type { App } from "./server.ts"
+import { createIsomorphicFn } from "@teyik0/furin"
+import { api as serverApi, type Api } from "../api/index.ts"
 
-export const api = treaty<App>("localhost:3000")
+export const getApi = createIsomorphicFn()
+  .server(() => treaty(serverApi))
+  .client(() => treaty<Api>(window.location.origin))
 ```
+
+Furin loaders remain server-only during SSR, SSG, ISR, and client navigation. The same accessor can therefore be used in a loader and an interactive component without shipping the Elysia application to the browser:
 
 ```tsx
 // src/pages/blog/index.tsx
-import { api } from "@/client"
+import { getApi } from "@/lib/api"
 import { route } from "./_route"
 
 export default route.page({
   loader: async () => {
-    const { data } = await api.api.posts.get()
-    return { posts: data ?? [] }
+    const { data, error } = await getApi().api.posts.get()
+    if (error) throw error.value
+    return { posts: data }
   },
   component: ({ posts }) => <PostList posts={posts} />,
 })
 ```
+
+The Elysia instance passed to `treaty(serverApi)` must contain the guards, auth hooks, logging, and sync plugins required by its routes. Parent hooks mounted only on a different outer Elysia instance are not implicitly included.
+
+Direct Eden execution also does not automatically inherit the incoming Furin request headers or cookies. Forward them when an endpoint depends on request identity:
+
+```ts
+loader: async ({ request }) => {
+  const { data, error } = await getApi().api.account.get({
+    headers: request.headers,
+  })
+  if (error) throw error.value
+  return { account: data }
+}
+```
+
+`createIsomorphicFn()` only selects the environment and transport. Cache invalidation and live synchronization remain declared independently through `sync`, tags, or paths.
 
 ## Middleware And Guards
 

@@ -1,7 +1,8 @@
+// biome-ignore-all lint/performance/noAwaitInLoops: route discovery walks filesystem entries sequentially for deterministic ordering
 import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, parse } from "node:path";
-import type { RuntimePage, RuntimeRoute } from "../../client.ts";
+import type { RuntimePage, RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import type { ErrorComponent } from "../../shared/error.ts";
 import type { NotFoundComponent } from "../../shared/not-found.ts";
 import {
@@ -71,10 +72,10 @@ export function loadProdRoutes(ctx: CompileContext): {
   }
 
   const root: RootLayout = {
-    path: ctx.rootPath,
-    route: rootExport,
     error: resolveModuleComponent(ctx.rootConventions?.errorPath),
     notFound: resolveModuleComponent(ctx.rootConventions?.notFoundPath),
+    path: ctx.rootPath,
+    route: rootExport,
   };
 
   const routes: ResolvedRoute[] = [];
@@ -107,14 +108,14 @@ export function loadProdRoutes(ctx: CompileContext): {
     // declared at any segment level.
 
     routes.push({
-      pattern,
+      error,
+      mode,
+      notFound,
       page,
       path,
+      pattern,
       routeChain,
-      mode,
       segmentBoundaries: boundaries,
-      error,
-      notFound,
       tags: collectRouteTags(routeChain, page),
     });
   }
@@ -174,17 +175,22 @@ export async function scanRootLayout(pagesDir: string): Promise<RootLayout> {
     loadConventionComponent<ErrorComponent>(pagesDir, "error"),
   ]);
   return {
-    path: rootPath,
-    route: rootExport,
-    notFound: notFoundEntry?.component,
-    notFoundPath: notFoundEntry?.path,
     error: errorEntry?.component,
     errorPath: errorEntry?.path,
+    notFound: notFoundEntry?.component,
+    notFoundPath: notFoundEntry?.path,
+    path: rootPath,
+    route: rootExport,
   };
 }
 
 const CONVENTION_FILE_NAMES = ["not-found", "error"] as const;
 const SOURCE_MODULE_EXTENSIONS = [".tsx", ".ts", ".jsx", ".js"] as const;
+const DYNAMIC_ROUTE_SEGMENT_RE = /(^|\/):[^/]+/g;
+
+function routePatternKey(pattern: string): string {
+  return pattern.replace(DYNAMIC_ROUTE_SEGMENT_RE, "$1:param");
+}
 
 function isConventionFileName(name: string): boolean {
   return (CONVENTION_FILE_NAMES as readonly string[]).includes(name);
@@ -219,11 +225,11 @@ async function loadConventionComponent<T>(
       }
     }
   }
-  return;
 }
 
 async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<ResolvedRoute[]> {
   const routes: ResolvedRoute[] = [];
+  const seenPatterns = new Map<string, string>();
   const notFoundCache = new Map<string, ConventionLookup<NotFoundComponent> | undefined>();
   const errorCache = new Map<string, ConventionLookup<ErrorComponent> | undefined>();
 
@@ -241,6 +247,16 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
     if (fileName.startsWith("_") || fileName === "root" || isConventionFileName(fileName)) {
       continue;
     }
+
+    const pattern = filePathToPattern(relativePath);
+    const patternKey = routePatternKey(pattern);
+    const previousPath = seenPatterns.get(patternKey);
+    if (previousPath !== undefined) {
+      throw new Error(
+        `[furin] Duplicate route pattern "${patternKey}" from "${previousPath}" and "${relativePath}".`
+      );
+    }
+    seenPatterns.set(patternKey, relativePath);
 
     const [notFound, errorComponent, segmentBoundaries] = await Promise.all([
       resolveNearestConvention<NotFoundComponent>(
@@ -261,7 +277,7 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
     ]);
 
     if (IS_DEV) {
-      const devRoute = await buildDevRoute(absolutePath, relativePath, root);
+      const devRoute = await buildDevRoute(absolutePath, relativePath, pattern, root);
       devRoute.notFound = notFound;
       devRoute.error = errorComponent;
       devRoute.segmentBoundaries = segmentBoundaries;
@@ -283,13 +299,13 @@ async function scanPageFiles(pagesDir: string, root: RootLayout): Promise<Resolv
     validateRouteChain(routeChain, root.route, relativePath);
 
     routes.push({
-      pattern: filePathToPattern(relativePath),
-      page,
-      path: absolutePath,
-      routeChain,
+      error: errorComponent,
       mode: resolveMode(page, routeChain),
       notFound,
-      error: errorComponent,
+      page,
+      path: absolutePath,
+      pattern,
+      routeChain,
       segmentBoundaries,
       tags: collectRouteTags(routeChain, page),
     });
@@ -329,7 +345,7 @@ async function collectSegmentBoundaries(
   }
 
   const boundaries: SegmentBoundary[] = [];
-  for (let depth = 0; depth < dirs.length; depth++) {
+  for (let depth = 0; depth < dirs.length; depth += 1) {
     const dir = dirs[depth] as string;
 
     const [errorEntry, notFoundEntry] = await Promise.all([
@@ -348,12 +364,12 @@ async function collectSegmentBoundaries(
     ]);
     if (errorEntry || notFoundEntry) {
       boundaries.push({
-        path: dir,
         depth,
         error: errorEntry?.component,
         errorPath: errorEntry?.path,
         notFound: notFoundEntry?.component,
         notFoundPath: notFoundEntry?.path,
+        path: dir,
       });
     }
   }
@@ -390,6 +406,7 @@ async function resolveNearestConvention<T>(
 async function buildDevRoute(
   absolutePath: string,
   relativePath: string,
+  pattern: string,
   root: RootLayout
 ): Promise<ResolvedRoute> {
   // Import via the virtual namespace (registerDevPagePlugin must be called first)
@@ -421,16 +438,16 @@ async function buildDevRoute(
   };
 
   return {
-    pattern: filePathToPattern(relativePath),
-    path: absolutePath,
     mode: page ? resolveMode(page, routeChain) : "ssr",
     // Still lazily re-imported on each request in createRoutePlugin for fresh code
     page: page ?? devStubPage,
+    path: absolutePath,
+    pattern,
     routeChain,
-    tags: collectRouteTags(routeChain, page),
     // scanPageFiles() overwrites this with the real chain before the route
     // is pushed — present here to satisfy the ResolvedRoute required shape.
     segmentBoundaries: [],
+    tags: collectRouteTags(routeChain, page),
   };
 }
 

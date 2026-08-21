@@ -1,32 +1,35 @@
-import { getBoards } from "@/api/modules/boards/service";
 import { BoardCard } from "@/components/board-card";
 import { CreateBoardForm } from "@/components/create-board-form";
+import { client } from "@/lib/api";
 import { route } from "./root";
 
 export default route.page({
   mode: "isr",
   revalidate: 10,
   tags: ["boards"],
-  loader: () => {
-    const rawBoards = getBoards();
+  head: () => ({
+    meta: [{ title: "Task Manager — Furin" }],
+  }),
+  loader: async () => {
+    const result = await client.boards.get();
+    if (result.error) {
+      throw new Error(`Failed to load boards (${result.error.status})`);
+    }
     const generatedAt = new Date().toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
     });
-    const boards = rawBoards.map((board) => ({
+    const boards = result.data.map((board) => ({
       ...board,
       formattedCreatedAt: new Date(board.createdAt).toLocaleDateString("en-US", {
-        month: "short",
         day: "numeric",
+        month: "short",
         year: "numeric",
       }),
     }));
-    return { boards, generatedAt, test: "tert" };
+    return { boards, generatedAt };
   },
-  head: () => ({
-    meta: [{ title: "Task Manager — Furin" }],
-  }),
   component: ({ boards, generatedAt }) => {
     return (
       <div className="mx-auto max-w-5xl px-6 py-14">

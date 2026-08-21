@@ -24,7 +24,13 @@ function canonicalize(value: unknown): unknown {
   return value;
 }
 
-export async function createMutationFingerprint(input: FingerprintInput): Promise<string> {
+export function sha256Hex(source: string): string {
+  const hasher = new Bun.CryptoHasher("sha256");
+  hasher.update(source);
+  return hasher.digest("hex");
+}
+
+export function createMutationFingerprint(input: FingerprintInput): string {
   const url = new URL(input.request.url);
   const query = [...url.searchParams.entries()].sort(
     ([leftKey, leftValue], [rightKey, rightValue]) =>
@@ -39,6 +45,5 @@ export async function createMutationFingerprint(input: FingerprintInput): Promis
     pathname: url.pathname,
     query,
   });
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(source));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return sha256Hex(source);
 }
