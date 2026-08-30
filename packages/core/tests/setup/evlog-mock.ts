@@ -13,6 +13,7 @@ const noop = () => undefined;
 
 export const evlogSetMock = mock((_entry: EvlogMockFields) => undefined);
 export const evlogErrorMock = mock((_error: string | Error) => undefined);
+export const evlogWarnMock = mock((_message: string) => undefined);
 export const evlogOptionsMock = mock((_options: EvlogElysiaOptions | undefined) => undefined);
 
 let setHandler: EvlogMockSet = evlogSetMock;
@@ -26,7 +27,7 @@ function createUseLoggerMock(): RequestLogger {
     info: noop,
     set: (entry: EvlogMockFields) => setHandler(entry),
     setLevel: noop,
-    warn: noop,
+    warn: (message: string) => evlogWarnMock(message),
   };
 }
 
@@ -39,6 +40,7 @@ export function resetEvlogMock(): void {
   evlogErrorMock.mockClear();
   evlogOptionsMock.mockClear();
   evlogSetMock.mockClear();
+  evlogWarnMock.mockClear();
 }
 
 mock.module("evlog/elysia", () => ({

@@ -89,6 +89,11 @@ function scanRouteFiles(
 ): void {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.isDirectory()) {
+      // Underscore-prefixed directories are co-located private folders
+      // (components, libs) — never route segments.
+      if (entry.name.startsWith("_")) {
+        continue;
+      }
       scanRouteFiles(join(directory, entry.name), [...directorySegments, entry.name], files);
       continue;
     }
@@ -98,6 +103,11 @@ function scanRouteFiles(
     }
     const base = entry.name.slice(0, -extension.length);
     if (ROUTE_CONVENTIONS.has(base)) {
+      continue;
+    }
+    // Underscore-prefixed files are private co-located modules — except the
+    // `_route` layout convention, resolved downstream by buildRouteTree.
+    if (base.startsWith("_") && base !== "_route") {
       continue;
     }
     files.push({

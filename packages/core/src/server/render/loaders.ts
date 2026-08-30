@@ -57,11 +57,22 @@ export type LoaderResult =
  */
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const FURIN_RESERVED_KEY_PREFIX = "__furin";
+/**
+ * Loader data keys that the render pipeline overwrites with request-context
+ * values when assembling component props — a loader field with one of these
+ * names is silently dead on arrival.
+ */
+const ROUTE_CTX_RESERVED_KEYS = new Set(["params", "query", "path"]);
 
 function assertPublicLoaderKey(key: string): void {
   if (key.startsWith(FURIN_RESERVED_KEY_PREFIX)) {
     throw new Error(
       `[furin] Loader data key "${key}" is reserved for framework metadata. Rename this field to avoid conflicts.`
+    );
+  }
+  if (ROUTE_CTX_RESERVED_KEYS.has(key)) {
+    throw new Error(
+      `[furin] Loader data key "${key}" is reserved: it is overwritten by the route context when component props are assembled. Rename this field to avoid conflicts.`
     );
   }
 }
@@ -459,10 +470,23 @@ async function runLoadersInternal(
         // field-accesses via createLoaderCtx still receive the rejection
         // instead of silently resolving to undefined. The real rejection is
         // re-thrown by the Promise.all below.
-        accumulatedParentPromise = Promise.all([parentAccum, loaderPromise]).then(([acc, own]) => ({
-          ...acc,
-          ...own,
-        }));
+        accumulatedParentPromise = Promise.all([parentAccum, loaderPromise]).then(([acc, own]) => {
+          if (IS_DEV) {
+            // Flattened parent data means a deeper loader silently shadows an
+            // ancestor's field (deepest wins). Surface the collision instead.
+            for (const key of Object.keys(own)) {
+              if (Object.hasOwn(acc, key)) {
+                useLogger().warn(
+                  `[furin] Loader data collision on "${key}" for ${ctx.path}: a deeper loader overwrites the value inherited from its layout chain (deepest wins).`
+                );
+              }
+            }
+          }
+          return {
+            ...acc,
+            ...own,
+          };
+        });
         accumulatedParentPromise.catch(() => {
           /* suppress unhandled-rejection warning */
         });

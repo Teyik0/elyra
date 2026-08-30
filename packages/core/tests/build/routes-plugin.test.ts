@@ -112,6 +112,48 @@ export { adminApp, rootApp };
       rmSync(tempDir, { force: true, recursive: true });
     }
   });
+
+  test("ignores underscore-prefixed files and directories", async () => {
+    const instance = { pagesDir: join(FIXTURES, "underscore"), prefix: "" };
+    const tempDir = mkdtempSync(join(tmpdir(), "furin-routes-underscore-"));
+    const entryPath = join(tempDir, "entry.ts");
+
+    try {
+      writeFileSync(
+        entryPath,
+        `export { furinApp } from ${JSON.stringify(routeModuleSpecifier(instance))};\n`
+      );
+      const result = await Bun.build({
+        entrypoints: [entryPath],
+        naming: "built.js",
+        outdir: tempDir,
+        plugins: [createRoutesPlugin({ instances: [instance], target: "server" })],
+        target: "bun",
+      });
+      expect(result.success).toBe(true);
+      const output = result.outputs.find((artifact) => artifact.kind === "entry-point");
+      if (!output) {
+        throw new Error("Expected a bundled entry point");
+      }
+
+      const built = (await import(`${output.path}?t=${Date.now()}`)) as {
+        furinApp: { handle(request: Request): Promise<Response> };
+      };
+      // The regular page still routes.
+      const index = await built.furinApp.handle(new Request("http://localhost/"));
+      expect(index.status).toBe(200);
+      expect(await index.text()).toContain("underscore-index");
+      // Co-located private files and directories never become routes.
+      const components = await built.furinApp.handle(new Request("http://localhost/_components"));
+      expect(components.status).toBe(404);
+      const libHelpers = await built.furinApp.handle(
+        new Request("http://localhost/_lib/helpers")
+      );
+      expect(libHelpers.status).toBe(404);
+    } finally {
+      rmSync(tempDir, { force: true, recursive: true });
+    }
+  });
 });
 
 describe("furin/routes client plugin", () => {
