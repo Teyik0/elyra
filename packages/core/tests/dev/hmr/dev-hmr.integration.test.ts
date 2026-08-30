@@ -36,9 +36,11 @@ describe.serial("dev HMR", () => {
     app.path,
     "src/pages/root.tsx",
     [
-      'import { defineRoute } from "@teyik0/furin";',
+      'import { defineRootRoute } from "@teyik0/furin";',
       "",
-      "export const route = defineRoute().layout(({ children }) => (",
+      "export const route = defineRootRoute()",
+      '  .config({ mode: "ssr" })',
+      "  .layout(({ children }) => (",
       '  <div data-root-version="root-v1">{children}</div>',
       "));",
     ].join("\n")
@@ -50,8 +52,11 @@ describe.serial("dev HMR", () => {
     [
       'import { defineRoute } from "@teyik0/furin";',
       'import { MobileNav } from "../../components/mobile-nav";',
+      'import { route as rootRoute } from "../root";',
       "",
-      "export const route = defineRoute().layout(({ children }) => (",
+      "export const route = defineRoute()",
+      '  .config({ layout: rootRoute, mode: "ssr" })',
+      "  .layout(({ children }) => (",
       "    <section>",
       "      <MobileNav />",
       "      {children}",
@@ -65,8 +70,11 @@ describe.serial("dev HMR", () => {
     "src/pages/docs/index.tsx",
     [
       'import { defineRoute } from "@teyik0/furin";',
+      'import { route as parentRoute } from "./_route";',
       "",
-      "export const route = defineRoute().page(() => <main>Docs page</main>);",
+      "export const route = defineRoute()",
+      '  .config({ layout: parentRoute, mode: "ssg" })',
+      "  .page(() => <main>Docs page</main>);",
     ].join("\n")
   );
 
@@ -75,8 +83,10 @@ describe.serial("dev HMR", () => {
     "src/pages/index.tsx",
     [
       'import { defineRoute } from "@teyik0/furin";',
+      'import { route as rootRoute } from "./root";',
       "",
-      'export const route = defineRoute().config({ mode: "isr", revalidate: 60 })',
+      "export const route = defineRoute()",
+      '  .config({ layout: rootRoute, mode: "isr", revalidate: 60 })',
       "  .page(() => <main>ISR home</main>);",
     ].join("\n")
   );
@@ -129,8 +139,11 @@ describe.serial("dev HMR", () => {
       "src/pages/index.tsx",
       [
         'import { defineRoute } from "@teyik0/furin";',
+        'import { route as rootRoute } from "./root";',
         "",
-        "export const route = defineRoute().page(() => <main>Updated via HMR</main>);",
+        "export const route = defineRoute()",
+        '  .config({ layout: rootRoute, mode: "ssg" })',
+        "  .page(() => <main>Updated via HMR</main>);",
       ].join("\n")
     );
 
@@ -159,8 +172,11 @@ describe.serial("dev HMR", () => {
       "src/pages/index.tsx",
       [
         'import { defineRoute } from "@teyik0/furin";',
+        'import { route as rootRoute } from "./root";',
         "",
-        "export const route = defineRoute().page(() => <main>Second edit works</main>);",
+        "export const route = defineRoute()",
+        '  .config({ layout: rootRoute, mode: "ssg" })',
+        "  .page(() => <main>Second edit works</main>);",
       ].join("\n")
     );
 
@@ -204,9 +220,11 @@ describe.serial("dev HMR", () => {
       app.path,
       "src/pages/root.tsx",
       [
-        'import { defineRoute } from "@teyik0/furin";',
+        'import { defineRootRoute } from "@teyik0/furin";',
         "",
-        "export const route = defineRoute().layout(({ children }) => (",
+        "export const route = defineRootRoute()",
+        '  .config({ mode: "ssr" })',
+        "  .layout(({ children }) => (",
         '  <div data-root-version="root-v2">{children}</div>',
         "));",
       ].join("\n")
@@ -260,8 +278,11 @@ describe.serial("dev HMR", () => {
       [
         'import { defineRoute } from "@teyik0/furin";',
         'import { MobileNav } from "../../components/mobile-nav";',
+        'import { route as rootRoute } from "../root";',
         "",
-        "export const route = defineRoute().layout(({ children }) => (",
+        "export const route = defineRoute()",
+        '  .config({ layout: rootRoute, mode: "ssr" })',
+        "  .layout(({ children }) => (",
         '    <section data-docs-layout="docs-v2">',
         "      <MobileNav />",
         "      {children}",

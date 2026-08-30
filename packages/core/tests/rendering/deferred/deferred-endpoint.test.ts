@@ -3,7 +3,7 @@ import "../../setup/evlog-mock";
 
 import { Elysia, t } from "elysia";
 import { defer } from "../../../src/client";
-import { defineRoute } from "../../../src/furin.ts";
+import { defineRootRoute, defineRoute } from "../../../src/furin.ts";
 import { adaptDefinedLayout, adaptDefinedPage } from "../../../src/server/router/defined-route.ts";
 import { createDataEndpoint } from "../../../src/server/router/plugin.ts";
 import type { ResolvedRoute } from "../../../src/server/router/types.ts";
@@ -29,10 +29,14 @@ function cloneResolvedRoute(route: ResolvedRoute): ResolvedRoute {
   return cloned;
 }
 
-const rootTerminal = defineRoute().layout(({ children }) => children);
+const rootTerminal = defineRootRoute()
+  .config({ mode: "ssr" })
+  .layout(({ children }) => children);
 const rootRoute = adaptDefinedLayout(rootTerminal, undefined);
 const queryDefaultRoute = defineRoute()
   .config({
+    layout: rootTerminal,
+    mode: "ssr",
     query: t.Object({
       city: t.Optional(t.String({ default: "Paris" })),
     }),
@@ -40,6 +44,8 @@ const queryDefaultRoute = defineRoute()
   .page(() => null);
 const queryTypesRoute = defineRoute()
   .config({
+    layout: rootTerminal,
+    mode: "ssr",
     query: t.Object({
       active: t.Boolean(),
       filter: t.Optional(t.Object({ category: t.String() })),
@@ -50,6 +56,7 @@ const queryTypesRoute = defineRoute()
   .loader(({ query }) => ({ queryFromLoader: query }))
   .page(() => null);
 const withLoaderLayout = defineRoute()
+  .config({ layout: rootTerminal, mode: "ssr" })
   .loader(({ cookie, headers, path, request, set }) => {
     set.headers["x-loader-ran"] = "true";
     return {
@@ -85,6 +92,7 @@ const BASE_ROUTES: ResolvedRoute[] = [
   resolveRoute(queryTypesRoute, rootRoute, "/query-types", "/query-types"),
   resolveRoute(
     defineRoute()
+      .config({ layout: withLoaderLayout, mode: "ssr" })
       .loader(async () => ({ pageData: "from-page" }))
       .page(() => null),
     withLoaderRuntime,
@@ -93,7 +101,7 @@ const BASE_ROUTES: ResolvedRoute[] = [
   ),
   resolveRoute(
     defineRoute()
-      .config({ mode: "ssr" })
+      .config({ layout: rootTerminal, mode: "ssr" })
       .loader(async () =>
         defer({
           stats: Promise.resolve(42),
@@ -107,7 +115,7 @@ const BASE_ROUTES: ResolvedRoute[] = [
   ),
   resolveRoute(
     defineRoute()
-      .config({ mode: "ssr" })
+      .config({ layout: rootTerminal, mode: "ssr" })
       .page(() => null),
     rootRoute,
     "/ssr-page",
@@ -115,7 +123,7 @@ const BASE_ROUTES: ResolvedRoute[] = [
   ),
   resolveRoute(
     defineRoute()
-      .config({ params: t.Object({ id: t.String() }) })
+      .config({ layout: rootTerminal, mode: "ssr", params: t.Object({ id: t.String() }) })
       .loader(() => ({ pageData: "from-dynamic" }))
       .page(() => null),
     rootRoute,
@@ -124,7 +132,7 @@ const BASE_ROUTES: ResolvedRoute[] = [
   ),
   resolveRoute(
     defineRoute()
-      .config({ params: t.Object({ id: t.Number() }) })
+      .config({ layout: rootTerminal, mode: "ssr", params: t.Object({ id: t.Number() }) })
       .loader(({ params }) => ({ paramsFromLoader: params }))
       .page(() => null),
     rootRoute,
@@ -133,7 +141,7 @@ const BASE_ROUTES: ResolvedRoute[] = [
   ),
   resolveRoute(
     defineRoute()
-      .config({ mode: "ssr" })
+      .config({ layout: rootTerminal, mode: "ssr" })
       .loader(() => ({ pageData: "from-static-specific" }))
       .page(() => null),
     rootRoute,
@@ -142,7 +150,7 @@ const BASE_ROUTES: ResolvedRoute[] = [
   ),
   resolveRoute(
     defineRoute()
-      .config({ mode: "ssr" })
+      .config({ layout: rootTerminal, mode: "ssr" })
       .loader(({ redirect }) => {
         throw redirect("?tab=billing");
       })
@@ -153,7 +161,7 @@ const BASE_ROUTES: ResolvedRoute[] = [
   ),
   resolveRoute(
     defineRoute()
-      .config({ params: t.Object({ slug: t.String() }) })
+      .config({ layout: rootTerminal, mode: "ssr", params: t.Object({ slug: t.String() }) })
       .loader(({ params }) =>
         defer({
           post: Promise.resolve({ title: `Post for ${params.slug}` }),
@@ -353,7 +361,7 @@ describe("GET /_furin/data", () => {
 
   test("streams requestData for an ISR route during SPA navigation", async () => {
     const routeDefinition = defineRoute()
-      .config({ mode: "isr" })
+      .config({ layout: rootTerminal, mode: "isr" })
       .requestLoader(({ cookies }) => ({ user: cookies.get("session") }))
       .loader(() => ({ catalog: "Shoes" }))
       .page(() => null);
@@ -378,6 +386,7 @@ describe("GET /_furin/data", () => {
 
   test("forwards request headers to loaders reading request.headers", async () => {
     const routeDefinition = defineRoute()
+      .config({ layout: rootTerminal, mode: "ssr" })
       .loader(({ request }) => ({
         authHeader: request.headers.get("authorization"),
         cookieHeader: request.headers.get("cookie"),

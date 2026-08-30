@@ -1,9 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { Elysia, t } from "elysia";
-import { defineRoute, type RouteLoaderData } from "../../src/furin.ts";
+import { defineRootRoute, defineRoute, type RouteLoaderData } from "../../src/furin.ts";
+
+const rootRoute = defineRootRoute()
+  .config({ mode: "ssr" })
+  .layout(({ children }) => children);
 
 const route = defineRoute()
   .config({
+    layout: rootRoute,
     mode: "isr",
     params: t.Object({ id: t.Number() }),
     query: t.Object({ tab: t.Optional(t.String()) }),
@@ -29,7 +34,7 @@ const route = defineRoute()
 const app = new Elysia().use(new Elysia({ prefix: "/boards/:id" }).use(route.elysia));
 
 const queryRoute = defineRoute()
-  .config({ query: t.Object({ page: t.Number() }) })
+  .config({ layout: rootRoute, mode: "ssr", query: t.Object({ page: t.Number() }) })
   .loader(({ query }) => {
     const page: number = query.page;
     return { page };
@@ -42,6 +47,7 @@ describe("defineRoute", () => {
   test("delegates matched native routes to the Furin renderer when mounted", async () => {
     let loaderCalls = 0;
     const renderedRoute = defineRoute()
+      .config({ layout: rootRoute, mode: "ssr" })
       .loader(() => {
         loaderCalls += 1;
         return { title: "loader" };
@@ -93,6 +99,7 @@ describe("defineRoute", () => {
   test("keeps static params on an SSG page terminal", async () => {
     const staticRoute = defineRoute()
       .config({
+        layout: rootRoute,
         mode: "ssg",
         params: t.Object({ slug: t.String() }),
         staticParams: () => [{ slug: "hello-world" }],
@@ -104,7 +111,7 @@ describe("defineRoute", () => {
 
   test("types request-specific data through the requestLoader stage", async () => {
     const privateRoute = defineRoute()
-      .config({ query: t.Object({ locale: t.String() }) })
+      .config({ layout: rootRoute, mode: "ssr", query: t.Object({ locale: t.String() }) })
       .requestLoader(({ cookies, query }) => ({
         locale: query.locale,
         user: cookies.get("session"),
@@ -123,12 +130,14 @@ describe("defineRoute", () => {
   });
 
   test("types parent loader data without retaining the parent at runtime", async () => {
-    const parent = defineRoute()
+    const parent = defineRootRoute()
+      .config({ mode: "ssr" })
       .loader(() => ({ organization: "Furin" }))
       .layout(({ children }) => children);
     const child = defineRoute()
       .config({
         layout: parent,
+        mode: "ssr",
         params: t.Object({ boardId: t.Number() }),
       })
       .loader(async ({ organization, params }) => {
@@ -153,11 +162,12 @@ describe("defineRoute", () => {
   });
 
   test("accumulates ancestor loader data through nested layouts", async () => {
-    const rootLayout = defineRoute()
+    const rootLayout = defineRootRoute()
+      .config({ mode: "ssr" })
       .loader(() => ({ account: "acme" }))
       .layout(({ children }) => children);
     const organizationLayout = defineRoute()
-      .config({ layout: rootLayout })
+      .config({ layout: rootLayout, mode: "ssr" })
       .loader(async ({ account }) => ({ organization: `${await account}:furin` }))
       .layout(({ data, children }) => {
         const account: string = data.account;
@@ -167,6 +177,7 @@ describe("defineRoute", () => {
     const child = defineRoute()
       .config({
         layout: organizationLayout,
+        mode: "ssr",
         query: t.Object({ page: t.Number() }),
       })
       .loader(async ({ account, organization, query }) => ({
@@ -191,12 +202,14 @@ describe("defineRoute", () => {
   });
 
   test("passes dynamic child params to a layout loader", async () => {
-    const layout = defineRoute()
-      .config({ params: t.Object({ organizationId: t.Number() }) })
+    const layout = defineRootRoute()
+      .config({ mode: "ssr", params: t.Object({ organizationId: t.Number() }) })
       .loader(({ params }) => ({ organizationId: params.organizationId }))
       .layout(({ children }) => children);
     const child = defineRoute()
       .config({
+        layout,
+        mode: "ssr",
         params: t.Object({ boardId: t.Number(), organizationId: t.Number() }),
       })
       .loader((context) => ({

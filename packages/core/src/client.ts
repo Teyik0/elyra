@@ -3,7 +3,7 @@
   entry for furin/client consumers, not a generic internal barrel.
 */
 
-export { defineRoute } from "./client/define-route.ts";
+export { defineRootRoute, defineRoute } from "./client/define-route.ts";
 export {
   type SyncMutation,
   type SyncMutationContext,

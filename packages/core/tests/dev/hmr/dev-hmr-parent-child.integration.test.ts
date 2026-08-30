@@ -76,9 +76,11 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
     app.path,
     "src/pages/root.tsx",
     [
-      'import { defineRoute } from "@teyik0/furin";',
+      'import { defineRootRoute } from "@teyik0/furin";',
       "",
-      'export const route = defineRoute().layout(({ children }) => <div data-root="true">{children}</div>);',
+      "export const route = defineRootRoute()",
+      '  .config({ mode: "ssr" })',
+      '  .layout(({ children }) => <div data-root="true">{children}</div>);',
     ].join("\n")
   );
 
@@ -88,8 +90,11 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
     "src/pages/blog/_route.tsx",
     [
       'import { defineRoute } from "@teyik0/furin";',
+      'import { route as rootRoute } from "../root";',
       "",
-      'export const route = defineRoute().layout(({ children }) => <nav data-blog-layout="blog-v1">{children}</nav>);',
+      "export const route = defineRoute()",
+      '  .config({ layout: rootRoute, mode: "ssr" })',
+      '  .layout(({ children }) => <nav data-blog-layout="blog-v1">{children}</nav>);',
     ].join("\n")
   );
 
@@ -99,8 +104,11 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
     "src/pages/blog/index.tsx",
     [
       'import { defineRoute } from "@teyik0/furin";',
+      'import { route as parentRoute } from "./_route";',
       "",
-      'export const route = defineRoute().page(() => <main data-blog-listing="true">Blog listing</main>);',
+      "export const route = defineRoute()",
+      '  .config({ layout: parentRoute, mode: "ssg" })',
+      '  .page(() => <main data-blog-listing="true">Blog listing</main>);',
     ].join("\n")
   );
 
@@ -111,9 +119,10 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
     [
       'import { defineRoute } from "@teyik0/furin";',
       'import { t } from "elysia";',
+      'import { route as parentRoute } from "./_route";',
       "",
       "export const route = defineRoute()",
-      "  .config({ params: t.Object({ slug: t.String() }) })",
+      '  .config({ layout: parentRoute, mode: "ssg", params: t.Object({ slug: t.String() }) })',
       "  .page(() => (",
       '    <article data-post-version="post-v1">Blog post content</article>',
       "  ));",
@@ -126,8 +135,10 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
     "src/pages/blog/isr-stamp.tsx",
     [
       'import { defineRoute } from "@teyik0/furin";',
+      'import { route as parentRoute } from "./_route";',
       "",
-      'export const route = defineRoute().config({ mode: "isr", revalidate: 60 })',
+      "export const route = defineRoute()",
+      '  .config({ layout: parentRoute, mode: "isr", revalidate: 60 })',
       "  .loader(async () => ({ stamp: Date.now() }))",
       "  .page(({ data }) => (",
       "    <div data-stamp={String(data.stamp)}>ISR stamp: {data.stamp}</div>",
@@ -141,8 +152,11 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
     "src/pages/index.tsx",
     [
       'import { defineRoute } from "@teyik0/furin";',
+      'import { route as rootRoute } from "./root";',
       "",
-      "export const route = defineRoute().page(() => <main>Home</main>);",
+      "export const route = defineRoute()",
+      '  .config({ layout: rootRoute, mode: "ssg" })',
+      "  .page(() => <main>Home</main>);",
     ].join("\n")
   );
 
@@ -205,9 +219,10 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
       [
         'import { defineRoute } from "@teyik0/furin";',
         'import { t } from "elysia";',
+        'import { route as parentRoute } from "./_route";',
         "",
         "export const route = defineRoute()",
-        "  .config({ params: t.Object({ slug: t.String() }) })",
+        '  .config({ layout: parentRoute, mode: "ssg", params: t.Object({ slug: t.String() }) })',
         "  .page(() => (",
         '    <article data-post-version="post-v2">Updated blog post</article>',
         "  ));",
@@ -268,8 +283,11 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
       "src/pages/blog/_route.tsx",
       [
         'import { defineRoute } from "@teyik0/furin";',
+        'import { route as rootRoute } from "../root";',
         "",
-        'export const route = defineRoute().layout(({ children }) => <nav data-blog-layout="blog-v2">{children}</nav>);',
+        "export const route = defineRoute()",
+        '  .config({ layout: rootRoute, mode: "ssr" })',
+        '  .layout(({ children }) => <nav data-blog-layout="blog-v2">{children}</nav>);',
       ].join("\n")
     );
 
@@ -313,8 +331,11 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
       "src/pages/blog/_route.tsx",
       [
         'import { defineRoute } from "@teyik0/furin";',
+        'import { route as rootRoute } from "../root";',
         "",
-        'export const route = defineRoute().layout(({ children }) => <nav data-blog-layout="blog-v3">{children}</nav>);',
+        "export const route = defineRoute()",
+        '  .config({ layout: rootRoute, mode: "ssr" })',
+        '  .layout(({ children }) => <nav data-blog-layout="blog-v3">{children}</nav>);',
       ].join("\n")
     );
 
@@ -411,8 +432,10 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
       "src/pages/blog/isr-stamp.tsx",
       [
         'import { defineRoute } from "@teyik0/furin";',
+        'import { route as parentRoute } from "./_route";',
         "",
-        'export const route = defineRoute().config({ mode: "isr", revalidate: 60 })',
+        "export const route = defineRoute()",
+        '  .config({ layout: parentRoute, mode: "isr", revalidate: 60 })',
         "  // Loader intentionally returns a bumped stamp so a cache miss is detectable.",
         "  .loader(async () => ({ stamp: Date.now() + 99999 }))",
         "  .page(({ data }) => (",
@@ -468,9 +491,10 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
         app.path,
         "src/pages/root.tsx",
         [
-          'import { defineRoute } from "@teyik0/furin";',
+          'import { defineRootRoute } from "@teyik0/furin";',
           "",
-          "export const route = defineRoute()",
+          "export const route = defineRootRoute()",
+          '  .config({ mode: "ssr" })',
           `  .loader(() => ({ hello: "${helloValue}" }))`,
           "  .layout(({ children, data }) => (",
           '    <div data-root="true" data-hello={data.hello}>',

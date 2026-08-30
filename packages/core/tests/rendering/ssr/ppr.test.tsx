@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { Elysia, t } from "elysia";
 import { Suspense, use } from "react";
-import { defineRoute } from "../../../src/furin.ts";
+import { defineRootRoute, defineRoute } from "../../../src/furin.ts";
 import { revalidateTag } from "../../../src/server/auto-invalidate";
 import { getAutoInvalidateRegistry } from "../../../src/server/auto-invalidate/registry.ts";
 import {
@@ -26,11 +26,13 @@ afterEach(async () => {
   await Promise.resolve();
 });
 const originalDevMode = IS_DEV;
-const rootTerminal = defineRoute().layout(({ children }) => (
-  <html lang="en">
-    <body>{children}</body>
-  </html>
-));
+const rootTerminal = defineRootRoute()
+  .config({ mode: "ssr" })
+  .layout(({ children }) => (
+    <html lang="en">
+      <body>{children}</body>
+    </html>
+  ));
 const root = {
   path: "/root.tsx",
   route: adaptDefinedLayout(rootTerminal, undefined),
@@ -62,7 +64,7 @@ afterAll(async () => {
 describe("partial prerendering", () => {
   test("cross-instance invalidation removes tags from the cache-owning app", async () => {
     const route = defineRoute()
-      .config({ mode: "isr", tags: ["catalog"] })
+      .config({ layout: rootTerminal, mode: "isr", tags: ["catalog"] })
       .requestLoader(() => ({ user: "alice" }))
       .loader(() => ({ catalog: "Shoes" }))
       .page(({ data }) => <main>{data.catalog}</main>);
@@ -88,7 +90,7 @@ describe("partial prerendering", () => {
     let publicCalls = 0;
     let privateCalls = 0;
     const route = defineRoute()
-      .config({ mode: "isr", revalidate: 60 })
+      .config({ layout: rootTerminal, mode: "isr", revalidate: 60 })
       .requestLoader(({ cookies }) => {
         privateCalls += 1;
         return { user: cookies.get("session") };
@@ -131,6 +133,7 @@ describe("partial prerendering", () => {
     let publicCalls = 0;
     const route = defineRoute()
       .config({
+        layout: rootTerminal,
         mode: "isr",
         query: t.Object({ view: t.Optional(t.String()) }),
         revalidate: 60,
@@ -174,7 +177,7 @@ describe("partial prerendering", () => {
     let catalog = "Shoes";
     let publicCalls = 0;
     const route = defineRoute()
-      .config({ mode: "isr", revalidate: 60, tags: ["catalog"] })
+      .config({ layout: rootTerminal, mode: "isr", revalidate: 60, tags: ["catalog"] })
       .requestLoader(() => ({ user: "alice" }))
       .loader(() => {
         publicCalls += 1;
@@ -217,7 +220,7 @@ describe("partial prerendering", () => {
 
   test("streams a rejected requestData chunk instead of aborting the PPR response", async () => {
     const route = defineRoute()
-      .config({ mode: "isr", revalidate: 60 })
+      .config({ layout: rootTerminal, mode: "isr", revalidate: 60 })
       .requestLoader(() => {
         throw new Error("private boom");
       })

@@ -21,7 +21,12 @@ function boardHue(id: string): string {
 }
 
 export const route = defineRoute()
-  .config({ layout: rootRoute, params: t.Object({ boardId: t.String() }), tags: ["boards"] })
+  .config({
+    layout: rootRoute,
+    mode: "ssr",
+    params: t.Object({ boardId: t.String() }),
+    tags: ["boards"],
+  })
   .loader(() => {
     const sidebarBoards = getBoards();
     return { sidebarBoards };

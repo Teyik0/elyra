@@ -44,7 +44,7 @@ export const route = routeBuilder().config({ mode: "ssg" }).page(Page);`,
       `import { defineRoute } from "@teyik0/furin";
 import { route as parentRoute } from "./_route";
 const Page = () => null;
-export const route = defineRoute().config({ parent: parentRoute }).page(Page);`,
+export const route = defineRoute().config({ layout: parentRoute, mode: "ssr" }).page(Page);`,
       "route.tsx"
     );
 

@@ -7,14 +7,28 @@ import { expectTypeOf } from "expect-type";
 import "@teyik0/furin/routes";
 
 declare const defineRoute: typeof import("../../src/furin.ts").defineRoute;
+declare const defineRootRoute: typeof import("../../src/furin.ts").defineRootRoute;
 declare const t: typeof import("elysia").t;
+
+const createRootLayout = () =>
+  defineRootRoute()
+    .config({ mode: "ssr" })
+    .layout(({ children }) => children);
+declare const rootLayout: ReturnType<typeof createRootLayout>;
 
 const createProductsRoute = () =>
   defineRoute()
-    .config({ query: t.Object({ page: t.Number(), tag: t.Optional(t.String()) }) })
+    .config({
+      layout: rootLayout,
+      mode: "ssr",
+      query: t.Object({ page: t.Number(), tag: t.Optional(t.String()) }),
+    })
     .page(() => null);
 
-const createRootRoute = () => defineRoute().page(() => null);
+const createRootRoute = () =>
+  defineRootRoute()
+    .config({ mode: "ssr" })
+    .page(() => null);
 
 declare const productsRoute: ReturnType<typeof createProductsRoute>;
 declare const rootRoute: ReturnType<typeof createRootRoute>;

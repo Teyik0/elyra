@@ -55,7 +55,7 @@ const app = new Elysia()
 type FileName = keyof typeof FILES;
 
 export const route = defineRoute()
-  .config({ layout: parentRoute })
+  .config({ layout: parentRoute, mode: "ssr" })
   .loader(async () => {
     const entries = Object.entries(FILES) as [FileName, string][];
     const codeHtmlMap = Promise.all(

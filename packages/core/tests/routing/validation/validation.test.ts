@@ -140,8 +140,8 @@ describe("scanRootLayout", () => {
 
     writeFileSync(
       join(defaultRouteDir, "root.tsx"),
-      `import { defineRoute } from ${JSON.stringify(furinEntry)};
-export default defineRoute().layout(({ children }) => children);`
+      `import { defineRootRoute } from ${JSON.stringify(furinEntry)};
+export default defineRootRoute().config({ mode: "ssr" }).layout(({ children }) => children);`
     );
 
     expect(scanRootLayout(defaultRouteDir)).rejects.toThrow();
@@ -167,8 +167,8 @@ export { route };`
 
     writeFileSync(
       join(validDir, "root.tsx"),
-      `import { defineRoute } from ${JSON.stringify(furinEntry)};
-export const route = defineRoute().layout(({ children }) => children);`
+      `import { defineRootRoute } from ${JSON.stringify(furinEntry)};
+export const route = defineRootRoute().config({ mode: "ssr" }).layout(({ children }) => children);`
     );
 
     const result = await scanRootLayout(validDir);

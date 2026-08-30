@@ -1,7 +1,7 @@
 import "./globals.css";
-import { defineRoute } from "@teyik0/furin";
+import { defineRootRoute } from "@teyik0/furin";
 import { RootLayout } from "@/components/root-layout";
 
-export const route = defineRoute()
+export const route = defineRootRoute()
   .config({ mode: "ssg" })
   .layout(({ children }) => <RootLayout>{children}</RootLayout>);

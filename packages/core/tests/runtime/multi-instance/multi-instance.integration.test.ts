@@ -67,9 +67,11 @@ function writeAdminPages(appPath) {
     appPath,
     "src/admin/root.tsx",
     [
-      'import { defineRoute } from "@teyik0/furin";',
+      'import { defineRootRoute } from "@teyik0/furin";',
       "",
-      'export const route = defineRoute().layout(({ children }) => <div data-testid="admin-layout">{children}</div>);',
+      "export const route = defineRootRoute()",
+      '  .config({ mode: "ssr" })',
+      '  .layout(({ children }) => <div data-testid="admin-layout">{children}</div>);',
     ].join("\\n")
   );
   writeAppFile(
@@ -77,8 +79,11 @@ function writeAdminPages(appPath) {
     "src/admin/index.tsx",
     [
       'import { defineRoute } from "@teyik0/furin";',
+      'import { route as rootRoute } from "./root";',
       "",
-      "export const route = defineRoute().page(() => <main>Admin home</main>);",
+      "export const route = defineRoute()",
+      '  .config({ layout: rootRoute, mode: "ssg" })',
+      "  .page(() => <main>Admin home</main>);",
     ].join("\\n")
   );
   writeAppFile(
@@ -87,8 +92,9 @@ function writeAdminPages(appPath) {
     [
       'import { Link } from "@teyik0/furin/link";',
       'import { defineRoute } from "@teyik0/furin";',
+      'import { route as rootRoute } from "./root";',
       "",
-      'export const route = defineRoute().config({ mode: "ssr" }).page(() => (',
+      'export const route = defineRoute().config({ layout: rootRoute, mode: "ssr" }).page(() => (',
       "    <nav>",
       '      <Link to="/users">Users link</Link>',
       '      <Link to="/nav">Self link</Link>',
@@ -101,8 +107,11 @@ function writeAdminPages(appPath) {
     "src/admin/users.tsx",
     [
       'import { defineRoute, revalidatePath } from "@teyik0/furin";',
+      'import { route as rootRoute } from "./root";',
       "",
-      "export const route = defineRoute().loader(() => {",
+      "export const route = defineRoute()",
+      '  .config({ layout: rootRoute, mode: "ssr" })',
+      "  .loader(() => {",
       '    revalidatePath("/from-admin", "page");',
       '    return { who: "admin" };',
       "  }).page(() => <main>Admin users</main>);",
@@ -121,8 +130,11 @@ async function mountBothApps(options) {
     "src/pages/revalidating.tsx",
     [
       'import { defineRoute, revalidatePath } from "@teyik0/furin";',
+      'import { route as rootRoute } from "./root";',
       "",
-      "export const route = defineRoute().loader(() => {",
+      "export const route = defineRoute()",
+      '  .config({ layout: rootRoute, mode: "ssr" })',
+      "  .loader(() => {",
       '    revalidatePath("/from-front", "page");',
       "    return {};",
       "  }).page(() => <main>Front revalidating</main>);",
@@ -134,8 +146,11 @@ async function mountBothApps(options) {
     [
       'import { Link } from "@teyik0/furin/link";',
       'import { defineRoute } from "@teyik0/furin";',
+      'import { route as rootRoute } from "./root";',
       "",
-      "export const route = defineRoute().page(() => (",
+      "export const route = defineRoute()",
+      '  .config({ layout: rootRoute, mode: "ssg" })',
+      "  .page(() => (",
       "    <nav>",
       '      <Link to="/users">Users link</Link>',
       "    </nav>",

@@ -3,7 +3,7 @@ import { defer } from "../../../../src/client";
 import { route as rootRoute } from "./root";
 
 export const route = defineRoute()
-  .config({ mode: "ssr", parent: rootRoute })
+  .config({ layout: rootRoute, mode: "ssr" })
   .loader(async () =>
     defer({
       stats: Promise.resolve(42),

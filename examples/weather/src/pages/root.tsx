@@ -1,9 +1,10 @@
 import { t } from "elysia";
 import "./globals.css";
-import { defineRoute } from "@teyik0/furin";
+import { defineRootRoute } from "@teyik0/furin";
 
-export const route = defineRoute()
+export const route = defineRootRoute()
   .config({
+    mode: "ssr",
     query: t.Object({
       city: t.String({ default: "Paris" }),
     }),

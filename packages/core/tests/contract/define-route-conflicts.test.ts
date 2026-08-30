@@ -14,15 +14,17 @@ import { describe, expectTypeOf, test } from "bun:test";
  */
 
 declare const defineRoute: typeof import("../../src/furin.ts").defineRoute;
+declare const defineRootRoute: typeof import("../../src/furin.ts").defineRootRoute;
 
 const createParentRoute = () =>
-  defineRoute()
+  defineRootRoute()
+    .config({ mode: "ssr" })
     .loader(() => ({ user: "teyik", visits: 2 }))
     .layout(({ children }) => children);
 
 const createCompatibleChild = () =>
   defineRoute()
-    .config({ layout: createParentRoute() })
+    .config({ layout: createParentRoute(), mode: "ssr" })
     .loader(() => ({ visits: 3 }))
     .page(({ data }) => {
       expectTypeOf(data.visits).toEqualTypeOf<number>();
@@ -32,7 +34,7 @@ const createCompatibleChild = () =>
 
 const createConflictingChild = () =>
   defineRoute()
-    .config({ layout: createParentRoute() })
+    .config({ layout: createParentRoute(), mode: "ssr" })
     .loader(() => ({ user: 42 }))
     .page(({ data }) => {
       // @ts-expect-error — `user` is the branded conflict marker: the child
@@ -43,7 +45,7 @@ const createConflictingChild = () =>
 
 const createConflictingHeadAndLayout = () =>
   defineRoute()
-    .config({ layout: createParentRoute() })
+    .config({ layout: createParentRoute(), mode: "ssr" })
     .loader(() => ({ visits: "many" }))
     .head(({ data }) => {
       // @ts-expect-error — `visits` conflicts: number (parent) vs string.
@@ -57,7 +59,8 @@ const createConflictingHeadAndLayout = () =>
     });
 
 const createParentlessRoute = () =>
-  defineRoute()
+  defineRootRoute()
+    .config({ mode: "ssr" })
     .loader(() => ({ user: 42 }))
     .page(({ data }) => {
       expectTypeOf(data.user).toEqualTypeOf<number>();

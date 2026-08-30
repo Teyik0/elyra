@@ -7,7 +7,8 @@ import { route as rootRoute } from "../root";
 // is preserved alongside any child-defined fields in the Elysia guard.
 export const route = defineRoute()
   .config({
-    parent: rootRoute,
+    layout: rootRoute,
+    mode: "ssr",
     query: t.Object({
       parentFilter: t.Optional(t.String({ default: "parent-default" })),
     }),

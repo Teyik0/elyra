@@ -120,7 +120,10 @@ describe("furin-dev-page React singleton", () => {
       {
         "_route.tsx": (paths) => `import { defineRoute } from "@teyik0/furin";
           import { Nav } from ${JSON.stringify(paths["nav.tsx"])};
-          export const route = defineRoute().layout(({ children }) => (
+          import { route as rootRoute } from ${JSON.stringify(paths["root.tsx"])};
+          export const route = defineRoute()
+            .config({ layout: rootRoute, mode: "ssr" })
+            .layout(({ children }) => (
               <section>
                 <Nav />
                 {children}
@@ -131,10 +134,15 @@ describe("furin-dev-page React singleton", () => {
             const [open] = useState(true);
             return <button data-open={String(open)}>nav</button>;
           }`,
-        "page.tsx": `import { defineRoute } from "@teyik0/furin";
-          export const route = defineRoute().page(() => <main>docs page</main>);`,
-        "root.tsx": `import { defineRoute } from "@teyik0/furin";
-          export const route = defineRoute().layout(({ children }) => <div data-root="yes">{children}</div>);`,
+        "page.tsx": (paths) => `import { defineRoute } from "@teyik0/furin";
+          import { route as parentRoute } from ${JSON.stringify(paths["_route.tsx"])};
+          export const route = defineRoute()
+            .config({ layout: parentRoute, mode: "ssg" })
+            .page(() => <main>docs page</main>);`,
+        "root.tsx": `import { defineRootRoute } from "@teyik0/furin";
+          export const route = defineRootRoute()
+            .config({ mode: "ssr" })
+            .layout(({ children }) => <div data-root="yes">{children}</div>);`,
       },
       async (paths) => {
         const rootPath = requireTmpPath(paths, "root.tsx");

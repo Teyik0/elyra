@@ -10,16 +10,18 @@ import { describe, expectTypeOf, test } from "bun:test";
  */
 
 declare const defineRoute: typeof import("../../src/furin.ts").defineRoute;
+declare const defineRootRoute: typeof import("../../src/furin.ts").defineRootRoute;
 declare const t: typeof import("elysia").t;
 
 const createBoardLayout = () =>
-  defineRoute()
+  defineRootRoute()
+    .config({ mode: "ssr" })
     .loader(() => ({ user: "teyik" }))
     .layout(({ children }) => children);
 
 const createChildWithLayout = () =>
   defineRoute()
-    .config({ layout: createBoardLayout() })
+    .config({ layout: createBoardLayout(), mode: "ssr" })
     .loader(() => ({ board: "42" }))
     .page(({ data }) => {
       expectTypeOf(data.user).toEqualTypeOf<string>();
@@ -31,6 +33,7 @@ const createChildWithLayoutAndParams = () =>
   defineRoute()
     .config({
       layout: createBoardLayout(),
+      mode: "ssr",
       params: t.Object({ id: t.String() }),
     })
     .loader(({ params }) => {
@@ -44,7 +47,8 @@ const createChildWithLayoutAndParams = () =>
     });
 
 const createParentlessChild = () =>
-  defineRoute()
+  defineRootRoute()
+    .config({ mode: "ssr" })
     .loader(() => ({ board: "42" }))
     .page(({ data }) => {
       expectTypeOf(data).toEqualTypeOf<{ board: string }>();
@@ -55,7 +59,7 @@ const createLegacyParentKey = () =>
   defineRoute()
     .config(
       // @ts-expect-error — the old `parent` key was renamed to `layout`.
-      { parent: createBoardLayout() }
+      { mode: "ssr", parent: createBoardLayout() }
     )
     .page(() => "unused");
 

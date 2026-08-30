@@ -3,7 +3,7 @@ import { type Context, Elysia } from "elysia";
 import { defer } from "furin/client";
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
-import { defineRoute } from "../../../src/furin.ts";
+import { defineRootRoute, defineRoute } from "../../../src/furin.ts";
 import { renderSSR } from "../../../src/server/render/index.ts";
 import { serializeLoaderDataNdjson } from "../../../src/server/render/ssr.ts";
 import { adaptDefinedLayout, adaptDefinedPage } from "../../../src/server/router/defined-route.ts";
@@ -18,11 +18,13 @@ process.env.FURIN_RSC_CODEC_PATH = "";
 
 type RenderServerComponent = (node: ReactNode) => Promise<ReactNode>;
 
-const rootTerminal = defineRoute().layout(({ children }) => (
-  <html lang="en">
-    <body>{children}</body>
-  </html>
-));
+const rootTerminal = defineRootRoute()
+  .config({ mode: "ssr" })
+  .layout(({ children }) => (
+    <html lang="en">
+      <body>{children}</body>
+    </html>
+  ));
 const root = {
   path: "/root.tsx",
   route: adaptDefinedLayout(rootTerminal, undefined),
@@ -83,6 +85,7 @@ function createRscRoute(renderServerComponent: RenderServerComponent): {
   root: RootLayout;
 } {
   const route = defineRoute()
+    .config({ layout: rootTerminal, mode: "ssr" })
     .loader(async () => ({ article: await renderServerComponent(<h1>Flight article</h1>) }))
     .page(({ data }) => <main>{data.article}</main>);
   const resolved = resolveRoute(route, "/rsc.tsx", "/rsc");
@@ -194,6 +197,7 @@ try {
   expect(html).toContain('id="__FURIN_ROUTE_FRAMES__"');
 
   const nestedSsrRoute = defineRoute()
+    .config({ layout: rootTerminal, mode: "ssr" })
     .loader(async () => ({
       content: { article: await renderServerComponent(<h1>SSR Nested Flight article</h1>) },
     }))
@@ -222,6 +226,7 @@ try {
     resolveSlow = resolve;
   });
   const route = defineRoute()
+    .config({ layout: rootTerminal, mode: "ssr" })
     .loader(async () =>
       defer({
         content: { article: await renderServerComponent(<h1>Nested Flight article</h1>) },
@@ -248,6 +253,7 @@ try {
   expect(await parsedRace.deferredPromises.slow).toBe("done");
 
   const deferredRscRoute = defineRoute()
+    .config({ layout: rootTerminal, mode: "ssr" })
     .loader(async () =>
       defer({
         readyArticle: await renderServerComponent(<h1>Ready Flight article</h1>),
@@ -267,6 +273,7 @@ try {
   );
 
   const deferredOnlyRscRoute = defineRoute()
+    .config({ layout: rootTerminal, mode: "ssr" })
     .loader(async () =>
       defer({
         slowArticle: Promise.resolve(

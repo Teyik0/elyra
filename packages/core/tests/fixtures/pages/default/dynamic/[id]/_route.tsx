@@ -5,5 +5,5 @@ import { route as rootRoute } from "../../root";
 export const paramsSchema = t.Object({ id: t.String() });
 
 export const route = defineRoute()
-  .config({ params: paramsSchema, parent: rootRoute })
+  .config({ layout: rootRoute, mode: "ssr", params: paramsSchema })
   .layout(({ children }) => children);

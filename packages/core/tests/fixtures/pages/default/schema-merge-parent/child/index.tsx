@@ -4,7 +4,8 @@ import { route as parentRoute } from "./_route";
 
 export const route = defineRoute()
   .config({
-    parent: parentRoute,
+    layout: parentRoute,
+    mode: "ssr",
     query: t.Object({
       childFilter: t.Optional(t.String({ default: "child-default" })),
       parentFilter: t.Optional(t.String({ default: "parent-default" })),

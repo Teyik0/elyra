@@ -122,7 +122,10 @@ test.serial("furin() refreshes route types after a topology change", async () =>
       "src/pages/settings.tsx",
       [
         'import { defineRoute } from "@teyik0/furin";',
-        "export const route = defineRoute().page(() => <main>Settings</main>);",
+        'import { route as rootRoute } from "./root";',
+        "export const route = defineRoute()",
+        '  .config({ layout: rootRoute, mode: "ssg" })',
+        "  .page(() => <main>Settings</main>);",
       ].join("\n")
     );
 
@@ -140,7 +143,9 @@ test.serial("furin() registers native routes in dev without replacing SSR respon
     "src/pages/index.tsx",
     [
       'import { defineRoute } from "@teyik0/furin";',
+      'import { route as rootRoute } from "./root";',
       "export const route = defineRoute()",
+      '  .config({ layout: rootRoute, mode: "ssr" })',
       "  .loader(() => ({ title: 'Native route' }))",
       "  .page(({ data }) => <main>{data.title}</main>);",
     ].join("\n")
@@ -171,8 +176,9 @@ test.serial(
       [
         'import { defineRoute } from "@teyik0/furin";',
         'import { t } from "elysia";',
+        'import { route as rootRoute } from "../root";',
         "export const route = defineRoute()",
-        "  .config({ query: t.Object({ locale: t.String() }) })",
+        '  .config({ layout: rootRoute, mode: "ssr", query: t.Object({ locale: t.String() }) })',
         "  .loader(() => ({ organization: 'Furin' }))",
         "  .layout(({ children }) => <section>{children}</section>);",
       ].join("\n")
@@ -183,8 +189,9 @@ test.serial(
       [
         'import { defineRoute } from "@teyik0/furin";',
         'import { t } from "elysia";',
+        'import { route as parentRoute } from "./_route";',
         "export const route = defineRoute()",
-        "  .config({ params: t.Object({ id: t.Number() }) })",
+        '  .config({ layout: parentRoute, mode: "ssr", params: t.Object({ id: t.Number() }) })',
         "  .loader(async (context) => {",
         "    const parent = context as typeof context & { organization: Promise<string> | string; query: { locale: string } };",
         // biome-ignore lint/suspicious/noTemplateCurlyInString: source fixture contains a template literal
@@ -214,7 +221,9 @@ test.serial("native routes preserve deferred renderer streaming", async () => {
     "src/pages/index.tsx",
     [
       'import { defer, defineRoute } from "@teyik0/furin";',
+      'import { route as rootRoute } from "./root";',
       "export const route = defineRoute()",
+      '  .config({ layout: rootRoute, mode: "ssr" })',
       "  .loader(() => defer({ slow: Promise.resolve('later'), title: 'Native deferred' }))",
       "  .page(({ data }) => <main>{data.title}</main>);",
     ].join("\n")
@@ -300,7 +309,9 @@ test.serial(
       "src/pages/index.tsx",
       [
         'import { defineRoute } from "@teyik0/furin";',
+        'import { route as rootRoute } from "./root";',
         "export const route = defineRoute()",
+        '  .config({ layout: rootRoute, mode: "ssr" })',
         "  .loader(() => ({ title: 'Compiled native' }))",
         "  .page(({ data }) => <main>{data.title}</main>);",
       ].join("\n")

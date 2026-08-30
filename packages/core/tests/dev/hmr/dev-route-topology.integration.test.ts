@@ -43,9 +43,11 @@ describe.serial("dev route topology — hot add/remove of route files", () => {
     app.path,
     "src/pages/root.tsx",
     [
-      'import { defineRoute } from "@teyik0/furin";',
+      'import { defineRootRoute } from "@teyik0/furin";',
       "",
-      'export const route = defineRoute().layout(({ children }) => <div data-root="true">{children}</div>);',
+      "export const route = defineRootRoute()",
+      '  .config({ mode: "ssr" })',
+      '  .layout(({ children }) => <div data-root="true">{children}</div>);',
     ].join("\n")
   );
 
@@ -55,8 +57,11 @@ describe.serial("dev route topology — hot add/remove of route files", () => {
     "src/pages/index.tsx",
     [
       'import { defineRoute } from "@teyik0/furin";',
+      'import { route as rootRoute } from "./root";',
       "",
-      "export const route = defineRoute().page(() => <main>Home</main>);",
+      "export const route = defineRoute()",
+      '  .config({ layout: rootRoute, mode: "ssg" })',
+      "  .page(() => <main>Home</main>);",
     ].join("\n")
   );
 
@@ -103,8 +108,11 @@ describe.serial("dev route topology — hot add/remove of route files", () => {
       "src/pages/about.tsx",
       [
         'import { defineRoute } from "@teyik0/furin";',
+        'import { route as rootRoute } from "./root";',
         "",
-        'export const route = defineRoute().page(() => <main data-about="v1">About page</main>);',
+        "export const route = defineRoute()",
+        '  .config({ layout: rootRoute, mode: "ssg" })',
+        '  .page(() => <main data-about="v1">About page</main>);',
       ].join("\n")
     );
 

@@ -41,3 +41,8 @@ export function defineRoute() {
     },
   };
 }
+
+/** Client stub for the root-layout builder — identical surface. */
+export function defineRootRoute() {
+  return defineRoute();
+}

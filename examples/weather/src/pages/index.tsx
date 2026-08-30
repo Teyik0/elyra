@@ -11,6 +11,7 @@ const POPULAR_CITIES = ["Paris", "Tokyo", "New York", "London", "Sydney", "Dubai
 export const route = defineRoute()
   .config({
     layout: parentRoute,
+    mode: "ssr",
     query: t.Object({ city: t.String({ default: "Paris" }) }),
   })
   .loader(async ({ query, request }) => {

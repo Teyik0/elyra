@@ -764,21 +764,24 @@ class HeadedSchema<
   declare readonly head: never;
 }
 
-class ConfigStage extends NoSchemaChain {
-  constructor() {
-    super({}, undefined);
-  }
-
+/**
+ * First stage of the builder: `config()` is MANDATORY and must declare at
+ * least `layout` and `mode`. Loader/page/layout are intentionally unreachable
+ * before it — a route without an explicit rendering contract does not compile.
+ */
+class UnconfiguredRoute {
   config<LayoutRoute, QuerySchema extends FurinSchema>(
     options: ConfigFor<NoFields> & {
-      layout?: LayoutRoute;
+      layout: LayoutRoute;
+      mode: RenderingMode;
       params?: undefined;
       query: QuerySchema;
     }
   ): QuerySchemaChain<ParamsOf<QuerySchema>, QuerySchema, DataOfRoute<LayoutRoute>>;
   config<LayoutRoute, ParamsSchema extends FurinSchema, QuerySchema extends FurinSchema>(
     options: ConfigFor<ParamsOf<ParamsSchema>> & {
-      layout?: LayoutRoute;
+      layout: LayoutRoute;
+      mode: RenderingMode;
       params: ParamsSchema;
       query: QuerySchema;
     }
@@ -791,7 +794,8 @@ class ConfigStage extends NoSchemaChain {
   >;
   config<LayoutRoute, ParamsSchema extends FurinSchema>(
     options: ConfigFor<ParamsOf<ParamsSchema>> & {
-      layout?: LayoutRoute;
+      layout: LayoutRoute;
+      mode: RenderingMode;
       params: ParamsSchema;
       query?: undefined;
     }
@@ -804,7 +808,8 @@ class ConfigStage extends NoSchemaChain {
   >;
   config<LayoutRoute>(
     options: ConfigFor<NoFields> & {
-      layout?: LayoutRoute;
+      layout: LayoutRoute;
+      mode: RenderingMode;
       params?: undefined;
       query?: undefined;
     }
@@ -815,7 +820,8 @@ class ConfigStage extends NoSchemaChain {
     QuerySchema extends FurinSchema | undefined,
   >(
     options: DefineRouteConfig & {
-      layout?: LayoutRoute;
+      layout: LayoutRoute;
+      mode: RenderingMode;
       params?: ParamsSchema;
       query?: QuerySchema;
     }
@@ -845,8 +851,83 @@ class ConfigStage extends NoSchemaChain {
   }
 }
 
-export function defineRoute(): ConfigStage {
-  return new ConfigStage();
+/**
+ * Stage for `pages/root.tsx` — the document shell has no layout above it, so
+ * `config()` requires only `mode` (the TanStack `createRootRoute` analogue).
+ */
+class UnconfiguredRootRoute {
+  config<QuerySchema extends FurinSchema>(
+    options: ConfigFor<NoFields> & {
+      mode: RenderingMode;
+      params?: undefined;
+      query: QuerySchema;
+    }
+  ): QuerySchemaChain<ParamsOf<QuerySchema>, QuerySchema, NoFields>;
+  config<ParamsSchema extends FurinSchema, QuerySchema extends FurinSchema>(
+    options: ConfigFor<ParamsOf<ParamsSchema>> & {
+      mode: RenderingMode;
+      params: ParamsSchema;
+      query: QuerySchema;
+    }
+  ): SchemaChain<
+    ParamsOf<ParamsSchema>,
+    ParamsOf<QuerySchema>,
+    ParamsSchema,
+    QuerySchema,
+    NoFields
+  >;
+  config<ParamsSchema extends FurinSchema>(
+    options: ConfigFor<ParamsOf<ParamsSchema>> & {
+      mode: RenderingMode;
+      params: ParamsSchema;
+      query?: undefined;
+    }
+  ): SchemaChain<ParamsOf<ParamsSchema>, NoFields, ParamsSchema, undefined, NoFields>;
+  config(
+    options: ConfigFor<NoFields> & {
+      mode: RenderingMode;
+      params?: undefined;
+      query?: undefined;
+    }
+  ): NoSchemaChain<NoFields, NoFields, NoFields>;
+  config<ParamsSchema extends FurinSchema | undefined, QuerySchema extends FurinSchema | undefined>(
+    options: DefineRouteConfig & {
+      mode: RenderingMode;
+      params?: ParamsSchema;
+      query?: QuerySchema;
+    }
+  ) {
+    if (options.params === undefined) {
+      if (options.query !== undefined) {
+        return new QuerySchemaChain<
+          ParamsOf<Exclude<QuerySchema, undefined>>,
+          Exclude<QuerySchema, undefined>,
+          NoFields
+        >(options, options.query as Exclude<QuerySchema, undefined>, undefined);
+      }
+      return new NoSchemaChain<NoFields, NoFields, NoFields>(options, undefined);
+    }
+    return new SchemaChain<
+      ParamsOf<Exclude<ParamsSchema, undefined>>,
+      ParamsOf<Exclude<QuerySchema, undefined>>,
+      Exclude<ParamsSchema, undefined>,
+      Exclude<QuerySchema, undefined>,
+      NoFields
+    >(
+      options,
+      options.params as Exclude<ParamsSchema, undefined>,
+      options.query as Exclude<QuerySchema, undefined>,
+      undefined
+    );
+  }
+}
+
+export function defineRoute(): UnconfiguredRoute {
+  return new UnconfiguredRoute();
+}
+
+export function defineRootRoute(): UnconfiguredRootRoute {
+  return new UnconfiguredRootRoute();
 }
 
 export type RouteParams<Route> = Route extends { elysia: infer App }

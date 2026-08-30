@@ -7,11 +7,12 @@ describe("defineRoute renderer adapter", () => {
   test("maps loader, head and structured component props to the runtime contract", async () => {
     const root = { __type: "FURIN_ROUTE" as const };
     const layout = defineRoute()
+      .config({ layout: root, mode: "ssr" })
       .loader(() => ({ organization: "Furin" }))
       .layout(({ children, data }) => `${data.organization}:${children}`);
     const runtimeLayout = adaptDefinedLayout(layout, root);
     const route = defineRoute()
-      .config({ mode: "isr", params: t.Object({ id: t.Number() }) })
+      .config({ layout: root, mode: "isr", params: t.Object({ id: t.Number() }) })
       .loader(({ params }) => ({ board: `Board ${params.id}` }))
       .head(({ data }) => ({ meta: [{ title: data.board }] }))
       .page(({ data, params }) => `${data.board}:${params.id}`);
@@ -34,6 +35,7 @@ describe("defineRoute renderer adapter", () => {
   test("keeps requestLoader data outside public loader data", async () => {
     const parent = { __type: "FURIN_ROUTE" as const };
     const route = defineRoute()
+      .config({ layout: parent, mode: "ssr" })
       .requestLoader(() => ({ user: "alice" }))
       .loader(() => ({ public: "catalog" }))
       .page(

@@ -7,7 +7,7 @@ import { route as rootRoute } from "./root";
  * miss (advanced timestamp) is directly observable in the rendered HTML.
  */
 export const route = defineRoute()
-  .config({ mode: "ssg", parent: rootRoute })
+  .config({ layout: rootRoute, mode: "ssg" })
   .loader(() => Promise.resolve({ timestamp: Date.now() }))
   .page(({ data: { timestamp } }) => (
     <div data-testid="ssg-loader-page" data-timestamp={String(timestamp)}>

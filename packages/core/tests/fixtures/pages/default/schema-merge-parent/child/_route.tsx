@@ -7,7 +7,8 @@ import { route as parentRoute } from "../_route";
 // are both present in the Elysia guard — neither is dropped.
 export const route = defineRoute()
   .config({
-    parent: parentRoute,
+    layout: parentRoute,
+    mode: "ssr",
     query: t.Object({
       childFilter: t.Optional(t.String({ default: "child-default" })),
     }),

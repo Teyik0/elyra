@@ -9,8 +9,8 @@ const FURIN_ENTRY = join(import.meta.dir, "../../../src/furin.ts");
 
 // root.tsx — minimal named route terminal with a layout.
 const ROOT_MODULE = `
-import { defineRoute } from ${JSON.stringify(FURIN_ENTRY)};
-export const route = defineRoute().layout(({ children }) => children);
+import { defineRootRoute } from ${JSON.stringify(FURIN_ENTRY)};
+export const route = defineRootRoute().config({ mode: "ssr" }).layout(({ children }) => children);
 `;
 
 // page module that inherits from root — import path is computed per page so
@@ -25,7 +25,7 @@ function pageModule(pageAbsPath: string, rootAbsPath: string): string {
 import { defineRoute } from ${JSON.stringify(FURIN_ENTRY)};
 import { route as rootRoute } from ${JSON.stringify(rel)};
 export const route = defineRoute()
-  .config({ parent: rootRoute })
+  .config({ layout: rootRoute, mode: "ssr" })
   .page(() => null);
 `;
 }

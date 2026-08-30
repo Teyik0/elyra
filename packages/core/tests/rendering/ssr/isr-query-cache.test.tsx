@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { Elysia, t } from "elysia";
-import { defineRoute } from "../../../src/furin.ts";
+import { defineRootRoute, defineRoute } from "../../../src/furin.ts";
 import { __resetCacheState, revalidatePath } from "../../../src/server/cache/index.ts";
 import { renderForPath } from "../../../src/server/render/ssr.ts";
 import { adaptDefinedLayout, adaptDefinedPage } from "../../../src/server/router/defined-route.ts";
@@ -13,11 +13,13 @@ import { collectRouteChainFromRoute } from "../../../src/shared/utils/index.ts";
   true;
 
 const originalDevMode = IS_DEV;
-const rootTerminal = defineRoute().layout(({ children }) => (
-  <html lang="en">
-    <body>{children}</body>
-  </html>
-));
+const rootTerminal = defineRootRoute()
+  .config({ mode: "ssr" })
+  .layout(({ children }) => (
+    <html lang="en">
+      <body>{children}</body>
+    </html>
+  ));
 const root = {
   path: "/root.tsx",
   route: adaptDefinedLayout(rootTerminal, undefined),
@@ -59,6 +61,7 @@ test("ISR cache keys include the query string and path invalidation clears every
   let loaderCalls = 0;
   const route = defineRoute()
     .config({
+      layout: rootTerminal,
       mode: "isr",
       query: t.Object({ tenant: t.Optional(t.String()) }),
       revalidate: 60,
@@ -92,6 +95,7 @@ test("ISR cache keys include the query string and path invalidation clears every
 test("ISR cached loaders reject request-specific context", async () => {
   const route = defineRoute()
     .config({
+      layout: rootTerminal,
       mode: "isr",
       query: t.Object({ tenant: t.Optional(t.String()) }),
       revalidate: 60,
@@ -120,7 +124,7 @@ test("ISR cached loaders reject request-specific context", async () => {
 test("synthetic ISR renders preserve repeated query values for loaders", async () => {
   let observedQuery: unknown;
   const route = defineRoute()
-    .config({ mode: "isr" })
+    .config({ layout: rootTerminal, mode: "isr" })
     .loader(({ query }) => {
       observedQuery = query;
       return {};
@@ -145,7 +149,7 @@ test("synthetic ISR renders preserve repeated query values for loaders", async (
 test("synthetic ISR renders preserve __proto__ query values for loaders", async () => {
   let observedQuery: unknown;
   const route = defineRoute()
-    .config({ mode: "isr" })
+    .config({ layout: rootTerminal, mode: "isr" })
     .loader(({ query }) => {
       observedQuery = query;
       return {};

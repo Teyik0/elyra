@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { RuntimeRoute } from "../../../src/client/internal/runtime-types.ts";
-import { defineRoute } from "../../../src/furin.ts";
+import { defineRootRoute } from "../../../src/furin.ts";
 import { refreshLayoutChain } from "../../../src/server/router/hmr.ts";
 
 describe("refreshLayoutChain", () => {
@@ -17,7 +17,7 @@ describe("refreshLayoutChain", () => {
     const importFn = (specifier: string) => {
       if (specifier.includes("board/_route.tsx")) {
         return Promise.resolve({
-          route: defineRoute().layout(newLayout),
+          route: defineRootRoute().config({ mode: "ssr" }).layout(newLayout),
         });
       }
       return Promise.resolve({});
@@ -42,7 +42,8 @@ describe("refreshLayoutChain", () => {
     const importFn = (specifier: string) => {
       if (specifier.includes("board/_route.tsx")) {
         return Promise.resolve({
-          route: defineRoute()
+          route: defineRootRoute()
+            .config({ mode: "ssr" })
             .loader(newLoader)
             .layout(({ children }) => children),
         });
@@ -64,7 +65,9 @@ describe("refreshLayoutChain", () => {
     const importFn = (specifier: string) => {
       if (specifier.includes("board/_route.tsx")) {
         return Promise.resolve({
-          route: defineRoute().page(() => null),
+          route: defineRootRoute()
+            .config({ mode: "ssr" })
+            .page(() => null),
         });
       }
       return Promise.resolve({});
@@ -85,7 +88,9 @@ describe("refreshLayoutChain", () => {
     const importFn = (specifier: string) => {
       if (specifier.includes("board/_route.tsx")) {
         return Promise.resolve({
-          route: defineRoute().layout(({ children }) => children),
+          route: defineRootRoute()
+            .config({ mode: "ssr" })
+            .layout(({ children }) => children),
         });
       }
       return Promise.resolve({});
@@ -149,7 +154,7 @@ describe("refreshLayoutChain", () => {
       }
       if (specifier.includes("thread/_route.tsx")) {
         return Promise.resolve({
-          route: defineRoute().layout(newThreadLayout),
+          route: defineRootRoute().config({ mode: "ssr" }).layout(newThreadLayout),
         });
       }
       return Promise.resolve({});
@@ -184,7 +189,7 @@ describe("refreshLayoutChain", () => {
       }
       if (specifier.includes("/a/b/c/_route.tsx")) {
         return Promise.resolve({
-          route: defineRoute().layout(newCLayout),
+          route: defineRootRoute().config({ mode: "ssr" }).layout(newCLayout),
         });
       }
       return Promise.resolve({});
@@ -212,12 +217,12 @@ describe("refreshLayoutChain", () => {
     const importFn = (specifier: string) => {
       if (specifier.includes("/a/_route.tsx") && !specifier.includes("/a/b/")) {
         return Promise.resolve({
-          route: defineRoute().layout(newALayout),
+          route: defineRootRoute().config({ mode: "ssr" }).layout(newALayout),
         });
       }
       if (specifier.includes("/a/b/_route.tsx")) {
         return Promise.resolve({
-          route: defineRoute().layout(newBLayout),
+          route: defineRootRoute().config({ mode: "ssr" }).layout(newBLayout),
         });
       }
       return Promise.resolve({});
@@ -241,7 +246,7 @@ describe("refreshLayoutChain", () => {
     const importFn = (specifier: string) => {
       if (specifier.includes("board/_route.ts?")) {
         return Promise.resolve({
-          route: defineRoute().layout(newLayout),
+          route: defineRootRoute().config({ mode: "ssr" }).layout(newLayout),
         });
       }
 

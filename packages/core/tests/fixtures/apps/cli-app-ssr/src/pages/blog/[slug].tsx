@@ -5,6 +5,7 @@ import { route as rootRoute } from "../root";
 export const route = defineRoute()
   .config({
     layout: rootRoute,
+    mode: "ssg",
     params: t.Object({ slug: t.String() }),
     staticParams: () => [{ slug: "hello-world" }],
   })

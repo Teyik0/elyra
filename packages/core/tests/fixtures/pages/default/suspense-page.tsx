@@ -11,7 +11,7 @@ function AsyncChild() {
 }
 
 export const route = defineRoute()
-  .config({ mode: "ssr", parent: rootRoute })
+  .config({ layout: rootRoute, mode: "ssr" })
   .page(() => (
     <div data-testid="suspense-page">
       <Suspense fallback={<span data-testid="suspense-fallback">Loading…</span>}>

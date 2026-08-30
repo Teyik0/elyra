@@ -1,6 +1,10 @@
 import type { RouteMap } from "@teyik0/furin/routes";
 import type React from "react";
-import type { ElysiaRouteLeaf, ElysiaRouteQuery } from "../../shared/elysia-contract.ts";
+import type {
+  ElysiaRouteLeaf,
+  ElysiaRouteParams,
+  ElysiaRouteQuery,
+} from "../../shared/elysia-contract.ts";
 import type { ErrorComponent } from "../../shared/error.ts";
 import type { NotFoundComponent } from "../../shared/not-found.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
@@ -34,6 +38,29 @@ export type RouteSearch<To extends RouteTo> = keyof RouteManifest extends never
     ? RouteSearchInput<RouteManifest[To]>
     : undefined;
 
+/**
+ * URL values for a route's path params: schema numbers accept both `42` and
+ * `"42"` (the URL always carries strings), everything else stays as declared.
+ * Falls back to a permissive record before RouteMap generation.
+ */
+export type RouteParamsOf<To extends RouteTo> = keyof RouteManifest extends never
+  ? Record<string, string | number>
+  : To extends keyof RouteManifest
+    ? RouteManifest[To] extends { elysia: infer App }
+      ? unknown extends ElysiaRouteParams<ElysiaRouteLeaf<App>>
+        ? undefined
+        : keyof ElysiaRouteParams<ElysiaRouteLeaf<App>> extends never
+          ? undefined
+          : {
+              [Key in keyof ElysiaRouteParams<ElysiaRouteLeaf<App>>]: ElysiaRouteParams<
+                ElysiaRouteLeaf<App>
+              >[Key] extends number
+                ? string | number
+                : ElysiaRouteParams<ElysiaRouteLeaf<App>>[Key];
+            }
+      : undefined
+    : undefined;
+
 export type PreloadStrategy = false | "intent" | "viewport" | "render";
 
 export interface LinkProps<To extends RouteTo = RouteTo>
@@ -55,6 +82,12 @@ export interface LinkProps<To extends RouteTo = RouteTo>
    * Styles and classNames from `inactiveProps` win over the static props.
    */
   inactiveProps?: () => React.AnchorHTMLAttributes<HTMLAnchorElement>;
+  /**
+   * Typed path params for this route pattern: `/board/:boardId` with
+   * `{ boardId: 42 }` renders `/board/42`. Auto-completed from the route's
+   * params schema; schema numbers accept both `42` and `"42"`.
+   */
+  params?: RouteParamsOf<To>;
   /** Preload strategy. Default: "intent" (preload on hover/focus). */
   preload?: PreloadStrategy;
   /** Delay in ms before intent preload triggers. Default: 50. */

@@ -8,7 +8,8 @@ export const querySchema = t.Object({
 
 export const route = defineRoute()
   .config({
-    parent: rootRoute,
+    layout: rootRoute,
+    mode: "ssr",
     query: querySchema,
   })
   .layout(({ children }) => children);

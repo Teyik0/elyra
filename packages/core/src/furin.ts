@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { staticPlugin } from "@elysiajs/static";
@@ -53,6 +53,7 @@ import { clientDirNameForPrefix } from "./shared/prefix.ts";
 // biome-ignore lint/performance/noBarrelFile: furin.ts is the public package entry
 export {
   type DefineRouteConfig,
+  defineRootRoute,
   defineRoute,
   type RequestLoaderContext,
   type RouteLoaderData,
@@ -522,14 +523,39 @@ export async function furin({
     // Lazy import — build pipeline has native deps not available in compiled binaries
     const { registerDevPagePlugin } = await import("./server/dev-page-plugin.ts");
     registerDevPagePlugin();
-    const { registerDevRoutesPlugin, registerDevRouteTopologyWatcher, routeModuleSpecifier } =
-      await import("./plugin/routes.ts");
+    const {
+      registerDevRoutesPlugin,
+      registerDevRouteTopologyWatcher,
+      routeModuleSpecifier,
+      routeSourcePaths,
+    } = await import("./plugin/routes.ts");
     const routeInstance = { pagesDir: resolvedPagesDir, prefix };
     registerDevRoutesPlugin([routeInstance]);
+
+    // TanStack-style config auto-fix: verify each route file's `layout`
+    // reference against the file-system tree and rewrite missing/misplaced
+    // ones. Idempotent and content-diff safe — the watcher ignores content
+    // edits, so a rewrite can never loop.
+    const { fixRouteConfigLayout } = await import("./plugin/route-config-autofix.ts");
+    const applyRouteConfigAutofix = (): void => {
+      for (const sourcePath of routeSourcePaths(routeInstance)) {
+        try {
+          const source = readFileSync(sourcePath, "utf8");
+          const fixed = fixRouteConfigLayout(source, sourcePath, resolvedPagesDir);
+          if (fixed !== null && fixed !== source) {
+            writeFileSync(sourcePath, fixed);
+          }
+        } catch (error) {
+          console.warn(`[furin] Could not auto-fix route config for ${sourcePath}:`, error);
+        }
+      }
+    };
+
     const { furinApp: nativeRoutesApp } = (await import(routeModuleSpecifier(routeInstance))) as {
       furinApp: AnyElysia;
     };
     const { root, routes } = await loadDevelopmentRoutes(resolvedPagesDir);
+    applyRouteConfigAutofix();
     const searchRoutes = createSearchRouteMetadata(routes);
     const renderNativeRoute = createNativeRouteRenderer(prefix, routes, root, "", searchRoutes);
     nativeRouteRenderers.set(instance, renderNativeRoute);
@@ -578,6 +604,7 @@ export async function furin({
           onTopologyChange: async () => {
             const next = await loadDevelopmentRoutes(resolvedPagesDir);
             writeCurrentDevFiles(next.routes, next.root.path);
+            applyRouteConfigAutofix();
             // Recompose the native renderer in place: Bun --hot cannot be
             // triggered from generated artifacts (its watch graph is the
             // entry's static imports), so topology changes are served by

@@ -67,11 +67,13 @@ function collectDefineRouteBindings(program: Program): Set<string> {
       if (specifier.type !== "ImportSpecifier" || specifier.importKind === "type") {
         continue;
       }
-      if (importedName(specifier) === "defineRoute") {
-        const local = localName(specifier);
-        if (local) {
-          bindings.add(local);
-        }
+      const imported = importedName(specifier);
+      if (imported !== "defineRoute" && imported !== "defineRootRoute") {
+        continue;
+      }
+      const local = localName(specifier);
+      if (local) {
+        bindings.add(local);
       }
     }
   }

@@ -2,5 +2,5 @@ import { defineRoute } from "@teyik0/furin";
 import { route as parentRoute } from "./root";
 
 export const route = defineRoute()
-  .config({ parent: parentRoute })
+  .config({ layout: parentRoute, mode: "ssg" })
   .page(() => <div data-testid="home">Home</div>);

@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, renameSync } from "node:fs";
+import { mkdirSync, readdirSync, renameSync, statSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { type AnyElysia, Elysia } from "elysia";
@@ -418,13 +418,55 @@ export function validateRouteParams(
   }
 }
 
+const ROUTE_MODULE_CACHE_SYMBOL = Symbol.for("@teyik0/furin/route-module-cache");
+
+interface CachedRouteModule {
+  module: Record<string, unknown>;
+  mtimeMs: number;
+}
+
+/**
+ * TanStack-style incremental generator cache (routeNodeCache + mtime check):
+ * a route module is re-evaluated only when its mtime changed. Unchanged
+ * modules are served from the cache, so a full topology scan costs
+ * O(changes) module evaluations instead of O(routes). Lives on globalThis so
+ * the cache survives Bun soft reloads (the mtime key makes a stale entry
+ * self-heal on the next scan after any file edit).
+ */
+function routeModuleCache(): Map<string, CachedRouteModule> {
+  const existing = Reflect.get(globalThis, ROUTE_MODULE_CACHE_SYMBOL);
+  if (existing instanceof Map) {
+    return existing as Map<string, CachedRouteModule>;
+  }
+  const cache = new Map<string, CachedRouteModule>();
+  Reflect.set(globalThis, ROUTE_MODULE_CACHE_SYMBOL, cache);
+  return cache;
+}
+
+async function importRouteModule(sourcePath: string): Promise<Record<string, unknown>> {
+  const cache = routeModuleCache();
+  let mtimeMs = 0;
+  try {
+    ({ mtimeMs } = statSync(sourcePath));
+  } catch {
+    mtimeMs = 0; // deleted between scan and import — let the import surface it
+  }
+  const cached = cache.get(sourcePath);
+  if (cached && cached.mtimeMs === mtimeMs) {
+    return cached.module;
+  }
+  const moduleUrl = `${pathToFileURL(sourcePath).href}?furin-routes=${mtimeMs}`;
+  const module = (await import(moduleUrl)) as Record<string, unknown>;
+  cache.set(sourcePath, { module, mtimeMs });
+  return module;
+}
+
 async function validateRouteModules(routeFiles: Iterable<RouteModuleInfo>): Promise<void> {
   await Promise.all(
     [...routeFiles]
       .filter((routeFile) => routeFile.routePath !== "")
       .map(async (routeFile) => {
-        const moduleUrl = `${pathToFileURL(routeFile.sourcePath).href}?furin-validate=${Date.now()}`;
-        const module = (await import(moduleUrl)) as {
+        const module = (await importRouteModule(routeFile.sourcePath)) as {
           route?: { schemas?: { params?: { properties?: object } } };
         };
         validateRouteParams(routeFile.routePath, module.route?.schemas);
@@ -447,8 +489,7 @@ async function loadRouteModule(sourcePath: string): Promise<{
     useLoaderData?: () => unknown;
   };
 }> {
-  const moduleUrl = `${pathToFileURL(sourcePath).href}?furin-routes=${Date.now()}`;
-  return (await import(moduleUrl)) as {
+  return (await importRouteModule(sourcePath)) as {
     route?: {
       elysia?: AnyElysia;
       loader?: unknown;
