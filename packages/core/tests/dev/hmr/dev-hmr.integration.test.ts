@@ -36,11 +36,11 @@ describe.serial("dev HMR", () => {
     app.path,
     "src/pages/root.tsx",
     [
-      'import { createRoute } from "@teyik0/furin/client";',
+      'import { defineRoute } from "@teyik0/furin";',
       "",
-      "export const route = createRoute({",
-      '  layout: ({ children }) => <div data-root-version="root-v1">{children}</div>,',
-      "});",
+      "export const route = defineRoute().layout(({ children }) => (",
+      '  <div data-root-version="root-v1">{children}</div>',
+      "));",
     ].join("\n")
   );
 
@@ -48,19 +48,15 @@ describe.serial("dev HMR", () => {
     app.path,
     "src/pages/docs/_route.tsx",
     [
-      'import { createRoute } from "@teyik0/furin/client";',
+      'import { defineRoute } from "@teyik0/furin";',
       'import { MobileNav } from "../../components/mobile-nav";',
-      'import { route as rootRoute } from "../root";',
       "",
-      "export const route = createRoute({",
-      "  parent: rootRoute,",
-      "  layout: ({ children }) => (",
+      "export const route = defineRoute().layout(({ children }) => (",
       "    <section>",
       "      <MobileNav />",
       "      {children}",
       "    </section>",
-      "  ),",
-      "});",
+      "  ));",
     ].join("\n")
   );
 
@@ -68,11 +64,9 @@ describe.serial("dev HMR", () => {
     app.path,
     "src/pages/docs/index.tsx",
     [
-      'import { route } from "./_route";',
+      'import { defineRoute } from "@teyik0/furin";',
       "",
-      "export default route.page({",
-      "  component: () => <main>Docs page</main>,",
-      "});",
+      "export const route = defineRoute().page(() => <main>Docs page</main>);",
     ].join("\n")
   );
 
@@ -80,13 +74,10 @@ describe.serial("dev HMR", () => {
     app.path,
     "src/pages/index.tsx",
     [
-      'import { route as rootRoute } from "./root";',
+      'import { defineRoute } from "@teyik0/furin";',
       "",
-      "export default rootRoute.page({",
-      '  mode: "isr",',
-      "  revalidate: 60,",
-      "  component: () => <main>ISR home</main>,",
-      "});",
+      'export const route = defineRoute().config({ mode: "isr", revalidate: 60 })',
+      "  .page(() => <main>ISR home</main>);",
     ].join("\n")
   );
 
@@ -137,11 +128,9 @@ describe.serial("dev HMR", () => {
       app.path,
       "src/pages/index.tsx",
       [
-        'import { route as rootRoute } from "./root";',
+        'import { defineRoute } from "@teyik0/furin";',
         "",
-        "export default rootRoute.page({",
-        "  component: () => <main>Updated via HMR</main>,",
-        "});",
+        "export const route = defineRoute().page(() => <main>Updated via HMR</main>);",
       ].join("\n")
     );
 
@@ -169,11 +158,9 @@ describe.serial("dev HMR", () => {
       app.path,
       "src/pages/index.tsx",
       [
-        'import { route as rootRoute } from "./root";',
+        'import { defineRoute } from "@teyik0/furin";',
         "",
-        "export default rootRoute.page({",
-        "  component: () => <main>Second edit works</main>,",
-        "});",
+        "export const route = defineRoute().page(() => <main>Second edit works</main>);",
       ].join("\n")
     );
 
@@ -217,11 +204,11 @@ describe.serial("dev HMR", () => {
       app.path,
       "src/pages/root.tsx",
       [
-        'import { createRoute } from "@teyik0/furin/client";',
+        'import { defineRoute } from "@teyik0/furin";',
         "",
-        "export const route = createRoute({",
-        '  layout: ({ children }) => <div data-root-version="root-v2">{children}</div>,',
-        "});",
+        "export const route = defineRoute().layout(({ children }) => (",
+        '  <div data-root-version="root-v2">{children}</div>',
+        "));",
       ].join("\n")
     );
 
@@ -271,19 +258,15 @@ describe.serial("dev HMR", () => {
       app.path,
       "src/pages/docs/_route.tsx",
       [
-        'import { createRoute } from "@teyik0/furin/client";',
+        'import { defineRoute } from "@teyik0/furin";',
         'import { MobileNav } from "../../components/mobile-nav";',
-        'import { route as rootRoute } from "../root";',
         "",
-        "export const route = createRoute({",
-        "  parent: rootRoute,",
-        "  layout: ({ children }) => (",
+        "export const route = defineRoute().layout(({ children }) => (",
         '    <section data-docs-layout="docs-v2">',
         "      <MobileNav />",
         "      {children}",
         "    </section>",
-        "  ),",
-        "});",
+        "  ));",
       ].join("\n")
     );
 

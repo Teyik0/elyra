@@ -49,16 +49,17 @@ const app = new Elysia()
 
 ```ts
 // src/pages/blog/[slug].tsx
-import { route } from "./_route"
+import { defineRoute } from "@teyik0/furin"
+import { route as parentRoute } from "./_route"
 
-export default route.page({
-  loader: async ({ params, log }) => {
+export const route = defineRoute()
+  .config({ parent: parentRoute })
+  .loader(async ({ params, log }) => {
     log.set({ slug: params.slug })
     const post = await getPost(params.slug, log)
     return { post }
-  },
-  component: ({ post }) => <BlogPost post={post} />,
-})
+  })
+  .page(({ data: { post } }) => <BlogPost post={post} />)
 ```
 
 Pass `log` explicitly to service functions that need it:

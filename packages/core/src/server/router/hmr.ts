@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import type { Context } from "elysia";
 import type { RuntimePage, RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import type { SearchRouteMetadata } from "../../shared/search-params.ts";
-import { collectRouteChainFromRoute, isFurinPage, isFurinRoute } from "../../shared/utils/index.ts";
+import { collectRouteChainFromRoute } from "../../shared/utils/index.ts";
 import { autoInvalidateRegistry } from "../auto-invalidate/registry.ts";
 import {
   type DevLoaderCacheEntry,
@@ -18,6 +18,7 @@ import { type CompileContext, getCompileContext } from "../internal.ts";
 import { resolvePath } from "../render/assemble.ts";
 import { type LoaderResult, runLoaders } from "../render/loaders.ts";
 import { renderSSR } from "../render/ssr.ts";
+import { adaptDefinedLayout, adaptDefinedPage, isDefinedRouteTerminal } from "./defined-route.ts";
 import { collectRouteTags, getSourceModuleCandidates, isModuleNotFoundError } from "./discovery.ts";
 import { collectIntermediateLayoutDirs, resolveMode } from "./patterns.ts";
 import type { ResolvedRoute, RootLayout } from "./types.ts";
@@ -87,13 +88,22 @@ function patchRouteEntryFromFreshModule(
   entry: RuntimeRoute | undefined,
   freshMod: Record<string, unknown>
 ): void {
-  const freshRoute = freshMod.route ?? freshMod.default;
-  if (!(entry && freshRoute && isFurinRoute(freshRoute))) {
+  const freshRoute = freshMod.route;
+  if (!(entry && freshRoute)) {
     return;
   }
 
-  entry.layout = freshRoute.layout;
-  entry.loader = freshRoute.loader;
+  if (isDefinedRouteTerminal(freshRoute) && typeof freshRoute.layout === "function") {
+    const adapted = adaptDefinedLayout(freshRoute, entry.parent);
+    entry.layout = adapted.layout;
+    entry.loader = adapted.loader;
+    entry.mode = adapted.mode;
+    entry.params = adapted.params;
+    entry.query = adapted.query;
+    entry.requestLoader = adapted.requestLoader;
+    entry.revalidate = adapted.revalidate;
+    entry.tags = adapted.tags;
+  }
 }
 
 /**
@@ -197,8 +207,8 @@ export async function handleDevRequest(
       string,
       unknown
     >;
-    const rootExport = rootMod.route ?? rootMod.default;
-    if (rootExport && isFurinRoute(rootExport) && rootExport.layout) {
+    const rootExport = rootMod.route;
+    if (isDefinedRouteTerminal(rootExport) && typeof rootExport.layout === "function") {
       // Preserve the RootLayout-level convention fields (error, notFound,
       // errorPath, notFoundPath) populated by `scanRootLayout` from
       // `pages/error.tsx` and `pages/not-found.tsx`.  Replacing the whole
@@ -206,15 +216,27 @@ export async function handleDevRequest(
       // fallbacks — `route.error ?? root.error` would resolve to `undefined`
       // in dev after the first request, making custom 404/500 screens
       // disappear after a HMR refresh.
-      currentRoot = { ...currentRoot, route: rootExport };
+      currentRoot = {
+        ...currentRoot,
+        route: adaptDefinedLayout(rootExport, undefined, root.path),
+      };
     }
 
-    const pageMod = await import(`${route.path}?furin-server&t=${Date.now()}`);
-    const page = pageMod.default;
-    if (page && isFurinPage(page)) {
-      const chain = collectRouteChainFromRoute(page._route as RuntimeRoute);
-      await refreshLayoutChain(chain, route.path, root.path, undefined);
-
+    const pageMod = (await import(`${route.path}?furin-server&t=${Date.now()}`)) as Record<
+      string,
+      unknown
+    >;
+    let page: RuntimePage | undefined;
+    let chain: RuntimeRoute[] | undefined;
+    if (isDefinedRouteTerminal(pageMod.route) && typeof pageMod.route.page === "function") {
+      const currentChain = route.routeChain;
+      await refreshLayoutChain(currentChain, route.path, root.path, undefined);
+      const parent = currentChain.at(-2) ?? currentRoot.route;
+      const adaptedPage = adaptDefinedPage(pageMod.route, parent);
+      page = adaptedPage;
+      chain = collectRouteChainFromRoute(adaptedPage._route);
+    }
+    if (page && chain) {
       // Patch chain[0] (the root) with the freshly-imported root's loader
       // and layout.  `refreshLayoutChain` deliberately starts at chainIdx=1
       // because the root is already loaded separately above; without this

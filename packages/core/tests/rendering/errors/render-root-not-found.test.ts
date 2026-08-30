@@ -10,7 +10,7 @@ const {
   __resetTemplateState,
   setProductionTemplateContent,
 } = await import("./packages/core/src/server/render/template.ts");
-const { scanPages } = await import("./packages/core/src/server/router/index.ts");
+const { scanPages } = await import("./packages/core/src/server/router/discovery.ts");
 const { __setDevMode } = await import("./packages/core/src/server/runtime-env.ts");
 
 function assert(condition, message) {
@@ -57,7 +57,7 @@ await import("./packages/core/tests/setup/evlog-mock.ts");
 const { join } = await import("node:path");
 const { renderRootNotFound } = await import("./packages/core/src/server/render/index.ts");
 const { __resetTemplateState } = await import("./packages/core/src/server/render/template.ts");
-const { scanPages } = await import("./packages/core/src/server/router/index.ts");
+const { scanPages } = await import("./packages/core/src/server/router/discovery.ts");
 const { __setDevMode } = await import("./packages/core/src/server/runtime-env.ts");
 
 __setDevMode(true);

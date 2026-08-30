@@ -34,12 +34,16 @@ async function createCompileContext(appPath: string): Promise<CompileContext> {
   const rootPath = join(appPath, "src/pages/root.tsx");
   const indexPath = join(appPath, "src/pages/index.tsx");
   const [rootMod, indexMod] = await Promise.all([import(rootPath), import(indexPath)]);
+  const rootRoute = rootMod.route as { elysia: Elysia };
+  const indexRoute = indexMod.route as { elysia: Elysia };
+  const nativeRoutes = new Elysia().use(rootRoute.elysia.use(new Elysia().use(indexRoute.elysia)));
 
   return {
     modules: {
       [rootPath]: rootMod,
       [indexPath]: indexMod,
     },
+    nativeRoutes,
     rootConventions: {},
     rootPath,
     routeMetadata: {

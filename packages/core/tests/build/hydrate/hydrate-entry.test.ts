@@ -9,7 +9,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { generateHydrateEntry } from "../../../src/build/hydrate.ts";
-import type { ResolvedRoute } from "../../../src/server/router/index.ts";
+import type { ResolvedRoute } from "../../../src/server/router/types.ts";
 
 // ── Minimal stub ──────────────────────────────────────────────────────────────
 
@@ -81,6 +81,27 @@ describe("generateHydrateEntry", () => {
     const code = generateHydrateEntry([route], ROOT, "", false);
 
     expect(code).toContain('searchDefaults: {"page":1}');
+  });
+
+  test("rebuilds the client layout chain from scanned layout modules", () => {
+    const route = {
+      ...makeRoute("/boards", "/app/src/pages/boards/index.tsx"),
+      routeChain: [
+        { __type: "FURIN_ROUTE" as const, layout: () => null },
+        {
+          __type: "FURIN_ROUTE" as const,
+          layout: () => null,
+          sourcePath: "/app/src/pages/boards/_route.tsx",
+        },
+      ],
+    } as ResolvedRoute;
+
+    const code = generateHydrateEntry([route], ROOT, "", false);
+
+    expect(code).toContain('import("/app/src/pages/boards/_route.tsx")');
+    expect(code).toContain("layout: __furin_layout_route_0.component");
+    expect(code).not.toContain("?? __furin_layout_0.default");
+    expect(code).toContain("parent: __furin_parent");
   });
 
   test("clientLogging off (default) — omits evlog from the client entry", () => {
@@ -193,23 +214,19 @@ describe("generateHydrateEntry", () => {
       writeFileSync(
         rootPath,
         [
-          'import { createRoute } from "@teyik0/furin/client";',
+          'import { defineRoute } from "@teyik0/furin/client";',
           "",
-          "export const route = createRoute({",
-          "  layout: ({ children }) => <div>{children}</div>,",
-          "});",
+          "export const route = defineRoute().layout(({ children }) => <div>{children}</div>);",
         ].join("\n")
       );
 
       writeFileSync(
         pagePath,
         [
+          'import { defineRoute } from "@teyik0/furin/client";',
           'import { Link } from "@teyik0/furin/link";',
           "",
-          "export default {",
-          '  component: () => <Link to="/docs">Docs</Link>,',
-          '  _route: { __type: "FURIN_ROUTE" },',
-          "};",
+          'export const route = defineRoute().page(() => <Link to="/docs">Docs</Link>);',
         ].join("\n")
       );
 

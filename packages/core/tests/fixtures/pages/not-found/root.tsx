@@ -1,8 +1,4 @@
-import type { ReactNode } from "react";
-import { createRoute } from "../../../../src/client";
-
-export const route = createRoute({
-  layout: ({ children }: { children: ReactNode | undefined }) => (
-    <div data-testid="root-layout">{children}</div>
-  ),
-});
+import { defineRoute } from "@teyik0/furin";
+export const route = defineRoute().layout(({ children }) => (
+  <div data-testid="root-layout">{children}</div>
+));

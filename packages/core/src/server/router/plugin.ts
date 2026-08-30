@@ -1,7 +1,7 @@
 import { type AnyElysia, type Context, Elysia, t } from "elysia";
-import type { AnySchema } from "elysia/types";
 import { toCrossJSONAsync } from "seroval";
 import { computeErrorDigest } from "../../shared/digest.ts";
+import type { FurinSchema } from "../../shared/elysia-contract.ts";
 import { containsRscSource, serializeRouteFrames } from "../../shared/route-frame.ts";
 import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search-params.ts";
 import { useLogger } from "../context-logger.ts";
@@ -186,45 +186,46 @@ export function createRoutePlugin(
 
   if (allParams || allQuery) {
     plugin.guard({
-      params: allParams as AnySchema,
-      query: allQuery as AnySchema,
+      params: allParams as FurinSchema,
+      query: allQuery as FurinSchema,
     });
   }
 
-  plugin.get(pattern, (ctx) => {
-    // Dev mode: re-imports page + layouts on every request via the
-    // ?furin-server cache-buster, then dispatches into one of:
-    //   - renderDevISRWithLoaderCache  (mode === "isr")
-    //   - renderDevSSGWithLoaderCache  (mode === "ssg")
-    //   - renderSSR                    (otherwise)
-    //
-    // Only the LOADER OUTPUT is cached in dev — HTML is always re-assembled
-    // fresh so the response always embeds the latest Bun client chunk URL.
-    // This avoids the "infinite reload loop" footgun where a cached ISR/SSG
-    // HTML response held an OLD chunk URL after Bun rebundled.  The dev
-    // cache is invalidated source-aware via `isDevLoaderCacheValid`
-    // (mtime-checked dependency walk on every read).
-    if (IS_DEV) {
-      return handleDevRequest(route, ctx, root, searchRoutes);
-    }
-
-    if ((route.mode === "ssg" || route.mode === "isr") && hasRequestLoader(route)) {
-      return renderPprRoute(route, ctx, root, resolvedBuildId, searchRoutes);
-    }
-
-    if (route.mode === "ssg") {
-      return handleSSGRequest(route, ctx, root, resolvedBuildId, searchRoutes);
-    }
-
-    if (route.mode === "isr") {
-      ctx.set.headers["cache-tag"] = resolvePath(route.pattern, ctx.params ?? {});
-      return handleISR(route, ctx, root, resolvedBuildId, searchRoutes);
-    }
-
-    return renderSSR(route, ctx, root, undefined, searchRoutes);
-  });
+  plugin.get(pattern, (ctx) =>
+    renderResolvedRoute(route, ctx, root, resolvedBuildId, searchRoutes)
+  );
 
   return plugin;
+}
+
+export function renderResolvedRoute(
+  route: ResolvedRoute,
+  ctx: Context,
+  root: RootLayout,
+  buildId: string,
+  searchRoutes: SearchRouteMetadata[] | undefined
+): unknown {
+  // Dev mode: re-imports page + layouts on every request via the
+  // ?furin-server cache-buster. Only loader output is cached in dev; HTML is
+  // always reassembled with the latest Bun client chunk URL.
+  if (IS_DEV) {
+    return handleDevRequest(route, ctx, root, searchRoutes);
+  }
+
+  if ((route.mode === "ssg" || route.mode === "isr") && hasRequestLoader(route)) {
+    return renderPprRoute(route, ctx, root, buildId, searchRoutes);
+  }
+
+  if (route.mode === "ssg") {
+    return handleSSGRequest(route, ctx, root, buildId, searchRoutes);
+  }
+
+  if (route.mode === "isr") {
+    ctx.set.headers["cache-tag"] = resolvePath(route.pattern, ctx.params ?? {});
+    return handleISR(route, ctx, root, buildId, searchRoutes);
+  }
+
+  return renderSSR(route, ctx, root, undefined, searchRoutes);
 }
 
 /**
@@ -309,8 +310,8 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
         status: (code: number) => new Response(null, { status: code }),
       } as unknown as SyntheticDataContext;
 
-      // Normalize params and query through the same merged schemas used by
-      // createRoutePlugin so loaders see identical typed/defaulted inputs.
+      // Normalize params and query through the route chain schemas so SPA and
+      // document requests expose identical typed/defaulted inputs.
       const mergedParams = mergeRouteSchemas(matched.route.routeChain, "params");
       const mergedQuery = mergeRouteSchemas(matched.route.routeChain, "query");
       const parsedParams = await parseRouteParams(matched.params, mergedParams);

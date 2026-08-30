@@ -389,6 +389,7 @@ export async function buildStaticTarget(
     basePath,
     clientLogging: Boolean(options.clientLogging),
     outDir: targetDir,
+    pagesDir: dirname(root.path),
     plugins: options.plugins,
     publicPath,
     rootLayout: root.path,

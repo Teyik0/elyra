@@ -57,6 +57,11 @@ export function generateHydrateEntry(
       mergeRouteSchemas(route.routeChain ?? [], "query")
     );
     const boundaryIdents = new Map<string, string>();
+    const layoutPaths = (route.routeChain ?? [])
+      .slice(1)
+      .filter((entry) => entry.layout && entry.sourcePath)
+      .map((entry) => entry.sourcePath as string);
+    const layoutIdents = layoutPaths.map((_, index) => `__furin_layout_${index}`);
 
     // Emit one boundary literal per segment that actually carries a convention
     // file — segments that only declare one of the two are emitted with the
@@ -80,16 +85,21 @@ export function generateHydrateEntry(
 
     const lazyImports = [
       `import("${resolvedPage}")`,
+      ...layoutPaths.map((filePath) => `import("${filePath.replace(/\\/g, "/")}")`),
       ...[...boundaryIdents.keys()].map((filePath) => `import("${filePath.replace(/\\/g, "/")}")`),
     ];
-    const loadBody =
+    const importIdents = ["__furin_page", ...layoutIdents, ...boundaryIdents.values()];
+    const layoutAssignments = layoutIdents
+      .map(
+        (ident, index) =>
+          `const __furin_layout_route_${index} = ${ident}.route; __furin_parent = { __type: "FURIN_ROUTE", layout: __furin_layout_route_${index}.component, parent: __furin_parent };`
+      )
+      .join(" ");
+    const boundaryResult =
       boundaryLiterals.length > 0
-        ? `Promise.all([${lazyImports.join(", ")}]).then(([__furin_page, ${[
-            ...boundaryIdents.values(),
-          ].join(
-            ", "
-          )}]) => ({ default: __furin_page.default, segmentBoundaries: [${boundaryLiterals.join(", ")}] }))`
-        : `import("${resolvedPage}")`;
+        ? `, segmentBoundaries: [${boundaryLiterals.join(", ")}]`
+        : "";
+    const loadBody = `Promise.all([${lazyImports.join(", ")}]).then(([${importIdents.join(", ")}]) => { const __furin_page_route = __furin_page.route; let __furin_parent = root; ${layoutAssignments} return { default: { __type: "FURIN_PAGE", _route: { __type: "FURIN_ROUTE", parent: __furin_parent }, component: __furin_page_route.component }${boundaryResult} }; })`;
 
     const searchDefaultsEntry = searchDefaults
       ? `, searchDefaults: ${JSON.stringify(searchDefaults)}`

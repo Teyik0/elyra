@@ -630,6 +630,7 @@ export function RouterProvider({
   // Render-synchronous scroll restoration.
   useLayoutEffect(() => {
     const instruction = pendingScrollRef.current;
+    // biome-ignore lint/suspicious/noUnnecessaryConditions: the ref is null until navigation schedules scrolling
     if (!instruction) {
       return;
     }

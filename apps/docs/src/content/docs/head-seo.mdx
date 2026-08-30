@@ -10,15 +10,15 @@ Define `head()` on a page or route:
 
 ```tsx
 // src/pages/blog/[slug].tsx
-export default route.page({
-  head: ({ post }) => ({
+export const route = defineRoute()
+  .loader(async ({ params }) => ({ post: await db.getPost(params.slug) }))
+  .head(({ data: { post } }) => ({
     meta: [
       { title: post.title },
       { name: "description", content: post.excerpt },
     ],
-  }),
-  component: ({ post }) => <article>{post.title}</article>,
-});
+  }))
+  .page(({ data: { post } }) => <article>{post.title}</article>)
 ```
 
 The `head()` function receives the same props as the page component (loader data, params, query).
@@ -134,8 +134,7 @@ During client-side navigation, Furin extracts the new `head()` result, updates `
 
 ```tsx
 // src/pages/root.tsx
-export const route = createRoute({
-  layout: ({ children }) => (
+export const route = defineRoute().layout(({ children }) => (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
@@ -144,8 +143,7 @@ export const route = createRoute({
       </head>
       <body>{children}</body>
     </html>
-  ),
-});
+  ))
 ```
 
 ---
@@ -155,8 +153,9 @@ export const route = createRoute({
 A complete SEO setup for a blog post:
 
 ```tsx
-export default route.page({
-  head: ({ post }) => ({
+export const route = defineRoute()
+  .loader(async ({ params }) => ({ post: await db.getPost(params.slug) }))
+  .head(({ data: { post } }) => ({
     meta: [
       { title: post.title },
       { name: "description", content: post.excerpt },
@@ -175,7 +174,6 @@ export default route.page({
     links: [
       { rel: "canonical", href: `https://example.com/blog/${post.slug}` },
     ],
-  }),
-  // ...
-});
+  }))
+  .page(({ data: { post } }) => <Article post={post} />)
 ```

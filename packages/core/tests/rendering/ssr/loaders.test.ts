@@ -5,7 +5,7 @@ import type { Context } from "elysia";
 import type { HTTPHeaders } from "elysia/types";
 import { FurinRscRenderError } from "../../../src/rsc/render-error.ts";
 import { runLoaders, runPublicLoaders } from "../../../src/server/render/loaders.ts";
-import type { ResolvedRoute } from "../../../src/server/router/index.ts";
+import type { ResolvedRoute } from "../../../src/server/router/types.ts";
 import { __setDevMode } from "../../../src/server/runtime-env.ts";
 import { evlogErrorMock } from "../../setup/evlog-mock.ts";
 
@@ -33,6 +33,8 @@ describe("runLoaders requestLoader", () => {
     const route = {
       mode: "ssr",
       page: {},
+      path: "/parallel.tsx",
+      pattern: "/parallel",
       routeChain: [
         {
           __type: "FURIN_ROUTE",
@@ -48,8 +50,6 @@ describe("runLoaders requestLoader", () => {
           },
         },
       ],
-      path: "/parallel.tsx",
-      pattern: "/parallel",
       segmentBoundaries: [],
     } as unknown as ResolvedRoute;
 
@@ -88,6 +88,8 @@ describe("runLoaders requestLoader", () => {
     const route = {
       mode: "ssr",
       page: {},
+      path: "/with-loader.tsx",
+      pattern: "/with-loader",
       routeChain: [
         {
           __type: "FURIN_ROUTE",
@@ -99,8 +101,6 @@ describe("runLoaders requestLoader", () => {
           },
         },
       ],
-      path: "/with-loader.tsx",
-      pattern: "/with-loader",
       segmentBoundaries: [],
     } as unknown as ResolvedRoute;
     const context = createMockLoaderContext({

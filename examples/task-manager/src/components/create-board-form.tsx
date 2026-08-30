@@ -8,10 +8,11 @@ export function CreateBoardForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const inFlightRef = useRef(false);
+  const inFlightRef = useRef<boolean>(false);
   const createBoard = useSync(apiClient.api.boards.post);
 
   const handleCreate = async () => {
+    // biome-ignore lint/suspicious/noUnnecessaryConditions: concurrent submissions can observe the async lock as true
     if (inFlightRef.current) {
       return;
     }

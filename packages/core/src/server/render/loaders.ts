@@ -1,12 +1,13 @@
 import type { Context } from "elysia";
 import type { RuntimeRoute } from "../../client/internal/runtime-types.ts";
-import { isDeferred, type RequestLoaderContext } from "../../client.ts";
+import { isDeferred } from "../../client.ts";
+import type { RequestLoaderContext } from "../../define-route.ts";
 import { isFurinRscRenderError } from "../../rsc/render-error.ts";
 import { computeErrorDigest } from "../../shared/digest.ts";
 import { type FurinNotFoundError, isNotFoundError } from "../../shared/not-found.ts";
 import { useLogger } from "../context-logger.ts";
 import { currentInstrumentationRequest, emitLoaderFinished } from "../devtools/instrumentation.ts";
-import type { ResolvedRoute } from "../router/index.ts";
+import type { ResolvedRoute } from "../router/types.ts";
 import { IS_DEV } from "../runtime-env.ts";
 
 export type LoaderResult =

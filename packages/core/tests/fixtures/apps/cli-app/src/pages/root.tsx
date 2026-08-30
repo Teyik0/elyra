@@ -1,5 +1,5 @@
-import { createRoute } from "@teyik0/furin/client";
+import { defineRoute } from "@teyik0/furin";
 
-export const route = createRoute({
-  layout: ({ children }) => <div data-testid="root-layout">{children}</div>,
-});
+export const route = defineRoute().layout(({ children }) => (
+  <div data-testid="root-layout">{children}</div>
+));

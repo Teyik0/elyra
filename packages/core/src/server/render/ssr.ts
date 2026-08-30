@@ -18,7 +18,7 @@ import type { SearchParamsInput, SearchRouteMetadata } from "../../shared/search
 import { runInSyntheticRenderScope, useLogger } from "../context-logger.ts";
 import { currentInstance } from "../instance.ts";
 // FurinNotFoundError is used indirectly via buildNotFoundElement in element.tsx
-import type { ResolvedRoute, RootLayout } from "../router/index.ts";
+import type { ResolvedRoute, RootLayout } from "../router/types.ts";
 import { IS_DEV } from "../runtime-env.ts";
 import {
   assembleHTML,
@@ -137,7 +137,7 @@ export async function renderElementWithShellFallback(
   ssrContext: RouterContextValue
 ): Promise<ShellFallbackResult> {
   try {
-    return { stream: await renderToReadableStream(element), shellError: undefined };
+    return { shellError: undefined, stream: await renderToReadableStream(element) };
   } catch (error) {
     const digest = computeErrorDigest(error);
     try {
@@ -147,7 +147,7 @@ export async function renderElementWithShellFallback(
           ssrContext
         )
       );
-      return { stream, shellError: { digest } };
+      return { shellError: { digest }, stream };
     } catch {
       const stream = await renderToReadableStream(
         withSSRRouterContext(
@@ -155,7 +155,7 @@ export async function renderElementWithShellFallback(
           ssrContext
         )
       );
-      return { stream, shellError: { digest } };
+      return { shellError: { digest }, stream };
     }
   }
 }
@@ -209,7 +209,7 @@ function buildSuccessRender(
   try {
     const headData = buildHeadInjection(route.page.head?.(componentProps));
     const element = buildElement(route, componentProps, root.route);
-    return { element, headData, errorDigest: undefined, status: 200 };
+    return { element, errorDigest: undefined, headData, status: 200 };
   } catch (headError) {
     if (throwOnFailure) {
       throw headError;
@@ -222,7 +222,7 @@ function buildSuccessRender(
       undefined,
       500
     );
-    return { element, headData: "", errorDigest, status: 500 };
+    return { element, errorDigest, headData: "", status: 500 };
   }
 }
 
@@ -282,8 +282,8 @@ export async function prepareRender(
     ...syncData,
     ...(deferredPromises ?? {}),
     params: ctx.params,
-    query: ctx.query,
     path: ctx.path,
+    query: ctx.query,
   };
 
   const template = await resolveRenderTemplate(ctx);
@@ -296,7 +296,7 @@ export async function prepareRender(
   if (loaderResult.type === "not-found") {
     element = buildNotFoundElement(route.notFound ?? root.notFound, loaderResult.error);
     status = 404;
-    notFoundError = { message: loaderResult.error.message, data: loaderResult.error.data };
+    notFoundError = { data: loaderResult.error.data, message: loaderResult.error.message };
   } else if (loaderResult.type === "error") {
     const { status: errorStatus } = loaderResult;
     errorDigest = computeErrorDigest(loaderResult.error);
@@ -324,20 +324,20 @@ export async function prepareRender(
   const ssrContext: RouterContextValue = {
     basePath: resolvedBasePath,
     currentHref: currentHrefFromContext(ctx, resolvedBasePath),
-    search: (ctx.query as SearchParamsInput | undefined) ?? {},
-    searchRoutes: searchRoutes ?? [],
+    defaultPreload: "intent",
+    defaultPreloadDelay: 50,
+    defaultPreloadStaleTime: 30_000,
+    invalidatePrefetch: (_path, _type) => {
+      /* noop */
+    },
+    isNavigating: false,
     navigate: (_href, _opts) => Promise.resolve(),
     prefetch: (_href, _opts) => {
       /* noop */
     },
-    invalidatePrefetch: (_path, _type) => {
-      /* noop */
-    },
     refresh: (_opts) => Promise.resolve(),
-    isNavigating: false,
-    defaultPreload: "intent",
-    defaultPreloadDelay: 50,
-    defaultPreloadStaleTime: 30_000,
+    search: (ctx.query as SearchParamsInput | undefined) ?? {},
+    searchRoutes: searchRoutes ?? [],
   };
   element = withSSRRouterContext(element, ssrContext);
 
@@ -350,9 +350,9 @@ export async function prepareRender(
     headers,
     loader_ms,
     notFoundError,
-    syncData,
     ssrContext,
     status,
+    syncData,
     template,
   };
 }
@@ -385,15 +385,15 @@ export function renderForPath(
         }
       }
       const ctx: Context = {
-        params,
-        query,
-        request: new Request(requestUrl),
-        headers: {},
         cookie: {},
-        redirect: (url: string, redirectStatus: number | undefined) =>
-          new Response(null, { status: redirectStatus ?? 302, headers: { Location: url } }),
-        set: { headers: {} },
+        headers: {},
+        params,
         path: resolvedPath,
+        query,
+        redirect: (url: string, redirectStatus: number | undefined) =>
+          new Response(null, { headers: { Location: url }, status: redirectStatus ?? 302 }),
+        request: new Request(requestUrl),
+        set: { headers: {} },
       } as Context;
 
       const loaderResult = await runPublicLoaders(route, ctx);
@@ -412,10 +412,10 @@ export function renderForPath(
 
       useLogger().set({
         furin: {
-          render: mode,
-          route: route.pattern,
           cache: mode === "isr" ? "revalidated" : "miss",
           loader_ms: prepared.loader_ms,
+          render: mode,
+          route: route.pattern,
           ...(prepared.errorDigest ? { digest: prepared.errorDigest } : {}),
         },
       });
@@ -425,13 +425,13 @@ export function renderForPath(
       await stream.allReady;
       const reactHtml = await streamToString(stream);
       return {
-        html: assembleHTML(template, headData, reactHtml, syncData),
         headers,
+        html: assembleHTML(template, headData, reactHtml, syncData),
         ndjson: await serializeLoaderDataNdjson(syncData, deferredPromises),
         status,
       };
     },
-    { route: route.pattern, render: mode }
+    { render: mode, route: route.pattern }
   );
 }
 
@@ -556,8 +556,8 @@ export async function renderToHTML(
   const reactHtml = await streamToString(stream);
 
   return {
-    html: assembleHTML(template, headData, reactHtml, syncData),
     headers,
+    html: assembleHTML(template, headData, reactHtml, syncData),
     ndjson: await serializeLoaderDataNdjson(syncData, deferredPromises),
     status,
   };
@@ -586,9 +586,9 @@ export async function renderSSR(
 
   useLogger().set({
     furin: {
+      loader_ms: prepared.loader_ms,
       render: route.mode,
       route: route.pattern,
-      loader_ms: prepared.loader_ms,
       ...(prepared.errorDigest ? { digest: prepared.errorDigest } : {}),
     },
   });
@@ -608,7 +608,7 @@ export async function renderSSR(
     status = 500;
     finalDigest = shellError.digest;
     useLogger().set({
-      furin: { render: route.mode, route: route.pattern, digest: finalDigest, phase: "shell" },
+      furin: { digest: finalDigest, phase: "shell", render: route.mode, route: route.pattern },
     });
   }
 
@@ -673,12 +673,12 @@ export async function renderSSR(
   })().catch((err) => writer.abort(err));
 
   return new Response(readable, {
-    status,
     headers: {
-      "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Content-Type": "text/html; charset=utf-8",
       ...headers,
     },
+    status,
   });
 }
 

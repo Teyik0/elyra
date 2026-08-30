@@ -1,13 +1,19 @@
+import { defineRoute } from "@teyik0/furin";
 import { Link } from "@teyik0/furin/link";
+import { t } from "elysia";
 import type { WeatherResponse } from "../api/weather";
 import { CurrentWeatherCard } from "../components/current-weather-card";
 import { ForecastGrid } from "../components/forecast-grid";
-import { route } from "./root";
+import { route as parentRoute } from "./root";
 
 const POPULAR_CITIES = ["Paris", "Tokyo", "New York", "London", "Sydney", "Dubai"];
 
-export default route.page({
-  loader: async ({ query, request }) => {
+export const route = defineRoute()
+  .config({
+    parent: parentRoute,
+    query: t.Object({ city: t.String({ default: "Paris" }) }),
+  })
+  .loader(async ({ query, request }) => {
     const { city } = query;
     const url = new URL(`/api/weather?city=${encodeURIComponent(city)}`, request.url);
     const res = await fetch(url);
@@ -23,8 +29,11 @@ export default route.page({
     }));
 
     return { city, error: null, weather: { ...data, daily: dailyWithDayName } };
-  },
-  component: ({ weather, city, error }) => {
+  })
+  .head(({ query }) => ({
+    meta: [{ title: `Weather in ${query.city ?? "Paris"}` }],
+  }))
+  .page(({ data: { weather, city, error } }) => {
     return (
       <div className="space-y-8">
         {/* Header */}
@@ -89,8 +98,4 @@ export default route.page({
         {weather ? <ForecastGrid daily={weather.daily} /> : null}
       </div>
     );
-  },
-  head: ({ query }) => ({
-    meta: [{ title: `Weather in ${query.city ?? "Paris"}` }],
-  }),
-});
+  });

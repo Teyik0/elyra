@@ -1,18 +1,13 @@
-import { createRoute } from "../../../../src/client";
+import { defineRoute } from "@teyik0/furin";
 import { route as rootRoute } from "./root";
 
-const syncLoaderRoute = createRoute({
-  mode: "ssr",
-  parent: rootRoute,
-});
-
-export default syncLoaderRoute.page({
-  component: () => <div>sync loader</div>,
-  loader: () => {
+export const route = defineRoute()
+  .config({ mode: "ssr", parent: rootRoute })
+  .loader(() => {
     const startedAt = performance.now();
     while (performance.now() - startedAt < 8) {
       // Deliberate synchronous work verifies that DevTools times loader invocation.
     }
     return { completed: true };
-  },
-});
+  })
+  .page(() => <div>sync loader</div>);

@@ -9,7 +9,7 @@ const { join } = await import("node:path");
 const { defer } = await import("../../../src/client.ts");
 const { renderSSR } = await import("../../../src/server/render/index.ts");
 const { setProductionTemplateContent } = await import("../../../src/server/render/template.ts");
-const { scanPages } = await import("../../../src/server/router/index.ts");
+const { scanPages } = await import("../../../src/server/router/discovery.ts");
 const { __setDevMode } = await import("../../../src/server/runtime-env.ts");
 const { Await } = await import("../../../src/shared/await.tsx");
 
@@ -54,8 +54,8 @@ describe.serial("renderSSR deferred Suspense scenarios", () => {
         ...fixture.ssrRoute.page,
         loader: () =>
           defer({
-            slow: new Promise((resolve) => setTimeout(() => resolve("slow-value"), 80)),
             fast: new Promise((resolve) => setTimeout(() => resolve("fast-value"), 10)),
+            slow: new Promise((resolve) => setTimeout(() => resolve("slow-value"), 80)),
           }),
       },
     });

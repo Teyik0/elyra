@@ -7,6 +7,7 @@ import { buildEntrySource } from "../build/entry-template.ts";
 import { copyDirRecursive, ensureDir, toPosixPath } from "../build/shared.ts";
 import { buildSSGCacheSnapshot } from "../build/ssg-cache.ts";
 import type { BuildAppOptions, PackageTargetBuildManifest } from "../build/types.ts";
+import { createRoutesPlugin, routeModuleSpecifier, routeSourcePaths } from "../plugin/routes.ts";
 import { ssgRouteCache } from "../server/cache/ssg.ts";
 import { generateProdIndexHtml } from "../server/render/shell.ts";
 import { setProductionTemplateContent } from "../server/render/template.ts";
@@ -47,12 +48,13 @@ export async function buildPackageTarget(
   ensureDir(targetDir);
 
   const { entryChunk, cssChunks } = await buildClient(routes, {
-    outDir: targetDir,
-    rootLayout: root.path,
-    plugins: options.plugins,
-    publicPath: `${prefix}/_client/`,
     basePath: prefix,
     clientLogging: options.clientLogging ?? false,
+    outDir: targetDir,
+    pagesDir,
+    plugins: options.plugins,
+    publicPath: `${prefix}/_client/`,
+    rootLayout: root.path,
   });
 
   // Same fingerprint as the Bun target: hashing only the client chunks would
@@ -109,9 +111,9 @@ export async function buildPackageTarget(
     routeMetadata[toPosixPath(route.path)] = {
       segmentBoundaries: route.segmentBoundaries.map((b) => ({
         depth: b.depth,
-        path: toPosixPath(b.path),
         errorPath: b.errorPath ? toPosixPath(b.errorPath) : undefined,
         notFoundPath: b.notFoundPath ? toPosixPath(b.notFoundPath) : undefined,
+        path: toPosixPath(b.path),
       })),
     };
   }
@@ -122,11 +124,13 @@ export async function buildPackageTarget(
       {
         buildId,
         clientLogging: options.clientLogging ?? false,
+        modulePaths: routeSourcePaths({ pagesDir, prefix }),
+        nativeRoutes: routeModuleSpecifier(app),
         prefix,
-        rootPath: root.path,
-        routes: routes.map((r) => ({ pattern: r.pattern, path: r.path, mode: r.mode })),
         rootConventions,
+        rootPath: root.path,
         routeMetadata,
+        routes: routes.map((r) => ({ mode: r.mode, path: r.path, pattern: r.pattern })),
         ssgCache,
       },
     ],
@@ -138,16 +142,19 @@ export async function buildPackageTarget(
 
   const result = await runBunBuild({
     entrypoints: [registerEntry],
+    minify: false,
+    naming: { chunk: "[name]-[hash].[ext]", entry: "[name].[ext]" },
     outdir: targetDir,
-    target: "bun",
     // Keep EVERY dependency external (incl. @teyik0/furin): the host must
     // share one copy of the furin runtime with this register module — only
     // the package's own page sources get bundled in.
     packages: "external",
-    naming: { entry: "[name].[ext]", chunk: "[name]-[hash].[ext]" },
+    plugins: [
+      ...(options.plugins ?? []),
+      createRoutesPlugin({ instances: [app], target: "server" }),
+    ],
     sourcemap: "none",
-    minify: false,
-    plugins: options.plugins,
+    target: "bun",
   });
   if (!result.success) {
     throw new AggregateError(result.logs, "[furin] package register build failed");

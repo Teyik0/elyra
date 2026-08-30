@@ -1,5 +1,5 @@
 // biome-ignore-all lint/performance/noJsxPropsBind: board nav active props depend on router active state
-import { createRoute } from "@teyik0/furin/client";
+import { defineRoute } from "@teyik0/furin";
 import { Link } from "@teyik0/furin/link";
 import { t } from "elysia";
 import type { Board } from "@/api/modules/boards/service";
@@ -20,8 +20,13 @@ function boardHue(id: string): string {
   return PALETTE[id.charCodeAt(0) % PALETTE.length] ?? (PALETTE[0] as string);
 }
 
-export const route = createRoute({
-  layout: ({ children, sidebarBoards }) => (
+export const route = defineRoute()
+  .config({ params: t.Object({ boardId: t.String() }), parent: rootRoute, tags: ["boards"] })
+  .loader(() => {
+    const sidebarBoards = getBoards();
+    return { sidebarBoards };
+  })
+  .layout(({ data: { sidebarBoards }, children }) => (
     <div className="flex min-h-screen">
       {/* ─── Sidebar ──────────────────────────────────────────── */}
       <aside className="flex w-55 shrink-0 flex-col border-white/5 border-r bg-[#0a0a0c]">
@@ -97,12 +102,4 @@ export const route = createRoute({
       {/* Main */}
       <main className="flex flex-1 flex-col overflow-hidden">{children}</main>
     </div>
-  ),
-  loader: () => {
-    const sidebarBoards = getBoards();
-    return { sidebarBoards };
-  },
-  params: t.Object({ boardId: t.String() }),
-  parent: rootRoute,
-  tags: ["boards"],
-});
+  ));

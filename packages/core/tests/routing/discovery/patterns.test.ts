@@ -69,11 +69,6 @@ describe("filePathToPattern", () => {
 describe("compareRouteSpecificity", () => {
   const moreSpecific = (a: string, b: string) => compareRouteSpecificity(a, b) > 0;
 
-  test("keeps the legacy routeSpecificity export as an alias", async () => {
-    const { routeSpecificity } = await import("../../../src/server/router/index.ts");
-    expect(routeSpecificity).toBe(compareRouteSpecificity);
-  });
-
   test("literal segment outranks :param at the same position", () => {
     expect(moreSpecific("/users/new", "/users/:id")).toBe(true);
     expect(compareRouteSpecificity("/users/:id", "/users/new")).toBeLessThan(0);

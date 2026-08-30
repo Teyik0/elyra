@@ -4,7 +4,7 @@ import { DefaultErrorFallback, DefaultNotFoundFallback } from "../../client/defa
 import type { RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import type { ErrorComponent } from "../../shared/error.ts";
 import type { FurinNotFoundError, NotFoundComponent } from "../../shared/not-found.ts";
-import type { ResolvedRoute, SegmentBoundary } from "../router/index.ts";
+import type { ResolvedRoute, SegmentBoundary } from "../router/types.ts";
 import { IS_DEV } from "../runtime-env.ts";
 
 export function buildElement(

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { RuntimeRoute } from "../../../src/client/internal/runtime-types.ts";
-import { refreshLayoutChain } from "../../../src/server/router/index.ts";
+import { defineRoute } from "../../../src/furin.ts";
+import { refreshLayoutChain } from "../../../src/server/router/hmr.ts";
 
 describe("refreshLayoutChain", () => {
   test("patches layout on intermediate route chain objects after re-import", async () => {
@@ -16,7 +17,7 @@ describe("refreshLayoutChain", () => {
     const importFn = (specifier: string) => {
       if (specifier.includes("board/_route.tsx")) {
         return Promise.resolve({
-          route: { __type: "FURIN_ROUTE", layout: newLayout },
+          route: defineRoute().layout(newLayout),
         });
       }
       return Promise.resolve({});
@@ -24,9 +25,9 @@ describe("refreshLayoutChain", () => {
 
     await refreshLayoutChain(chain, "/pages/board/page.tsx", "/pages/root.tsx", importFn);
 
-    expect((chain[1] as Required<RuntimeRoute>).layout).toBe(newLayout);
-    expect((chain[0] as Required<RuntimeRoute>).layout).not.toBe(newLayout);
-    expect((chain[2] as Required<RuntimeRoute>).layout).not.toBe(newLayout);
+    expect((chain[1] as Required<RuntimeRoute>).layout({} as never)).toBe("new");
+    expect((chain[0] as Required<RuntimeRoute>).layout({} as never)).toBe("root");
+    expect((chain[2] as Required<RuntimeRoute>).layout({} as never)).toBe("page");
   });
 
   test("patches loader on intermediate route chain objects", async () => {
@@ -41,7 +42,9 @@ describe("refreshLayoutChain", () => {
     const importFn = (specifier: string) => {
       if (specifier.includes("board/_route.tsx")) {
         return Promise.resolve({
-          route: { __type: "FURIN_ROUTE", loader: newLoader },
+          route: defineRoute()
+            .loader(newLoader)
+            .layout(({ children }) => children),
         });
       }
       return Promise.resolve({});
@@ -52,7 +55,7 @@ describe("refreshLayoutChain", () => {
     expect((chain[1] as Required<RuntimeRoute>).loader).toBe(newLoader);
   });
 
-  test("removes stale layout when _route.tsx no longer exports one", async () => {
+  test("keeps the current layout while _route.tsx has no layout terminal", async () => {
     const chain: RuntimeRoute[] = [
       { __type: "FURIN_ROUTE", layout: () => "root" },
       { __type: "FURIN_ROUTE", layout: () => "board" },
@@ -61,7 +64,7 @@ describe("refreshLayoutChain", () => {
     const importFn = (specifier: string) => {
       if (specifier.includes("board/_route.tsx")) {
         return Promise.resolve({
-          route: { __type: "FURIN_ROUTE" },
+          route: defineRoute().page(() => null),
         });
       }
       return Promise.resolve({});
@@ -69,7 +72,7 @@ describe("refreshLayoutChain", () => {
 
     await refreshLayoutChain(chain, "/pages/board/page.tsx", "/pages/root.tsx", importFn);
 
-    expect((chain[1] as RuntimeRoute | undefined)?.layout).toBeUndefined();
+    expect((chain[1] as RuntimeRoute | undefined)?.layout).toBeDefined();
     expect((chain[0] as RuntimeRoute | undefined)?.layout).toBeDefined();
   });
 
@@ -82,7 +85,7 @@ describe("refreshLayoutChain", () => {
     const importFn = (specifier: string) => {
       if (specifier.includes("board/_route.tsx")) {
         return Promise.resolve({
-          route: { __type: "FURIN_ROUTE" },
+          route: defineRoute().layout(({ children }) => children),
         });
       }
       return Promise.resolve({});
@@ -146,7 +149,7 @@ describe("refreshLayoutChain", () => {
       }
       if (specifier.includes("thread/_route.tsx")) {
         return Promise.resolve({
-          route: { __type: "FURIN_ROUTE", layout: newThreadLayout },
+          route: defineRoute().layout(newThreadLayout),
         });
       }
       return Promise.resolve({});
@@ -157,8 +160,8 @@ describe("refreshLayoutChain", () => {
     // chain[1] (threadRoute) should be patched with thread's new layout,
     // NOT left untouched because the old code mapped board's missing _route.tsx
     // to chain index 1 and skipped thread's _route.tsx entirely.
-    expect((chain[1] as Required<RuntimeRoute>).layout).toBe(newThreadLayout);
-    expect((chain[0] as Required<RuntimeRoute>).layout).not.toBe(newThreadLayout);
+    expect((chain[1] as Required<RuntimeRoute>).layout({} as never)).toBe("new-thread");
+    expect((chain[0] as Required<RuntimeRoute>).layout({} as never)).toBe("root");
   });
 
   test("handles multiple gap directories correctly", async () => {
@@ -181,7 +184,7 @@ describe("refreshLayoutChain", () => {
       }
       if (specifier.includes("/a/b/c/_route.tsx")) {
         return Promise.resolve({
-          route: { __type: "FURIN_ROUTE", layout: newCLayout },
+          route: defineRoute().layout(newCLayout),
         });
       }
       return Promise.resolve({});
@@ -189,7 +192,7 @@ describe("refreshLayoutChain", () => {
 
     await refreshLayoutChain(chain, "/pages/a/b/c/page.tsx", "/pages/root.tsx", importFn);
 
-    expect((chain[1] as Required<RuntimeRoute>).layout).toBe(newCLayout);
+    expect((chain[1] as Required<RuntimeRoute>).layout({} as never)).toBe("new-c");
   });
 
   test("skips gap dirs and patches all present _route.tsx files", async () => {
@@ -209,12 +212,12 @@ describe("refreshLayoutChain", () => {
     const importFn = (specifier: string) => {
       if (specifier.includes("/a/_route.tsx") && !specifier.includes("/a/b/")) {
         return Promise.resolve({
-          route: { __type: "FURIN_ROUTE", layout: newALayout },
+          route: defineRoute().layout(newALayout),
         });
       }
       if (specifier.includes("/a/b/_route.tsx")) {
         return Promise.resolve({
-          route: { __type: "FURIN_ROUTE", layout: newBLayout },
+          route: defineRoute().layout(newBLayout),
         });
       }
       return Promise.resolve({});
@@ -222,8 +225,8 @@ describe("refreshLayoutChain", () => {
 
     await refreshLayoutChain(chain, "/pages/a/b/page.tsx", "/pages/root.tsx", importFn);
 
-    expect((chain[1] as Required<RuntimeRoute>).layout).toBe(newALayout);
-    expect((chain[2] as Required<RuntimeRoute>).layout).toBe(newBLayout);
+    expect((chain[1] as Required<RuntimeRoute>).layout({} as never)).toBe("new-a");
+    expect((chain[2] as Required<RuntimeRoute>).layout({} as never)).toBe("new-b");
   });
 
   test("refreshes intermediate layouts declared in _route.ts", async () => {
@@ -238,7 +241,7 @@ describe("refreshLayoutChain", () => {
     const importFn = (specifier: string) => {
       if (specifier.includes("board/_route.ts?")) {
         return Promise.resolve({
-          route: { __type: "FURIN_ROUTE", layout: newLayout },
+          route: defineRoute().layout(newLayout),
         });
       }
 
@@ -249,6 +252,6 @@ describe("refreshLayoutChain", () => {
 
     await refreshLayoutChain(chain, "/pages/board/page.tsx", "/pages/root.tsx", importFn);
 
-    expect((chain[1] as Required<RuntimeRoute>).layout).toBe(newLayout);
+    expect((chain[1] as Required<RuntimeRoute>).layout({} as never)).toBe("new");
   });
 });

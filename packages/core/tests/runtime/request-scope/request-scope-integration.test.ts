@@ -41,16 +41,12 @@ function writeRevalidatePages(appPath, asyncLoader) {
     appPath,
     "src/pages/revalidate-a.tsx",
     [
-      'import { route as rootRoute } from "./root";',
-      'import { revalidatePath } from "@teyik0/furin";',
+      'import { defineRoute, revalidatePath } from "@teyik0/furin";',
       "",
-      "export default rootRoute.page({",
-      "  loader: " + loaderPrefix + "() => {",
+      "export const route = defineRoute().loader(" + loaderPrefix + "() => {",
       '    revalidatePath("/page-a", "page");',
       "    return {};",
-      "  },",
-      "  component: () => <div>Page A</div>,",
-      "});",
+      "  }).page(() => <div>Page A</div>);",
     ].join("\\n")
   );
 
@@ -58,16 +54,12 @@ function writeRevalidatePages(appPath, asyncLoader) {
     appPath,
     "src/pages/revalidate-b.tsx",
     [
-      'import { route as rootRoute } from "./root";',
-      'import { revalidatePath } from "@teyik0/furin";',
+      'import { defineRoute, revalidatePath } from "@teyik0/furin";',
       "",
-      "export default rootRoute.page({",
-      "  loader: " + loaderPrefix + "() => {",
+      "export const route = defineRoute().loader(" + loaderPrefix + "() => {",
       '    revalidatePath("/page-b", "page");',
       "    return {};",
-      "  },",
-      "  component: () => <div>Page B</div>,",
-      "});",
+      "  }).page(() => <div>Page B</div>);",
     ].join("\\n")
   );
 }

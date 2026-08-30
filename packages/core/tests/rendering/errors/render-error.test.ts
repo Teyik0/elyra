@@ -4,7 +4,7 @@ import type { HTTPHeaders } from "elysia/types";
 import { createElement, type ReactNode } from "react";
 import type { RuntimePage, RuntimeRoute } from "../../../src/client/internal/runtime-types.ts";
 import { renderSSR, renderToHTML } from "../../../src/server/render/index.ts";
-import type { ResolvedRoute, RootLayout } from "../../../src/server/router/index.ts";
+import type { ResolvedRoute, RootLayout } from "../../../src/server/router/types.ts";
 import { __setDevMode } from "../../../src/server/runtime-env.ts";
 import type { ErrorComponent } from "../../../src/shared/error.ts";
 import { evlogSetMock } from "../../setup/evlog-mock";

@@ -67,22 +67,18 @@ function writeAdminPages(appPath) {
     appPath,
     "src/admin/root.tsx",
     [
-      'import { createRoute } from "@teyik0/furin/client";',
+      'import { defineRoute } from "@teyik0/furin";',
       "",
-      "export const route = createRoute({",
-      '  layout: ({ children }) => <div data-testid="admin-layout">{children}</div>,',
-      "});",
+      'export const route = defineRoute().layout(({ children }) => <div data-testid="admin-layout">{children}</div>);',
     ].join("\\n")
   );
   writeAppFile(
     appPath,
     "src/admin/index.tsx",
     [
-      'import { route as rootRoute } from "./root";',
+      'import { defineRoute } from "@teyik0/furin";',
       "",
-      "export default rootRoute.page({",
-      "  component: () => <main>Admin home</main>,",
-      "});",
+      "export const route = defineRoute().page(() => <main>Admin home</main>);",
     ].join("\\n")
   );
   writeAppFile(
@@ -90,33 +86,26 @@ function writeAdminPages(appPath) {
     "src/admin/nav.tsx",
     [
       'import { Link } from "@teyik0/furin/link";',
-      'import { route as rootRoute } from "./root";',
+      'import { defineRoute } from "@teyik0/furin";',
       "",
-      "export default rootRoute.page({",
-      '  mode: "ssr",',
-      "  component: () => (",
+      'export const route = defineRoute().config({ mode: "ssr" }).page(() => (',
       "    <nav>",
       '      <Link to="/users">Users link</Link>',
       '      <Link to="/nav">Self link</Link>',
       "    </nav>",
-      "  ),",
-      "});",
+      "  ));",
     ].join("\\n")
   );
   writeAppFile(
     appPath,
     "src/admin/users.tsx",
     [
-      'import { route as rootRoute } from "./root";',
-      'import { revalidatePath } from "@teyik0/furin";',
+      'import { defineRoute, revalidatePath } from "@teyik0/furin";',
       "",
-      "export default rootRoute.page({",
-      "  loader: () => {",
+      "export const route = defineRoute().loader(() => {",
       '    revalidatePath("/from-admin", "page");',
       '    return { who: "admin" };',
-      "  },",
-      "  component: () => <main>Admin users</main>,",
-      "});",
+      "  }).page(() => <main>Admin users</main>);",
     ].join("\\n")
   );
   return join(appPath, "src/admin");
@@ -131,16 +120,12 @@ async function mountBothApps(options) {
     app.path,
     "src/pages/revalidating.tsx",
     [
-      'import { route as rootRoute } from "./root";',
-      'import { revalidatePath } from "@teyik0/furin";',
+      'import { defineRoute, revalidatePath } from "@teyik0/furin";',
       "",
-      "export default rootRoute.page({",
-      "  loader: () => {",
+      "export const route = defineRoute().loader(() => {",
       '    revalidatePath("/from-front", "page");',
       "    return {};",
-      "  },",
-      "  component: () => <main>Front revalidating</main>,",
-      "});",
+      "  }).page(() => <main>Front revalidating</main>);",
     ].join("\\n")
   );
   writeAppFile(
@@ -148,15 +133,13 @@ async function mountBothApps(options) {
     "src/pages/nav.tsx",
     [
       'import { Link } from "@teyik0/furin/link";',
-      'import { route as rootRoute } from "./root";',
+      'import { defineRoute } from "@teyik0/furin";',
       "",
-      "export default rootRoute.page({",
-      "  component: () => (",
+      "export const route = defineRoute().page(() => (",
       "    <nav>",
       '      <Link to="/users">Users link</Link>',
       "    </nav>",
-      "  ),",
-      "});",
+      "  ));",
     ].join("\\n")
   );
   const adminPagesDir = writeAdminPages(app.path);

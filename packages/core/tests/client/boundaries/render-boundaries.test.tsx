@@ -356,8 +356,6 @@ function makeNotFoundBoundaryInState(
     boundary.state = { ...boundary.state, ...next };
   }) as typeof boundary.setState;
   const derived = FurinNotFoundBoundary.getDerivedStateFromError(error);
-  if (derived) {
-    boundary.state = { ...boundary.state, ...derived } as typeof boundary.state;
-  }
+  boundary.state = { ...boundary.state, ...derived } as typeof boundary.state;
   return boundary;
 }

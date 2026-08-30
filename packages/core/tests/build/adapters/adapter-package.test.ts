@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { scanPages } from "../../../src/server/router/index.ts";
+import { scanPages } from "../../../src/server/router/discovery.ts";
 import {
   createTmpApp,
   removeAppPath,

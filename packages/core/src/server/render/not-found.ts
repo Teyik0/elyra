@@ -4,7 +4,7 @@ import type { RouterContextValue } from "../../client/router/types.ts";
 import { FurinNotFoundError } from "../../shared/not-found.ts";
 import { useLogger } from "../context-logger.ts";
 import { currentInstance } from "../instance.ts";
-import type { RootLayout } from "../router/index.ts";
+import type { RootLayout } from "../router/types.ts";
 import { IS_DEV } from "../runtime-env.ts";
 import { assembleHTML, streamToString } from "./assemble.ts";
 import { buildNotFoundElement } from "./element.tsx";
@@ -44,27 +44,27 @@ export async function renderRootNotFound(
   const notFoundContext: RouterContextValue = {
     basePath,
     currentHref: request ? normalizeHref(toLogical(new URL(request.url).pathname, basePath)) : "/",
-    search: {},
-    searchRoutes: [],
+    defaultPreload: "intent",
+    defaultPreloadDelay: 50,
+    defaultPreloadStaleTime: 30_000,
+    invalidatePrefetch: (_path, _type) => {
+      /* noop */
+    },
+    isNavigating: false,
     navigate: (_href, _opts) => Promise.resolve(),
     prefetch: (_href, _opts) => {
       /* noop */
     },
-    invalidatePrefetch: (_path, _type) => {
-      /* noop */
-    },
     refresh: (_opts) => Promise.resolve(),
-    isNavigating: false,
-    defaultPreload: "intent",
-    defaultPreloadDelay: 50,
-    defaultPreloadStaleTime: 30_000,
+    search: {},
+    searchRoutes: [],
   };
 
   useLogger().set({
     furin: {
-      render: "not-found",
       action: "catch_all",
       path: request ? new URL(request.url).pathname : "/",
+      render: "not-found",
     },
   });
 
@@ -79,9 +79,9 @@ export async function renderRootNotFound(
     // 404 page from logs and drains.
     useLogger().set({
       furin: {
-        render: "not-found",
         action: "component_render_failed",
         error: renderError instanceof Error ? renderError.message : String(renderError),
+        render: "not-found",
       },
     });
     reactStream = await renderToReadableStream(
@@ -93,7 +93,7 @@ export async function renderRootNotFound(
   const html = assembleHTML(template, "", reactHtml, { __furinStatus: 404 });
 
   return new Response(html, {
-    status: 404,
     headers: { "Content-Type": "text/html; charset=utf-8" },
+    status: 404,
   });
 }

@@ -1,6 +1,6 @@
-import { createRoute } from "@teyik0/furin/client";
+import { defineRoute } from "@teyik0/furin";
 import "./globals.css";
 
-export const route = createRoute({
-  layout: ({ children }) => <div className="min-h-screen">{children}</div>,
-});
+export const route = defineRoute().layout(({ children }) => (
+  <div className="min-h-screen">{children}</div>
+));

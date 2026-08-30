@@ -5,6 +5,7 @@ import { staticPlugin } from "@elysiajs/static";
 import { type AnyElysia, Elysia, file } from "elysia";
 import { type DrainContext, initLogger } from "evlog";
 import { type EvlogElysiaOptions, evlog } from "evlog/elysia";
+import { FURIN_RENDER_DECORATOR, type FurinRouteDispatcher } from "./define-route.ts";
 import { consumePendingInvalidations } from "./server/cache/invalidation.ts";
 import { setSSGCache } from "./server/cache/ssg.ts";
 import {
@@ -34,8 +35,10 @@ import {
   setProductionTemplatePath,
 } from "./server/render/template.ts";
 import { loadProdRoutes } from "./server/router/discovery.ts";
-import { createDataEndpoint, createRoutePlugin } from "./server/router/plugin.ts";
+import { buildRouteMatcher } from "./server/router/patterns.ts";
+import { createDataEndpoint, renderResolvedRoute } from "./server/router/plugin.ts";
 import { createSearchRouteMetadata } from "./server/router/schemas.ts";
+import type { ResolvedRoute, RootLayout } from "./server/router/types.ts";
 import { IS_DEV } from "./server/runtime-env.ts";
 import { type FurinSyncOption, resolveSyncStreamPath } from "./server/sync/config.ts";
 import { createSyncStreamPlugin } from "./server/sync/stream.ts";
@@ -49,6 +52,13 @@ import { clientDirNameForPrefix } from "./shared/prefix.ts";
 
 // biome-ignore lint/performance/noBarrelFile: furin.ts is the public package entry
 export {
+  type DefineRouteConfig,
+  defineRoute,
+  type RequestLoaderContext,
+  type RouteLoaderData,
+  type RouteParams,
+} from "./define-route.ts";
+export {
   type ClientIsomorphicFn,
   createIsomorphicFn,
   type IsomorphicFn,
@@ -59,6 +69,7 @@ export { clientDirNameForPrefix } from "./shared/prefix.ts";
 
 const MAX_BROWSER_INGEST_BYTES = 64 * 1024;
 const MAX_BROWSER_INGEST_EVENTS = 100;
+const DEV_ROUTE_TOPOLOGY_POLL_INTERVAL_MS = 100;
 
 function resolveClientDirFromArgv(prefix: string): string {
   const dirName = clientDirNameForPrefix(prefix);
@@ -357,8 +368,46 @@ function wrapWithRequestScope(app: AnyElysia): Elysia {
 }
 
 async function loadDevelopmentRoutes(resolvedPagesDir: string) {
-  const { scanPages } = await import("./server/router/index.ts");
+  const { scanPages } = await import("./server/router/discovery.ts");
   return scanPages(resolvedPagesDir);
+}
+
+function createNativeRouteRenderer(
+  prefix: string,
+  routes: ResolvedRoute[],
+  root: RootLayout,
+  buildId: string,
+  searchRoutes: ReturnType<typeof createSearchRouteMetadata>
+): FurinRouteDispatcher {
+  const matchNativeRoute = buildRouteMatcher(routes);
+  return (context) => {
+    const { request } = context;
+    const { pathname } = new URL(request.url);
+    const hasPrefix = prefix !== "" && (pathname === prefix || pathname.startsWith(`${prefix}/`));
+    const logicalPath = hasPrefix ? pathname.slice(prefix.length) : pathname;
+    const matched = matchNativeRoute(logicalPath || "/");
+    if (!matched) {
+      throw new Error(`[furin] Native route dispatcher missed ${JSON.stringify(logicalPath)}`);
+    }
+    return renderResolvedRoute(
+      matched.route,
+      context as unknown as Parameters<typeof renderResolvedRoute>[1],
+      root,
+      buildId,
+      searchRoutes
+    );
+  };
+}
+
+const nativeRouteRenderers = new WeakMap<FurinInstance, FurinRouteDispatcher>();
+
+function dispatchNativeRoute(context: Parameters<FurinRouteDispatcher>[0]): unknown {
+  const { pathname } = new URL(context.request.url);
+  const renderer = nativeRouteRenderers.get(resolveInstanceByPath(pathname));
+  if (!renderer) {
+    throw new Error(`[furin] No route renderer is registered for ${JSON.stringify(pathname)}`);
+  }
+  return renderer(context);
 }
 
 function hydrateSSGCacheFromCompileContext(ctx: CompileContext): void {
@@ -466,36 +515,73 @@ export async function furin({
     // Lazy import — build pipeline has native deps not available in compiled binaries
     const { registerDevPagePlugin } = await import("./server/dev-page-plugin.ts");
     registerDevPagePlugin();
+    const { registerDevRoutesPlugin, registerDevRouteTopologyWatcher, routeModuleSpecifier } =
+      await import("./plugin/routes.ts");
+    const routeInstance = { pagesDir: resolvedPagesDir, prefix };
+    registerDevRoutesPlugin([routeInstance]);
+    const { furinApp: nativeRoutesApp } = (await import(routeModuleSpecifier(routeInstance))) as {
+      furinApp: AnyElysia;
+    };
     const { root, routes } = await loadDevelopmentRoutes(resolvedPagesDir);
     const searchRoutes = createSearchRouteMetadata(routes);
+    const renderNativeRoute = createNativeRouteRenderer(prefix, routes, root, "", searchRoutes);
+    nativeRouteRenderers.set(instance, renderNativeRoute);
 
     const { writeDevFiles } = await import("./build/hydrate.ts");
-    writeDevFiles(
-      routes,
-      {
-        outDir: furinDir,
-        rootLayout: root.path,
-        basePath: prefix,
-        publicPath: `${prefix}/_client/`,
-        clientLogging: clientLogging ?? false,
-        // furin-env.d.ts is one file at the project root — only the root
-        // instance owns it, otherwise mounted apps clobber each other's types.
-        skipRouteTypes: prefix !== "",
-      },
-      cwd
-    );
-
+    const writeCurrentDevFiles = (currentRoutes: ResolvedRoute[], rootLayout: string): void => {
+      writeDevFiles(
+        currentRoutes,
+        {
+          basePath: prefix,
+          clientLogging: clientLogging ?? false,
+          outDir: furinDir,
+          publicPath: `${prefix}/_client/`,
+          rootLayout,
+          // furin-env.d.ts is one file at the project root — only the root
+          // instance owns it, otherwise mounted apps clobber each other's types.
+          skipRouteTypes: prefix !== "",
+        },
+        cwd
+      );
+    };
+    writeCurrentDevFiles(routes, root.path);
+    const devHtmlBundle = (await import(join(furinDir, "index.html"))).default;
     const publicDir = resolve(cwd, "public");
     const publicExists = existsSync(publicDir);
+    const hmrEntryPath = `${prefix}/_bun_hmr_entry`;
+    let routeTopologyWatcher: ReturnType<typeof registerDevRouteTopologyWatcher> | undefined;
 
     // Routes registered below are LOGICAL — Elysia's `prefix` makes them
     // physical when this plugin is merged into the parent app (child prefixes
     // like staticPlugin's compose underneath).
     const devApp = new Elysia({
       name: instanceName,
-      seed: resolvedPagesDir,
       prefix: prefix || undefined,
+      seed: resolvedPagesDir,
     })
+      .onStart((app) => {
+        const nativeServeRoutes = {
+          ...app.config.serve?.routes,
+          [hmrEntryPath]: devHtmlBundle,
+        };
+        app.config.serve = { ...app.config.serve, routes: nativeServeRoutes };
+        app.server?.reload({ fetch: app.fetch, routes: nativeServeRoutes });
+        routeTopologyWatcher = registerDevRouteTopologyWatcher({
+          instance: routeInstance,
+          onTopologyChange: async () => {
+            const next = await loadDevelopmentRoutes(resolvedPagesDir);
+            writeCurrentDevFiles(next.routes, next.root.path);
+          },
+          pollIntervalMs: DEV_ROUTE_TOPOLOGY_POLL_INTERVAL_MS,
+        });
+      })
+      .onStop(() => {
+        routeTopologyWatcher?.close();
+        routeTopologyWatcher = undefined;
+      })
+      // Elysia 1.4.30 only preserves Bun's native HTMLBundle handler when the
+      // bundle is also present in serve.routes once request hooks are installed.
+      .use(await staticPlugin({ assets: furinDir, bunFullstack: true, prefix: "/_bun_hmr_entry" }))
       .use(loggerPlugin)
       // Local scope (default) — a global hook would leak onto sibling furin
       // instances mounted on the same parent app.
@@ -511,7 +597,6 @@ export async function furin({
           set.headers["x-furin-revalidate"] = pending.join(",");
         }
       })
-      .use(await staticPlugin({ assets: furinDir, prefix: "/_bun_hmr_entry", bunFullstack: true }))
       .use(
         publicExists ? await staticPlugin({ assets: publicDir, prefix: "/public" }) : new Elysia()
       )
@@ -524,12 +609,8 @@ export async function furin({
       .use(createInstrumentationPlugin(routes, syncStreamPath))
       .use(sync ? createSyncStreamPlugin(sync) : new Elysia())
       .use(createDataEndpoint(routes))
-      .use((app) =>
-        routes.reduce(
-          (chain, route) => chain.use(createRoutePlugin(route, root, undefined, searchRoutes)),
-          app
-        )
-      )
+      .decorate(FURIN_RENDER_DECORATOR, dispatchNativeRoute)
+      .use(nativeRoutesApp)
       .use(createNotFoundHandling(prefix, routes, root));
     registerInstance(instance);
     return wrapWithRequestScope(devApp);
@@ -542,6 +623,17 @@ export async function furin({
   const { root, routes } = loadProdRoutes(ctx);
   const searchRoutes = createSearchRouteMetadata(routes);
   const prodBuildId = ctx.buildId ?? "";
+  if (!ctx.nativeRoutes) {
+    throw new Error("[furin] Production build is missing the composed Elysia route app.");
+  }
+  const renderNativeRoute = createNativeRouteRenderer(
+    prefix,
+    routes,
+    root,
+    prodBuildId,
+    searchRoutes
+  );
+  nativeRouteRenderers.set(instance, renderNativeRoute);
   instance.buildId = prodBuildId;
   // Init-time writes target THIS instance explicitly — with several mounted
   // apps there is no ambient request scope to resolve it from.
@@ -556,8 +648,8 @@ export async function furin({
   const clientAssetPrefix = `${prefix}/_client/`;
   const prodApp = new Elysia({
     name: instanceName,
-    seed: resolvedPagesDir,
     prefix: prefix || undefined,
+    seed: resolvedPagesDir,
   })
     .use(loggerPlugin)
     // Local scope (default) — a global hook would leak onto sibling furin
@@ -631,12 +723,8 @@ export async function furin({
     )
     .use(sync ? createSyncStreamPlugin(sync) : new Elysia())
     .use(createDataEndpoint(routes))
-    .use((app) =>
-      routes.reduce(
-        (chain, route) => chain.use(createRoutePlugin(route, root, prodBuildId, searchRoutes)),
-        app
-      )
-    )
+    .decorate(FURIN_RENDER_DECORATOR, dispatchNativeRoute)
+    .use(ctx.nativeRoutes)
     .use(createNotFoundHandling(prefix, routes, root));
   registerInstance(instance);
   return wrapWithRequestScope(prodApp);
@@ -686,7 +774,6 @@ export type { InvalidationInput, InvalidationRule } from "./server/auto-invalida
 export { furinInvalidate, revalidateTag } from "./server/auto-invalidate/index.ts";
 export { revalidatePath, setCachePurger } from "./server/cache/invalidation.ts";
 export { buildElement, buildErrorElement, renderRootNotFound } from "./server/render/index.ts";
-export type { ResolvedRoute, SegmentBoundary } from "./server/router/index.ts";
 export {
   type FurinSyncOption,
   type FurinSyncOptions,

@@ -16,7 +16,7 @@ import type { ISRCacheEntry } from "../cache/isr-ssg.ts";
 import { pathWithRequestSearch } from "../cache/route-cache.ts";
 import { createLogger, useLogger } from "../context-logger.ts";
 import { currentInstance, withInstance } from "../instance.ts";
-import type { ResolvedRoute, RootLayout } from "../router/index.ts";
+import type { ResolvedRoute, RootLayout } from "../router/types.ts";
 import {
   assembleHTML,
   injectSyncRuntimeScript,

@@ -6,7 +6,7 @@ import "../../setup/evlog-mock";
 import type { HTTPHeaders } from "elysia/types";
 import type { RuntimePage, RuntimeRoute } from "../../../src/client/internal/runtime-types.ts";
 import { renderSSR, renderToHTML } from "../../../src/server/render/index.ts";
-import type { ResolvedRoute, RootLayout } from "../../../src/server/router/index.ts";
+import type { ResolvedRoute, RootLayout } from "../../../src/server/router/types.ts";
 import { __setDevMode } from "../../../src/server/runtime-env.ts";
 import { type NotFoundComponent, notFound } from "../../../src/shared/not-found.ts";
 
