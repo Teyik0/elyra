@@ -5,7 +5,7 @@ import { client } from "@/lib/api";
 import { route as parentRoute } from "./root";
 
 export const route = defineRoute()
-  .config({ mode: "isr", parent: parentRoute, revalidate: 10, tags: ["boards"] })
+  .config({ layout: parentRoute, mode: "isr", revalidate: 10, tags: ["boards"] })
   .loader(async () => {
     const result = await client.boards.get();
     if (result.error) {

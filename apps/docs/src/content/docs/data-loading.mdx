@@ -12,7 +12,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as parentRoute } from "../root"
 
 export const route = defineRoute()
-  .config({ parent: parentRoute })
+  .config({ layout: parentRoute })
   .loader(async () => ({
     stats: await getDashboardStats(),
   }))
@@ -29,7 +29,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
-  .config({ parent: rootRoute })
+  .config({ layout: rootRoute })
   .loader(async ({ request }) => ({
     user: await getSession(request),
   }))
@@ -49,7 +49,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as parentRoute } from "./_route"
 
 export const route = defineRoute()
-  .config({ parent: parentRoute })
+  .config({ layout: parentRoute })
   .loader(async ({ user }) => {
     const { id } = await user
     return { stats: await getDashboardStats(id) }
@@ -82,7 +82,7 @@ import { route as parentRoute } from "../root"
 
 export const route = defineRoute()
   .config({
-    parent: parentRoute,
+    layout: parentRoute,
     query: t.Object({
       page: t.Optional(t.Number({ default: 1 })),
       tag: t.Optional(t.String()),

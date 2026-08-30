@@ -3,6 +3,6 @@ import { route as rootRoute } from "./root";
 
 // Explicit SSR mode — cannot be statically exported
 export const route = defineRoute()
-  .config({ mode: "ssr", parent: rootRoute })
+  .config({ layout: rootRoute, mode: "ssr" })
   .loader(async () => ({ user: "Alice" }))
   .page(({ data: { user } }) => <main>Dashboard for {user}</main>);

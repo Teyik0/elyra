@@ -4,8 +4,8 @@ import { route as rootRoute } from "../root";
 
 export const route = defineRoute()
   .config({
+    layout: rootRoute,
     params: t.Object({ slug: t.String() }),
-    parent: rootRoute,
     staticParams: () => [{ slug: "hello-world" }],
   })
   .page(() => <article>Blog post page</article>);

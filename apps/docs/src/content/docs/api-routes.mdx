@@ -255,7 +255,7 @@ import { getApi } from "@/lib/api"
 import { route as parentRoute } from "./_route"
 
 export const route = defineRoute()
-  .config({ parent: parentRoute })
+  .config({ layout: parentRoute })
   .loader(async () => {
     const { data, error } = await getApi().api.posts.get()
     if (error) throw error.value

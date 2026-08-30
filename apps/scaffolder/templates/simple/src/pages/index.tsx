@@ -7,7 +7,7 @@ interface HelloPayload {
 }
 
 export const route = defineRoute()
-  .config({ parent: parentRoute })
+  .config({ layout: parentRoute })
   .loader(async ({ request }) => {
     const response = await fetch(new URL("/api/hello", request.url));
     const payload = (await response.json()) as HelloPayload;

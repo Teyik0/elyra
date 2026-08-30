@@ -201,7 +201,7 @@ When a route inherits from multiple `_route.tsx` files (layout chain), their `qu
 // src/pages/products/_route.tsx
 export const route = defineRoute()
   .config({
-    parent: rootRoute,
+    layout: rootRoute,
     query: t.Object({ sort: t.Optional(t.String()) }),
   })
   .layout(({ children }) => children)
@@ -209,7 +209,7 @@ export const route = defineRoute()
 // src/pages/products/index.tsx
 export const route = defineRoute()
   .config({
-    parent: productsRoute,
+    layout: productsRoute,
     query: t.Object({ page: t.Optional(t.Number({ default: 1 })) }),
   })
   .page(() => <ProductList />)

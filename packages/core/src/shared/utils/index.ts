@@ -71,7 +71,7 @@ export function validateRouteChain(
     const location = pagePath ? `in ${pagePath}` : "";
     throw new Error(
       `[furin] Page ${location} must inherit from root route. ` +
-        "Add the root terminal to defineRoute().config({ parent: rootRoute })."
+        "Add the root terminal to defineRoute().config({ layout: rootRoute })."
     );
   }
 

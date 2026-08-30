@@ -128,8 +128,8 @@ describe("defineRoute", () => {
       .layout(({ children }) => children);
     const child = defineRoute()
       .config({
+        layout: parent,
         params: t.Object({ boardId: t.Number() }),
-        parent,
       })
       .loader(async ({ organization, params }) => {
         const organizationPromise: Promise<string> = organization;
@@ -157,7 +157,7 @@ describe("defineRoute", () => {
       .loader(() => ({ account: "acme" }))
       .layout(({ children }) => children);
     const organizationLayout = defineRoute()
-      .config({ parent: rootLayout })
+      .config({ layout: rootLayout })
       .loader(async ({ account }) => ({ organization: `${await account}:furin` }))
       .layout(({ data, children }) => {
         const account: string = data.account;
@@ -166,7 +166,7 @@ describe("defineRoute", () => {
       });
     const child = defineRoute()
       .config({
-        parent: organizationLayout,
+        layout: organizationLayout,
         query: t.Object({ page: t.Number() }),
       })
       .loader(async ({ account, organization, query }) => ({

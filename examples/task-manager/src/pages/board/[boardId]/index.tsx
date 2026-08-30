@@ -8,8 +8,8 @@ import { route as parentRoute } from "../_route";
 
 export const route = defineRoute()
   .config({
+    layout: parentRoute,
     params: t.Object({ boardId: t.String() }),
-    parent: parentRoute,
     tags: ["board", "cards"],
   })
   .loader(({ params }) => {

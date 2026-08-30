@@ -86,6 +86,27 @@ type RequestLoader<Params, Query, Data extends LoaderData> = (
   context: RequestLoaderContext<Params, Query>
 ) => Awaitable<Data>;
 
+/**
+ * Same-name parent/loader fields whose types are incompatible map to a
+ * readable branded error object; compatible overrides (same-type) map to
+ * `never` and are dropped from the mapped type.
+ */
+type ParentDataConflicts<ParentData extends LoaderData, Data extends LoaderData> = {
+  [Key in keyof Data & keyof ParentData as Data[Key] extends ParentData[Key] ? never : Key]: {
+    __furinConflict: "this loader key overwrites a parent loader key with an incompatible type";
+    parentType: ParentData[Key];
+    loaderType: Data[Key];
+  };
+};
+
+type WithoutParentDataConflicts<
+  ParentData extends LoaderData,
+  Data extends LoaderData,
+> = keyof ParentDataConflicts<ParentData, Data> extends never
+  ? ParentData & Data
+  : Omit<ParentData & Data, keyof ParentDataConflicts<ParentData, Data>> &
+      ParentDataConflicts<ParentData, Data>;
+
 type RenderContext<
   Params,
   Query,
@@ -93,7 +114,7 @@ type RenderContext<
   Data extends LoaderData,
   RequestData extends LoaderData,
 > = {
-  data: ParentData & Data;
+  data: WithoutParentDataConflicts<ParentData, Data>;
   params: Params;
   path: string;
   query: Query;
@@ -748,23 +769,16 @@ class ConfigStage extends NoSchemaChain {
     super({}, undefined);
   }
 
-  config<ParentRoute>(
+  config<LayoutRoute, QuerySchema extends FurinSchema>(
     options: ConfigFor<NoFields> & {
-      parent: ParentRoute;
-      params?: undefined;
-      query?: undefined;
-    }
-  ): NoSchemaChain<NoFields, NoFields, DataOfRoute<ParentRoute>>;
-  config<ParentRoute, QuerySchema extends FurinSchema>(
-    options: ConfigFor<NoFields> & {
-      parent: ParentRoute;
+      layout?: LayoutRoute;
       params?: undefined;
       query: QuerySchema;
     }
-  ): QuerySchemaChain<ParamsOf<QuerySchema>, QuerySchema, DataOfRoute<ParentRoute>>;
-  config<ParentRoute, ParamsSchema extends FurinSchema, QuerySchema extends FurinSchema>(
+  ): QuerySchemaChain<ParamsOf<QuerySchema>, QuerySchema, DataOfRoute<LayoutRoute>>;
+  config<LayoutRoute, ParamsSchema extends FurinSchema, QuerySchema extends FurinSchema>(
     options: ConfigFor<ParamsOf<ParamsSchema>> & {
-      parent: ParentRoute;
+      layout?: LayoutRoute;
       params: ParamsSchema;
       query: QuerySchema;
     }
@@ -773,11 +787,11 @@ class ConfigStage extends NoSchemaChain {
     ParamsOf<QuerySchema>,
     ParamsSchema,
     QuerySchema,
-    DataOfRoute<ParentRoute>
+    DataOfRoute<LayoutRoute>
   >;
-  config<ParentRoute, ParamsSchema extends FurinSchema>(
+  config<LayoutRoute, ParamsSchema extends FurinSchema>(
     options: ConfigFor<ParamsOf<ParamsSchema>> & {
-      parent: ParentRoute;
+      layout?: LayoutRoute;
       params: ParamsSchema;
       query?: undefined;
     }
@@ -786,25 +800,22 @@ class ConfigStage extends NoSchemaChain {
     NoFields,
     ParamsSchema,
     undefined,
-    DataOfRoute<ParentRoute>
+    DataOfRoute<LayoutRoute>
   >;
-  config(options: ConfigFor<NoFields> & { params?: undefined; query?: undefined }): NoSchemaChain;
-  config<QuerySchema extends FurinSchema>(
-    options: ConfigFor<NoFields> & { params?: undefined; query: QuerySchema }
-  ): QuerySchemaChain<ParamsOf<QuerySchema>, QuerySchema>;
-  config<ParamsSchema extends FurinSchema, QuerySchema extends FurinSchema>(
-    options: ConfigFor<ParamsOf<ParamsSchema>> & { params: ParamsSchema; query: QuerySchema }
-  ): SchemaChain<ParamsOf<ParamsSchema>, ParamsOf<QuerySchema>, ParamsSchema, QuerySchema>;
-  config<ParamsSchema extends FurinSchema>(
-    options: ConfigFor<ParamsOf<ParamsSchema>> & { params: ParamsSchema; query?: undefined }
-  ): SchemaChain<ParamsOf<ParamsSchema>, NoFields, ParamsSchema, undefined>;
+  config<LayoutRoute>(
+    options: ConfigFor<NoFields> & {
+      layout?: LayoutRoute;
+      params?: undefined;
+      query?: undefined;
+    }
+  ): NoSchemaChain<NoFields, NoFields, DataOfRoute<LayoutRoute>>;
   config<
-    ParentRoute,
+    LayoutRoute,
     ParamsSchema extends FurinSchema | undefined,
     QuerySchema extends FurinSchema | undefined,
   >(
     options: DefineRouteConfig & {
-      parent?: ParentRoute;
+      layout?: LayoutRoute;
       params?: ParamsSchema;
       query?: QuerySchema;
     }
@@ -814,17 +825,17 @@ class ConfigStage extends NoSchemaChain {
         return new QuerySchemaChain<
           ParamsOf<Exclude<QuerySchema, undefined>>,
           Exclude<QuerySchema, undefined>,
-          DataOfRoute<ParentRoute>
+          DataOfRoute<LayoutRoute>
         >(options, options.query as Exclude<QuerySchema, undefined>, undefined);
       }
-      return new NoSchemaChain<NoFields, NoFields, DataOfRoute<ParentRoute>>(options, undefined);
+      return new NoSchemaChain<NoFields, NoFields, DataOfRoute<LayoutRoute>>(options, undefined);
     }
     return new SchemaChain<
       ParamsOf<Exclude<ParamsSchema, undefined>>,
       ParamsOf<Exclude<QuerySchema, undefined>>,
       Exclude<ParamsSchema, undefined>,
       Exclude<QuerySchema, undefined>,
-      DataOfRoute<ParentRoute>
+      DataOfRoute<LayoutRoute>
     >(
       options,
       options.params as Exclude<ParamsSchema, undefined>,

@@ -9,7 +9,7 @@ import { DOCS_NAV } from "@/lib/docs";
 import { route as rootRoute } from "../root";
 
 export const route = defineRoute()
-  .config({ mode: "ssg", parent: rootRoute })
+  .config({ layout: rootRoute, mode: "ssg" })
   .layout(({ children, path }) => {
     // `path` is injected by Furin from componentProps (ctx.path server-side,
     // state.data.path client-side) — always correct on SSR and SPA navigation.

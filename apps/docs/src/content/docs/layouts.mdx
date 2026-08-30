@@ -29,7 +29,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
-  .config({ parent: rootRoute })
+  .config({ layout: rootRoute })
   .layout(({ children }) => (
     <div className="mx-auto max-w-5xl px-4 py-10">
       <BlogSidebar />
@@ -46,7 +46,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as parentRoute } from "./_route"
 
 export const route = defineRoute()
-  .config({ parent: parentRoute })
+  .config({ layout: parentRoute })
   .page(() => <BlogList />)
 ```
 
@@ -72,7 +72,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
-  .config({ parent: rootRoute })
+  .config({ layout: rootRoute })
   .loader(async ({ request }) => ({
     user: await getSession(request),
   }))

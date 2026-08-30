@@ -22,8 +22,8 @@ function avatarColor(id: string): string {
 
 export const route = defineRoute()
   .config({
+    layout: rootRoute,
     mode: "isr",
-    parent: rootRoute,
     revalidate: 10,
     tags: ["boards"],
   })

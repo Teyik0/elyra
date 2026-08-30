@@ -4,11 +4,11 @@ import { route as boardRoute } from "../../_route";
 
 export const route = defineRoute()
   .config({
+    layout: boardRoute,
     params: t.Object({
       boardId: t.String(),
       cardId: t.String(),
     }),
-    parent: boardRoute,
     tags: ["cards"],
   })
   .layout(({ children }) => children);

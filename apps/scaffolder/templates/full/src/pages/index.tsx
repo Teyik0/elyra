@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { route as parentRoute } from "./root";
 
 export const route = defineRoute()
-  .config({ parent: parentRoute })
+  .config({ layout: parentRoute })
   .loader(() => getHelloPayload())
   .page(({ data: { message, source } }) => (
     <div className="w-full space-y-8">
