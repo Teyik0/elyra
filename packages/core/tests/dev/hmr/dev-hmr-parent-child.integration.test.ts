@@ -41,8 +41,11 @@ const HELLO_ATTR_RE = /data-hello="([^"]+)"/;
  *   #6 (P1): Client-side SPA prefetch cache invalidation — requires browser
  *     automation (Playwright / Puppeteer) because `prefetchCache` lives in the
  *     browser process.
- *   #8 (P2): Hot-adding a brand-new page file at runtime — `scanPages` runs
- *     once at startup; the server must be restarted to discover new routes.
+ *
+ * #8 (P2, hot-adding a page file at runtime) is now COVERED by
+ * `dev-route-topology.integration.test.ts`: the topology watcher rebuilds the
+ * native renderer on route add/remove, so new routes are served without a
+ * restart.
  */
 
 async function pollUntil(
@@ -459,8 +462,7 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
   test("#9 — editing root.tsx loader propagates to ISR pages on next request", async () => {
     // Helper — build a root.tsx whose loader contributes `hello: <value>`.
     // The layout renders `data-hello` on every response so we can assert
-    // against any registered page.  Adding a new page at runtime would not
-    // work (cf. limitation #8 — `scanPages` runs once at startup).
+    // against any registered page.
     const writeRoot = (helloValue: string): void => {
       writeAppFile(
         app.path,

@@ -387,8 +387,15 @@ function createNativeRouteRenderer(
     const logicalPath = hasPrefix ? pathname.slice(prefix.length) : pathname;
     const matched = matchNativeRoute(logicalPath || "/");
     if (!matched) {
-      throw new Error(`[furin] Native route dispatcher missed ${JSON.stringify(logicalPath)}`);
+      // Dev topology swap: the mounted Elysia route can outlive its source
+      // file (hot-remove). Render the root not-found page instead of failing.
+      const listenerOrigin = (context.server as { url?: { origin: string } } | undefined)?.url
+        ?.origin;
+      return renderRootNotFound(root, request, listenerOrigin);
     }
+    // The matcher re-derives params from the route pattern — required for the
+    // NOT_FOUND-fallback path (below) where Elysia never parsed the route.
+    context.params = matched.params;
     return renderResolvedRoute(
       matched.route,
       context as unknown as Parameters<typeof renderResolvedRoute>[1],
@@ -571,6 +578,22 @@ export async function furin({
           onTopologyChange: async () => {
             const next = await loadDevelopmentRoutes(resolvedPagesDir);
             writeCurrentDevFiles(next.routes, next.root.path);
+            // Recompose the native renderer in place: Bun --hot cannot be
+            // triggered from generated artifacts (its watch graph is the
+            // entry's static imports), so topology changes are served by
+            // swapping the dispatcher's route matcher. Hot-added routes then
+            // resolve through the NOT_FOUND fallback below; removed routes
+            // 404 through the renderer's miss path.
+            nativeRouteRenderers.set(
+              instance,
+              createNativeRouteRenderer(
+                prefix,
+                next.routes,
+                next.root,
+                "",
+                createSearchRouteMetadata(next.routes)
+              )
+            );
           },
           pollIntervalMs: DEV_ROUTE_TOPOLOGY_POLL_INTERVAL_MS,
         });
@@ -611,7 +634,20 @@ export async function furin({
       .use(createDataEndpoint(routes))
       .decorate(FURIN_RENDER_DECORATOR, dispatchNativeRoute)
       .use(nativeRoutesApp)
-      .use(createNotFoundHandling(prefix, routes, root));
+      .use(
+        createNotFoundHandling(prefix, routes, root, async (notFoundContext) => {
+          // Dev topology: try the (watcher-refreshed) native renderer before
+          // the root not-found page, so hot-added routes are served without
+          // a restart. Instances outside this pathname's prefix are skipped.
+          const { pathname } = new URL(notFoundContext.request.url);
+          if (!nativeRouteRenderers.has(resolveInstanceByPath(pathname))) {
+            return;
+          }
+          return await dispatchNativeRoute(
+            notFoundContext as unknown as Parameters<FurinRouteDispatcher>[0]
+          );
+        })
+      );
     registerInstance(instance);
     return wrapWithRequestScope(devApp);
   }
@@ -747,21 +783,40 @@ export async function furin({
 function createNotFoundHandling(
   prefix: string,
   routes: Array<{ pattern: string }>,
-  root: Parameters<typeof renderRootNotFound>[0]
+  root: Parameters<typeof renderRootNotFound>[0],
+  tryNativeDispatch?: (context: { request: Request }) => Promise<unknown>
 ): Elysia {
   const app = new Elysia();
   if (prefix === "") {
-    app.onError({ as: "global" }, async ({ code, request, server }) => {
-      if (code === "NOT_FOUND") {
-        return await renderRootNotFound(root, request, server?.url.origin);
+    app.onError({ as: "global" }, async (context) => {
+      if (context.code !== "NOT_FOUND") {
+        return;
       }
+      // Dev topology: the native renderer is rebuilt by the watcher on route
+      // add/remove, so a hot-added route (no mounted Elysia route yet) can
+      // still be served here. `tryNativeDispatch` is undefined in production.
+      if (tryNativeDispatch) {
+        const rendered = await tryNativeDispatch(context);
+        if (rendered !== undefined && rendered !== null) {
+          return rendered;
+        }
+      }
+      return await renderRootNotFound(root, context.request, context.server?.url.origin);
     });
     return app;
   }
   if (routes.some((route) => route.pattern === "/*")) {
     return app;
   }
-  app.get("/*", ({ request, server }) => renderRootNotFound(root, request, server?.url.origin));
+  app.get("/*", async ({ request, server }) => {
+    if (tryNativeDispatch) {
+      const rendered = await tryNativeDispatch({ request });
+      if (rendered !== undefined && rendered !== null) {
+        return rendered;
+      }
+    }
+    return renderRootNotFound(root, request, server?.url.origin);
+  });
   return app;
 }
 
