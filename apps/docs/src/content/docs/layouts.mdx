@@ -8,17 +8,19 @@ Furin uses `_route.tsx` files for directory layouts. Every route module exports 
 
 ```tsx
 // src/pages/root.tsx
-import { defineRoute } from "@teyik0/furin"
+import { defineRootRoute } from "@teyik0/furin"
 
-export const route = defineRoute().layout(({ children }) => (
-  <html lang="en">
-    <head>
-      <meta charSet="utf-8" />
-      <meta content="width=device-width, initial-scale=1" name="viewport" />
-    </head>
-    <body>{children}</body>
-  </html>
-))
+export const route = defineRootRoute()
+  .config({ mode: "ssr" })
+  .layout(({ children }) => (
+    <html lang="en">
+      <head>
+        <meta charSet="utf-8" />
+        <meta content="width=device-width, initial-scale=1" name="viewport" />
+      </head>
+      <body>{children}</body>
+    </html>
+  ))
 ```
 
 ## Directory Layout
@@ -29,7 +31,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
-  .config({ layout: rootRoute })
+  .config({ layout: rootRoute, mode: "ssr" })
   .layout(({ children }) => (
     <div className="mx-auto max-w-5xl px-4 py-10">
       <BlogSidebar />
@@ -46,7 +48,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as parentRoute } from "./_route"
 
 export const route = defineRoute()
-  .config({ layout: parentRoute })
+  .config({ layout: parentRoute, mode: "ssr" })
   .page(() => <BlogList />)
 ```
 
@@ -62,7 +64,7 @@ src/pages/
 │       └── plugins.tsx
 ```
 
-Each child `_route.tsx` names its parent in `config({ parent })` for loader-data inference. The route generator mounts the child under its filesystem parent, so Elysia's local scope flows downward.
+Each child `_route.tsx` names its parent in `config({ layout })` for loader-data inference. The route generator mounts the child under its filesystem parent, so Elysia's local scope flows downward.
 
 ## Layout Data
 
@@ -72,7 +74,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
-  .config({ layout: rootRoute })
+  .config({ layout: rootRoute, mode: "ssr" })
   .loader(async ({ request }) => ({
     user: await getSession(request),
   }))
@@ -89,11 +91,12 @@ Descendant components receive merged loader data under `data`. Descendant loader
 ## Deferred Layout Data
 
 ```tsx
-import { defineRoute } from "@teyik0/furin"
+import { defineRootRoute } from "@teyik0/furin"
 import { Await, defer } from "@teyik0/furin/client"
 import { Suspense } from "react"
 
-export const route = defineRoute()
+export const route = defineRootRoute()
+  .config({ mode: "ssr" })
   .loader(() =>
     defer({
       user: "alice",

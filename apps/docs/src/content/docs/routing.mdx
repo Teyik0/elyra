@@ -30,6 +30,7 @@ import { route as parentRoute } from "./_route"
 export const route = defineRoute()
   .config({
     layout: parentRoute,
+    mode: "ssr",
     params: t.Object({ slug: t.String() }),
   })
   .loader(async ({ params }) => {
@@ -45,7 +46,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
-  .config({ layout: rootRoute })
+  .config({ layout: rootRoute, mode: "ssr" })
   .layout(({ children }) => children)
 ```
 
@@ -65,7 +66,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
-  .config({ layout: rootRoute })
+  .config({ layout: rootRoute, mode: "ssr" })
   .layout(({ children }) => (
     <div className="mx-auto flex max-w-5xl gap-8 px-4 py-10">
       <aside>Sidebar</aside>
@@ -92,6 +93,7 @@ import { route as rootRoute } from "../root"
 export const route = defineRoute()
   .config({
     layout: rootRoute,
+    mode: "ssr",
     params: t.Object({ "*": t.String() }),
   })
   .page(({ params }) => <DocsPage path={params["*"]} />)

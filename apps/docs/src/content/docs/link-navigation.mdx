@@ -198,10 +198,15 @@ navigate({
 When a route inherits from multiple `_route.tsx` files (layout chain), their `query` schemas are merged. The generated `furin-env.d.ts` reflects the union of all query fields in the chain.
 
 ```tsx
+import { defineRoute } from "@teyik0/furin"
+import { t } from "elysia"
+import { route as rootRoute } from "../root"
+
 // src/pages/products/_route.tsx
 export const route = defineRoute()
   .config({
     layout: rootRoute,
+    mode: "ssr",
     query: t.Object({ sort: t.Optional(t.String()) }),
   })
   .layout(({ children }) => children)
@@ -212,6 +217,7 @@ import { route as productsRoute } from "./_route"
 export const route = defineRoute()
   .config({
     layout: productsRoute,
+    mode: "ssr",
     query: t.Object({ page: t.Optional(t.Number({ default: 1 })) }),
   })
   .page(() => <ProductList />)

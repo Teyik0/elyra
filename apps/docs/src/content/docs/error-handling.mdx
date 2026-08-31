@@ -74,7 +74,7 @@ import { defineRoute, notFound } from "@teyik0/furin"
 import { route as parentRoute } from "./_route"
 
 export const route = defineRoute()
-  .config({ layout: parentRoute })
+  .config({ layout: parentRoute, mode: "ssr" })
   .loader(async ({ params }) => {
     const post = await db.getPost(params.slug)
     if (!post) {

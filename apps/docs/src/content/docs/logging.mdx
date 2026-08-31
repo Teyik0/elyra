@@ -53,7 +53,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as parentRoute } from "./_route"
 
 export const route = defineRoute()
-  .config({ layout: parentRoute })
+  .config({ layout: parentRoute, mode: "ssr" })
   .loader(async ({ params, log }) => {
     log.set({ slug: params.slug })
     const post = await getPost(params.slug, log)

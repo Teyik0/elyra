@@ -12,7 +12,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as parentRoute } from "../root"
 
 export const route = defineRoute()
-  .config({ layout: parentRoute })
+  .config({ layout: parentRoute, mode: "ssr" })
   .loader(async () => ({
     stats: await getDashboardStats(),
   }))
@@ -21,7 +21,7 @@ export const route = defineRoute()
 
 ## Layout Loader
 
-A `_route.tsx` layout can load data for itself and its descendants. `parent` is type-only metadata; filesystem nesting determines the runtime layout tree.
+A `_route.tsx` layout can load data for itself and its descendants. `layout` is type-only metadata; filesystem nesting determines the runtime layout tree.
 
 ```tsx
 // src/pages/dashboard/_route.tsx
@@ -29,7 +29,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
-  .config({ layout: rootRoute })
+  .config({ layout: rootRoute, mode: "ssr" })
   .loader(async ({ request }) => ({
     user: await getSession(request),
   }))
@@ -49,7 +49,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as parentRoute } from "./_route"
 
 export const route = defineRoute()
-  .config({ layout: parentRoute })
+  .config({ layout: parentRoute, mode: "ssr" })
   .loader(async ({ user }) => {
     const { id } = await user
     return { stats: await getDashboardStats(id) }
@@ -83,6 +83,7 @@ import { route as parentRoute } from "../root"
 export const route = defineRoute()
   .config({
     layout: parentRoute,
+    mode: "ssr",
     query: t.Object({
       page: t.Optional(t.Number({ default: 1 })),
       tag: t.Optional(t.String()),
@@ -103,9 +104,10 @@ Every dynamic segment must be covered by the local params schema. Generation fai
 ```tsx
 import { defineRoute } from "@teyik0/furin"
 import { t } from "elysia"
+import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
-  .config({ params: t.Object({ slug: t.String() }) })
+  .config({ layout: rootRoute, mode: "ssr", params: t.Object({ slug: t.String() }) })
   .loader(({ params }) => getPost(params.slug).then((post) => ({ post })))
   .page(({ data: { post } }) => <article>{post.title}</article>)
 ```
@@ -116,9 +118,11 @@ For SSG, ISR, or PPR data that must never enter the public loader payload, put `
 
 ```tsx
 import { Suspense, use } from "react"
+import { defineRoute } from "@teyik0/furin"
+import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
-  .config({ mode: "ssg" })
+  .config({ layout: rootRoute, mode: "ssg" })
   .requestLoader(async ({ cookies }) => ({
     session: await readSession(cookies),
   }))

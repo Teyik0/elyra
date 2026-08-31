@@ -58,9 +58,11 @@ Every app needs `src/pages/root.tsx`. It is the top-level layout and should rend
 
 ```tsx
 // src/pages/root.tsx
-import { defineRoute } from "@teyik0/furin"
+import { defineRootRoute } from "@teyik0/furin"
 
-export const route = defineRoute().layout(({ children }) => (
+export const route = defineRootRoute()
+  .config({ mode: "ssr" })
+  .layout(({ children }) => (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
@@ -79,7 +81,7 @@ import { defineRoute } from "@teyik0/furin"
 import { route as rootRoute } from "./root"
 
 export const route = defineRoute()
-  .config({ layout: rootRoute })
+  .config({ layout: rootRoute, mode: "ssr" })
   .page(() => <h1>Hello Furin</h1>)
 ```
 

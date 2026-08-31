@@ -95,8 +95,11 @@ There are no mutation names, collections, or client wrappers to configure. The A
 Tags come from page and route metadata:
 
 ```tsx
+import { defineRoute } from "@teyik0/furin"
+import { route as rootRoute } from "../root"
+
 export const route = defineRoute()
-  .config({ mode: "isr", revalidate: 60, tags: ["posts"] })
+  .config({ layout: rootRoute, mode: "isr", revalidate: 60, tags: ["posts"] })
   .loader(async () => ({ posts: await db.posts.findMany() }))
   .page(({ data: { posts } }) => <PostsPage posts={posts} />)
 ```
@@ -255,7 +258,7 @@ import { getApi } from "@/lib/api"
 import { route as parentRoute } from "./_route"
 
 export const route = defineRoute()
-  .config({ layout: parentRoute })
+  .config({ layout: parentRoute, mode: "ssr" })
   .loader(async () => {
     const { data, error } = await getApi().api.posts.get()
     if (error) throw error.value

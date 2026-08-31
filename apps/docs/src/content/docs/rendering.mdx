@@ -8,8 +8,10 @@ SSR is the default mode.
 
 ```tsx
 import { defineRoute } from "@teyik0/furin"
+import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
+  .config({ layout: rootRoute, mode: "ssr" })
   .loader(async ({ request }) => ({
     user: await getSession(request),
   }))
@@ -22,9 +24,10 @@ Use SSR for personalized pages and request-time data. SSR supports [deferred str
 
 ```tsx
 import { defineRoute } from "@teyik0/furin"
+import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
-  .config({ mode: "ssg" })
+  .config({ layout: rootRoute, mode: "ssg" })
   .page(() => <div>This page is pre-rendered</div>)
 ```
 
@@ -33,9 +36,11 @@ Dynamic SSG params are also declared in `config()`.
 ```tsx
 import { defineRoute } from "@teyik0/furin"
 import { t } from "elysia"
+import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
   .config({
+    layout: rootRoute,
     mode: "ssg",
     params: t.Object({ slug: t.String() }),
     staticParams: async () => {
@@ -56,9 +61,11 @@ Pair `mode: "isr"` with `revalidate`.
 ```tsx
 import { defineRoute } from "@teyik0/furin"
 import { t } from "elysia"
+import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
   .config({
+    layout: rootRoute,
     mode: "isr",
     params: t.Object({ id: t.String() }),
     revalidate: 60,
@@ -76,9 +83,10 @@ Keep cacheable data in `loader()` and request-specific data in `requestLoader()`
 ```tsx
 import { defineRoute } from "@teyik0/furin"
 import { Suspense, use } from "react"
+import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
-  .config({ mode: "isr", revalidate: 60 })
+  .config({ layout: rootRoute, mode: "isr", revalidate: 60 })
   .requestLoader(({ cookies }) => ({
     user: getUser(cookies.get("session")),
   }))
@@ -104,8 +112,10 @@ RSC is a loader value, not a rendering mode. Use the explicit composite API.
 ```tsx
 import { defineRoute } from "@teyik0/furin"
 import { CompositeComponent, createCompositeComponent } from "@teyik0/furin/rsc"
+import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
+  .config({ layout: rootRoute, mode: "ssr" })
   .loader(async () => ({
     card: await createCompositeComponent<{
       Action: React.ComponentType<{ productId: string }>
@@ -131,9 +141,11 @@ The server fragment is encoded as Flight. Client interactivity enters through ch
 
 ```tsx
 import { t } from "elysia"
+import { defineRoute } from "@teyik0/furin"
+import { route as rootRoute } from "../root"
 
 export const route = defineRoute()
-  .config({ mode: "ssr", params: t.Object({ slug: t.String() }) })
+  .config({ layout: rootRoute, mode: "ssr", params: t.Object({ slug: t.String() }) })
   .loader(async ({ params }) => ({ post: await db.getPost(params.slug) }))
   .head(({ data: { post } }) => ({
     meta: [

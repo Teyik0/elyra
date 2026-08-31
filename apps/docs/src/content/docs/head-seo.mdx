@@ -10,7 +10,11 @@ Define `head()` on a page or route:
 
 ```tsx
 // src/pages/blog/[slug].tsx
+import { defineRoute } from "@teyik0/furin"
+import { route as rootRoute } from "../root"
+
 export const route = defineRoute()
+  .config({ layout: rootRoute, mode: "ssr" })
   .loader(async ({ params }) => ({ post: await db.getPost(params.slug) }))
   .head(({ data: { post } }) => ({
     meta: [
@@ -134,7 +138,11 @@ During client-side navigation, Furin extracts the new `head()` result, updates `
 
 ```tsx
 // src/pages/root.tsx
-export const route = defineRoute().layout(({ children }) => (
+import { defineRootRoute } from "@teyik0/furin"
+
+export const route = defineRootRoute()
+  .config({ mode: "ssr" })
+  .layout(({ children }) => (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
@@ -153,7 +161,11 @@ export const route = defineRoute().layout(({ children }) => (
 A complete SEO setup for a blog post:
 
 ```tsx
+import { defineRoute } from "@teyik0/furin"
+import { route as rootRoute } from "../root"
+
 export const route = defineRoute()
+  .config({ layout: rootRoute, mode: "ssr" })
   .loader(async ({ params }) => ({ post: await db.getPost(params.slug) }))
   .head(({ data: { post } }) => ({
     meta: [
