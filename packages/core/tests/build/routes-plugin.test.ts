@@ -4,14 +4,89 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createRoutesPlugin,
-  materializeRouteTypes,
   routeModuleSpecifier,
   type RouteInstanceSpec,
 } from "../../src/plugin/routes.ts";
+import { routeMapDeclaration } from "../../src/shared/route-map.ts";
 
 const FIXTURES = join(import.meta.dir, "../fixtures/routes-v2");
 
 describe("furin/routes server plugin", () => {
+  test("keeps generated route bindings unique for separator-like paths", async () => {
+    const instance = { pagesDir: join(FIXTURES, "colliding-paths"), prefix: "" };
+    const tempDir = mkdtempSync(join(tmpdir(), "furin-routes-bindings-"));
+    const entryPath = join(tempDir, "entry.ts");
+
+    try {
+      writeFileSync(
+        entryPath,
+        `export { furinApp } from ${JSON.stringify(routeModuleSpecifier(instance))};\n`
+      );
+      const result = await Bun.build({
+        entrypoints: [entryPath],
+        naming: "built.js",
+        outdir: tempDir,
+        plugins: [createRoutesPlugin({ instances: [instance], target: "server" })],
+        target: "bun",
+      });
+      expect(result.success).toBe(true);
+      const output = result.outputs.find((artifact) => artifact.kind === "entry-point");
+      if (!output) {
+        throw new Error("Expected a bundled entry point");
+      }
+      const built = (await import(`${output.path}?t=${Date.now()}`)) as {
+        furinApp: { handle(request: Request): Promise<Response> };
+      };
+
+      const [hyphen, nested] = await Promise.all([
+        built.furinApp.handle(new Request("http://localhost/foo-bar")),
+        built.furinApp.handle(new Request("http://localhost/foo/bar")),
+      ]);
+
+      expect(await hyphen.text()).toBe("hyphen");
+      expect(await nested.text()).toBe("nested");
+    } finally {
+      rmSync(tempDir, { force: true, recursive: true });
+    }
+  });
+
+  test("preserves catch-all pages as Elysia wildcards", async () => {
+    const instance = { pagesDir: join(FIXTURES, "catch-all"), prefix: "" };
+    const tempDir = mkdtempSync(join(tmpdir(), "furin-routes-catch-all-"));
+    const entryPath = join(tempDir, "entry.ts");
+
+    try {
+      writeFileSync(
+        entryPath,
+        `export { furinApp } from ${JSON.stringify(routeModuleSpecifier(instance))};\n`
+      );
+      const result = await Bun.build({
+        entrypoints: [entryPath],
+        naming: "built.js",
+        outdir: tempDir,
+        plugins: [createRoutesPlugin({ instances: [instance], target: "server" })],
+        target: "bun",
+      });
+      expect(result.success).toBe(true);
+      const output = result.outputs.find((artifact) => artifact.kind === "entry-point");
+      if (!output) {
+        throw new Error("Expected a bundled entry point");
+      }
+      const built = (await import(`${output.path}?t=${Date.now()}`)) as {
+        furinApp: { handle(request: Request): Promise<Response> };
+      };
+
+      const response = await built.furinApp.handle(
+        new Request("http://localhost/docs/guides/routing")
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ path: "guides/routing" });
+    } finally {
+      rmSync(tempDir, { force: true, recursive: true });
+    }
+  });
+
   test("resolves one isolated Elysia app per mounted instance", async () => {
     const rootInstance = { pagesDir: join(FIXTURES, "root"), prefix: "" };
     const adminInstance = { pagesDir: join(FIXTURES, "admin"), prefix: "/admin" };
@@ -47,6 +122,7 @@ export { adminApp, rootApp };
       };
       expect(await (await built.rootApp.handle(new Request("http://localhost/"))).json()).toEqual({
         home: true,
+        root: true,
       });
       expect(await (await built.adminApp.handle(new Request("http://localhost/"))).text()).toBe(
         "admin"
@@ -194,20 +270,32 @@ describe("furin/routes client plugin", () => {
   });
 });
 
-describe("furin/routes type materialization", () => {
-  test("writes a normalized RouteMap once", async () => {
-    const instance = { pagesDir: join(FIXTURES, "root"), prefix: "" };
-    const tempDir = mkdtempSync(join(tmpdir(), "furin-routes-types-"));
-    const dtsPath = join(tempDir, "furin-env.d.ts");
+describe("furin/routes type declaration", () => {
+  test("generates one normalized RouteMap declaration", () => {
+    expect(
+      routeMapDeclaration([
+        { importSpecifier: "./pages/boards/[id]", pattern: "/boards/:id" },
+        { importSpecifier: "./pages/index", pattern: "/" },
+      ])
+    ).toBe(`declare module "@teyik0/furin/routes" {
+  interface RouteMap {
+    "/": typeof import("./pages/index").route;
+    [path: \`/boards/\${string}\`]: typeof import("./pages/boards/[id]").route;
+  }
+}`);
+  });
 
-    try {
-      expect(await materializeRouteTypes({ dtsPath, instance })).toBe(true);
-      const content = await Bun.file(dtsPath).text();
-      expect(content).toContain('"/": typeof import(');
-      expect(content).toContain('[path: `/boards/${string}`]: typeof import(');
-      expect(await materializeRouteTypes({ dtsPath, instance })).toBe(false);
-    } finally {
-      rmSync(tempDir, { force: true, recursive: true });
-    }
+  test("escapes static template segments and normalizes wildcards", () => {
+    const declaration = routeMapDeclaration([
+      { importSpecifier: "./pages/docs", pattern: "/docs/`${literal}/:slug" },
+      { importSpecifier: "./pages/files", pattern: "/files/*" },
+    ]);
+
+    expect(declaration).toContain(
+      "[path: `/docs/\\`\\${literal}/${string}`]: typeof import(\"./pages/docs\").route;"
+    );
+    expect(declaration).toContain(
+      "[path: `/files/${string}`]: typeof import(\"./pages/files\").route;"
+    );
   });
 });

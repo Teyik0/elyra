@@ -28,7 +28,7 @@ import { handleDevRequest } from "./hmr.ts";
 import { buildRouteMatcher } from "./patterns.ts";
 import { mergeRouteSchemas } from "./schema-merge.ts";
 import { parseDataEndpointPath, parseRouteParams, parseRouteQuery } from "./schemas.ts";
-import type { ResolvedRoute, RootLayout } from "./types.ts";
+import type { ResolvedRoute, ResolvedRoutesSource, RootLayout } from "./types.ts";
 
 interface DataRouteParamsInput {
   [key: string]: unknown;
@@ -241,9 +241,10 @@ export function renderResolvedRoute(
  *   - `__furinNotFound`    — not-found payload
  *   - `__furinRedirect`    — logical path after a server-side redirect
  */
-export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
+export function createDataEndpoint(routesSource: ResolvedRoutesSource): AnyElysia {
   const plugin = new Elysia();
-  const matchRoute = buildRouteMatcher(routes);
+  let matchedRoutes = typeof routesSource === "function" ? routesSource() : routesSource;
+  let matchRoute = buildRouteMatcher(matchedRoutes);
 
   plugin.get(
     "/_furin/data",
@@ -267,8 +268,11 @@ export function createDataEndpoint(routes: ResolvedRoute[]): AnyElysia {
       const wideEventLog = useLogger();
       wideEventLog.set({ path: rawPath });
 
-      // Precompiled at plugin creation: route regexes are built once, sorted
-      // most-specific first, then the hot path only executes regex matches.
+      const currentRoutes = typeof routesSource === "function" ? routesSource() : routesSource;
+      if (currentRoutes !== matchedRoutes) {
+        matchedRoutes = currentRoutes;
+        matchRoute = buildRouteMatcher(matchedRoutes);
+      }
       const matched = matchRoute(pathname);
 
       if (!matched) {

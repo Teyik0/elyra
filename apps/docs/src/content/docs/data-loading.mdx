@@ -115,6 +115,8 @@ export const route = defineRoute()
 For SSG, ISR, or PPR data that must never enter the public loader payload, put `requestLoader()` before `loader()`. Its result is exposed separately as `requestData`.
 
 ```tsx
+import { Suspense, use } from "react"
+
 export const route = defineRoute()
   .config({ mode: "ssg" })
   .requestLoader(async ({ cookies }) => ({
@@ -122,7 +124,9 @@ export const route = defineRoute()
   }))
   .loader(() => ({ title: "Dashboard" }))
   .page(({ data: { title }, requestData }) => (
-    <Dashboard session={requestData} title={title} />
+    <Suspense fallback={<DashboardSkeleton />}>
+      <Dashboard session={use(requestData).session} title={title} />
+    </Suspense>
   ))
 ```
 

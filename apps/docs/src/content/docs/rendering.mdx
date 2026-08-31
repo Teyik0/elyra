@@ -130,7 +130,10 @@ The server fragment is encoded as Flight. Client interactivity enters through ch
 `head()` follows `loader()` and precedes the terminal.
 
 ```tsx
+import { t } from "elysia"
+
 export const route = defineRoute()
+  .config({ mode: "ssr", params: t.Object({ slug: t.String() }) })
   .loader(async ({ params }) => ({ post: await db.getPost(params.slug) }))
   .head(({ data: { post } }) => ({
     meta: [

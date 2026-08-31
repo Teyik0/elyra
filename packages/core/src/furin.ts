@@ -37,7 +37,12 @@ import {
 import { loadProdRoutes } from "./server/router/discovery.ts";
 import { buildRouteMatcher } from "./server/router/patterns.ts";
 import { createDataEndpoint, renderResolvedRoute } from "./server/router/plugin.ts";
-import { createSearchRouteMetadata } from "./server/router/schemas.ts";
+import { mergeRouteSchemas } from "./server/router/schema-merge.ts";
+import {
+  createSearchRouteMetadata,
+  parseRouteParams,
+  parseRouteQuery,
+} from "./server/router/schemas.ts";
 import type { ResolvedRoute, RootLayout } from "./server/router/types.ts";
 import { IS_DEV } from "./server/runtime-env.ts";
 import { type FurinSyncOption, resolveSyncStreamPath } from "./server/sync/config.ts";
@@ -381,9 +386,10 @@ function createNativeRouteRenderer(
   searchRoutes: ReturnType<typeof createSearchRouteMetadata>
 ): FurinRouteDispatcher {
   const matchNativeRoute = buildRouteMatcher(routes);
-  return (context) => {
+  return async (context) => {
     const { request } = context;
-    const { pathname } = new URL(request.url);
+    const requestUrl = new URL(request.url);
+    const { pathname } = requestUrl;
     const hasPrefix = prefix !== "" && (pathname === prefix || pathname.startsWith(`${prefix}/`));
     const logicalPath = hasPrefix ? pathname.slice(prefix.length) : pathname;
     const matched = matchNativeRoute(logicalPath || "/");
@@ -394,9 +400,28 @@ function createNativeRouteRenderer(
         ?.origin;
       return renderRootNotFound(root, request, listenerOrigin);
     }
-    // The matcher re-derives params from the route pattern — required for the
-    // NOT_FOUND-fallback path (below) where Elysia never parsed the route.
-    context.params = matched.params;
+    const parsedParams = await parseRouteParams(
+      matched.params,
+      mergeRouteSchemas(matched.route.routeChain, "params")
+    );
+    if (!parsedParams.ok) {
+      return Response.json(
+        { errors: parsedParams.errors, message: "Invalid params", type: "validation" },
+        { status: 422 }
+      );
+    }
+    const parsedQuery = await parseRouteQuery(
+      requestUrl,
+      mergeRouteSchemas(matched.route.routeChain, "query")
+    );
+    if (!parsedQuery.ok) {
+      return Response.json(
+        { errors: parsedQuery.errors, message: "Invalid query", type: "validation" },
+        { status: 422 }
+      );
+    }
+    context.params = parsedParams.params;
+    context.query = parsedQuery.query;
     return renderResolvedRoute(
       matched.route,
       context as unknown as Parameters<typeof renderResolvedRoute>[1],
@@ -555,15 +580,16 @@ export async function furin({
       furinApp: AnyElysia;
     };
     const { root, routes } = await loadDevelopmentRoutes(resolvedPagesDir);
+    let currentRoutes = routes;
     applyRouteConfigAutofix();
     const searchRoutes = createSearchRouteMetadata(routes);
     const renderNativeRoute = createNativeRouteRenderer(prefix, routes, root, "", searchRoutes);
     nativeRouteRenderers.set(instance, renderNativeRoute);
 
     const { writeDevFiles } = await import("./build/hydrate.ts");
-    const writeCurrentDevFiles = (currentRoutes: ResolvedRoute[], rootLayout: string): void => {
+    const writeCurrentDevFiles = (routesToWrite: ResolvedRoute[], rootLayout: string): void => {
       writeDevFiles(
-        currentRoutes,
+        routesToWrite,
         {
           basePath: prefix,
           clientLogging: clientLogging ?? false,
@@ -603,6 +629,7 @@ export async function furin({
           instance: routeInstance,
           onTopologyChange: async () => {
             const next = await loadDevelopmentRoutes(resolvedPagesDir);
+            currentRoutes = next.routes;
             writeCurrentDevFiles(next.routes, next.root.path);
             applyRouteConfigAutofix();
             // Recompose the native renderer in place: Bun --hot cannot be
@@ -656,9 +683,9 @@ export async function furin({
           ? file(join(publicDir, "favicon.ico"))
           : () => new Response(null, { status: 404 })
       )
-      .use(createInstrumentationPlugin(routes, syncStreamPath))
+      .use(createInstrumentationPlugin(() => currentRoutes, syncStreamPath))
       .use(sync ? createSyncStreamPlugin(sync) : new Elysia())
-      .use(createDataEndpoint(routes))
+      .use(createDataEndpoint(() => currentRoutes))
       .decorate(FURIN_RENDER_DECORATOR, dispatchNativeRoute)
       .use(nativeRoutesApp)
       .use(

@@ -1,12 +1,7 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { extname, join, relative } from "node:path";
 import type { ResolvedRoute } from "../server/router/types.ts";
-
-function routeTypeKey(pattern: string): string {
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: emits TypeScript template-literal syntax
-  const value = pattern.replace(/:[^/]+/g, "${string}").replace(/\*/g, "${string}");
-  return value.includes("${") ? `\`${value}\`` : JSON.stringify(value);
-}
+import { routeMapDeclaration, type RouteMapEntry } from "../shared/route-map.ts";
 
 function tagKeyToPropertyName(tag: string): string {
   return /^[$A-Z_a-z][$\w]*$/.test(tag) ? tag : JSON.stringify(tag);
@@ -19,19 +14,13 @@ function tagToStringLiteral(tag: string): string {
 
 /** @internal Exported for framework build and focused contract tests. */
 export function writeRouteTypes(routes: ResolvedRoute[], projectRoot: string): void {
-  const routeMapBody = [...routes]
-    .sort((left, right) => left.pattern.localeCompare(right.pattern))
-    .map((route) => {
-      const typeKey = routeTypeKey(route.pattern);
-      const property = typeKey.startsWith("`") ? `[key: ${typeKey}]` : typeKey;
-      const extension = extname(route.path);
-      const sourcePath = extension ? route.path.slice(0, -extension.length) : route.path;
-      const relativePath = relative(projectRoot, sourcePath).replaceAll("\\", "/");
-      const specifier = relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
-      return `    ${property}: typeof import(${JSON.stringify(specifier)}).route`;
-    })
-    .join(";\n");
-  const routeMapEntries = routeMapBody ? `${routeMapBody};` : "";
+  const entries: RouteMapEntry[] = routes.map((route) => {
+    const extension = extname(route.path);
+    const sourcePath = extension ? route.path.slice(0, -extension.length) : route.path;
+    const relativePath = relative(projectRoot, sourcePath).replaceAll("\\", "/");
+    const specifier = relativePath.startsWith(".") ? relativePath : `./${relativePath}`;
+    return { importSpecifier: specifier, pattern: route.pattern };
+  });
 
   const sortedTags = [...new Set(routes.flatMap((route) => route.tags ?? []))].sort();
   const tagBlock =
@@ -45,11 +34,7 @@ export function writeRouteTypes(routes: ResolvedRoute[], projectRoot: string): v
 /// <reference types="@teyik0/furin/env" />
 import "@teyik0/furin/routes";
 
-declare module "@teyik0/furin/routes" {
-  interface RouteMap {
-${routeMapEntries}
-  }
-}${tagBlock}
+${routeMapDeclaration(entries)}${tagBlock}
 `;
 
   const typesPath = join(projectRoot, "furin-env.d.ts");

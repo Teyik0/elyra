@@ -207,6 +207,8 @@ export const route = defineRoute()
   .layout(({ children }) => children)
 
 // src/pages/products/index.tsx
+import { route as productsRoute } from "./_route"
+
 export const route = defineRoute()
   .config({
     layout: productsRoute,

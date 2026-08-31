@@ -41,7 +41,7 @@ describe("Elysia contract", () => {
       // @ts-expect-error Elysia 1.4 uses get(path, handler, hook), not hook-first.
       new Elysia().get("/", { params: paramsSchema }, ({ params }) => params.id);
     };
-    expectTypeOf(invalidHookFirst).toBeFunction();
+    expectTypeOf(invalidHookFirst).returns.toBeVoid();
   });
 
   test("propagates parent promises to nested routes without awaiting independent work", async () => {

@@ -9,7 +9,7 @@ import { describe, expectTypeOf, test } from "bun:test";
  *
  * Type-only file: `defineRoute` is a `declare const` so `furin.ts` is never
  * loaded at runtime (Bun 1.4 hangs on otherwise-static contract tests — see
- * elysia-route-manifest-types.test.ts). Assertions run via `bun run tscheck`;
+ * elysia-route-manifest-types.type.test.ts). Assertions run via `bun run tscheck`;
  * the `@ts-expect-error` directives below must stay consumed.
  */
 

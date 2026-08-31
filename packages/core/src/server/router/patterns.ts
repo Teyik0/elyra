@@ -42,6 +42,14 @@ export function resolveMode(page: RuntimePage, routeChain: RuntimeRoute[]): "ssr
   return "ssr";
 }
 
+export function routeSegmentToPattern(segment: string): string {
+  if (!(segment.startsWith("[") && segment.endsWith("]"))) {
+    return segment;
+  }
+  const inner = segment.slice(1, -1);
+  return inner.startsWith("...") ? "*" : `:${inner}`;
+}
+
 export function filePathToPattern(path: string): string {
   const parts = path.replaceAll("\\", "/").split("/");
   const segments: string[] = [];
@@ -65,19 +73,7 @@ export function filePathToPattern(path: string): string {
       continue;
     }
 
-    if (name.startsWith("[") && name.endsWith("]")) {
-      const inner = name.slice(1, -1);
-
-      if (inner.startsWith("...")) {
-        segments.push("*");
-        continue;
-      }
-
-      segments.push(`:${inner}`);
-      continue;
-    }
-
-    segments.push(name);
+    segments.push(routeSegmentToPattern(name));
   }
 
   return `/${segments.join("/")}`;

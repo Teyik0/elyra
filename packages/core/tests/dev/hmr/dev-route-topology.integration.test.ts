@@ -1,6 +1,7 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: integration test polling must wait between retries
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { parseDeferredNdjson } from "../../../src/shared/deferred-ndjson.ts";
 import { createTmpApp, removeAppPath, writeAppFile } from "../../support/app-fixtures.ts";
 import { getFreePort } from "../../support/hmr.ts";
 import { startProcess } from "../../support/process.ts";
@@ -112,7 +113,8 @@ describe.serial("dev route topology — hot add/remove of route files", () => {
         "",
         "export const route = defineRoute()",
         '  .config({ layout: rootRoute, mode: "ssg" })',
-        '  .page(() => <main data-about="v1">About page</main>);',
+        '  .loader(() => ({ title: "About page" }))',
+        '  .page(({ data }) => <main data-about="v1">{data.title}</main>);',
       ].join("\n")
     );
 
@@ -136,6 +138,21 @@ describe.serial("dev route topology — hot add/remove of route files", () => {
     expect(served).toBe(true);
     expect(status).toBe(200);
     expect(html).toContain('data-about="v1"');
+
+    const dataResponse = await fetch(
+      `http://localhost:${port}/_furin/data?path=${encodeURIComponent("/about")}`
+    );
+    expect(dataResponse.status).toBe(200);
+    const { syncData } = await parseDeferredNdjson(
+      dataResponse.body ??
+        new ReadableStream<Uint8Array>({ start: (controller) => controller.close() }),
+      undefined
+    );
+    expect(syncData.title).toBe("About page");
+
+    const snapshotResponse = await fetch(`http://localhost:${port}/_furin/devtools/snapshot`);
+    const snapshot = (await snapshotResponse.json()) as { routes: Array<{ pattern: string }> };
+    expect(snapshot.routes.some((route) => route.pattern === "/about")).toBe(true);
 
     // No server restart must have occurred.
     const logsAfter = server.getStdout() + server.getStderr();
@@ -163,5 +180,58 @@ describe.serial("dev route topology — hot add/remove of route files", () => {
 
     expect(gone).toBe(true);
     expect(status).toBe(404);
+
+    const dataResponse = await fetch(
+      `http://localhost:${port}/_furin/data?path=${encodeURIComponent("/about")}`
+    );
+    expect(dataResponse.status).toBe(404);
+
+    const snapshotResponse = await fetch(`http://localhost:${port}/_furin/devtools/snapshot`);
+    const snapshot = (await snapshotResponse.json()) as { routes: Array<{ pattern: string }> };
+    expect(snapshot.routes.some((route) => route.pattern === "/about")).toBe(false);
+  }, 20_000);
+
+  test("hot-added routes retain schema normalization", async () => {
+    writeAppFile(
+      app.path,
+      "src/pages/items/[id].tsx",
+      [
+        'import { defineRoute } from "@teyik0/furin";',
+        'import { t } from "elysia";',
+        'import { route as rootRoute } from "../root";',
+        "",
+        "export const route = defineRoute()",
+        "  .config({",
+        "    layout: rootRoute,",
+        '    mode: "ssr",',
+        "    params: t.Object({ id: t.Number() }),",
+        "    query: t.Object({ page: t.Optional(t.Number({ default: 7 })) }),",
+        "  })",
+        "  .loader(({ params, query }) => ({",
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: emits a route source template literal
+        "    detail: `${typeof params.id}:${params.id}:${query.page}`,",
+        "  }))",
+        '  .page(({ data }) => <main data-item="true">{data.detail}</main>);',
+      ].join("\n")
+    );
+
+    try {
+      let html = "";
+      const served = await pollUntil(
+        async () => {
+          const response = await fetch(`http://localhost:${port}/items/42`);
+          html = await response.text();
+          return response.status === 200 && html.includes("number:42:7");
+        },
+        40,
+        250
+      );
+
+      expect(served).toBe(true);
+      expect(html).toContain("number:42:7");
+      expect((await fetch(`http://localhost:${port}/items/nope`)).status).toBe(422);
+    } finally {
+      removeAppPath(app.path, "src/pages/items/[id].tsx");
+    }
   }, 20_000);
 });

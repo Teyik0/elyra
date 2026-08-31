@@ -1,6 +1,7 @@
 import { type Context, Elysia, ValidationError } from "elysia";
 import type { RequestLogger } from "evlog";
 import type { HeadOptions, RenderingMode } from "./client.ts";
+import { applySchemaDefaults } from "./server/router/schemas.ts";
 import type {
   ElysiaRouteLeaf,
   ElysiaRouteParams,
@@ -256,7 +257,10 @@ async function validateLayoutSchema(
   schema: FurinSchema,
   value: unknown
 ): Promise<SchemaValues> {
-  const selected = selectLayoutSchemaValues(schema, value);
+  const selectedValues = selectLayoutSchemaValues(schema, value);
+  const selected = isTypeBoxObjectSchema(schema)
+    ? applySchemaDefaults(schema, selectedValues)
+    : selectedValues;
   const validator = getSchemaValidator(schema, { coerce: true, dynamic: true });
   const checked = await validator?.Check(selected);
   if (
@@ -287,7 +291,7 @@ function registerLayout<Params, Query, ParentData extends LoaderData, Data exten
         ? await validateLayoutSchema("query", querySchema, context.query)
         : context.query;
       if (getFurinRenderer(context)) {
-        return {};
+        return { params, query };
       }
       return {
         ...(loader

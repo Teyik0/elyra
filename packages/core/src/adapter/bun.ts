@@ -41,6 +41,7 @@ const _ext = ".ts";
 const BUILD_ID_INPUT_PATHS = [
   `${_pkgSrcDir}/build/compile-entry${_ext}`,
   `${_pkgSrcDir}/build/entry-template${_ext}`,
+  `${_pkgSrcDir}/plugin/routes${_ext}`,
   `${_pkgSrcDir}/server/render/index${_ext}`,
   `${_pkgSrcDir}/server/render/shell${_ext}`,
 ];

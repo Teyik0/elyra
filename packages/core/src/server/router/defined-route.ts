@@ -43,7 +43,7 @@ function toDefinedRenderContext(props: RuntimeData): DefinedRenderContext {
     children,
     data,
     params,
-    path: _path as string,
+    path: (_path as string | undefined) ?? "",
     query,
     requestData: requestData as Promise<object> | undefined,
   };

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Elysia, t } from "elysia";
-import { defineRootRoute, defineRoute, type RouteLoaderData } from "../../src/furin.ts";
+import { defineRootRoute, defineRoute } from "../../src/furin.ts";
 
 const rootRoute = defineRootRoute()
   .config({ mode: "ssr" })
@@ -190,15 +190,15 @@ describe("defineRoute", () => {
         const page: number = query.page;
         return `${account}:${organization}:${label}:${page}`;
       });
-    const accumulated: RouteLoaderData<typeof child> = {
-      account: "acme",
-      label: "acme:furin:1",
-      organization: "acme:furin",
-    };
+    const nestedApp = new Elysia().use(
+      rootLayout.elysia.use(organizationLayout.elysia.use(child.elysia))
+    );
 
+    const response = await nestedApp.handle(new Request("http://localhost/?page=1"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ label: "acme:acme:furin:1" });
     expect("parent" in child).toBe(false);
-    expect(accumulated.organization).toBe("acme:furin");
-    await Promise.resolve();
   });
 
   test("passes dynamic child params to a layout loader", async () => {
@@ -229,5 +229,31 @@ describe("defineRoute", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ boardId: 42, organizationId: 12 });
     expect(invalid.status).toBe(422);
+  });
+
+  test("passes normalized layout params and query to the renderer", async () => {
+    const layout = defineRootRoute()
+      .config({
+        mode: "ssr",
+        params: t.Object({ organizationId: t.Number() }),
+        query: t.Object({ page: t.Optional(t.Number({ default: 7 })) }),
+      })
+      .layout(({ children }) => children);
+    const child = defineRoute()
+      .config({ layout, mode: "ssr" })
+      .page(() => null);
+    const nestedApp = new Elysia()
+      .decorate("$furinRender", (context: { params: unknown; query: unknown }) =>
+        Response.json({ params: context.params, query: context.query })
+      )
+      .use(new Elysia({ prefix: "/:organizationId" }).use(layout.elysia.use(child.elysia)));
+
+    const response = await nestedApp.handle(new Request("http://localhost/42"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      params: { organizationId: 42 },
+      query: { page: 7 },
+    });
   });
 });

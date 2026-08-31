@@ -41,6 +41,8 @@ describe("writeRouteTypes", () => {
     const content = readFileSync(join(temporaryDirectory, "furin-env.d.ts"), "utf8");
     expect(content).toContain('declare module "@teyik0/furin/routes"');
     expect(content).toContain("interface RouteMap");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: asserts generated TypeScript syntax
+    expect(content).toContain("[path: `/boards/${string}`]");
     expect(content).toContain('typeof import("./src/pages/boards/[id]").route');
     expect(content).not.toContain("RouteManifest");
     expect(content).not.toContain("searchInput");

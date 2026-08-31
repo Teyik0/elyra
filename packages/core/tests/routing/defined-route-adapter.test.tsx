@@ -4,6 +4,20 @@ import { defineRoute } from "../../src/furin.ts";
 import { adaptDefinedLayout, adaptDefinedPage } from "../../src/server/router/defined-route.ts";
 
 describe("defineRoute renderer adapter", () => {
+  test("defaults a missing render path to an empty string", async () => {
+    const parent = { __type: "FURIN_ROUTE" as const };
+    const route = defineRoute()
+      .config({ layout: parent, mode: "ssr" })
+      .loader(() => ({}))
+      .head(({ path }) => ({ meta: [{ title: path }] }))
+      .page(({ path }) => path);
+    const page = adaptDefinedPage(route, parent);
+
+    expect(page.component({})).toBe("");
+    expect(page.head?.({})).toEqual({ meta: [{ title: "" }] });
+    await Promise.resolve();
+  });
+
   test("maps loader, head and structured component props to the runtime contract", async () => {
     const root = { __type: "FURIN_ROUTE" as const };
     const layout = defineRoute()
