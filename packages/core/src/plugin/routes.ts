@@ -385,13 +385,12 @@ async function retainComposableRoutes(node: RouteTreeNode): Promise<void> {
   if (node.indexRoute && !(await isComposable(node.indexRoute))) {
     node.indexRoute = undefined;
   }
-  node.fileRoutes = (
+  const composableRoutes = (
     await Promise.all(
       node.fileRoutes.map(async (route) => ({ keep: await isComposable(route), route }))
     )
-  )
-    .filter(({ keep }) => keep)
-    .map(({ route }) => route);
+  ).flatMap(({ keep, route }) => (keep ? [route] : []));
+  node.fileRoutes = composableRoutes;
   await Promise.all(node.children.map((child) => retainComposableRoutes(child)));
 }
 
@@ -448,8 +447,10 @@ export function validateRouteParams(
   if (pathParams.length === 0) {
     return;
   }
-  const schemaParams = schemas?.params?.properties ? Object.keys(schemas.params.properties) : [];
-  const missing = pathParams.filter((param) => !schemaParams.includes(param));
+  const schemaParams = new Set(
+    schemas?.params?.properties ? Object.keys(schemas.params.properties) : []
+  );
+  const missing = pathParams.filter((param) => !schemaParams.has(param));
   if (missing.length > 0) {
     throw new Error(
       `[furin] ${JSON.stringify(path)}: path params missing from the params schema: ${missing.join(", ")}`
@@ -590,16 +591,21 @@ async function importRouteModule(sourcePath: string): Promise<Record<string, unk
 }
 
 async function validateRouteModules(routeFiles: Iterable<RouteModuleInfo>): Promise<void> {
-  await Promise.all(
-    [...routeFiles]
-      .filter((routeFile) => routeFile.routePath !== "")
-      .map(async (routeFile) => {
+  const validations: Promise<void>[] = [];
+  for (const routeFile of routeFiles) {
+    if (routeFile.routePath === "") {
+      continue;
+    }
+    validations.push(
+      (async () => {
         const module = (await importRouteModule(routeFile.sourcePath)) as {
           route?: { schemas?: { params?: { properties?: object } } };
         };
         validateRouteParams(routeFile.routePath, module.route?.schemas);
-      })
-  );
+      })()
+    );
+  }
+  await Promise.all(validations);
 }
 
 interface ClientRouteMetadata {

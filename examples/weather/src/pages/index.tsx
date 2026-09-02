@@ -18,6 +18,9 @@ export const route = defineRoute()
     const { city } = query;
     const url = new URL(`/api/weather?city=${encodeURIComponent(city)}`, request.url);
     const res = await fetch(url);
+    if (!res.ok) {
+      return { city, error: `Weather API error (${res.status})`, weather: null };
+    }
     const data = (await res.json()) as WeatherResponse | null;
 
     if (!data) {

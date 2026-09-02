@@ -104,13 +104,13 @@ export const route = defineRoute()
 
             <div className="flex flex-wrap gap-4">
               <Link
-                className="rounded-full bg-blue-600 px-8 py-3 font-medium text-sm text-white transition-all hover:bg-blue-500 hover:shadow-blue-500/25 hover:shadow-lg"
+                className="rounded-full bg-blue-600 px-8 py-3 font-medium text-sm text-white transition-[background-color,box-shadow] hover:bg-blue-500 hover:shadow-blue-500/25 hover:shadow-lg"
                 to="/docs"
               >
                 Get Started
               </Link>
               <a
-                className="rounded-full border border-border px-8 py-3 font-medium text-foreground/70 text-sm transition-all hover:border-foreground/40 hover:text-foreground"
+                className="rounded-full border border-border px-8 py-3 font-medium text-foreground/70 text-sm transition-colors hover:border-foreground/40 hover:text-foreground"
                 href="https://github.com/teyik0/furin"
                 rel="noopener noreferrer"
                 target="_blank"
@@ -190,13 +190,13 @@ export const route = defineRoute()
           </p>
           <div className="flex flex-wrap justify-center gap-4">
             <Link
-              className="rounded-full bg-blue-600 px-8 py-3 font-medium text-sm text-white transition-all hover:bg-blue-500 hover:shadow-blue-500/25 hover:shadow-lg"
+              className="rounded-full bg-blue-600 px-8 py-3 font-medium text-sm text-white transition-[background-color,box-shadow] hover:bg-blue-500 hover:shadow-blue-500/25 hover:shadow-lg"
               to="/docs"
             >
               Explore Examples
             </Link>
             <Link
-              className="rounded-full border border-border px-8 py-3 font-medium text-foreground/70 text-sm transition-all hover:border-foreground/40 hover:text-foreground"
+              className="rounded-full border border-border px-8 py-3 font-medium text-foreground/70 text-sm transition-colors hover:border-foreground/40 hover:text-foreground"
               to="/docs"
             >
               Read the Docs
