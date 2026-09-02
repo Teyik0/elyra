@@ -124,7 +124,7 @@ test("ISR cached loaders reject request-specific context", async () => {
 test("synthetic ISR renders preserve repeated query values for loaders", async () => {
   let observedQuery: unknown;
   const route = defineRoute()
-    .config({ layout: rootTerminal, mode: "isr" })
+    .config({ layout: rootTerminal, mode: "isr", revalidate: 60 })
     .loader(({ query }) => {
       observedQuery = query;
       return {};
@@ -149,7 +149,7 @@ test("synthetic ISR renders preserve repeated query values for loaders", async (
 test("synthetic ISR renders preserve __proto__ query values for loaders", async () => {
   let observedQuery: unknown;
   const route = defineRoute()
-    .config({ layout: rootTerminal, mode: "isr" })
+    .config({ layout: rootTerminal, mode: "isr", revalidate: 60 })
     .loader(({ query }) => {
       observedQuery = query;
       return {};

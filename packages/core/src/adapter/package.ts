@@ -179,7 +179,7 @@ const CLIENT_DIR = fileURLToPath(new URL("./client", import.meta.url));
  *
  * @param {object} [options] Extra furin() options (logger, sync, ...) —
  * pagesDir/prefix/clientDir are baked into the package and cannot be overridden.
- * @returns {Promise<import("elysia").Elysia>}
+ * @returns {ReturnType<typeof import("@teyik0/furin").furin>}
  */
 export function createFurinApp(options = {}) {
   return furin({
@@ -194,12 +194,11 @@ export const prefix = ${JSON.stringify(prefix)};
 `;
   writeFileSync(join(targetDir, "index.js"), factorySource);
 
-  const dtsSource = `import type { Elysia } from "elysia";
-import type { FurinOptions } from "@teyik0/furin";
+  const dtsSource = `import type { FurinOptions, furin } from "@teyik0/furin";
 
 /** Extra furin() options — pagesDir/prefix/clientDir are baked into the package and cannot be overridden. */
 export type CreateFurinAppOptions = Omit<FurinOptions, "pagesDir" | "prefix" | "clientDir">;
-export declare function createFurinApp(options?: CreateFurinAppOptions): Promise<Elysia>;
+export declare function createFurinApp(options?: CreateFurinAppOptions): ReturnType<typeof furin>;
 export declare const prefix: string;
 `;
   writeFileSync(join(targetDir, "index.d.ts"), dtsSource);

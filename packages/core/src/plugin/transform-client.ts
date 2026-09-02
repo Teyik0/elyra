@@ -143,8 +143,11 @@ function chainRootIsDefineRoute(
   return false;
 }
 
-function removeChainedServerCalls(source: MagicString, program: Program): boolean {
-  const bindings = collectDefineRouteBindings(program);
+function removeChainedServerCalls(
+  source: MagicString,
+  program: Program,
+  bindings: Set<string>
+): boolean {
   let transformed = rewriteDefineRouteImports(source, program, bindings);
 
   walk(program, {
@@ -193,10 +196,23 @@ export function transformForClient(code: string, filename: string): TransformRes
   }
 
   let source = new MagicString(clientSource);
-  const removedRouteCode = removeChainedServerCalls(source, program);
+  const routeBindings = collectDefineRouteBindings(program);
+  const removedRouteCode = removeChainedServerCalls(source, program, routeBindings);
   const removedServerCode = isomorphicResult.transformed || removedRouteCode;
   if (removedServerCode) {
     source = deadCodeElimination(source, code, lang);
+  }
+  if (routeBindings.size > 0) {
+    source.append(`
+if (import.meta.hot) {
+  import.meta.hot.accept((updatedModule) => {
+    const updatedRoute = updatedModule?.route;
+    if (updatedRoute?.component) {
+      window.__FURIN_HMR_UPDATE__?.(${JSON.stringify(filename)}, updatedRoute.component);
+    }
+  });
+}
+`);
   }
 
   return {

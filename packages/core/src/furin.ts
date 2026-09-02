@@ -373,6 +373,17 @@ function wrapWithRequestScope(app: AnyElysia): Elysia {
   });
 }
 
+function createFurinPlugin(
+  app: AnyElysia,
+  prepareParent: ((parentApp: AnyElysia) => void) | undefined
+) {
+  const scopedApp = wrapWithRequestScope(app);
+  return <ParentApp extends AnyElysia>(parentApp: ParentApp) => {
+    prepareParent?.(parentApp);
+    return parentApp.use(scopedApp);
+  };
+}
+
 async function loadDevelopmentRoutes(resolvedPagesDir: string) {
   const { scanPages } = await import("./server/router/discovery.ts");
   return scanPages(resolvedPagesDir);
@@ -488,8 +499,9 @@ export interface FurinOptions {
 /**
  * Main Furin plugin.
  *
- * Returns a standalone Elysia instance (async function) so that routes are
- * properly registered in Elysia's router for SPA navigation to work.
+ * Returns an Elysia plugin function. Applying the function to the parent app
+ * before `listen()` lets development register Bun's native HTML bundle in the
+ * initial server options while preserving Elysia's route composition.
  *
  * ## Usage
  *
@@ -559,29 +571,32 @@ export async function furin({
 
     // TanStack-style config auto-fix: verify each route file's `layout`
     // reference against the file-system tree and rewrite missing/misplaced
-    // ones. Idempotent and content-diff safe — the watcher ignores content
-    // edits, so a rewrite can never loop.
+    // ones. Idempotent and content-diff safe — the watcher resynchronizes the
+    // route-file signature after a rewrite, so the auto-fix cannot loop.
     const { fixRouteConfigLayout } = await import("./plugin/route-config-autofix.ts");
-    const applyRouteConfigAutofix = (): void => {
-      for (const sourcePath of routeSourcePaths(routeInstance)) {
-        try {
-          const source = readFileSync(sourcePath, "utf8");
-          const fixed = fixRouteConfigLayout(source, sourcePath, resolvedPagesDir);
-          if (fixed !== null && fixed !== source) {
-            writeFileSync(sourcePath, fixed);
-          }
-        } catch (error) {
-          console.warn(`[furin] Could not auto-fix route config for ${sourcePath}:`, error);
+    const applyRouteConfigAutofix = (): boolean => {
+      let changed = false;
+      const sourcePaths = [
+        join(resolvedPagesDir, "root.tsx"),
+        ...routeSourcePaths(routeInstance),
+      ].filter((sourcePath) => existsSync(sourcePath));
+      for (const sourcePath of sourcePaths) {
+        const source = readFileSync(sourcePath, "utf8");
+        const fixed = fixRouteConfigLayout(source, sourcePath, resolvedPagesDir);
+        if (fixed !== null && fixed !== source) {
+          writeFileSync(sourcePath, fixed);
+          changed = true;
         }
       }
+      return changed;
     };
+    applyRouteConfigAutofix();
 
     const { furinApp: nativeRoutesApp } = (await import(routeModuleSpecifier(routeInstance))) as {
       furinApp: AnyElysia;
     };
     const { root, routes } = await loadDevelopmentRoutes(resolvedPagesDir);
     let currentRoutes = routes;
-    applyRouteConfigAutofix();
     const searchRoutes = createSearchRouteMetadata(routes);
     const renderNativeRoute = createNativeRouteRenderer(prefix, routes, root, "", searchRoutes);
     nativeRouteRenderers.set(instance, renderNativeRoute);
@@ -604,6 +619,21 @@ export async function furin({
       );
     };
     writeCurrentDevFiles(routes, root.path);
+    const refreshDevelopmentRoutes = async (): Promise<void> => {
+      const next = await loadDevelopmentRoutes(resolvedPagesDir);
+      currentRoutes = next.routes;
+      writeCurrentDevFiles(next.routes, next.root.path);
+      nativeRouteRenderers.set(
+        instance,
+        createNativeRouteRenderer(
+          prefix,
+          next.routes,
+          next.root,
+          "",
+          createSearchRouteMetadata(next.routes)
+        )
+      );
+    };
     const devHtmlBundle = (await import(join(furinDir, "index.html"))).default;
     const publicDir = resolve(cwd, "public");
     const publicExists = existsSync(publicDir);
@@ -618,36 +648,22 @@ export async function furin({
       prefix: prefix || undefined,
       seed: resolvedPagesDir,
     })
-      .onStart((app) => {
-        const nativeServeRoutes = {
-          ...app.config.serve?.routes,
-          [hmrEntryPath]: devHtmlBundle,
-        };
-        app.config.serve = { ...app.config.serve, routes: nativeServeRoutes };
-        app.server?.reload({ fetch: app.fetch, routes: nativeServeRoutes });
+      .onStart(() => {
         routeTopologyWatcher = registerDevRouteTopologyWatcher({
           instance: routeInstance,
+          onRouteFilesTouched: async () => {
+            if (applyRouteConfigAutofix()) {
+              await refreshDevelopmentRoutes();
+            }
+          },
           onTopologyChange: async () => {
-            const next = await loadDevelopmentRoutes(resolvedPagesDir);
-            currentRoutes = next.routes;
-            writeCurrentDevFiles(next.routes, next.root.path);
+            // Bun --hot cannot be triggered from generated artifacts (its
+            // watch graph is the entry's static imports), so topology changes
+            // are served by swapping the dispatcher's route matcher. Hot-added
+            // routes then resolve through the NOT_FOUND fallback below;
+            // removed routes 404 through the renderer's miss path.
             applyRouteConfigAutofix();
-            // Recompose the native renderer in place: Bun --hot cannot be
-            // triggered from generated artifacts (its watch graph is the
-            // entry's static imports), so topology changes are served by
-            // swapping the dispatcher's route matcher. Hot-added routes then
-            // resolve through the NOT_FOUND fallback below; removed routes
-            // 404 through the renderer's miss path.
-            nativeRouteRenderers.set(
-              instance,
-              createNativeRouteRenderer(
-                prefix,
-                next.routes,
-                next.root,
-                "",
-                createSearchRouteMetadata(next.routes)
-              )
-            );
+            await refreshDevelopmentRoutes();
           },
           pollIntervalMs: DEV_ROUTE_TOPOLOGY_POLL_INTERVAL_MS,
         });
@@ -703,7 +719,15 @@ export async function furin({
         })
       );
     registerInstance(instance);
-    return wrapWithRequestScope(devApp);
+    return createFurinPlugin(devApp, (parentApp) => {
+      parentApp.config.serve = {
+        ...parentApp.config.serve,
+        routes: {
+          ...parentApp.config.serve?.routes,
+          [hmrEntryPath]: devHtmlBundle,
+        },
+      };
+    });
   }
 
   // ── Production ──────────────────────────────────────────────────────────
@@ -817,7 +841,7 @@ export async function furin({
     .use(ctx.nativeRoutes)
     .use(createNotFoundHandling(prefix, routes, root));
   registerInstance(instance);
-  return wrapWithRequestScope(prodApp);
+  return createFurinPlugin(prodApp, undefined);
 }
 
 /**

@@ -57,16 +57,32 @@ export interface RequestLoaderContext<Params = NoFields, Query = NoFields> {
   readonly request: Request;
 }
 
-export interface DefineRouteConfig {
-  mode?: RenderingMode;
-  revalidate?: number;
-  staticParams?: () => Awaitable<readonly unknown[]>;
+interface SharedRouteConfig {
   tags?: readonly string[];
 }
 
-type ConfigFor<Params> = Omit<DefineRouteConfig, "staticParams"> & {
-  staticParams?: () => Awaitable<readonly Params[]>;
-};
+type RenderingConfig<Params> = SharedRouteConfig &
+  (
+    | {
+        mode: "ssr";
+        revalidate?: never;
+        staticParams?: never;
+      }
+    | {
+        mode: "ssg";
+        revalidate?: never;
+        staticParams?: () => Awaitable<readonly Params[]>;
+      }
+    | {
+        mode: "isr";
+        revalidate: number;
+        staticParams?: () => Awaitable<readonly Params[]>;
+      }
+  );
+
+export type DefineRouteConfig = RenderingConfig<unknown>;
+
+type ConfigFor<Params> = RenderingConfig<Params>;
 
 type LoaderContext<Params, Query, ParentData extends LoaderData> = {
   params: Params;

@@ -1,5 +1,5 @@
-import { readdirSync, statSync } from "node:fs";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { type AnyElysia, Elysia } from "elysia";
 import { detectLoaderFromPath } from "../server/lang-detect.ts";
@@ -40,6 +40,7 @@ export interface DevRouteTopologyWatcher {
 
 export interface DevRouteTopologyWatcherOptions {
   instance: RouteInstanceSpec;
+  onRouteFilesTouched?: () => Promise<void> | void;
   onTopologyChange: () => Promise<void> | void;
   pollIntervalMs: number;
 }
@@ -47,6 +48,7 @@ export interface DevRouteTopologyWatcherOptions {
 interface DevRouteTopologyWatcherState extends DevRouteTopologyWatcherOptions {
   pending: boolean;
   refreshing: boolean;
+  routeFilesSignature: string;
   source: string;
   timer: ReturnType<typeof setInterval>;
 }
@@ -216,6 +218,29 @@ function routeTopologySource(instance: RouteInstanceSpec): string {
   return `${JSON.stringify(paths)}\n`;
 }
 
+function routeFilesSignature(instance: RouteInstanceSpec): string {
+  const rootPath = resolve(instance.pagesDir, "root.tsx");
+  const sourcePaths = [rootPath, ...routeSourcePaths(instance)].filter((path) => existsSync(path));
+  const dependencyPaths = new Set<string>();
+  for (const sourcePath of sourcePaths) {
+    const cached = routeModuleCache().get(sourcePath);
+    const dependencies = cached?.dependencies ?? collectRouteModuleDependencies(sourcePath);
+    for (const dependency of dependencies) {
+      dependencyPaths.add(dependency.path);
+    }
+  }
+  return [...dependencyPaths]
+    .toSorted((left, right) => left.localeCompare(right))
+    .map((path) => {
+      try {
+        return `${path}:${statSync(path).mtimeMs}`;
+      } catch {
+        return `${path}:missing`;
+      }
+    })
+    .join("\n");
+}
+
 function devRouteTopologyWatchers(): Map<string, DevRouteTopologyWatcherState> {
   const existing = Reflect.get(globalThis, DEV_ROUTE_WATCHERS_SYMBOL);
   if (existing instanceof Map) {
@@ -235,9 +260,16 @@ async function refreshRouteTopology(state: DevRouteTopologyWatcherState): Promis
   try {
     state.pending = false;
     const source = routeTopologySource(state.instance);
-    if (source !== state.source) {
+    if (source === state.source) {
+      const signature = routeFilesSignature(state.instance);
+      if (signature !== state.routeFilesSignature) {
+        await state.onRouteFilesTouched?.();
+        state.routeFilesSignature = routeFilesSignature(state.instance);
+      }
+    } else {
       await state.onTopologyChange();
-      state.source = source;
+      state.source = routeTopologySource(state.instance);
+      state.routeFilesSignature = routeFilesSignature(state.instance);
     }
   } catch (error) {
     console.error("[furin] Failed to refresh route topology", error);
@@ -257,6 +289,7 @@ export function registerDevRouteTopologyWatcher(
   const existing = watchers.get(watcherKey);
   if (existing) {
     existing.instance = options.instance;
+    existing.onRouteFilesTouched = options.onRouteFilesTouched;
     existing.onTopologyChange = options.onTopologyChange;
     return {
       close: () => {
@@ -267,6 +300,7 @@ export function registerDevRouteTopologyWatcher(
   }
 
   const source = routeTopologySource(options.instance);
+  const routeFilesSignatureValue = routeFilesSignature(options.instance);
   let state: DevRouteTopologyWatcherState;
   const timer = setInterval(() => {
     refreshRouteTopology(state).catch((error) => {
@@ -278,6 +312,7 @@ export function registerDevRouteTopologyWatcher(
     ...options,
     pending: false,
     refreshing: false,
+    routeFilesSignature: routeFilesSignatureValue,
     source,
     timer,
   };
@@ -425,17 +460,21 @@ export function validateRouteParams(
 const ROUTE_MODULE_CACHE_SYMBOL = Symbol.for("@teyik0/furin/route-module-cache");
 
 interface CachedRouteModule {
+  dependencies: RouteModuleDependency[];
   module: Record<string, unknown>;
+}
+
+interface RouteModuleDependency {
   mtimeMs: number;
+  path: string;
 }
 
 /**
- * TanStack-style incremental generator cache (routeNodeCache + mtime check):
- * a route module is re-evaluated only when its mtime changed. Unchanged
- * modules are served from the cache, so a full topology scan costs
- * O(changes) module evaluations instead of O(routes). Lives on globalThis so
- * the cache survives Bun soft reloads (the mtime key makes a stale entry
- * self-heal on the next scan after any file edit).
+ * TanStack-style incremental generator cache: a route module is re-evaluated
+ * only when it or one of its transitive project-local imports changed.
+ * Unchanged modules remain cached, so topology scans avoid rebuilding every
+ * composed Elysia route. The cache lives on globalThis across Bun soft reloads;
+ * dependency mtimes make stale closures self-heal on the next scan.
  */
 function routeModuleCache(): Map<string, CachedRouteModule> {
   const existing = Reflect.get(globalThis, ROUTE_MODULE_CACHE_SYMBOL);
@@ -447,21 +486,106 @@ function routeModuleCache(): Map<string, CachedRouteModule> {
   return cache;
 }
 
+function findPackageRoot(sourcePath: string): string {
+  const fallback = dirname(sourcePath);
+  let directory = fallback;
+  while (dirname(directory) !== directory) {
+    if (existsSync(join(directory, "package.json"))) {
+      return directory;
+    }
+    directory = dirname(directory);
+  }
+  return existsSync(join(directory, "package.json")) ? directory : fallback;
+}
+
+function isWithinDirectory(path: string, directory: string): boolean {
+  const relativePath = relative(directory, path);
+  return relativePath === "" || !(relativePath.startsWith("..") || isAbsolute(relativePath));
+}
+
+function isFurinPackageImport(specifier: string): boolean {
+  return (
+    specifier === "furin" ||
+    specifier.startsWith("furin/") ||
+    specifier === "@teyik0/furin" ||
+    specifier.startsWith("@teyik0/furin/")
+  );
+}
+
+function resolveRouteModuleImports(dependencyPath: string, packageRoot: string): string[] {
+  if (!ROUTE_EXTENSION.test(extname(dependencyPath))) {
+    return [];
+  }
+  const source = readFileSync(dependencyPath, "utf8");
+  const transpiler = new Bun.Transpiler({ loader: detectLoaderFromPath(dependencyPath) });
+  const resolvedImports: string[] = [];
+  for (const imported of transpiler.scanImports(source)) {
+    if (isFurinPackageImport(imported.path)) {
+      continue;
+    }
+    try {
+      const resolvedImport = realpathSync(Bun.resolveSync(imported.path, dirname(dependencyPath)));
+      if (isAbsolute(resolvedImport) && isWithinDirectory(resolvedImport, packageRoot)) {
+        resolvedImports.push(resolvedImport);
+      }
+    } catch {
+      // External and unresolved imports do not participate in the local graph.
+    }
+  }
+  return resolvedImports;
+}
+
+function collectRouteModuleDependencies(sourcePath: string): RouteModuleDependency[] {
+  const packageRoot = realpathSync(findPackageRoot(sourcePath));
+  const pending = [sourcePath];
+  const visited = new Set<string>();
+  const dependencies: RouteModuleDependency[] = [];
+
+  while (pending.length > 0) {
+    const dependencyPath = pending.pop();
+    if (!dependencyPath || visited.has(dependencyPath)) {
+      continue;
+    }
+    visited.add(dependencyPath);
+
+    let mtimeMs: number;
+    try {
+      ({ mtimeMs } = statSync(dependencyPath));
+    } catch {
+      continue;
+    }
+    dependencies.push({ mtimeMs, path: dependencyPath });
+    pending.push(...resolveRouteModuleImports(dependencyPath, packageRoot));
+  }
+
+  return dependencies.toSorted((left, right) => left.path.localeCompare(right.path));
+}
+
+function routeModuleDependenciesAreFresh(dependencies: RouteModuleDependency[]): boolean {
+  return dependencies.every((dependency) => {
+    try {
+      return statSync(dependency.path).mtimeMs === dependency.mtimeMs;
+    } catch {
+      return false;
+    }
+  });
+}
+
 async function importRouteModule(sourcePath: string): Promise<Record<string, unknown>> {
   const cache = routeModuleCache();
-  let mtimeMs = 0;
-  try {
-    ({ mtimeMs } = statSync(sourcePath));
-  } catch {
-    mtimeMs = 0; // deleted between scan and import — let the import surface it
-  }
   const cached = cache.get(sourcePath);
-  if (cached && cached.mtimeMs === mtimeMs) {
+  if (
+    cached &&
+    Array.isArray(cached.dependencies) &&
+    routeModuleDependenciesAreFresh(cached.dependencies)
+  ) {
     return cached.module;
   }
-  const moduleUrl = `${pathToFileURL(sourcePath).href}?furin-routes=${mtimeMs}`;
+  const dependencies = collectRouteModuleDependencies(sourcePath);
+  const fingerprint = Bun.hash(JSON.stringify(dependencies)).toString(16);
+  const moduleUrl = `${pathToFileURL(sourcePath).href}?furin-routes=${fingerprint}`;
   const module = (await import(moduleUrl)) as Record<string, unknown>;
-  cache.set(sourcePath, { module, mtimeMs });
+  cache.set(sourcePath, { dependencies, module });
   return module;
 }
 

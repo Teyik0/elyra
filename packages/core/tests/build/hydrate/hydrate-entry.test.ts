@@ -99,7 +99,9 @@ describe("generateHydrateEntry", () => {
     const code = generateHydrateEntry([route], ROOT, "", false);
 
     expect(code).toContain('import("/app/src/pages/boards/_route.tsx")');
-    expect(code).toContain("layout: __furin_layout_route_0.component");
+    expect(code).toContain(
+      'layout: hotComponent("layout:/app/src/pages/boards/_route.tsx", __furin_layout_route_0.component)'
+    );
     expect(code).not.toContain("?? __furin_layout_0.default");
     expect(code).toContain("parent: __furin_parent");
   });
@@ -424,6 +426,15 @@ describe("generateHydrateEntry — digest rehydration (Slice 10)", () => {
 // data and React throws a hydration mismatch.
 
 describe("generateHydrateEntry — HMR hardening", () => {
+  test("keeps page and root component identities stable across hot updates", () => {
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
+
+    expect(code).toContain("updateHotComponent } from \"@teyik0/furin/client\";");
+    expect(code).toContain('hotComponent("page:/app/src/pages/index.tsx"');
+    expect(code).toContain('hotComponent("root:/app/src/pages/root.tsx"');
+    expect(code).toContain("hmrWindow.__FURIN_HMR_UPDATE__");
+  });
+
   test("uses window.__FURIN_ROOT__ as the HMR root persistence mechanism", () => {
     const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     expect(code).toContain("(window as any).__FURIN_ROOT__");

@@ -219,9 +219,13 @@ describe.serial("dev route topology — hot add/remove of route files", () => {
       let html = "";
       const served = await pollUntil(
         async () => {
-          const response = await fetch(`http://localhost:${port}/items/42`);
-          html = await response.text();
-          return response.status === 200 && html.includes("number:42:7");
+          try {
+            const response = await fetch(`http://localhost:${port}/items/42`);
+            html = await response.text();
+            return response.status === 200 && html.includes("number:42:7");
+          } catch {
+            return false;
+          }
         },
         40,
         250

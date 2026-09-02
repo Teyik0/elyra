@@ -19,14 +19,14 @@ const FILES = {
 import { route as rootRoute } from "./root"
 
 export const route = defineRoute()
-  .config({ layout: rootRoute })
+  .config({ layout: rootRoute, mode: "ssr" })
   .loader(async () => ({
     message: "Hello from Furin!",
   }))
   .page(({ data: { message } }) => (
     <h1>{message}</h1>
   ))`,
-  "pages/root.tsx": `import { defineRoute } from "@teyik0/furin"
+  "pages/root.tsx": `import { defineRootRoute } from "@teyik0/furin"
 import { Link } from "@teyik0/furin/link"
 import "./styles/globals.css"
 
@@ -42,7 +42,8 @@ function RootLayout({ children }: { children: React.ReactNode }) {
   )
 }
 
-export const route = defineRoute()
+export const route = defineRootRoute()
+  .config({ mode: "ssr" })
   .layout(({ children }) => <RootLayout>{children}</RootLayout>)`,
   "server.ts": `import { Elysia } from "elysia"
 import { furin } from "@teyik0/furin"

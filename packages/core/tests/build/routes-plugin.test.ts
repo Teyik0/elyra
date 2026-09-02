@@ -81,7 +81,7 @@ describe("furin/routes server plugin", () => {
       );
 
       expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ path: "guides/routing" });
+      expect(await response.json()).toEqual({ catchAllPath: "guides/routing" });
     } finally {
       rmSync(tempDir, { force: true, recursive: true });
     }

@@ -38,11 +38,23 @@ const createGeneratedBoardRoute = () =>
 
 declare const generatedBoardRoute: ReturnType<typeof createGeneratedBoardRoute>;
 
+const createGeneratedOptionalBoardRoute = () =>
+  defineRoute()
+    .config({
+      layout: rootLayout,
+      mode: "ssr",
+      params: t.Object({ boardId: t.Optional(t.Number()) }),
+    })
+    .page(({ params }) => params.boardId);
+
+declare const generatedOptionalBoardRoute: ReturnType<typeof createGeneratedOptionalBoardRoute>;
+
 declare const generatedRoute: ReturnType<typeof createGeneratedRoute>;
 
 declare module "@teyik0/furin/routes" {
   interface RouteMap {
     "/elysia-boards/:boardId": typeof generatedBoardRoute;
+    "/elysia-optional-boards/:boardId": typeof generatedOptionalBoardRoute;
     "/elysia-products": typeof generatedRoute;
   }
 }
@@ -64,6 +76,9 @@ const assertTypedLinkParams = () => {
   // Schema numbers accept both the number and its URL-string form.
   expectTypeOf<RouteParamsOf<"/elysia-boards/:boardId">>().toEqualTypeOf<{
     boardId: string | number;
+  }>();
+  expectTypeOf<RouteParamsOf<"/elysia-optional-boards/:boardId">>().toEqualTypeOf<{
+    boardId?: string | number;
   }>();
   // Routes without path params expose `undefined` params.
   expectTypeOf<RouteParamsOf<"/elysia-products">>().toEqualTypeOf<undefined>();

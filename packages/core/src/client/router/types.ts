@@ -19,6 +19,8 @@ type RouteSearchInput<Route> = Route extends { elysia: infer App }
     : ElysiaRouteQuery<ElysiaRouteLeaf<App>>
   : undefined;
 
+type RouteParamInput<Value> = Value extends number ? string | number : Value;
+
 /**
  * The valid `to` pathname union derived from the generated RouteMap.
  * Falls back to `string` when furin-env.d.ts has not been generated yet.
@@ -52,11 +54,9 @@ export type RouteParamsOf<To extends RouteTo> = keyof RouteManifest extends neve
         : keyof ElysiaRouteParams<ElysiaRouteLeaf<App>> extends never
           ? undefined
           : {
-              [Key in keyof ElysiaRouteParams<ElysiaRouteLeaf<App>>]: ElysiaRouteParams<
-                ElysiaRouteLeaf<App>
-              >[Key] extends number
-                ? string | number
-                : ElysiaRouteParams<ElysiaRouteLeaf<App>>[Key];
+              [Key in keyof ElysiaRouteParams<ElysiaRouteLeaf<App>>]: RouteParamInput<
+                ElysiaRouteParams<ElysiaRouteLeaf<App>>[Key]
+              >;
             }
       : undefined
     : undefined;

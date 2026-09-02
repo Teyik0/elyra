@@ -361,7 +361,7 @@ describe("GET /_furin/data", () => {
 
   test("streams requestData for an ISR route during SPA navigation", async () => {
     const routeDefinition = defineRoute()
-      .config({ layout: rootTerminal, mode: "isr" })
+      .config({ layout: rootTerminal, mode: "isr", revalidate: 60 })
       .requestLoader(({ cookies }) => ({ user: cookies.get("session") }))
       .loader(() => ({ catalog: "Shoes" }))
       .page(() => null);

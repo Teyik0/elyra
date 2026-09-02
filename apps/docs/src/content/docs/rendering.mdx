@@ -158,6 +158,6 @@ export const route = defineRoute()
 
 | Mode | Configuration | Best for |
 | --- | --- | --- |
-| `ssr` | omitted or `config({ mode: "ssr" })` | request-time and personalized data |
-| `ssg` | `config({ mode: "ssg" })` | content that changes rarely |
-| `isr` | `config({ mode: "isr", revalidate })` | cached pages refreshed periodically |
+| `ssr` | `config({ layout, mode: "ssr" })` | request-time and personalized data |
+| `ssg` | `config({ layout, mode: "ssg" })` | content that changes rarely |
+| `isr` | `config({ layout, mode: "isr", revalidate })` | cached pages refreshed periodically |

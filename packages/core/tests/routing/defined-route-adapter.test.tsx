@@ -26,7 +26,7 @@ describe("defineRoute renderer adapter", () => {
       .layout(({ children, data }) => `${data.organization}:${children}`);
     const runtimeLayout = adaptDefinedLayout(layout, root);
     const route = defineRoute()
-      .config({ layout: root, mode: "isr", params: t.Object({ id: t.Number() }) })
+      .config({ layout: root, mode: "isr", params: t.Object({ id: t.Number() }), revalidate: 60 })
       .loader(({ params }) => ({ board: `Board ${params.id}` }))
       .head(({ data }) => ({ meta: [{ title: data.board }] }))
       .page(({ data, params }) => `${data.board}:${params.id}`);

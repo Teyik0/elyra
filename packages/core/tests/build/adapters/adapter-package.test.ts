@@ -71,12 +71,12 @@ async function runBuildPackageTargetScenarios(): Promise<void> {
     const app = trackedTmpApp("cli-app");
     await buildPackage(app.path, "/shop");
     const declarations = readFileSync(join(app.path, ".furin/build/package/index.d.ts"), "utf8");
-    expect(declarations).toContain('import type { FurinOptions } from "@teyik0/furin"');
+    expect(declarations).toContain('import type { FurinOptions, furin } from "@teyik0/furin"');
     expect(declarations).toContain(
       'export type CreateFurinAppOptions = Omit<FurinOptions, "pagesDir" | "prefix" | "clientDir">',
     );
     expect(declarations).toContain(
-      "createFurinApp(options?: CreateFurinAppOptions): Promise<Elysia>",
+      "createFurinApp(options?: CreateFurinAppOptions): ReturnType<typeof furin>",
     );
   }
 

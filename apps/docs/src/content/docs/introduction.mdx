@@ -31,11 +31,13 @@ bun dev
 
 Use one `defineRoute()` chain for the complete route contract:
 
-- `config({ mode, revalidate, params, query, staticParams })`
+- mandatory `config({ layout, mode, revalidate, params, query, staticParams })`
 - optional `requestLoader()` for request-private data
 - optional `loader()` for public route data
 - optional `head()` after `loader()`
 - terminal `page()` or `layout()`
+
+The `pages/root.tsx` chain uses `defineRootRoute()` and omits `layout` because it has no parent.
 
 ## Current Status
 

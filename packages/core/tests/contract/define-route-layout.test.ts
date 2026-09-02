@@ -59,7 +59,7 @@ const createLegacyParentKey = () =>
   defineRoute()
     .config(
       // @ts-expect-error — the old `parent` key was renamed to `layout`.
-      { mode: "ssr", parent: createBoardLayout() }
+      { layout: createBoardLayout(), mode: "ssr", parent: createBoardLayout() }
     )
     .page(() => "unused");
 

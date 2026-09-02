@@ -89,17 +89,19 @@ export function generateHydrateEntry(
       ...[...boundaryIdents.keys()].map((filePath) => `import("${filePath.replace(/\\/g, "/")}")`),
     ];
     const importIdents = ["__furin_page", ...layoutIdents, ...boundaryIdents.values()];
-    const layoutAssignments = layoutIdents
-      .map(
-        (ident, index) =>
-          `const __furin_layout_route_${index} = ${ident}.route; __furin_parent = { __type: "FURIN_ROUTE", layout: __furin_layout_route_${index}.component, parent: __furin_parent };`
-      )
+    const layoutAssignments = layoutPaths
+      .map((filePath, index) => {
+        const ident = layoutIdents[index];
+        const componentKey = JSON.stringify(`layout:${filePath.replace(/\\/g, "/")}`);
+        return `const __furin_layout_route_${index} = ${ident}.route; __furin_parent = { __type: "FURIN_ROUTE", layout: hotComponent(${componentKey}, __furin_layout_route_${index}.component), parent: __furin_parent };`;
+      })
       .join(" ");
     const boundaryResult =
       boundaryLiterals.length > 0
         ? `, segmentBoundaries: [${boundaryLiterals.join(", ")}]`
         : "";
-    const loadBody = `Promise.all([${lazyImports.join(", ")}]).then(([${importIdents.join(", ")}]) => { const __furin_page_route = __furin_page.route; let __furin_parent = root; ${layoutAssignments} return { default: { __type: "FURIN_PAGE", _route: { __type: "FURIN_ROUTE", parent: __furin_parent }, component: __furin_page_route.component }${boundaryResult} }; })`;
+    const pageComponentKey = JSON.stringify(`page:${resolvedPage}`);
+    const loadBody = `Promise.all([${lazyImports.join(", ")}]).then(([${importIdents.join(", ")}]) => { const __furin_page_route = __furin_page.route; let __furin_parent = root; ${layoutAssignments} return { default: { __type: "FURIN_PAGE", _route: { __type: "FURIN_ROUTE", parent: __furin_parent }, component: hotComponent(${pageComponentKey}, __furin_page_route.component) }${boundaryResult} }; })`;
 
     const searchDefaultsEntry = searchDefaults
       ? `, searchDefaults: ${JSON.stringify(searchDefaults)}`
@@ -139,14 +141,30 @@ export function generateHydrateEntry(
   // RouterProvider receives basePath so navigate() / Link push physical paths.
   const routerProviderDefaults = `\n      autoRefresh: true,\n      basePath: ${basePathLiteral},\n      defaultPreload: "intent",\n      defaultPreloadDelay: 50,\n      defaultPreloadStaleTime: 30000,\n      prefetchCacheSize: 50,\n      syncStream,`;
 
+  const resolvedRootLayout = rootLayout.replace(/\\/g, "/");
+  const rootComponentKey = JSON.stringify(`root:${resolvedRootLayout}`);
+
   return `import { hydrateRoot, createRoot } from "react-dom/client";
-import { createElement } from "react";
+import { createElement, type ReactNode } from "react";
 ${loggingImports}import { RouterProvider } from "@teyik0/furin/link";
 import { fromCrossJSON, parseDeferredNdjson } from "@teyik0/furin/link";
+import { type HotComponentRegistry, updateHotComponent } from "@teyik0/furin/client";
 import type { SerovalNode } from "seroval";
-import { route as root } from "${rootLayout.replace(/\\/g, "/")}";
+import { route as __furin_root_route } from "${resolvedRootLayout}";
 
 ${loggerSetup}
+
+const hotComponentRegistry = ((window as unknown as {
+  __FURIN_HOT_COMPONENTS__?: HotComponentRegistry;
+}).__FURIN_HOT_COMPONENTS__ ??= new Map());
+const hotComponent = <Props,>(key: string, component: (props: Props) => ReactNode) =>
+  import.meta.hot ? updateHotComponent(hotComponentRegistry, key, component) : component;
+const __furin_root_component = hotComponent(${rootComponentKey}, __furin_root_route.component);
+const root = {
+  ...__furin_root_route,
+  component: __furin_root_component,
+  layout: __furin_root_component,
+};
 
 const routes = [
 ${routeEntries.join(",\n")}
@@ -302,6 +320,25 @@ const rootEl = document.getElementById("root") as HTMLElement;
     // window is the only object that survives Bun's module re-evaluation.
     // biome-ignore lint/suspicious/noExplicitAny: dev-only HMR global
     const existingRoot = (window as any).__FURIN_ROOT__;
+    const hmrWindow = window as unknown as {
+      __FURIN_HMR_UPDATE__?: (
+        sourcePath: string,
+        component: (props: never) => ReactNode
+      ) => void;
+    };
+    hmrWindow.__FURIN_HMR_UPDATE__ = (sourcePath, component) => {
+      const componentKeySuffix = ":" + sourcePath;
+      for (const key of hotComponentRegistry.keys()) {
+        if (key.endsWith(componentKeySuffix)) {
+          updateHotComponent(hotComponentRegistry, key, component);
+        }
+      }
+      (window as any).__FURIN_ROOT__?.render(app);
+      const refresh = (window as any).__FURIN_HMR_REFRESH__;
+      if (refresh) {
+        requestAnimationFrame(() => refresh());
+      }
+    };
     if (existingRoot) {
       // Already mounted — reconciliation, NOT hydration. React Fast Refresh
       // patched the component in-place, now re-render with the new module.

@@ -84,11 +84,11 @@ export function applyLinkParams(
     return to;
   }
   let url = to.replaceAll(/:([a-zA-Z0-9_]+)/g, (match: string, name: string) =>
-    name in params ? String(params[name]) : match
+    name in params ? encodeURIComponent(String(params[name])) : match
   );
   const wildcard: string | number | undefined = params["*"];
   if (wildcard !== undefined && url.includes("/*")) {
-    url = url.replace("/*", `/${String(wildcard)}`);
+    url = url.replace("/*", () => `/${String(wildcard)}`);
   }
   return url;
 }

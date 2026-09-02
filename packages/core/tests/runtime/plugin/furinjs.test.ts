@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Elysia from "elysia";
+import type { FurinOptions } from "../../../src/furin";
 import { routeModuleSpecifier } from "../../../src/plugin/routes.ts";
 import type { CompileContext } from "../../../src/server/internal";
 import { evlogOptionsMock, resetEvlogMock } from "../../setup/evlog-mock";
@@ -20,6 +21,10 @@ const tmpApps: TmpApp[] = [];
 function rememberTmpApp(app: TmpApp): TmpApp {
   tmpApps.push(app);
   return app;
+}
+
+async function createTestApp(options: FurinOptions): Promise<Elysia> {
+  return new Elysia().use(await furin(options));
 }
 
 function resetState(): void {
@@ -97,7 +102,7 @@ test.serial("furin() writes dev files in development", async () => {
   __setDevMode(true);
   process.chdir(app.path);
 
-  const instance = await furin({
+  const instance = await createTestApp({
     pagesDir: join(app.path, "src/pages"),
   });
 
@@ -107,6 +112,24 @@ test.serial("furin() writes dev files in development", async () => {
   expect(existsSync(join(app.path, "furin-env.d.ts"))).toBe(true);
 });
 
+test.serial("furin() scaffolds empty root and index route files into a working app", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
+  const pagesDir = join(app.path, "src/pages");
+  const rootPath = join(pagesDir, "root.tsx");
+  const indexPath = join(pagesDir, "index.tsx");
+  writeFileSync(rootPath, "\n");
+  writeFileSync(indexPath, "   \n");
+  __setDevMode(true);
+  process.chdir(app.path);
+
+  const instance = await createTestApp({ pagesDir });
+  const response = await instance.handle(new Request("http://furin/"));
+
+  expect(response.status).toBe(200);
+  expect(readFileSync(rootPath, "utf8")).toContain("defineRootRoute()");
+  expect(readFileSync(indexPath, "utf8")).toContain('.config({ layout: rootRoute, mode: "ssg" })');
+});
+
 test.serial("furin() refreshes route types after a topology change", async () => {
   const app = rememberTmpApp(createTmpApp("cli-app"));
   const pagesDir = join(app.path, "src/pages");
@@ -114,7 +137,7 @@ test.serial("furin() refreshes route types after a topology change", async () =>
   __setDevMode(true);
   process.chdir(app.path);
 
-  const instance = await furin({ pagesDir });
+  const instance = await createTestApp({ pagesDir });
   instance.listen(0);
   try {
     writeAppFile(
@@ -135,6 +158,48 @@ test.serial("furin() refreshes route types after a topology change", async () =>
   }
 });
 
+test.serial("furin() restores a removed route layout while the dev server is running", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
+  const pagesDir = join(app.path, "src/pages");
+  const routePath = join(pagesDir, "index.tsx");
+  __setDevMode(true);
+  process.chdir(app.path);
+
+  const instance = await createTestApp({ pagesDir });
+  instance.listen(0);
+  try {
+    const source = readFileSync(routePath, "utf8");
+    writeAppFile(app.path, "src/pages/index.tsx", source.replace("layout: rootRoute, ", ""));
+
+    await waitForFileContent(routePath, ".config({ layout: rootRoute, mode:");
+  } finally {
+    await instance.stop();
+  }
+});
+
+test.serial("furin() rejects an ambiguous route config at boot", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
+  const pagesDir = join(app.path, "src/pages");
+  writeAppFile(
+    app.path,
+    "src/pages/index.tsx",
+    [
+      'import { defineRoute } from "@teyik0/furin";',
+      'import { route as rootRoute } from "./root";',
+      "const selectLayout = () => rootRoute;",
+      "export const route = defineRoute()",
+      '  .config({ layout: selectLayout(), mode: "ssg" })',
+      "  .page(() => <main>Index</main>);",
+    ].join("\n")
+  );
+  __setDevMode(true);
+  process.chdir(app.path);
+
+  await expect(furin({ pagesDir })).rejects.toThrow(
+    `${join(pagesDir, "index.tsx")}: use a static layout route reference`
+  );
+});
+
 test.serial("furin() registers native routes in dev without replacing SSR responses", async () => {
   const app = rememberTmpApp(createTmpApp("cli-app"));
   const pagesDir = join(app.path, "src/pages");
@@ -153,7 +218,7 @@ test.serial("furin() registers native routes in dev without replacing SSR respon
   __setDevMode(true);
   process.chdir(app.path);
 
-  const instance = await furin({ pagesDir });
+  const instance = await createTestApp({ pagesDir });
   const nativeModule = (await import(routeModuleSpecifier({ pagesDir, prefix: "" }))) as {
     furinApp: { handle: (request: Request) => Promise<Response> };
   };
@@ -203,7 +268,7 @@ test.serial(
     __setDevMode(true);
     process.chdir(app.path);
 
-    const instance = await furin({ pagesDir });
+    const instance = await createTestApp({ pagesDir });
     const valid = await instance.handle(new Request("http://furin/boards/42?locale=fr"));
     const invalid = await instance.handle(new Request("http://furin/boards/42"));
 
@@ -231,7 +296,7 @@ test.serial("native routes preserve deferred renderer streaming", async () => {
   __setDevMode(true);
   process.chdir(app.path);
 
-  const instance = await furin({ pagesDir });
+  const instance = await createTestApp({ pagesDir });
   const response = await instance.handle(new Request("http://furin/"));
   const html = await response.text();
 
@@ -273,15 +338,17 @@ test.serial("furin() production plugin starts from built output", async () => {
 
   await setBuiltRouteContext(app.path);
 
-  const plugin = await furin({
+  const instance = await createTestApp({
     pagesDir: join(app.path, "src/pages"),
   });
-  const htmlResponse = await plugin.handle(new Request("http://furin/"));
-  const snapshotResponse = await plugin.handle(
+  const htmlResponse = await instance.handle(new Request("http://furin/"));
+  const snapshotResponse = await instance.handle(
     new Request("http://furin/_furin/devtools/snapshot")
   );
-  const clientResponse = await plugin.handle(new Request("http://furin/_furin/devtools/client.js"));
-  const eventsResponse = await plugin.handle(new Request("http://furin/_furin/devtools/events"));
+  const clientResponse = await instance.handle(
+    new Request("http://furin/_furin/devtools/client.js")
+  );
+  const eventsResponse = await instance.handle(new Request("http://furin/_furin/devtools/events"));
 
   expect(htmlResponse.status).toBe(200);
   expect(await htmlResponse.text()).not.toContain("furin-devtools");
@@ -290,7 +357,7 @@ test.serial("furin() production plugin starts from built output", async () => {
   expect(eventsResponse.status).toBe(404);
   await eventsResponse.body?.cancel();
 
-  const server = new Elysia().use(plugin).listen(0);
+  const server = instance.listen(0);
 
   try {
     await Bun.sleep(50);
@@ -342,7 +409,7 @@ test.serial(
       ),
     });
 
-    const instance = await furin({ pagesDir: join(app.path, "src/pages") });
+    const instance = await createTestApp({ pagesDir: join(app.path, "src/pages") });
     const response = await instance.handle(new Request("http://furin/"));
 
     expect(response.status).toBe(200);
@@ -374,7 +441,7 @@ test.serial("furin() serves embedded assets in production", async () => {
     },
   });
 
-  const instance = await furin({ pagesDir: join(app.path, "src/pages") });
+  const instance = await createTestApp({ pagesDir: join(app.path, "src/pages") });
   expect(instance).toBeInstanceOf(Elysia);
 
   const okClient = await instance.handle(new Request("http://furin/_client/app.js"));

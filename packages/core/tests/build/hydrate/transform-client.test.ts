@@ -23,6 +23,8 @@ export const route = defineRoute()
     expect(result.code).not.toContain(".loader(");
     expect(result.code).not.toContain(".head(");
     expect(result.code).not.toContain("./db");
+    expect(result.code).toContain("import.meta.hot.accept");
+    expect(result.code).toContain('"route.tsx"');
     expect(result.removedServerCode).toBe(true);
   });
 
@@ -84,6 +86,7 @@ export const route = defineRoute().page(() => null);`,
     const result = transformForClient("export const value = 1;", "module.ts");
 
     expect(result.code).toContain("value = 1");
+    expect(result.code).not.toContain("import.meta.hot.accept");
     expect(result.removedServerCode).toBe(false);
   });
 

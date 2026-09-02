@@ -2,10 +2,10 @@ import { defineRoute } from "@teyik0/furin";
 import { BoardCard } from "@/components/board-card";
 import { CreateBoardForm } from "@/components/create-board-form";
 import { client } from "@/lib/api";
-import { route as parentRoute } from "./root";
+import { route as rootRoute } from "./root";
 
 export const route = defineRoute()
-  .config({ layout: parentRoute, mode: "isr", revalidate: 10, tags: ["boards"] })
+  .config({ layout: rootRoute, mode: "isr", revalidate: 10, tags: ["boards"] })
   .loader(async () => {
     const result = await client.boards.get();
     if (result.error) {

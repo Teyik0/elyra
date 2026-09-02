@@ -4,6 +4,7 @@
 */
 
 export { defineRootRoute, defineRoute } from "./client/define-route.ts";
+export { type HotComponentRegistry, updateHotComponent } from "./client/hmr.ts";
 export {
   type SyncMutation,
   type SyncMutationContext,

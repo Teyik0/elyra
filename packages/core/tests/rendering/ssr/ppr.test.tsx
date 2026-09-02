@@ -64,7 +64,7 @@ afterAll(async () => {
 describe("partial prerendering", () => {
   test("cross-instance invalidation removes tags from the cache-owning app", async () => {
     const route = defineRoute()
-      .config({ layout: rootTerminal, mode: "isr", tags: ["catalog"] })
+      .config({ layout: rootTerminal, mode: "isr", revalidate: 60, tags: ["catalog"] })
       .requestLoader(() => ({ user: "alice" }))
       .loader(() => ({ catalog: "Shoes" }))
       .page(({ data }) => <main>{data.catalog}</main>);

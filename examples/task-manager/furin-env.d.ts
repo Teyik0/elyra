@@ -6,9 +6,9 @@ declare module "@teyik0/furin/routes" {
   interface RouteMap {
     "/": typeof import("./src/pages/index").route;
     "/rsc": typeof import("./src/pages/rsc").route;
-    [key: `/board/${string}`]: typeof import("./src/pages/board/[boardId]/index").route;
+    [path: `/board/${string}`]: typeof import("./src/pages/board/[boardId]/index").route;
     [
-      key: `/board/${string}/card/${string}`
+      path: `/board/${string}/card/${string}`
     ]: typeof import("./src/pages/board/[boardId]/card/[cardId]").route;
   }
 }
