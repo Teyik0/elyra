@@ -128,14 +128,22 @@ interface LayoutImport {
 }
 
 interface CollectedImports {
+  /** Every local import binding (collision detection for injected imports). */
+  allBindings: Set<string>;
   imports: LayoutImport[];
   /** End offset of the last import statement (import insertion point). */
   lastImportEnd: number;
+  /** Local binding of the `t` TypeBox import, when present. */
+  tBinding: string | null;
 }
+
+const LEADING_SLASH_RE = /^\//;
 
 function collectLayoutImports(program: Program, filePath: string): CollectedImports {
   const imports: LayoutImport[] = [];
+  const allBindings = new Set<string>();
   let lastImportEnd = 0;
+  let tBinding: string | null = null;
   for (const statement of program.body) {
     if (statement.type !== "ImportDeclaration") {
       continue;
@@ -148,29 +156,49 @@ function collectLayoutImports(program: Program, filePath: string): CollectedImpo
     if (end > lastImportEnd) {
       lastImportEnd = end;
     }
-    const specifierValue = declaration.source?.value;
-    if (typeof specifierValue !== "string") {
-      continue;
-    }
-    const resolvedPath = withoutExtension(resolve(filePath, "..", specifierValue));
-    for (const specifier of declaration.specifiers as unknown as AstNode[]) {
-      if (specifier.type !== "ImportSpecifier") {
-        continue;
-      }
-      const imported = asAstNode(specifier.imported);
-      const local = asAstNode(specifier.local);
-      if (
-        imported?.type === "Identifier" &&
-        typeof imported.name === "string" &&
-        imported.name === "route" &&
-        local?.type === "Identifier" &&
-        typeof local.name === "string"
-      ) {
-        imports.push({ binding: local.name, resolvedPath });
-      }
+    const collected = collectImportBinding(declaration, filePath, imports, allBindings);
+    if (collected !== null && tBinding === null) {
+      tBinding = collected;
     }
   }
-  return { imports, lastImportEnd };
+  return { allBindings, imports, lastImportEnd, tBinding };
+}
+
+function collectImportBinding(
+  declaration: ImportDeclaration,
+  filePath: string,
+  imports: LayoutImport[],
+  allBindings: Set<string>
+): string | null {
+  const specifierValue = declaration.source?.value;
+  if (typeof specifierValue !== "string") {
+    return null;
+  }
+  const resolvedPath = withoutExtension(resolve(filePath, "..", specifierValue));
+  let tBinding: string | null = null;
+  for (const specifier of declaration.specifiers as unknown as AstNode[]) {
+    if (specifier.type !== "ImportSpecifier") {
+      continue;
+    }
+    const imported = asAstNode(specifier.imported);
+    const local = asAstNode(specifier.local);
+    if (
+      imported?.type !== "Identifier" ||
+      typeof imported.name !== "string" ||
+      local?.type !== "Identifier" ||
+      typeof local.name !== "string"
+    ) {
+      continue;
+    }
+    allBindings.add(local.name);
+    if (imported.name === "route") {
+      imports.push({ binding: local.name, resolvedPath });
+    }
+    if (imported.name === "t" && specifierValue === "elysia") {
+      tBinding = local.name;
+    }
+  }
+  return tBinding;
 }
 
 function belongsToBuilderChain(node: unknown, bindings: BuilderBindings): boolean {
@@ -377,6 +405,8 @@ function collectChainHeads(program: Program, bindings: BuilderBindings): ChainHe
 }
 
 interface FixContext {
+  allBindings: Set<string>;
+  dynamicParams: string[];
   expected: ExpectedLayout | null;
   expectedResolvedPath: string;
   filePath: string;
@@ -386,6 +416,7 @@ interface FixContext {
   lastImportEnd: number;
   magic: MagicString;
   source: string;
+  tBinding: string | null;
 }
 
 type InferredRenderingMode = "isr" | "ssg" | "ssr";
@@ -487,6 +518,7 @@ interface ConfigProperties {
   all: AstNode[];
   layout: AstNode | undefined;
   mode: AstNode | undefined;
+  params: AstNode | undefined;
   query: AstNode | undefined;
   revalidate: AstNode | undefined;
   staticParams: AstNode | undefined;
@@ -503,6 +535,7 @@ function collectConfigProperties(object: AstNode): ConfigProperties {
     all,
     layout: findProperty("layout"),
     mode: findProperty("mode"),
+    params: findProperty("params"),
     query: findProperty("query"),
     revalidate: findProperty("revalidate"),
     staticParams: findProperty("staticParams"),
@@ -591,7 +624,59 @@ function missingConfigEntries(
   if (!properties.mode) {
     missing.push(`mode: "${inferredMode}"`);
   }
+  if (!properties.params && ctx.dynamicParams.length > 0) {
+    const typeBoxBinding = ensureTImport(ctx);
+    const body = ctx.dynamicParams
+      .map((name) => `${paramKey(name)}: ${typeBoxBinding}.String()`)
+      .join(", ");
+    missing.push(`params: ${typeBoxBinding}.Object({ ${body} })`);
+  }
   return missing;
+}
+
+/** Dynamic param names derived from the file path segments (`[id]` → id, `[...all]` → "*"). */
+export function dynamicParamsFor(filePath: string, pagesDir: string): string[] {
+  const relativePath = withoutExtension(relative(resolve(pagesDir), resolve(filePath)))
+    .replaceAll("\\", "/")
+    .replace(LEADING_SLASH_RE, "");
+  const params = new Set<string>();
+  for (const segment of relativePath.split("/")) {
+    if (segment.length === 0) {
+      continue;
+    }
+    if (segment.startsWith("[...") && segment.endsWith("]")) {
+      params.add("*");
+      continue;
+    }
+    if (!(segment.startsWith("[") && segment.endsWith("]"))) {
+      continue;
+    }
+    const name = segment.slice(1, -1);
+    if (name.length > 0) {
+      params.add(name);
+    }
+  }
+  return [...params];
+}
+
+const IDENTIFIER_RE = /^[A-Za-z_$][\w$]*$/;
+
+const paramKey = (name: string): string => (IDENTIFIER_RE.test(name) ? name : JSON.stringify(name));
+
+function ensureTImport(ctx: FixContext): string {
+  if (ctx.tBinding) {
+    return ctx.tBinding;
+  }
+  const offset = Math.max(ctx.lastImportEnd, 0);
+  let binding = "t";
+  let suffix = 2;
+  while (ctx.allBindings.has(binding)) {
+    binding = `t${suffix}`;
+    suffix += 1;
+  }
+  ctx.magic.appendRight(offset, `\nimport { ${binding} } from "elysia";`);
+  ctx.tBinding = binding;
+  return binding;
 }
 
 function insertConfigEntries(
@@ -629,6 +714,7 @@ function injectMissingConfigKeys(object: AstNode, ctx: FixContext): boolean {
 }
 
 interface RouteFileConvention {
+  dynamicParams: string[];
   expected: ExpectedLayout | null;
   fileName: string | undefined;
   filePath: string;
@@ -645,6 +731,7 @@ function routeFileConvention(
   const file = resolve(filePath);
   const extensionlessFile = withoutExtension(file);
   return {
+    dynamicParams: dynamicParamsFor(filePath, pagesDir),
     expected: expectedLayoutFor(filePath, pagesDir, probe),
     fileName: extensionlessFile.split(DIRECTORY_SPLIT_RE).pop(),
     filePath,
@@ -653,8 +740,17 @@ function routeFileConvention(
   };
 }
 
+/** `, params: t.Object({ … })` fragment for scaffolds — empty when no dynamic segment. */
+function scaffoldParamsDeclaration(dynamicParams: string[]): string {
+  if (dynamicParams.length === 0) {
+    return "";
+  }
+  const body = dynamicParams.map((name) => `${paramKey(name)}: t.String()`).join(", ");
+  return `, params: t.Object({ ${body} })`;
+}
+
 function scaffoldEmptyRoute(convention: RouteFileConvention): string | null {
-  const { expected, fileName, filePath, isNestedLayout, isRootLayout } = convention;
+  const { dynamicParams, expected, fileName, filePath, isNestedLayout, isRootLayout } = convention;
   if (isRootLayout) {
     return `import { defineRootRoute } from "@teyik0/furin";
 
@@ -664,11 +760,12 @@ export const route = defineRootRoute()
 `;
   }
   if (isNestedLayout && expected) {
-    return `import { defineRoute } from "@teyik0/furin";
+    const tImport = dynamicParams.length > 0 ? `\nimport { t } from "elysia"` : "";
+    return `import { defineRoute } from "@teyik0/furin";${tImport}
 import { route as ${expected.identifier} } from "${expected.importPath}";
 
 export const route = defineRoute()
-  .config({ layout: ${expected.identifier}, mode: "ssr" })
+  .config({ layout: ${expected.identifier}, mode: "ssr"${scaffoldParamsDeclaration(dynamicParams)} })
   .layout(({ children }) => children);
 `;
   }
@@ -678,11 +775,12 @@ export const route = defineRoute()
   if (!expected) {
     throw routeConfigError(filePath, "no ancestor layout found; create pages/root.tsx");
   }
-  return `import { defineRoute } from "@teyik0/furin";
+  const tImport = dynamicParams.length > 0 ? `\nimport { t } from "elysia"` : "";
+  return `import { defineRoute } from "@teyik0/furin";${tImport}
 import { route as ${expected.identifier} } from "${expected.importPath}";
 
 export const route = defineRoute()
-  .config({ layout: ${expected.identifier}, mode: "ssg" })
+  .config({ layout: ${expected.identifier}, mode: "ssg"${scaffoldParamsDeclaration(dynamicParams)} })
   .page(() => null);
 `;
 }
@@ -786,7 +884,10 @@ export function fixRouteConfigLayout(
   const expectedResolvedPath = convention.expected
     ? withoutExtension(resolve(filePath, "..", convention.expected.importPath))
     : "";
-  const { imports, lastImportEnd } = collectLayoutImports(parsed.program, filePath);
+  const { imports, lastImportEnd, allBindings, tBinding } = collectLayoutImports(
+    parsed.program,
+    filePath
+  );
   const bindings = collectBuilderBindings(parsed.program);
   const hasLoader = builderChainHasMethod(parsed.program, bindings, "loader");
   const heads = collectChainHeads(parsed.program, bindings).filter(
@@ -799,6 +900,8 @@ export function fixRouteConfigLayout(
   let touched = rewriteRootBuilder(routeHead, bindings, convention.isRootLayout, magic);
   const configObjects = collectConfigObjects(parsed.program, bindings);
   const ctx: FixContext = {
+    allBindings,
+    dynamicParams: dynamicParamsFor(filePath, pagesDir),
     expected: convention.expected,
     expectedResolvedPath,
     filePath,
@@ -808,6 +911,7 @@ export function fixRouteConfigLayout(
     lastImportEnd,
     magic,
     source,
+    tBinding,
   };
   if (configObjects.length === 0) {
     return insertCompleteConfig(routeHead, ctx);

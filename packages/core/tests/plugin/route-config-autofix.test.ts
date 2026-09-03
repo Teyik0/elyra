@@ -312,7 +312,7 @@ export const route = defineRoute()
     }
   });
 
-  test("repoints a wrong layout while also injecting a missing mode", () => {
+  test("repoints a wrong layout while also injecting a missing mode and params", () => {
     const pages = createPages({
       "board/_route.tsx": `import { defineRoute } from "@teyik0/furin";
 export const route = defineRoute().layout(({ children }) => children);
@@ -329,7 +329,10 @@ export const route = defineRoute()
     try {
       const filePath = join(pages.path, "board/[id].tsx");
       const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
-      expect(fixed).toContain('config({ mode: "ssg", layout: boardRoute })');
+      expect(fixed).toContain('mode: "ssg"');
+      expect(fixed).toContain("layout: boardRoute");
+      // R13: the [id] segment derives a params schema automatically.
+      expect(fixed).toContain("id: t.String()");
       expect(fixed).toContain('import { route as boardRoute } from "./_route";');
       expect(fixRouteConfigLayout(fixed ?? "", filePath, pages.path)).toBeNull();
     } finally {
@@ -801,6 +804,151 @@ export const route = defineRoute()
       expect(fixed).not.toContain("layout: impossibleParent");
       expect(fixed).not.toContain("revalidate");
       expect(fixRouteConfigLayout(fixed ?? "", filePath, pages.path)).toBeNull();
+    } finally {
+      pages.cleanup();
+    }
+  });
+
+  test("derives params from a dynamic segment and imports t", () => {
+    const pages = createPages({
+      "board/[id].tsx": `import { defineRoute } from "@teyik0/furin";
+import { route as rootRoute } from "../root";
+
+export const route = defineRoute()
+  .config({ layout: rootRoute, mode: "ssr" })
+  .page(() => "post");
+`,
+      "root.tsx": ROOT_LAYOUT,
+    });
+    try {
+      const filePath = join(pages.path, "board/[id].tsx");
+      const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
+      expect(fixed).toContain("params: t.Object({ id: t.String() })");
+      expect(fixed).toContain('import { t } from "elysia";');
+      // idempotent: second pass changes nothing
+      expect(fixRouteConfigLayout(fixed ?? "", filePath, pages.path)).toBeNull();
+    } finally {
+      pages.cleanup();
+    }
+  });
+
+  test("derives params from nested dynamic segments", () => {
+    const pages = createPages({
+      "board/_route.tsx": `import { defineRoute } from "@teyik0/furin";
+export const route = defineRoute().layout(({ children }) => children);
+`,
+      "board/[boardId]/card/[cardId].tsx": `import { defineRoute } from "@teyik0/furin";
+import { route as boardRoute } from "../../_route";
+
+export const route = defineRoute()
+  .config({ layout: boardRoute, mode: "ssr" })
+  .page(() => "card");
+`,
+      "root.tsx": ROOT_LAYOUT,
+    });
+    try {
+      const filePath = join(pages.path, "board/[boardId]/card/[cardId].tsx");
+      const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
+      expect(fixed).toContain("boardId: t.String()");
+      expect(fixed).toContain("cardId: t.String()");
+    } finally {
+      pages.cleanup();
+    }
+  });
+
+  test("derives the wildcard param from catch-all segments", () => {
+    const pages = createPages({
+      "docs/[...path].tsx": `import { defineRoute } from "@teyik0/furin";
+import { route as rootRoute } from "../root";
+
+export const route = defineRoute()
+  .config({ layout: rootRoute, mode: "ssr" })
+  .page(() => "docs");
+`,
+      "root.tsx": ROOT_LAYOUT,
+    });
+    try {
+      const filePath = join(pages.path, "docs/[...path].tsx");
+      const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
+      expect(fixed).toContain('"*": t.String()');
+    } finally {
+      pages.cleanup();
+    }
+  });
+
+  test("a _route file derives params from its own directory", () => {
+    const pages = createPages({
+      "boards/[organizationId]/_route.tsx": `import { defineRoute } from "@teyik0/furin";
+import { route as rootRoute } from "../../root";
+
+export const route = defineRoute()
+  .config({ layout: rootRoute, mode: "ssr" })
+  .layout(({ children }) => children);
+`,
+      "root.tsx": ROOT_LAYOUT,
+    });
+    try {
+      const filePath = join(pages.path, "boards/[organizationId]/_route.tsx");
+      const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
+      expect(fixed).toContain("params: t.Object({ organizationId: t.String() })");
+    } finally {
+      pages.cleanup();
+    }
+  });
+
+  test("preserves a user-declared params schema untouched", () => {
+    const pages = createPages({
+      "posts/[postId].tsx": `import { defineRoute } from "@teyik0/furin";
+import { t } from "elysia";
+import { route as rootRoute } from "../root";
+
+export const route = defineRoute()
+  .config({ layout: rootRoute, mode: "ssr", params: t.Object({ postId: t.Number() }) })
+  .page(() => "post");
+`,
+      "root.tsx": ROOT_LAYOUT,
+    });
+    try {
+      const filePath = join(pages.path, "posts/[postId].tsx");
+      // The custom schema makes the config complete: the auto-fix changes nothing.
+      expect(fixRouteConfigLayout(readFile(filePath), filePath, pages.path)).toBeNull();
+      expect(readFile(filePath)).toContain("postId: t.Number()");
+    } finally {
+      pages.cleanup();
+    }
+  });
+
+  test("reuses an already-imported t binding instead of injecting another", () => {
+    const pages = createPages({
+      "board/[id].tsx": `import { defineRoute } from "@teyik0/furin";
+import { t } from "elysia";
+import { route as rootRoute } from "../root";
+
+export const route = defineRoute()
+  .config({ layout: rootRoute, mode: "ssr" })
+  .page(() => "post");
+`,
+      "root.tsx": ROOT_LAYOUT,
+    });
+    try {
+      const filePath = join(pages.path, "board/[id].tsx");
+      const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
+      expect(fixed).toContain("params: t.Object({ id: t.String() })");
+      // exactly one elysia import — no duplicate t injection
+      const elysiaImports = fixed?.match(/from "elysia"/g) ?? [];
+      expect(elysiaImports.length).toBe(1);
+    } finally {
+      pages.cleanup();
+    }
+  });
+
+  test("scaffolds an empty dynamic page with its params schema", () => {
+    const pages = createPages({ "posts/[slug].tsx": "", "root.tsx": ROOT_LAYOUT });
+    try {
+      const filePath = join(pages.path, "posts/[slug].tsx");
+      const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
+      expect(fixed).toContain("params: t.Object({ slug: t.String() })");
+      expect(fixed).toContain('import { t } from "elysia"');
     } finally {
       pages.cleanup();
     }
