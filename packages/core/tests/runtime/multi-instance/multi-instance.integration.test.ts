@@ -67,11 +67,11 @@ function writeAdminPages(appPath) {
     appPath,
     "src/admin/root.tsx",
     [
-      'import { defineRootRoute } from "@teyik0/furin";',
+      'import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin";',
       "",
       "export const route = defineRootRoute()",
       '  .config({ mode: "ssr" })',
-      '  .layout(({ children }) => <div data-testid="admin-layout">{children}</div>);',
+      '  .layout(({ children }) => <html lang="en"><head><HeadContent /></head><body><div data-testid="admin-layout">{children}</div><Scripts /></body></html>);',
     ].join("\\n")
   );
   writeAppFile(

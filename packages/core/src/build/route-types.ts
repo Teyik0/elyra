@@ -13,7 +13,7 @@ function tagToStringLiteral(tag: string): string {
 }
 
 /** @internal Exported for framework build and focused contract tests. */
-export function writeRouteTypes(routes: ResolvedRoute[], projectRoot: string): void {
+export function writeRouteTypes(routes: ResolvedRoute[], projectRoot: string): boolean {
   const entries: RouteMapEntry[] = routes.map((route) => {
     const extension = extname(route.path);
     const sourcePath = extension ? route.path.slice(0, -extension.length) : route.path;
@@ -40,9 +40,10 @@ ${routeMapDeclaration(entries)}${tagBlock}
   const typesPath = join(projectRoot, "furin-env.d.ts");
   const existing = existsSync(typesPath) ? readFileSync(typesPath, "utf8") : "";
   if (content === existing) {
-    return;
+    return false;
   }
   const temporaryPath = `${typesPath}.${process.pid}.${Bun.nanoseconds()}.tmp`;
   writeFileSync(temporaryPath, content);
   renameSync(temporaryPath, typesPath);
+  return true;
 }

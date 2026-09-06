@@ -1,5 +1,5 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: HMR polling and invalidation are intentionally sequential
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import type { Context } from "elysia";
 import type { RuntimePage, RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import type { SearchRouteMetadata } from "../../shared/search-params.ts";
@@ -25,6 +25,74 @@ import type { ResolvedRoute, RootLayout } from "./types.ts";
 
 type RouteModuleImport = (specifier: string) => Promise<Record<string, unknown>>;
 
+interface DevRouteModuleCacheEntry {
+  module: Promise<Record<string, unknown>>;
+  stamp: string;
+}
+
+const routeModuleImport: RouteModuleImport = (specifier) =>
+  import(specifier) as Promise<Record<string, unknown>>;
+const runtimeDevRouteModuleCache = new Map<string, DevRouteModuleCacheEntry>();
+const devRouteModuleCaches = new WeakMap<
+  RouteModuleImport,
+  Map<string, DevRouteModuleCacheEntry>
+>();
+
+function routeModuleSourceStamp(path: string): string {
+  try {
+    const stats = statSync(path, { bigint: true });
+    return `${stats.mtimeNs}:${stats.size}`;
+  } catch {
+    return "missing";
+  }
+}
+
+/**
+ * Reuses one virtual ESM module per source version. A timestamp generated on
+ * every request leaks module-registry entries because Bun cannot release old
+ * module identities; the source stamp preserves HMR freshness without
+ * request-proportional growth. Promise caching also deduplicates concurrent
+ * requests for the same edited version.
+ */
+export async function importStampedRouteModule(
+  path: string,
+  resolveImport: RouteModuleImport
+): Promise<Record<string, unknown>> {
+  let cache = runtimeDevRouteModuleCache;
+  if (resolveImport !== routeModuleImport) {
+    const resolverCache = devRouteModuleCaches.get(resolveImport);
+    if (resolverCache) {
+      cache = resolverCache;
+    } else {
+      cache = new Map();
+      devRouteModuleCaches.set(resolveImport, cache);
+    }
+  }
+  const stamp = routeModuleSourceStamp(path);
+  const cached = cache.get(path);
+  if (cached?.stamp === stamp) {
+    return cached.module;
+  }
+
+  const entry: DevRouteModuleCacheEntry = {
+    module: resolveImport(`${path}?furin-server&t=${Bun.hash(stamp).toString()}`),
+    stamp,
+  };
+  cache.set(path, entry);
+  try {
+    return await entry.module;
+  } catch (error) {
+    if (cache.get(path) === entry) {
+      cache.delete(path);
+    }
+    throw error;
+  }
+}
+
+export function invalidateStampedRouteModules(): void {
+  runtimeDevRouteModuleCache.clear();
+}
+
 function isResolvedRouteModuleCandidate(
   layoutPath: string,
   imported: Record<string, unknown>,
@@ -39,12 +107,17 @@ function isResolvedRouteModuleCandidate(
 
 export async function importFreshRouteModuleCandidate(
   layoutPath: string,
-  timestamp: number,
   resolveImport: RouteModuleImport,
   ctx: CompileContext | null
 ): Promise<Record<string, unknown> | undefined> {
+  if (
+    resolveImport === routeModuleImport &&
+    !(existsSync(layoutPath) || ctx?.modules[layoutPath])
+  ) {
+    return;
+  }
   try {
-    const imported = await resolveImport(`${layoutPath}?furin-server&t=${timestamp}`);
+    const imported = await importStampedRouteModule(layoutPath, resolveImport);
     if (!isResolvedRouteModuleCandidate(layoutPath, imported, ctx)) {
       return;
     }
@@ -67,17 +140,11 @@ export async function importFreshRouteModuleCandidate(
 
 async function importFreshLayoutRouteModule(
   layoutDir: string,
-  timestamp: number,
   resolveImport: RouteModuleImport,
   ctx: CompileContext | null
 ): Promise<Record<string, unknown> | undefined> {
   for (const layoutPath of getSourceModuleCandidates(layoutDir, "_route")) {
-    const freshMod = await importFreshRouteModuleCandidate(
-      layoutPath,
-      timestamp,
-      resolveImport,
-      ctx
-    );
+    const freshMod = await importFreshRouteModuleCandidate(layoutPath, resolveImport, ctx);
     if (freshMod) {
       return freshMod;
     }
@@ -107,10 +174,9 @@ function patchRouteEntryFromFreshModule(
 }
 
 /**
- * Re-imports intermediate layout _route.tsx files with cache-busting so that
- * server-side renders reflect the latest code after an HMR edit.  Bun's ESM
- * cache keeps the original module alive, so we import via ?furin-server and
- * patch the layout/loader references on the existing route-chain objects.
+ * Re-imports edited intermediate layout _route.tsx files with a versioned
+ * module identity, then patches the layout/loader references on the existing
+ * route-chain objects.
  *
  * The optional `importFn` parameter exists only for unit testing. In production
  * it defaults to the real `import()`.
@@ -121,10 +187,8 @@ export async function refreshLayoutChain(
   rootPath: string,
   importFn: ((specifier: string) => Promise<Record<string, unknown>>) | undefined
 ): Promise<void> {
-  const resolveImport: RouteModuleImport =
-    importFn ?? ((s: string) => import(s) as Promise<Record<string, unknown>>);
+  const resolveImport = importFn ?? routeModuleImport;
   const ctx = getCompileContext();
-  const timestamp = Date.now();
   const layoutDirs = collectIntermediateLayoutDirs(pagePath, rootPath);
 
   // Track chainIdx independently rather than deriving it from layoutPaths
@@ -137,9 +201,7 @@ export async function refreshLayoutChain(
   // Imports are parallelised for speed; patching stays sequential so the
   // chainIdx-to-layoutDir positional mapping remains deterministic.
   const freshMods = await Promise.all(
-    layoutDirs.map((layoutDir) =>
-      importFreshLayoutRouteModule(layoutDir, timestamp, resolveImport, ctx)
-    )
+    layoutDirs.map((layoutDir) => importFreshLayoutRouteModule(layoutDir, resolveImport, ctx))
   );
   let chainIdx = 1; // chain[0] is the root
   for (const freshMod of freshMods) {
@@ -167,8 +229,8 @@ export async function refreshLayoutChain(
  * `mode` reflects the CURRENT contents of the page module — not the value
  * captured at scan time.
  *
- * In dev, `handleDevRequest` re-imports the page on every request to pick up
- * source edits via the `?furin-server&t=<ts>` cache-buster. Without this
+ * In dev, `handleDevRequest` resolves the current versioned page module on
+ * every request. Without this
  * function the spread `{ ...route, page, chain }` would carry over the stale
  * `route.mode` resolved at startup, so toggling `revalidate` or removing a
  * loader in source would not retake effect until a server restart.
@@ -191,7 +253,7 @@ export function rebuildDevRoute(
   };
 }
 
-/** @internal Handles a request in dev mode — re-imports the page fresh on every request. */
+/** @internal Handles a request in dev mode using the current source-version modules. */
 export async function handleDevRequest(
   route: ResolvedRoute,
   ctx: Context,
@@ -203,10 +265,7 @@ export async function handleDevRequest(
   // renders React to HTML, and injects __FURIN_DATA__.
   try {
     let currentRoot = root;
-    const rootMod = (await import(`${root.path}?furin-server&t=${Date.now()}`)) as Record<
-      string,
-      unknown
-    >;
+    const rootMod = await importStampedRouteModule(root.path, routeModuleImport);
     const rootExport = rootMod.route;
     if (isDefinedRouteTerminal(rootExport) && typeof rootExport.layout === "function") {
       // Preserve the RootLayout-level convention fields (error, notFound,
@@ -222,10 +281,7 @@ export async function handleDevRequest(
       };
     }
 
-    const pageMod = (await import(`${route.path}?furin-server&t=${Date.now()}`)) as Record<
-      string,
-      unknown
-    >;
+    const pageMod = await importStampedRouteModule(route.path, routeModuleImport);
     let page: RuntimePage | undefined;
     let chain: RuntimeRoute[] | undefined;
     if (isDefinedRouteTerminal(pageMod.route) && typeof pageMod.route.page === "function") {

@@ -3,7 +3,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { staticPlugin } from "@elysiajs/static";
 import { type AnyElysia, Elysia, file } from "elysia";
-import { type DrainContext, initLogger } from "evlog";
+import { type DrainContext, initLogger, type LoggerConfig } from "evlog";
 import { type EvlogElysiaOptions, evlog } from "evlog/elysia";
 import { FURIN_RENDER_DECORATOR, type FurinRouteDispatcher } from "./define-route.ts";
 import { consumePendingInvalidations } from "./server/cache/invalidation.ts";
@@ -35,6 +35,7 @@ import {
   setProductionTemplatePath,
 } from "./server/render/template.ts";
 import { loadProdRoutes } from "./server/router/discovery.ts";
+import { invalidateStampedRouteModules } from "./server/router/hmr.ts";
 import { buildRouteMatcher } from "./server/router/patterns.ts";
 import { createDataEndpoint, renderResolvedRoute } from "./server/router/plugin.ts";
 import { mergeRouteSchemas } from "./server/router/schema-merge.ts";
@@ -337,6 +338,15 @@ function createLoggerPlugin(
   ) as unknown as Elysia;
 }
 
+function initializeLogger(logger: FurinLoggerOptions | undefined): EvlogElysiaOptions {
+  const { sampling, ...elysiaLoggerOptions } = logger ?? {};
+  initLogger({
+    env: { service: "furin" },
+    ...(sampling ? { sampling } : {}),
+  });
+  return elysiaLoggerOptions;
+}
+
 /**
  * Registers a HigherOrderFunction on the Elysia instance so that every request
  * runs inside a fresh instance-bound `AsyncLocalStorage` scope. This isolates
@@ -443,6 +453,25 @@ function createNativeRouteRenderer(
   };
 }
 
+interface DevelopmentRouteSnapshot {
+  render: FurinRouteDispatcher;
+  root: RootLayout;
+  routes: ResolvedRoute[];
+}
+
+function createDevelopmentRouteSnapshot(
+  prefix: string,
+  root: RootLayout,
+  routes: ResolvedRoute[]
+): DevelopmentRouteSnapshot {
+  const searchRoutes = createSearchRouteMetadata(routes);
+  return {
+    render: createNativeRouteRenderer(prefix, routes, root, "", searchRoutes),
+    root,
+    routes,
+  };
+}
+
 const nativeRouteRenderers = new WeakMap<FurinInstance, FurinRouteDispatcher>();
 
 function dispatchNativeRoute(context: Parameters<FurinRouteDispatcher>[0]): unknown {
@@ -464,6 +493,8 @@ function hydrateSSGCacheFromCompileContext(ctx: CompileContext): void {
 }
 
 /** Options for the {@link furin} plugin. */
+export type FurinLoggerOptions = EvlogElysiaOptions & Pick<LoggerConfig, "sampling">;
+
 export interface FurinOptions {
   /**
    * Production only: explicit directory holding this app's built client
@@ -479,7 +510,7 @@ export interface FurinOptions {
    * and unaffected.
    */
   clientLogging?: boolean;
-  logger?: EvlogElysiaOptions;
+  logger?: FurinLoggerOptions;
   pagesDir?: string;
   /**
    * Mount prefix for this app, e.g. `"/admin"`. All pages, framework
@@ -522,7 +553,7 @@ export async function furin({
 }: FurinOptions = {}) {
   const prefix = normalizePrefix(rawPrefix);
   const syncStreamPath = resolveSyncStreamPath(sync);
-  initLogger({ env: { service: "furin" } });
+  const elysiaLoggerOptions = initializeLogger(logger);
 
   const cwd = process.cwd();
   // The pagesDir param drives which compile context this instance loads. In a
@@ -533,7 +564,7 @@ export async function furin({
   const loggerPlugin = createLoggerPlugin(
     prefix,
     syncStreamPath,
-    logger,
+    elysiaLoggerOptions,
     clientLogging === true || ctx?.clientLogging === true
   );
   const resolvedPagesDir = ctx?.rootPath ? dirname(ctx.rootPath) : paramPagesDir;
@@ -592,25 +623,23 @@ export async function furin({
     };
     applyRouteConfigAutofix();
 
-    const { furinApp: nativeRoutesApp } = (await import(routeModuleSpecifier(routeInstance))) as {
-      furinApp: AnyElysia;
+    const { furinShell: nativeRoutesApp } = (await import(routeModuleSpecifier(routeInstance))) as {
+      furinShell: AnyElysia;
     };
     const { root, routes } = await loadDevelopmentRoutes(resolvedPagesDir);
-    let currentRoutes = routes;
-    const searchRoutes = createSearchRouteMetadata(routes);
-    const renderNativeRoute = createNativeRouteRenderer(prefix, routes, root, "", searchRoutes);
-    nativeRouteRenderers.set(instance, renderNativeRoute);
+    let currentSnapshot = createDevelopmentRouteSnapshot(prefix, root, routes);
+    nativeRouteRenderers.set(instance, (context) => currentSnapshot.render(context));
 
     const { writeDevFiles } = await import("./build/hydrate.ts");
-    const writeCurrentDevFiles = (routesToWrite: ResolvedRoute[], rootLayout: string): void => {
+    const writeCurrentDevFiles = (snapshot: DevelopmentRouteSnapshot): void => {
       writeDevFiles(
-        routesToWrite,
+        snapshot.routes,
         {
           basePath: prefix,
           clientLogging: clientLogging ?? false,
           outDir: furinDir,
           publicPath: `${prefix}/_client/`,
-          rootLayout,
+          rootLayout: snapshot.root.path,
           // furin-env.d.ts is one file at the project root — only the root
           // instance owns it, otherwise mounted apps clobber each other's types.
           skipRouteTypes: prefix !== "",
@@ -618,21 +647,13 @@ export async function furin({
         cwd
       );
     };
-    writeCurrentDevFiles(routes, root.path);
+    writeCurrentDevFiles(currentSnapshot);
     const refreshDevelopmentRoutes = async (): Promise<void> => {
       const next = await loadDevelopmentRoutes(resolvedPagesDir);
-      currentRoutes = next.routes;
-      writeCurrentDevFiles(next.routes, next.root.path);
-      nativeRouteRenderers.set(
-        instance,
-        createNativeRouteRenderer(
-          prefix,
-          next.routes,
-          next.root,
-          "",
-          createSearchRouteMetadata(next.routes)
-        )
-      );
+      const nextSnapshot = createDevelopmentRouteSnapshot(prefix, next.root, next.routes);
+      writeCurrentDevFiles(nextSnapshot);
+      invalidateStampedRouteModules();
+      currentSnapshot = nextSnapshot;
     };
     const devHtmlBundle = (await import(join(furinDir, "index.html"))).default;
     const publicDir = resolve(cwd, "public");
@@ -652,9 +673,8 @@ export async function furin({
         routeTopologyWatcher = registerDevRouteTopologyWatcher({
           instance: routeInstance,
           onRouteFilesTouched: async () => {
-            if (applyRouteConfigAutofix()) {
-              await refreshDevelopmentRoutes();
-            }
+            applyRouteConfigAutofix();
+            await refreshDevelopmentRoutes();
           },
           onTopologyChange: async () => {
             // Bun --hot cannot be triggered from generated artifacts (its
@@ -680,7 +700,7 @@ export async function furin({
       // instances mounted on the same parent app.
       .onError(async ({ code, request, server }) => {
         if (code === "NOT_FOUND") {
-          return await renderRootNotFound(root, request, server?.url.origin);
+          return await renderRootNotFound(currentSnapshot.root, request, server?.url.origin);
         }
       })
       .onAfterHandle(({ set }) => {
@@ -699,9 +719,9 @@ export async function furin({
           ? file(join(publicDir, "favicon.ico"))
           : () => new Response(null, { status: 404 })
       )
-      .use(createInstrumentationPlugin(() => currentRoutes, syncStreamPath))
+      .use(createInstrumentationPlugin(() => currentSnapshot.routes, syncStreamPath))
       .use(sync ? createSyncStreamPlugin(sync) : new Elysia())
-      .use(createDataEndpoint(() => currentRoutes))
+      .use(createDataEndpoint(() => currentSnapshot.routes))
       .decorate(FURIN_RENDER_DECORATOR, dispatchNativeRoute)
       .use(nativeRoutesApp)
       .use(
@@ -899,6 +919,7 @@ function createNotFoundHandling(
 }
 
 export { FurinErrorBoundary, FurinNotFoundBoundary } from "./client/boundaries.tsx";
+export { HeadContent, Scripts } from "./client/document.tsx";
 // ── Public API re-export ──────────────────────────────────────────────────────
 // biome-ignore-start lint/performance/noBarrelFile: intentional — furin.ts is the public package entry
 export type { DeferredData } from "./client.ts";

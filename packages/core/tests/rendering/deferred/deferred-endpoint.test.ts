@@ -459,7 +459,7 @@ describe("GET /_furin/data", () => {
     expect(await deferredPromises.stats).toBe(42);
   });
 
-  test("emits __furinTitle from the page head() for SPA navigation", async () => {
+  test("emits the resolved page head for SPA navigation", async () => {
     // During SPA navigation the client fetches /_furin/data (NDJSON) — head()
     // never runs in the browser, so the endpoint must resolve the page title
     // server-side and ship it as the reserved __furinTitle field. Without this,
@@ -486,6 +486,9 @@ describe("GET /_furin/data", () => {
       undefined
     );
     expect(syncData.__furinTitle).toBe("Page: from-page");
+    expect(syncData.__furinHead).toEqual({
+      meta: [{ title: "Page: from-page" }],
+    });
   });
 
   test("does not set __furinStatus for a route without a loader", async () => {

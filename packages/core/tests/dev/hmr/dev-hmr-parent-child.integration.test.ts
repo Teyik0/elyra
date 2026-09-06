@@ -76,11 +76,11 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
     app.path,
     "src/pages/root.tsx",
     [
-      'import { defineRootRoute } from "@teyik0/furin";',
+      'import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin";',
       "",
       "export const route = defineRootRoute()",
       '  .config({ mode: "ssr" })',
-      '  .layout(({ children }) => <div data-root="true">{children}</div>);',
+      '  .layout(({ children }) => <html lang="en"><head><HeadContent /></head><body><div data-root="true">{children}</div><Scripts /></body></html>);',
     ].join("\n")
   );
 
@@ -491,15 +491,19 @@ describe.serial("dev HMR — parent/child dependency edge cases", () => {
         app.path,
         "src/pages/root.tsx",
         [
-          'import { defineRootRoute } from "@teyik0/furin";',
+          'import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin";',
           "",
           "export const route = defineRootRoute()",
           '  .config({ mode: "ssr" })',
           `  .loader(() => ({ hello: "${helloValue}" }))`,
           "  .layout(({ children, data }) => (",
-          '    <div data-root="true" data-hello={data.hello}>',
-          "      {children}",
-          "    </div>",
+          '    <html lang="en">',
+          "      <head><HeadContent /></head>",
+          '      <body data-root="true" data-hello={data.hello}>',
+          "        {children}",
+          "        <Scripts />",
+          "      </body>",
+          "    </html>",
           "  ));",
         ].join("\n")
       );

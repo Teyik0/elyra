@@ -32,11 +32,11 @@ describe.serial("dev HMR cache invalidation on unrelated _route edit", () => {
     app.path,
     "src/pages/root.tsx",
     [
-      'import { defineRootRoute } from "@teyik0/furin";',
+      'import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin";',
       "",
       "export const route = defineRootRoute()",
       '  .config({ mode: "ssr" })',
-      '  .layout(({ children }) => <div data-test="root">{children}</div>);',
+      '  .layout(({ children }) => <html lang="en"><head><HeadContent /></head><body><div data-test="root">{children}</div><Scripts /></body></html>);',
     ].join("\n")
   );
 

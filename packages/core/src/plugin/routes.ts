@@ -2,8 +2,9 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "n
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { type AnyElysia, Elysia } from "elysia";
+import { type FurinNativeRouteContext, getFurinRenderer } from "../define-route.ts";
 import { detectLoaderFromPath } from "../server/lang-detect.ts";
-import { routeSegmentToPattern } from "../server/router/patterns.ts";
+import { parseDynamicRouteSegment, routeSegmentToPattern } from "../server/router/patterns.ts";
 
 const ROUTES_NAMESPACE_PREFIX = "furin-routes";
 const ROUTES_REGISTRY_SPECIFIER = "furin/routes?registry";
@@ -23,6 +24,11 @@ const DEV_ROUTES_FILE_FILTER = /[\\/]routes\.ts\?instance=[^&]+$/;
 
 const devInstancesBySpecifier = new Map<string, RouteInstanceSpec>();
 let devRoutesPluginRegistered = false;
+
+interface DevRoutesApps {
+  app: AnyElysia;
+  shell: AnyElysia;
+}
 
 export interface RouteInstanceSpec {
   pagesDir: string;
@@ -105,6 +111,10 @@ function scanRouteFiles(
       continue;
     }
     const base = entry.name.slice(0, -extension.length);
+    const sourcePath = join(directory, entry.name);
+    for (const segment of [...directorySegments, base]) {
+      parseDynamicRouteSegment(segment, sourcePath);
+    }
     if (ROUTE_CONVENTIONS.has(base)) {
       continue;
     }
@@ -116,7 +126,7 @@ function scanRouteFiles(
     files.push({
       base,
       directorySegments,
-      sourcePath: join(directory, entry.name),
+      sourcePath,
     });
   }
 }
@@ -210,19 +220,47 @@ export function routeSourcePaths(instance: RouteInstanceSpec): string[] {
     .toSorted((left, right) => left.localeCompare(right));
 }
 
+function conventionSourcePaths(directory: string): string[] {
+  const paths: string[] = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (!entry.name.startsWith("_")) {
+        paths.push(...conventionSourcePaths(join(directory, entry.name)));
+      }
+      continue;
+    }
+    const extension = extname(entry.name);
+    if (!ROUTE_EXTENSION.test(extension) || entry.name.endsWith(".d.ts")) {
+      continue;
+    }
+    const base = entry.name.slice(0, -extension.length);
+    if (base === "error" || base === "not-found") {
+      paths.push(resolve(directory, entry.name));
+    }
+  }
+  return paths;
+}
+
+function routeSnapshotSourcePaths(instance: RouteInstanceSpec): string[] {
+  const rootPath = resolve(instance.pagesDir, "root.tsx");
+  return [
+    ...(existsSync(rootPath) ? [rootPath] : []),
+    ...routeSourcePaths(instance),
+    ...conventionSourcePaths(instance.pagesDir),
+  ].toSorted((left, right) => left.localeCompare(right));
+}
+
 function routeTopologySource(instance: RouteInstanceSpec): string {
   const pagesDir = resolve(instance.pagesDir);
-  const paths = routeSourcePaths(instance).map((path) =>
+  const paths = routeSnapshotSourcePaths(instance).map((path) =>
     relative(pagesDir, path).replaceAll("\\", "/")
   );
   return `${JSON.stringify(paths)}\n`;
 }
 
 function routeFilesSignature(instance: RouteInstanceSpec): string {
-  const rootPath = resolve(instance.pagesDir, "root.tsx");
-  const sourcePaths = [rootPath, ...routeSourcePaths(instance)].filter((path) => existsSync(path));
   const dependencyPaths = new Set<string>();
-  for (const sourcePath of sourcePaths) {
+  for (const sourcePath of routeSnapshotSourcePaths(instance)) {
     const cached = routeModuleCache().get(sourcePath);
     const dependencies = cached?.dependencies ?? collectRouteModuleDependencies(sourcePath);
     for (const dependency of dependencies) {
@@ -634,7 +672,7 @@ async function loadRouteModule(sourcePath: string): Promise<{
   };
 }
 
-async function composableRouteApp(route: RouteFile): Promise<AnyElysia | undefined> {
+async function composableRouteApps(route: RouteFile): Promise<DevRoutesApps | undefined> {
   const module = await loadRouteModule(route.sourcePath);
   if (!module.route?.elysia) {
     return;
@@ -642,47 +680,66 @@ async function composableRouteApp(route: RouteFile): Promise<AnyElysia | undefin
   if (route.path !== "") {
     validateRouteParams(route.path, module.route.schemas);
   }
-  return module.route.elysia;
+  return {
+    app: module.route.elysia,
+    shell:
+      route.path === ""
+        ? new Elysia()
+        : new Elysia().get("/", (context) => {
+            const renderer = getFurinRenderer(context);
+            if (!renderer) {
+              throw new Error("[furin] No route renderer is registered.");
+            }
+            return renderer(context as unknown as FurinNativeRouteContext);
+          }),
+  };
 }
 
-async function composeRuntimeNode(node: RouteTreeNode): Promise<AnyElysia> {
+async function composeRuntimeNode(node: RouteTreeNode): Promise<DevRoutesApps> {
   const prefix = node.name ? `/${segmentPath(node.name)}` : "";
-  const [layoutApp, indexRouteApp, fileRouteApps, childApps] = await Promise.all([
-    node.layout ? composableRouteApp(node.layout) : undefined,
-    node.indexRoute ? composableRouteApp(node.indexRoute) : undefined,
-    Promise.all(node.fileRoutes.map((route) => composableRouteApp(route))),
+  const [layoutApps, indexRouteApps, fileRouteApps, childApps] = await Promise.all([
+    node.layout ? composableRouteApps(node.layout) : undefined,
+    node.indexRoute ? composableRouteApps(node.indexRoute) : undefined,
+    Promise.all(node.fileRoutes.map((route) => composableRouteApps(route))),
     Promise.all(node.children.map((child) => composeRuntimeNode(child))),
   ]);
-  const scope = layoutApp ?? new Elysia();
+  const appScope = layoutApps?.app ?? new Elysia();
+  const shellScope = layoutApps?.shell ?? new Elysia();
 
-  if (indexRouteApp) {
-    scope.use(new Elysia({ prefix: "" }).use(indexRouteApp));
+  if (indexRouteApps) {
+    appScope.use(new Elysia({ prefix: "" }).use(indexRouteApps.app));
+    shellScope.use(new Elysia({ prefix: "" }).use(indexRouteApps.shell));
   }
   for (const [index, route] of node.fileRoutes.entries()) {
-    const routeApp = fileRouteApps[index];
-    if (routeApp) {
+    const routeApps = fileRouteApps[index];
+    if (routeApps) {
       const segment = route.path.slice(route.path.lastIndexOf("/") + 1);
-      scope.use(new Elysia({ prefix: `/${segment}` }).use(routeApp));
+      appScope.use(new Elysia({ prefix: `/${segment}` }).use(routeApps.app));
+      shellScope.use(new Elysia({ prefix: `/${segment}` }).use(routeApps.shell));
     }
   }
-  for (const childApp of childApps) {
-    scope.use(childApp);
+  for (const child of childApps) {
+    appScope.use(child.app);
+    shellScope.use(child.shell);
   }
 
-  return new Elysia({ prefix }).use(scope);
+  return {
+    app: new Elysia({ prefix }).use(appScope),
+    shell: new Elysia({ prefix }).use(shellScope),
+  };
 }
 
-function composeRuntimeInstance(instance: RouteInstanceSpec): Promise<AnyElysia> {
+function composeRuntimeInstance(instance: RouteInstanceSpec): Promise<DevRoutesApps> {
   const instanceId = Bun.hash(instanceKey(instance)).toString(16);
   return composeRuntimeNode(buildRouteTree(instance.pagesDir, instanceId));
 }
 
-function devRoutesApps(): Map<string, AnyElysia> {
+function devRoutesApps(): Map<string, DevRoutesApps> {
   const existing = Reflect.get(globalThis, DEV_ROUTES_APPS_SYMBOL);
   if (existing instanceof Map) {
-    return existing as Map<string, AnyElysia>;
+    return existing as Map<string, DevRoutesApps>;
   }
-  const apps = new Map<string, AnyElysia>();
+  const apps = new Map<string, DevRoutesApps>();
   Reflect.set(globalThis, DEV_ROUTES_APPS_SYMBOL, apps);
   return apps;
 }
@@ -710,7 +767,9 @@ export function registerDevRoutesPlugin(instances: RouteInstanceSpec[]): void {
         return {
           contents: `const registry = Reflect.get(globalThis, Symbol.for(${JSON.stringify(
             Symbol.keyFor(DEV_ROUTES_APPS_SYMBOL)
-          )}));\nexport const furinApp = registry.get(${JSON.stringify(specifier)});\n`,
+          )}));\nconst routes = registry.get(${JSON.stringify(
+            specifier
+          )});\nexport const furinApp = routes.app;\nexport const furinShell = routes.shell;\n`,
           loader: "js",
         };
       });

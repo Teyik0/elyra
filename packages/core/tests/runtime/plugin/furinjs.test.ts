@@ -5,7 +5,7 @@ import Elysia from "elysia";
 import type { FurinOptions } from "../../../src/furin";
 import { routeModuleSpecifier } from "../../../src/plugin/routes.ts";
 import type { CompileContext } from "../../../src/server/internal";
-import { evlogOptionsMock, resetEvlogMock } from "../../setup/evlog-mock";
+import { evlogOptionsMock, initLoggerOptionsMock, resetEvlogMock } from "../../setup/evlog-mock";
 import { createTmpApp, removeAppPath, type TmpApp, writeAppFile } from "../../support/app-fixtures";
 import { runCli } from "../../support/process";
 
@@ -111,6 +111,30 @@ test.serial("furin() writes dev files in development", async () => {
   expect(existsSync(join(app.path, ".furin/_hydrate.tsx"))).toBe(true);
   expect(existsSync(join(app.path, "furin-env.d.ts"))).toBe(true);
 });
+
+test.serial(
+  "furin() forwards evlog sampling without passing it to the Elysia middleware",
+  async () => {
+    const app = rememberTmpApp(createTmpApp("cli-app"));
+    __setDevMode(true);
+    process.chdir(app.path);
+    const sampling = {
+      keep: [{ duration: 1000 }, { status: 400 }],
+      rates: { info: 10 },
+    };
+
+    await createTestApp({
+      logger: { sampling },
+      pagesDir: join(app.path, "src/pages"),
+    });
+
+    expect(initLoggerOptionsMock).toHaveBeenCalledWith({
+      env: { service: "furin" },
+      sampling,
+    });
+    expect(evlogOptionsMock.mock.calls[0]?.[0]).not.toHaveProperty("sampling");
+  }
+);
 
 test.serial("furin() scaffolds empty root and index route files into a working app", async () => {
   const app = rememberTmpApp(createTmpApp("cli-app"));

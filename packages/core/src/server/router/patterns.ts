@@ -42,12 +42,39 @@ export function resolveMode(page: RuntimePage, routeChain: RuntimeRoute[]): "ssr
   return "ssr";
 }
 
-export function routeSegmentToPattern(segment: string): string {
+const DYNAMIC_PARAMETER_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export interface DynamicRouteSegment {
+  catchAll: boolean;
+  name: string;
+}
+
+export function parseDynamicRouteSegment(
+  segment: string,
+  sourcePath: string | undefined
+): DynamicRouteSegment | undefined {
   if (!(segment.startsWith("[") && segment.endsWith("]"))) {
-    return segment;
+    return;
   }
   const inner = segment.slice(1, -1);
-  return inner.startsWith("...") ? "*" : `:${inner}`;
+  const catchAll = inner.startsWith("...");
+  const name = catchAll ? inner.slice(3) : inner;
+  if (!DYNAMIC_PARAMETER_NAME_RE.test(name)) {
+    throw new Error(
+      `[furin] Invalid dynamic parameter ${JSON.stringify(name)} in ${JSON.stringify(
+        sourcePath ?? segment
+      )}. Parameter names must match ${DYNAMIC_PARAMETER_NAME_RE}.`
+    );
+  }
+  return { catchAll, name };
+}
+
+export function routeSegmentToPattern(segment: string): string {
+  const dynamic = parseDynamicRouteSegment(segment, undefined);
+  if (!dynamic) {
+    return segment;
+  }
+  return dynamic.catchAll ? "*" : `:${dynamic.name}`;
 }
 
 export function filePathToPattern(path: string): string {
@@ -73,7 +100,12 @@ export function filePathToPattern(path: string): string {
       continue;
     }
 
-    segments.push(routeSegmentToPattern(name));
+    const dynamic = parseDynamicRouteSegment(name, path);
+    if (dynamic) {
+      segments.push(dynamic.catchAll ? "*" : `:${dynamic.name}`);
+    } else {
+      segments.push(name);
+    }
   }
 
   return `/${segments.join("/")}`;

@@ -3,7 +3,7 @@ import { type Context, Elysia } from "elysia";
 import { defer } from "furin/client";
 import type { ReactNode } from "react";
 import { renderToReadableStream } from "react-dom/server";
-import { defineRootRoute, defineRoute } from "../../../src/furin.ts";
+import { defineRootRoute, defineRoute, HeadContent, Scripts } from "../../../src/furin.ts";
 import { renderSSR } from "../../../src/server/render/index.ts";
 import { serializeLoaderDataNdjson } from "../../../src/server/render/ssr.ts";
 import { adaptDefinedLayout, adaptDefinedPage } from "../../../src/server/router/defined-route.ts";
@@ -22,7 +22,13 @@ const rootTerminal = defineRootRoute()
   .config({ mode: "ssr" })
   .layout(({ children }) => (
     <html lang="en">
-      <body>{children}</body>
+      <head>
+        <HeadContent />
+      </head>
+      <body>
+        {children}
+        <Scripts />
+      </body>
     </html>
   ));
 const root = {

@@ -1,7 +1,17 @@
 import "./globals.css";
-import { defineRootRoute } from "@teyik0/furin";
+import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin";
 import { RootLayout } from "@/components/root-layout";
 
 export const route = defineRootRoute()
   .config({ mode: "ssg" })
-  .layout(({ children }) => <RootLayout>{children}</RootLayout>);
+  .layout(({ children }) => (
+    <html lang="en">
+      <head>
+        <HeadContent />
+      </head>
+      <body>
+        <RootLayout>{children}</RootLayout>
+        <Scripts />
+      </body>
+    </html>
+  ));

@@ -1,5 +1,6 @@
 import type { RouteMap } from "@teyik0/furin/routes";
 import type React from "react";
+import type { HeadOptions } from "../../client.ts";
 import type {
   ElysiaRouteLeaf,
   ElysiaRouteParams,
@@ -243,6 +244,7 @@ export interface RouterState {
   error?: { digest: string; message: string; status: number };
   /** The canonical href after server-side redirects (e.g. query-default redirect). */
   finalHref?: string;
+  head?: HeadOptions;
   /**
    * The currently rendered route.
    *
@@ -293,6 +295,8 @@ export interface RootBoundaryOptions {
    * Server-logged error id propagated from `__FURIN_DATA__.__furinError.digest`.
    */
   digest?: string;
+  /** @internal Render the root fallback as a complete document. */
+  document?: boolean;
   onReset?: () => void;
   resetKey?: string | number;
 }

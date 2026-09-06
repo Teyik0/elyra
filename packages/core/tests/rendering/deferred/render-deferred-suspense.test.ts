@@ -74,6 +74,14 @@ describe.serial("renderSSR deferred Suspense scenarios", () => {
     expect(fastIdx).toBeGreaterThan(-1);
     expect(slowIdx).toBeGreaterThan(-1);
     expect(fastIdx).toBeLessThan(slowIdx);
+    expect(html.indexOf("window.__FURIN_ROUTE_FRAME_STREAM__=")).toBeLessThan(
+      html.indexOf('data-furin-entry=""')
+    );
+    expect(html.lastIndexOf("window.__FURIN_ROUTE_FRAME_STREAM__.push(")).toBeLessThan(
+      html.indexOf("</body>")
+    );
+    expect(html.indexOf("</body>")).toBeLessThan(html.indexOf("</html>"));
+    expect(html.match(/id="__FURIN_ROUTE_FRAMES__"/g)).toHaveLength(1);
   });
 
   test.serial("renderSSR resolves deferred Suspense content without aborting SSR", async () => {

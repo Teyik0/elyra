@@ -58,7 +58,7 @@ Without `errorElement`, the rejection propagates to the nearest React error boun
 The same contract applies to layouts.
 
 ```tsx
-import { defineRootRoute } from "@teyik0/furin"
+import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin"
 import { Await, defer } from "@teyik0/furin/client"
 import { Suspense } from "react"
 
@@ -71,13 +71,19 @@ export const route = defineRootRoute()
     })
   )
   .layout(({ children, data: { user, widgets } }) => (
-    <div>
-      <nav>Hello {user}</nav>
-      <Suspense fallback={<WidgetSkeleton />}>
-        <Await resolve={widgets}>{(value) => <WidgetList widgets={value} />}</Await>
-      </Suspense>
-      <main>{children}</main>
-    </div>
+    <html lang="en">
+      <head>
+        <HeadContent />
+      </head>
+      <body>
+        <nav>Hello {user}</nav>
+        <Suspense fallback={<WidgetSkeleton />}>
+          <Await resolve={widgets}>{(value) => <WidgetList widgets={value} />}</Await>
+        </Suspense>
+        <main>{children}</main>
+        <Scripts />
+      </body>
+    </html>
   ))
 ```
 

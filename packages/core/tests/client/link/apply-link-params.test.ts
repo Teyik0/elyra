@@ -23,9 +23,15 @@ describe("applyLinkParams", () => {
     expect(applyLinkParams("/docs/*", { "*": "a/b/c" })).toBe("/docs/a/b/c");
   });
 
-  test("preserves dollar replacement sequences in wildcard values", () => {
-    expect(applyLinkParams("/docs/*", { "*": "foo$&bar" })).toBe("/docs/foo$&bar");
-    expect(applyLinkParams("/docs/*", { "*": "foo$1bar" })).toBe("/docs/foo$1bar");
+  test("does not interpret dollar replacement sequences in wildcard values", () => {
+    expect(applyLinkParams("/docs/*", { "*": "foo$&bar" })).toBe("/docs/foo%24%26bar");
+    expect(applyLinkParams("/docs/*", { "*": "foo$1bar" })).toBe("/docs/foo%241bar");
+  });
+
+  test("URL-encodes each wildcard path segment", () => {
+    expect(applyLinkParams("/docs/*", { "*": "hello world/setup?#&%" })).toBe(
+      "/docs/hello%20world/setup%3F%23%26%25"
+    );
   });
 
   test("leaves unknown segments untouched", () => {

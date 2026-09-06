@@ -1,5 +1,5 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: route discovery walks filesystem entries sequentially for deterministic ordering
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, parse } from "node:path";
 import type { RuntimePage, RuntimeRoute } from "../../client/internal/runtime-types.ts";
@@ -264,7 +264,11 @@ async function loadConventionComponent<T>(
   const ctx = getCompileContext();
   for (const filePath of getSourceModuleCandidates(dir, name)) {
     if (existsSync(filePath) || ctx?.modules[filePath]) {
-      const mod = (ctx?.modules[filePath] ?? (await import(filePath))) as {
+      const moduleSpecifier =
+        IS_DEV && existsSync(filePath)
+          ? `${filePath}?furin-server&t=${Math.trunc(statSync(filePath).mtimeMs * 1000)}`
+          : filePath;
+      const mod = (ctx?.modules[filePath] ?? (await import(moduleSpecifier))) as {
         default?: T;
       };
       if (mod.default) {

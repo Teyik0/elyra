@@ -161,7 +161,7 @@ type Head<Params, Query, ParentData extends LoaderData, Data extends LoaderData>
   context: RenderContext<Params, Query, ParentData, Data, NoFields>
 ) => HeadOptions;
 
-function getFurinRenderer(context: object): FurinRouteDispatcher | undefined {
+export function getFurinRenderer(context: object): FurinRouteDispatcher | undefined {
   const renderer = (context as { $furinRender?: unknown })[FURIN_RENDER_DECORATOR];
   return typeof renderer === "function" ? (renderer as FurinRouteDispatcher) : undefined;
 }

@@ -144,11 +144,11 @@ export function generateHydrateEntry(
   const resolvedRootLayout = rootLayout.replace(/\\/g, "/");
   const rootComponentKey = JSON.stringify(`root:${resolvedRootLayout}`);
 
-  return `import { hydrateRoot, createRoot } from "react-dom/client";
+  return `import { hydrateRoot } from "react-dom/client";
 import { createElement, type ReactNode } from "react";
-${loggingImports}import { RouterProvider } from "@teyik0/furin/link";
+${loggingImports}import { DocumentProvider, type DocumentState, type HotComponentRegistry, updateHotComponent } from "@teyik0/furin/client";
+import { RouterProvider } from "@teyik0/furin/link";
 import { fromCrossJSON, parseDeferredNdjson } from "@teyik0/furin/link";
-import { type HotComponentRegistry, updateHotComponent } from "@teyik0/furin/client";
 import type { SerovalNode } from "seroval";
 import { route as __furin_root_route } from "${resolvedRootLayout}";
 
@@ -185,6 +185,25 @@ let loaderData = dataEl ? JSON.parse(dataEl.textContent || "{}") : {};
 const syncEl = document.getElementById("__FURIN_SYNC__");
 const syncConfig = syncEl ? JSON.parse(syncEl.textContent || "{}") : {};
 const syncStream = typeof syncConfig.stream === "string" ? syncConfig.stream : undefined;
+const headEl = document.getElementById("__FURIN_HEAD__");
+const head = headEl ? JSON.parse(headEl.textContent || "{}") : {};
+const entryEl = document.querySelector("script[type=module][src]") as HTMLScriptElement | null;
+const buildId = document.querySelector('meta[name="furin-build-id"]')?.getAttribute("content") ?? undefined;
+const faviconHref = document.querySelector('link[rel="icon"]')?.getAttribute("href") ?? undefined;
+const documentState: DocumentState = {
+  assets: {
+    buildId,
+    entryModule: entryEl?.getAttribute("src") ?? undefined,
+    faviconHref,
+    staticMode: document.querySelector('meta[name="furin-mode"][content="static"]') !== null,
+    stylesheets: Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+      .map((link) => link.getAttribute("href") ?? "")
+      .filter(Boolean),
+  },
+  dataJson: dataEl?.textContent ?? undefined,
+  head,
+  syncJson: syncEl?.textContent ?? undefined,
+};
 
 // ── Deferred data hydration ─────────────────────────────────────────────────
 // window.__FURIN_DEFERRED__ is injected by the server when a loader returns
@@ -252,8 +271,6 @@ if (__deferred && __deferred._chunks) {
       }
     }
   }
-const rootEl = document.getElementById("root") as HTMLElement;
-
 // Eagerly load only the current page module for initial hydration.
 // All other pages are loaded on demand when the user navigates to them.
 // Wrapped in an async IIFE to avoid top-level await, which causes Bun's HTML
@@ -314,6 +331,7 @@ const rootEl = document.getElementById("root") as HTMLElement;
     log.error({ action: "hydrate_no_match", pathname });
     return;
   }
+  app = createElement(DocumentProvider, { value: documentState }, app);
 
   if (import.meta.hot) {
     // Dev mode — preserve root across HMR using a window global.
@@ -350,22 +368,14 @@ const rootEl = document.getElementById("root") as HTMLElement;
       if (hmrRefresh) {
         requestAnimationFrame(() => hmrRefresh());
       }
-    } else if (rootEl.innerHTML.trim()) {
-      // First load with SSR content — hydrateRoot renders on construction
-      const root = hydrateRoot(rootEl, app);
-      // biome-ignore lint/suspicious/noExplicitAny: dev-only HMR global
-      (window as any).__FURIN_ROOT__ = root;
     } else {
-      // First load without SSR content — createRoot requires explicit .render()
-      const root = createRoot(rootEl);
-      root.render(app);
+      // First load — the root layout owns the server-rendered document.
+      const root = hydrateRoot(document, app);
       // biome-ignore lint/suspicious/noExplicitAny: dev-only HMR global
       (window as any).__FURIN_ROOT__ = root;
     }
-  } else if (rootEl.innerHTML.trim()) {
-    hydrateRoot(rootEl, app);
   } else {
-    createRoot(rootEl).render(app);
+    hydrateRoot(document, app);
   }
 
   log.info({ action: "hydrate_complete", pathname });
@@ -393,8 +403,10 @@ export function writeDevFiles(
   const hydrateCode = generateHydrateEntry(routes, rootLayout, basePath, clientLogging);
   const hydratePath = join(outDir, "_hydrate.tsx");
   const existingHydrate = existsSync(hydratePath) ? readFileSync(hydratePath, "utf8") : "";
+  let changed = false;
   if (hydrateCode !== existingHydrate) {
     writeFileSync(hydratePath, hydrateCode);
+    changed = true;
   }
 
   const indexHtml = generateIndexHtml();
@@ -402,13 +414,16 @@ export function writeDevFiles(
   const existingIndex = existsSync(indexPath) ? readFileSync(indexPath, "utf8") : "";
   if (indexHtml !== existingIndex) {
     writeFileSync(indexPath, indexHtml);
+    changed = true;
   }
 
   if (!skipRouteTypes) {
-    writeRouteTypes(routes, projectRoot);
+    changed = writeRouteTypes(routes, projectRoot) || changed;
   }
 
-  console.log(
-    "[furin] Dev files written (.furin/_hydrate.tsx + .furin/index.html + furin-env.d.ts)"
-  );
+  if (changed) {
+    console.log(
+      "[furin] Dev files written (.furin/_hydrate.tsx + .furin/index.html + furin-env.d.ts)"
+    );
+  }
 }

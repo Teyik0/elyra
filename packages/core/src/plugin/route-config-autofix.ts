@@ -4,6 +4,7 @@ import MagicString from "magic-string";
 import { walk } from "yuku-ast";
 import type { ImportDeclaration, Program } from "yuku-parser";
 import { detectLangFromPath, unwrapTSExpression } from "../server/lang-detect.ts";
+import { parseDynamicRouteSegment } from "../server/router/patterns.ts";
 import { parseSource } from "../shared/parser.ts";
 import type { AstNode } from "../shared/utils/ast-walk.ts";
 
@@ -266,6 +267,7 @@ function builderChainHasMethod(
 }
 
 interface BuilderBindings {
+  documentBindings: Set<string>;
   rootBindings: Set<string>;
   routeBindings: Set<string>;
   routeSpecifiers: Map<string, { end: number; start: number }>;
@@ -277,6 +279,19 @@ const FURIN_BUILDER_MODULES = new Set([
   "@teyik0/furin/client",
   "furin/client",
 ]);
+
+function collectDocumentBinding(
+  importedName: string,
+  localName: string,
+  bindings: BuilderBindings
+): void {
+  if (
+    (importedName === "HeadContent" || importedName === "Scripts") &&
+    localName === importedName
+  ) {
+    bindings.documentBindings.add(importedName);
+  }
+}
 
 function collectBindingsFromDeclaration(
   declaration: ImportDeclaration,
@@ -310,11 +325,13 @@ function collectBindingsFromDeclaration(
     if (imported.name === "defineRootRoute") {
       bindings.rootBindings.add(local.name);
     }
+    collectDocumentBinding(imported.name, local.name, bindings);
   }
 }
 
 function collectBuilderBindings(program: Program): BuilderBindings {
   const bindings: BuilderBindings = {
+    documentBindings: new Set(),
     rootBindings: new Set(),
     routeBindings: new Set(),
     routeSpecifiers: new Map(),
@@ -327,9 +344,19 @@ function collectBuilderBindings(program: Program): BuilderBindings {
   return bindings;
 }
 
+function prependMissingDocumentImports(bindings: BuilderBindings, magic: MagicString): void {
+  const missing = ["HeadContent", "Scripts"].filter(
+    (binding) => !bindings.documentBindings.has(binding)
+  );
+  if (missing.length > 0) {
+    magic.prepend(`import { ${missing.join(", ")} } from "@teyik0/furin";\n`);
+  }
+}
+
 interface ChainHead {
   binding: string;
   builderEnd: number;
+  chainEnd: number;
   end: number;
   exportedAsRoute: boolean;
   isRoot: boolean;
@@ -367,6 +394,7 @@ function collectChainHeads(program: Program, bindings: BuilderBindings): ChainHe
       const ancestors = context.ancestors() as AstNode[];
       const declaration = ancestors.find((ancestor) => ancestor.type === "VariableDeclarator");
       const identifier = asAstNode(declaration?.id);
+      const chain = asAstNode(declaration?.init);
       const variableDeclaration = ancestors.find(
         (ancestor) => ancestor.type === "VariableDeclaration"
       );
@@ -380,6 +408,7 @@ function collectChainHeads(program: Program, bindings: BuilderBindings): ChainHe
         heads.push({
           binding: callee.name,
           builderEnd: calleeEnd,
+          chainEnd: typeof chain?.end === "number" ? chain.end : callEnd,
           end: callEnd,
           exportedAsRoute,
           isRoot: true,
@@ -392,6 +421,7 @@ function collectChainHeads(program: Program, bindings: BuilderBindings): ChainHe
         heads.push({
           binding: callee.name,
           builderEnd: calleeEnd,
+          chainEnd: typeof chain?.end === "number" ? chain.end : callEnd,
           end: callEnd,
           exportedAsRoute,
           isRoot: false,
@@ -644,17 +674,11 @@ export function dynamicParamsFor(filePath: string, pagesDir: string): string[] {
     if (segment.length === 0) {
       continue;
     }
-    if (segment.startsWith("[...") && segment.endsWith("]")) {
-      params.add("*");
+    const dynamic = parseDynamicRouteSegment(segment, filePath);
+    if (!dynamic) {
       continue;
     }
-    if (!(segment.startsWith("[") && segment.endsWith("]"))) {
-      continue;
-    }
-    const name = segment.slice(1, -1);
-    if (name.length > 0) {
-      params.add(name);
-    }
+    params.add(dynamic.catchAll ? "*" : dynamic.name);
   }
   return [...params];
 }
@@ -752,11 +776,21 @@ function scaffoldParamsDeclaration(dynamicParams: string[]): string {
 function scaffoldEmptyRoute(convention: RouteFileConvention): string | null {
   const { dynamicParams, expected, fileName, filePath, isNestedLayout, isRootLayout } = convention;
   if (isRootLayout) {
-    return `import { defineRootRoute } from "@teyik0/furin";
+    return `import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin";
 
 export const route = defineRootRoute()
   .config({ mode: "ssr" })
-  .layout(({ children }) => children);
+  .layout(({ children }) => (
+    <html lang="en">
+      <head>
+        <HeadContent />
+      </head>
+      <body>
+        {children}
+        <Scripts />
+      </body>
+    </html>
+  ));
 `;
   }
   if (isNestedLayout && expected) {
@@ -805,8 +839,8 @@ function validateRouteChain(heads: ChainHead[], convention: RouteFileConvention)
   if (!(convention.isRootLayout || convention.expected)) {
     throw routeConfigError(convention.filePath, "no ancestor layout found; create pages/root.tsx");
   }
-  if (convention.isNestedLayout && routeHead.terminal === "page") {
-    throw routeConfigError(convention.filePath, "_route files must end with .layout()");
+  if ((convention.isRootLayout || convention.isNestedLayout) && routeHead.terminal === "page") {
+    throw routeConfigError(convention.filePath, "layout files must end with .layout()");
   }
   if (!(convention.isRootLayout || convention.isNestedLayout) && routeHead.terminal === "layout") {
     throw routeConfigError(convention.filePath, "page files must end with .page()");
@@ -841,7 +875,7 @@ function rewriteRootBuilder(
   return true;
 }
 
-function insertCompleteConfig(routeHead: ChainHead, ctx: FixContext): string {
+function insertCompleteConfig(routeHead: ChainHead, ctx: FixContext): void {
   const binding =
     ctx.expected && !ctx.isRootLayout ? resolveBinding(ctx, Math.max(ctx.lastImportEnd, 0)) : null;
   const layoutPart = binding && !ctx.isRootLayout ? `layout: ${binding}, ` : "";
@@ -852,7 +886,86 @@ function insertCompleteConfig(routeHead: ChainHead, ctx: FixContext): string {
     isRootLayout: ctx.isRootLayout,
   });
   ctx.magic.appendRight(routeHead.end, `.config({ ${layoutPart}mode: "${mode}" })`);
-  return ctx.magic.toString();
+}
+
+function insertMissingLayoutTerminal(
+  routeHead: ChainHead,
+  bindings: BuilderBindings,
+  convention: RouteFileConvention,
+  magic: MagicString
+): boolean {
+  if (!(convention.isRootLayout || convention.isNestedLayout) || routeHead.terminal === "layout") {
+    return false;
+  }
+  if (convention.isRootLayout) {
+    prependMissingDocumentImports(bindings, magic);
+  }
+  const layout = convention.isRootLayout
+    ? '(\n    <html lang="en">\n      <head>\n        <HeadContent />\n      </head>\n      <body>\n        {children}\n        <Scripts />\n      </body>\n    </html>\n  )'
+    : "children";
+  magic.appendRight(routeHead.chainEnd, `.layout(({ children }) => ${layout})`);
+  return true;
+}
+
+function legacyRootLayoutBody(node: unknown): AstNode | null {
+  const callback = asAstNode(node);
+  if (callback?.type !== "ArrowFunctionExpression") {
+    return null;
+  }
+  const params = Array.isArray(callback.params) ? callback.params : [];
+  const pattern = asAstNode(params[0]);
+  const properties = Array.isArray(pattern?.properties) ? pattern.properties : [];
+  const property = properties.length === 1 ? asAstNode(properties[0]) : null;
+  const value = asAstNode(property?.value);
+  const body = asAstNode(callback.body);
+  if (
+    pattern?.type !== "ObjectPattern" ||
+    property?.type !== "Property" ||
+    propertyName(property.key) !== "children" ||
+    value?.type !== "Identifier" ||
+    value.name !== "children" ||
+    body?.type !== "Identifier" ||
+    body.name !== "children"
+  ) {
+    return null;
+  }
+  return body;
+}
+
+function rewriteLegacyRootLayout(
+  program: Program,
+  bindings: BuilderBindings,
+  convention: RouteFileConvention,
+  magic: MagicString
+): boolean {
+  if (!convention.isRootLayout) {
+    return false;
+  }
+  let touched = false;
+  walk(program as never, {
+    CallExpression(call) {
+      const callee = asAstNode(call.callee);
+      if (callee?.type !== "MemberExpression" || !belongsToBuilderChain(callee.object, bindings)) {
+        return;
+      }
+      const property = asAstNode(callee.property);
+      if (property?.type !== "Identifier" || property.name !== "layout") {
+        return;
+      }
+      const argument = Array.isArray(call.arguments) ? call.arguments[0] : null;
+      const body = legacyRootLayoutBody(argument);
+      if (typeof body?.start === "number" && typeof body.end === "number") {
+        prependMissingDocumentImports(bindings, magic);
+        magic.update(
+          body.start,
+          body.end,
+          '(\n    <html lang="en">\n      <head>\n        <HeadContent />\n      </head>\n      <body>\n        {children}\n        <Scripts />\n      </body>\n    </html>\n  )'
+        );
+        touched = true;
+      }
+    },
+  });
+  return touched;
 }
 
 /**
@@ -862,8 +975,9 @@ function insertCompleteConfig(routeHead: ChainHead, ctx: FixContext): string {
  *   - `config()` without `layout`    → injects the expected ancestor layout
  *   - `config()` with a WRONG layout → repoints the reference (and its import)
  *   - `config()` without `mode`      → infers the mode using the runtime cascade
+ *   - layout file without `layout()` → appends an identity layout terminal
  * The root layout (`pages/root.tsx`, built with `defineRootRoute()`) never
- * receives a `layout`. Returns the new source, or null when unchanged
+ * receives a parent `layout` config entry. Returns the new source, or null when unchanged
  * (idempotent — running the fix twice returns null on the second pass).
  */
 export function fixRouteConfigLayout(
@@ -914,11 +1028,14 @@ export function fixRouteConfigLayout(
     tBinding,
   };
   if (configObjects.length === 0) {
-    return insertCompleteConfig(routeHead, ctx);
+    insertCompleteConfig(routeHead, ctx);
+    touched = true;
   }
   for (const object of configObjects) {
     touched = injectMissingConfigKeys(object, ctx) || touched;
   }
+  touched = insertMissingLayoutTerminal(routeHead, bindings, convention, magic) || touched;
+  touched = rewriteLegacyRootLayout(parsed.program, bindings, convention, magic) || touched;
 
   const output = magic.toString();
   // Structural idempotence: a rewrite that produces the exact input is no

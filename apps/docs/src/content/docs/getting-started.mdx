@@ -54,21 +54,23 @@ export type App = typeof app
 
 ## Root Layout
 
-Every app needs `src/pages/root.tsx`. It is the top-level layout and should render the document shell.
+Every app needs `src/pages/root.tsx`. It owns the complete document. `<HeadContent />` renders framework assets and route metadata; `<Scripts />` renders the hydration bootstrap and must stay inside `<body>`.
 
 ```tsx
 // src/pages/root.tsx
-import { defineRootRoute } from "@teyik0/furin"
+import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin"
 
 export const route = defineRootRoute()
   .config({ mode: "ssr" })
   .layout(({ children }) => (
     <html lang="en">
       <head>
-        <meta charSet="utf-8" />
-        <meta content="width=device-width, initial-scale=1" name="viewport" />
+        <HeadContent />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <Scripts />
+      </body>
     </html>
   ))
 ```

@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { createElement, createContext as mainCreateContext, useState as mainUseState } from "react";
 import { renderToString } from "react-dom/server";
 import { registerDevPagePlugin } from "../../../src/server/dev-page-plugin.ts";
+import { withDocumentState } from "../../../src/server/render/document.tsx";
 import { buildElement } from "../../../src/server/render/element.tsx";
 import { adaptDefinedLayout, adaptDefinedPage } from "../../../src/server/router/defined-route.ts";
 import { requireTmpPath, withTmpFiles, withTmpPage } from "../../support/tmp-files";
@@ -139,10 +140,10 @@ describe("furin-dev-page React singleton", () => {
           export const route = defineRoute()
             .config({ layout: parentRoute, mode: "ssg" })
             .page(() => <main>docs page</main>);`,
-        "root.tsx": `import { defineRootRoute } from "@teyik0/furin";
+        "root.tsx": `import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin";
           export const route = defineRootRoute()
             .config({ mode: "ssr" })
-            .layout(({ children }) => <div data-root="yes">{children}</div>);`,
+            .layout(({ children }) => <html lang="en"><head><HeadContent /></head><body><div data-root="yes">{children}</div><Scripts /></body></html>);`,
       },
       async (paths) => {
         const rootPath = requireTmpPath(paths, "root.tsx");
@@ -164,7 +165,22 @@ describe("furin-dev-page React singleton", () => {
           root
         );
 
-        expect(() => renderToString(element)).not.toThrow();
+        expect(() =>
+          renderToString(
+            withDocumentState(
+              element,
+              {
+                buildId: undefined,
+                entryModule: undefined,
+                faviconHref: undefined,
+                staticMode: false,
+                stylesheets: [],
+              },
+              undefined,
+              undefined
+            )
+          )
+        ).not.toThrow();
       }
     ));
 });

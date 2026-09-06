@@ -50,6 +50,18 @@ export function buildElement(
   return element;
 }
 
+export function wrapRootLayout(
+  element: ReactNode,
+  data: Record<string, unknown>,
+  rootLayout: RuntimeRoute
+): ReactNode {
+  if (!rootLayout.layout) {
+    return element;
+  }
+  const RootLayoutComponent = rootLayout.layout;
+  return <RootLayoutComponent {...data}>{element}</RootLayoutComponent>;
+}
+
 export function buildNotFoundElement(
   component: NotFoundComponent | undefined,
   error: FurinNotFoundError

@@ -88,7 +88,8 @@ export function applyLinkParams(
   );
   const wildcard: string | number | undefined = params["*"];
   if (wildcard !== undefined && url.includes("/*")) {
-    url = url.replace("/*", () => `/${String(wildcard)}`);
+    const encodedWildcard = String(wildcard).split("/").map(encodeURIComponent).join("/");
+    url = url.replace("/*", () => `/${encodedWildcard}`);
   }
   return url;
 }

@@ -26,19 +26,25 @@ export const route = defineRoute()
   .page(({ data: { message } }) => (
     <h1>{message}</h1>
   ))`,
-  "pages/root.tsx": `import { defineRootRoute } from "@teyik0/furin"
+  "pages/root.tsx": `import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin"
 import { Link } from "@teyik0/furin/link"
 import "./styles/globals.css"
 
 function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <>
-      <nav>
-        <Link to="/">Home</Link>
-        <Link to="/blog">Blog</Link>
-      </nav>
-      <main>{children}</main>
-    </>
+    <html lang="en">
+      <head>
+        <HeadContent />
+      </head>
+      <body>
+        <nav>
+          <Link to="/">Home</Link>
+          <Link to="/blog">Blog</Link>
+        </nav>
+        <main>{children}</main>
+        <Scripts />
+      </body>
+    </html>
   )
 }
 

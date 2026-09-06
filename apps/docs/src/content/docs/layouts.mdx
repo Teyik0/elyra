@@ -4,21 +4,23 @@ Furin uses `_route.tsx` files for directory layouts. Every route module exports 
 
 ## Root Layout
 
-`src/pages/root.tsx` is required and renders the document shell.
+`src/pages/root.tsx` is required and owns `<html>` and `<body>`. Place `<HeadContent />` in `<head>` and `<Scripts />` at the end of `<body>`; Furin does not inject a second document shell.
 
 ```tsx
 // src/pages/root.tsx
-import { defineRootRoute } from "@teyik0/furin"
+import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin"
 
 export const route = defineRootRoute()
   .config({ mode: "ssr" })
   .layout(({ children }) => (
     <html lang="en">
       <head>
-        <meta charSet="utf-8" />
-        <meta content="width=device-width, initial-scale=1" name="viewport" />
+        <HeadContent />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <Scripts />
+      </body>
     </html>
   ))
 ```

@@ -37,6 +37,14 @@ const INITIAL_DIGEST_PROP_RE = /initialDigest:/;
 // ── B12: no basePath — generated code is unchanged ───────────────────────────
 
 describe("generateHydrateEntry", () => {
+  test("hydrates the document owned by the root layout", () => {
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
+
+    expect(code).toContain("hydrateRoot(document, app)");
+    expect(code).not.toContain('document.getElementById("root")');
+    expect(code).not.toContain("createRoot(");
+  });
+
   test("imports RouterProvider via package specifier so client links share one RouterContext", () => {
     const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     expect(code).toContain('import { RouterProvider } from "@teyik0/furin/link";');
@@ -257,7 +265,7 @@ describe("generateHydrateEntry", () => {
         }
       );
 
-      expect(result.exitCode).toBe(0);
+      expect(result.exitCode, result.stderr.toString()).toBe(0);
 
       const chunks: string[] = [];
       for (const file of readdirSync(outDir)) {
@@ -267,9 +275,9 @@ describe("generateHydrateEntry", () => {
       }
       const bundleText = chunks.join("\n");
 
-      // RouterContext + SearchStoreContext. If the page-level Link import pulled
-      // in a second copy of Furin's router module, both contexts would duplicate.
-      expect((bundleText.match(/createContext\(null\)/g) ?? []).length).toBe(2);
+      // RouterContext + SearchStoreContext and the document contexts bundled by
+      // the client/link public entries. A second router copy would add two more.
+      expect((bundleText.match(/createContext\(null\)/g) ?? []).length).toBe(4);
     } finally {
       rmSync(tmpRoot, { force: true, recursive: true });
     }

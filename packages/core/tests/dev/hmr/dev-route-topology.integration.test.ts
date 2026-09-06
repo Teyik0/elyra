@@ -1,5 +1,6 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: integration test polling must wait between retries
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseDeferredNdjson } from "../../../src/shared/deferred-ndjson.ts";
 import { createTmpApp, removeAppPath, writeAppFile } from "../../support/app-fixtures.ts";
@@ -44,11 +45,11 @@ describe.serial("dev route topology — hot add/remove of route files", () => {
     app.path,
     "src/pages/root.tsx",
     [
-      'import { defineRootRoute } from "@teyik0/furin";',
+      'import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin";',
       "",
       "export const route = defineRootRoute()",
       '  .config({ mode: "ssr" })',
-      '  .layout(({ children }) => <div data-root="true">{children}</div>);',
+      '  .layout(({ children }) => <html lang="en"><head><HeadContent /></head><body><div data-root="true">{children}</div><Scripts /></body></html>);',
     ].join("\n")
   );
 
@@ -65,6 +66,24 @@ describe.serial("dev route topology — hot add/remove of route files", () => {
       "  .page(() => <main>Home</main>);",
     ].join("\n")
   );
+
+  const schemaRouteSource = (view: string): string =>
+    [
+      'import { defineRoute } from "@teyik0/furin";',
+      'import { t } from "elysia";',
+      'import { route as rootRoute } from "./root";',
+      "",
+      "export const route = defineRoute()",
+      "  .config({",
+      "    layout: rootRoute,",
+      '    mode: "ssr",',
+      `    query: t.Object({ view: t.Literal(${JSON.stringify(view)}) }),`,
+      "  })",
+      "  .loader(({ query }) => ({ view: query.view }))",
+      "  .page(({ data }) => <main data-schema={data.view}>{data.view}</main>);",
+    ].join("\n");
+
+  writeAppFile(app.path, "src/pages/schema.tsx", schemaRouteSource("before"));
 
   beforeAll(async () => {
     port = await getFreePort();
@@ -237,5 +256,93 @@ describe.serial("dev route topology — hot add/remove of route files", () => {
     } finally {
       removeAppPath(app.path, "src/pages/items/[id].tsx");
     }
+  }, 20_000);
+
+  test("hot-editing a query schema refreshes document and data validation", async () => {
+    const initialResponse = await fetch(`http://localhost:${port}/schema?view=before`);
+    expect(initialResponse.status).toBe(200);
+    expect(await initialResponse.text()).toContain('data-schema="before"');
+
+    writeAppFile(app.path, "src/pages/schema.tsx", schemaRouteSource("after"));
+
+    const refreshed = await pollUntil(
+      async () => {
+        const response = await fetch(`http://localhost:${port}/schema?view=after`);
+        return response.status === 200 && (await response.text()).includes('data-schema="after"');
+      },
+      40,
+      250
+    );
+    expect(refreshed).toBe(true);
+    expect((await fetch(`http://localhost:${port}/schema?view=before`)).status).toBe(422);
+
+    const dataResponse = await fetch(
+      `http://localhost:${port}/_furin/data?path=${encodeURIComponent("/schema?view=after")}`
+    );
+    expect(dataResponse.status).toBe(200);
+    const { syncData } = await parseDeferredNdjson(
+      dataResponse.body ??
+        new ReadableStream<Uint8Array>({ start: (controller) => controller.close() }),
+      undefined
+    );
+    expect(syncData.view).toBe("after");
+  }, 20_000);
+
+  test("hot-adding and removing not-found.tsx refreshes the rendered convention", async () => {
+    const missingUrl = `http://localhost:${port}/missing-convention`;
+    expect(await (await fetch(missingUrl)).text()).not.toContain("Hot convention");
+
+    writeAppFile(
+      app.path,
+      "src/pages/not-found.tsx",
+      "export default function NotFound() { return <main>Hot convention</main>; }\n"
+    );
+
+    const added = await pollUntil(
+      async () => {
+        const response = await fetch(missingUrl);
+        return response.status === 404 && (await response.text()).includes("Hot convention");
+      },
+      40,
+      250
+    );
+    expect(added).toBe(true);
+
+    removeAppPath(app.path, "src/pages/not-found.tsx");
+    const removed = await pollUntil(
+      async () => {
+        const response = await fetch(missingUrl);
+        return response.status === 404 && !(await response.text()).includes("Hot convention");
+      },
+      40,
+      250
+    );
+    expect(removed).toBe(true);
+  }, 20_000);
+
+  test("hot-editing a legacy root layout applies the document layout autofix", async () => {
+    const rootPath = join(app.path, "src/pages/root.tsx");
+    writeAppFile(
+      app.path,
+      "src/pages/root.tsx",
+      [
+        'import { defineRootRoute } from "@teyik0/furin";',
+        "",
+        "export const route = defineRootRoute()",
+        '  .config({ mode: "ssr" })',
+        "  .layout(({ children }) => children);",
+      ].join("\n")
+    );
+
+    const fixed = await pollUntil(
+      async () =>
+        readFileSync(rootPath, "utf8").includes("<HeadContent />") &&
+        readFileSync(rootPath, "utf8").includes("<Scripts />"),
+      40,
+      250
+    );
+
+    expect(fixed).toBe(true);
+    expect((await fetch(`http://localhost:${port}/`)).status).toBe(200);
   }, 20_000);
 });

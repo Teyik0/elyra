@@ -4,6 +4,13 @@
 */
 
 export { defineRootRoute, defineRoute } from "./client/define-route.ts";
+export {
+  type DocumentAssets,
+  DocumentProvider,
+  type DocumentState,
+  HeadContent,
+  Scripts,
+} from "./client/document.tsx";
 export { type HotComponentRegistry, updateHotComponent } from "./client/hmr.ts";
 export {
   type SyncMutation,

@@ -23,12 +23,14 @@ __setDevMode(false);
 const fixturesDir = join(process.cwd(), "packages/core/tests/fixtures/pages/default");
 
 __resetTemplateState();
-setProductionTemplateContent("<!DOCTYPE html><html><body>PROD</body></html>");
+setProductionTemplateContent(
+  '<!DOCTYPE html><html><body><script type="module" src="/prod-entry.js"></script></body></html>'
+);
 let result = await scanPages(fixturesDir);
 let response = await renderRootNotFound(result.root, undefined);
-assert(response.status === 404, "production template response status");
+assert(response.status === 404, "production assets response status");
 let body = await response.text();
-assert(body.includes("PROD"), "production template body");
+assert(body.includes('src="/prod-entry.js"'), "production entry asset");
 
 __resetTemplateState();
 result = await scanPages(fixturesDir);

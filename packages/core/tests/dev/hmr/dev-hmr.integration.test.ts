@@ -38,12 +38,15 @@ describe.serial("dev HMR", () => {
     app.path,
     "src/pages/root.tsx",
     [
-      'import { defineRootRoute } from "@teyik0/furin";',
+      'import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin";',
       "",
       "export const route = defineRootRoute()",
       '  .config({ mode: "ssr" })',
       "  .layout(({ children }) => (",
-      '  <div data-root-version="root-v1">{children}</div>',
+      '    <html lang="en">',
+      "      <head><HeadContent /></head>",
+      '      <body data-root-version="root-v1">{children}<Scripts /></body>',
+      "    </html>",
       "));",
     ].join("\n")
   );
@@ -127,7 +130,8 @@ describe.serial("dev HMR", () => {
     const html = await (await fetch(`http://localhost:${port}/`)).text();
     expect(html).toContain("ISR home");
     expect(html).toContain("__FURIN_DATA__");
-    expect(html).toContain('id="root"');
+    expect(html).toContain('data-furin-entry=""');
+    expect(html).not.toContain('id="root"');
 
     const hmrEntryHtml = await (await fetch(`http://localhost:${port}/_bun_hmr_entry`)).text();
     expect(hmrEntryHtml).toContain("data-bun-dev-server-script");
@@ -226,12 +230,15 @@ describe.serial("dev HMR", () => {
       app.path,
       "src/pages/root.tsx",
       [
-        'import { defineRootRoute } from "@teyik0/furin";',
+        'import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin";',
         "",
         "export const route = defineRootRoute()",
         '  .config({ mode: "ssr" })',
         "  .layout(({ children }) => (",
-        '  <div data-root-version="root-v2">{children}</div>',
+        '    <html lang="en">',
+        "      <head><HeadContent /></head>",
+        '      <body data-root-version="root-v2">{children}<Scripts /></body>',
+        "    </html>",
         "));",
       ].join("\n")
     );

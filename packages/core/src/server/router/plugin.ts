@@ -1,5 +1,6 @@
 import { type AnyElysia, type Context, Elysia, t } from "elysia";
 import { toCrossJSONAsync } from "seroval";
+import type { HeadOptions } from "../../client.ts";
 import { computeErrorDigest } from "../../shared/digest.ts";
 import type { FurinSchema } from "../../shared/elysia-contract.ts";
 import { containsRscSource, serializeRouteFrames } from "../../shared/route-frame.ts";
@@ -106,7 +107,7 @@ async function createLoaderDataResponse(
     });
   }
 
-  const syncDataWithTitle = withResolvedTitle(route, result.syncData);
+  const syncDataWithTitle = withResolvedHead(route, result.syncData);
   if (result.deferredPromises !== undefined) {
     return new Response(
       createDeferredRouteFrameStream(syncDataWithTitle, result.deferredPromises),
@@ -361,7 +362,7 @@ export function createDataEndpoint(routesSource: ResolvedRoutesSource): AnyElysi
  * synchronous loader data. A throwing `head()` is swallowed: a missing title
  * must never break the data response.
  */
-function withResolvedTitle(
+function withResolvedHead(
   route: ResolvedRoute,
   syncData: Record<string, unknown>
 ): Record<string, unknown> {
@@ -369,14 +370,15 @@ function withResolvedTitle(
   if (!head) {
     return syncData;
   }
-  let title: string | undefined;
+  let headOptions: HeadOptions;
   try {
-    title = extractTitle(head(syncData).meta);
+    headOptions = head(syncData);
   } catch {
     return syncData;
   }
+  const title = extractTitle(headOptions.meta);
   if (title === undefined) {
-    return syncData;
+    return { ...syncData, __furinHead: headOptions };
   }
-  return { ...syncData, __furinTitle: title };
+  return { ...syncData, __furinHead: headOptions, __furinTitle: title };
 }

@@ -122,12 +122,98 @@ describe("fixRouteConfigLayout", () => {
     try {
       const filePath = join(pages.path, "root.tsx");
       const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
-      expect(fixed).toBe(`import { defineRootRoute } from "@teyik0/furin";
+      expect(fixed).toBe(`import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin";
+
+export const route = defineRootRoute()
+  .config({ mode: "ssr" })
+  .layout(({ children }) => (
+    <html lang="en">
+      <head>
+        <HeadContent />
+      </head>
+      <body>
+        {children}
+        <Scripts />
+      </body>
+    </html>
+  ));
+`);
+      expect(fixRouteConfigLayout(fixed ?? "", filePath, pages.path)).toBeNull();
+    } finally {
+      pages.cleanup();
+    }
+  });
+
+  test("adds the missing layout terminal to an existing root route", () => {
+    const pages = createPages({
+      "root.tsx": `import { defineRootRoute } from "@teyik0/furin";
+
+export const route = defineRootRoute().config({ mode: "ssr" });
+`,
+    });
+    try {
+      const filePath = join(pages.path, "root.tsx");
+      const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
+      expect(fixed).toContain("<HeadContent />");
+      expect(fixed).toContain("<Scripts />");
+      expect(fixRouteConfigLayout(fixed ?? "", filePath, pages.path)).toBeNull();
+    } finally {
+      pages.cleanup();
+    }
+  });
+
+  test("adds config and layout to a bare root route", () => {
+    const pages = createPages({
+      "root.tsx": `import { defineRootRoute } from "@teyik0/furin";
+
+export const route = defineRootRoute();
+`,
+    });
+    try {
+      const filePath = join(pages.path, "root.tsx");
+      const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
+      expect(fixed).toContain("<HeadContent />");
+      expect(fixed).toContain("<Scripts />");
+      expect(fixRouteConfigLayout(fixed ?? "", filePath, pages.path)).toBeNull();
+    } finally {
+      pages.cleanup();
+    }
+  });
+
+  test("upgrades the legacy generated root identity layout", () => {
+    const pages = createPages({
+      "root.tsx": `import { defineRootRoute } from "@teyik0/furin";
 
 export const route = defineRootRoute()
   .config({ mode: "ssr" })
   .layout(({ children }) => children);
-`);
+`,
+    });
+    try {
+      const filePath = join(pages.path, "root.tsx");
+      const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
+      expect(fixed).toContain("<HeadContent />");
+      expect(fixed).toContain("<Scripts />");
+      expect(fixRouteConfigLayout(fixed ?? "", filePath, pages.path)).toBeNull();
+    } finally {
+      pages.cleanup();
+    }
+  });
+
+  test("does not duplicate document component imports when upgrading a root", () => {
+    const pages = createPages({
+      "root.tsx": `import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin";
+
+export const route = defineRootRoute()
+  .config({ mode: "ssr" })
+  .layout(({ children }) => children);
+`,
+    });
+    try {
+      const filePath = join(pages.path, "root.tsx");
+      const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
+      expect(fixed?.match(/\bHeadContent\b/g)).toHaveLength(2);
+      expect(fixed?.match(/\bScripts\b/g)).toHaveLength(2);
       expect(fixRouteConfigLayout(fixed ?? "", filePath, pages.path)).toBeNull();
     } finally {
       pages.cleanup();
@@ -476,7 +562,7 @@ export const route = defineRoute()
     try {
       const filePath = join(pages.path, "board/_route.tsx");
       expect(() => fixRouteConfigLayout(readFile(filePath), filePath, pages.path)).toThrow(
-        `${filePath}: _route files must end with .layout()`
+        `${filePath}: layout files must end with .layout()`
       );
     } finally {
       pages.cleanup();
