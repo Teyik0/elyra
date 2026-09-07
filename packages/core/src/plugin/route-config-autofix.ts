@@ -441,7 +441,8 @@ function collectChainHeads(program: Program, bindings: BuilderBindings): ChainHe
 
 interface FixContext {
   allBindings: Set<string>;
-  ancestorRequiresSsr: boolean;
+  ancestorHasLoader: boolean;
+  ancestorHasQuery: boolean;
   dynamicParams: string[];
   expected: ExpectedLayout | null;
   expectedResolvedPath: string;
@@ -458,19 +459,17 @@ interface FixContext {
 type InferredRenderingMode = "isr" | "ssg" | "ssr";
 
 function inferRenderingMode({
-  ancestorRequiresSsr,
   hasLoader,
   hasQuery,
   hasRevalidate,
   isRootLayout,
 }: {
-  ancestorRequiresSsr: boolean;
   hasLoader: boolean;
   hasQuery: boolean;
   hasRevalidate: boolean;
   isRootLayout: boolean;
 }): InferredRenderingMode {
-  if (isRootLayout || hasQuery || ancestorRequiresSsr) {
+  if (isRootLayout || hasQuery) {
     return "ssr";
   }
   if (!hasLoader) {
@@ -516,24 +515,42 @@ function ancestorLayoutPaths(filePath: string, pagesDir: string, probe: LayoutPr
   return paths;
 }
 
-function layoutSourceRequiresSsr(filePath: string): boolean {
+interface AncestorRenderingRequirements {
+  hasLoader: boolean;
+  hasQuery: boolean;
+}
+
+function layoutRenderingRequirements(filePath: string): AncestorRenderingRequirements {
   try {
     const source = readFileSync(filePath, "utf8");
     const parsed = parseSource(source, detectLangFromPath(filePath));
     const bindings = collectBuilderBindings(parsed.program);
-    if (builderChainHasMethod(parsed.program, bindings, "loader")) {
-      return true;
-    }
-    return collectConfigObjects(parsed.program, bindings).some(
-      (object) => collectConfigProperties(object).query !== undefined
-    );
+    return {
+      hasLoader: builderChainHasMethod(parsed.program, bindings, "loader"),
+      hasQuery: collectConfigObjects(parsed.program, bindings).some(
+        (object) => collectConfigProperties(object).query !== undefined
+      ),
+    };
   } catch {
-    return true;
+    return { hasLoader: false, hasQuery: true };
   }
 }
 
-function ancestorChainRequiresSsr(filePath: string, pagesDir: string, probe: LayoutProbe): boolean {
-  return ancestorLayoutPaths(filePath, pagesDir, probe).some(layoutSourceRequiresSsr);
+function ancestorRenderingRequirements(
+  filePath: string,
+  pagesDir: string,
+  probe: LayoutProbe
+): AncestorRenderingRequirements {
+  return ancestorLayoutPaths(filePath, pagesDir, probe).reduce<AncestorRenderingRequirements>(
+    (requirements, layoutPath) => {
+      const current = layoutRenderingRequirements(layoutPath);
+      return {
+        hasLoader: requirements.hasLoader || current.hasLoader,
+        hasQuery: requirements.hasQuery || current.hasQuery,
+      };
+    },
+    { hasLoader: false, hasQuery: false }
+  );
 }
 
 const wordBoundaryRe = (binding: string): RegExp => new RegExp(`\\b${binding}\\b`);
@@ -663,9 +680,8 @@ function validateConfigProperties(
   const inferredMode = properties.mode
     ? null
     : inferRenderingMode({
-        ancestorRequiresSsr: ctx.ancestorRequiresSsr,
-        hasLoader: ctx.hasLoader,
-        hasQuery: Boolean(properties.query),
+        hasLoader: ctx.hasLoader || ctx.ancestorHasLoader,
+        hasQuery: Boolean(properties.query) || ctx.ancestorHasQuery,
         hasRevalidate: Boolean(properties.revalidate),
         isRootLayout: ctx.isRootLayout,
       });
@@ -949,9 +965,8 @@ function insertCompleteConfig(routeHead: ChainHead, ctx: FixContext): void {
     entries.push(`layout: ${binding}`);
   }
   const mode = inferRenderingMode({
-    ancestorRequiresSsr: ctx.ancestorRequiresSsr,
-    hasLoader: ctx.hasLoader,
-    hasQuery: false,
+    hasLoader: ctx.hasLoader || ctx.ancestorHasLoader,
+    hasQuery: ctx.ancestorHasQuery,
     hasRevalidate: false,
     isRootLayout: ctx.isRootLayout,
   });
@@ -1091,9 +1106,11 @@ export function fixRouteConfigLayout(
   }
   let touched = rewriteRootBuilder(routeHead, bindings, convention.isRootLayout, magic);
   const configObjects = collectConfigObjects(parsed.program, bindings);
+  const ancestorRequirements = ancestorRenderingRequirements(filePath, pagesDir, probe);
   const ctx: FixContext = {
     allBindings,
-    ancestorRequiresSsr: ancestorChainRequiresSsr(filePath, pagesDir, probe),
+    ancestorHasLoader: ancestorRequirements.hasLoader,
+    ancestorHasQuery: ancestorRequirements.hasQuery,
     dynamicParams: dynamicParamsFor(filePath, pagesDir),
     expected: convention.expected,
     expectedResolvedPath,

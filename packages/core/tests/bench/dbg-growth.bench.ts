@@ -6,6 +6,10 @@ import { Elysia } from "elysia";
 import type { FurinOptions } from "../../src/furin";
 import { furin } from "../../src/furin.ts";
 
+if (globalThis.gc === undefined) {
+  throw new Error("Run this benchmark with bun --expose-gc");
+}
+
 const benchRoot = mkdtempSync(join(import.meta.dir, "../../.tmp-tests/", "dbg-growth-"));
 const pagesDir = join(benchRoot, "pages");
 mkdirSync(join(pagesDir, "posts"), { recursive: true });
@@ -56,6 +60,7 @@ for (let i = 0; i < TOTAL; i += 1) {
       throw new Error("Cannot calculate the median of an empty bucket");
     }
     dynamic.push(median);
+    globalThis.gc();
     const mem = process.memoryUsage();
     heapSeries.push({ heapMb: mem.heapUsed / 1e6, n: i + 1 });
     bucketAcc = [];

@@ -52,14 +52,20 @@ const createIsrWithStaticParams = () =>
     })
     .page(() => null);
 
-export const invalidRouteFactories = [
-  createSsrWithRevalidate,
-  createSsgWithRevalidate,
-  createSsrWithStaticParams,
-  createIsrWithoutRevalidate,
-] as const;
-
 describe("defineRoute rendering mode config", () => {
+  test("rejects revalidate outside ISR", () => {
+    expectTypeOf<ReturnType<typeof createSsrWithRevalidate>>().not.toBeNever();
+    expectTypeOf<ReturnType<typeof createSsgWithRevalidate>>().not.toBeNever();
+  });
+
+  test("rejects static params in SSR", () => {
+    expectTypeOf<ReturnType<typeof createSsrWithStaticParams>>().not.toBeNever();
+  });
+
+  test("requires revalidate in ISR", () => {
+    expectTypeOf<ReturnType<typeof createIsrWithoutRevalidate>>().not.toBeNever();
+  });
+
   test("allows static params in ISR", () => {
     expectTypeOf<ReturnType<typeof createIsrWithStaticParams>>().not.toBeNever();
   });

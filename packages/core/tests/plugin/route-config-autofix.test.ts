@@ -340,6 +340,35 @@ export const route = defineRoute()
     }
   });
 
+  test("infers isr when revalidate is present with an ancestor loader", () => {
+    const pages = createPages({
+      "dashboard/_route.tsx": `import { defineRoute } from "@teyik0/furin";
+import { route as rootRoute } from "../root";
+
+export const route = defineRoute()
+  .config({ layout: rootRoute, mode: "ssr" })
+  .loader(() => ({ user: "Ada" }))
+  .layout(({ children }) => children);
+`,
+      "dashboard/index.tsx": `import { defineRoute } from "@teyik0/furin";
+import { route as dashboardRoute } from "./_route";
+
+export const route = defineRoute()
+  .config({ layout: dashboardRoute, revalidate: 60 })
+  .page(() => "dashboard");
+`,
+      "root.tsx": ROOT_LAYOUT,
+    });
+    try {
+      const filePath = join(pages.path, "dashboard/index.tsx");
+      const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
+      expect(fixed).toContain('config({ mode: "isr", layout: dashboardRoute, revalidate: 60 })');
+      expect(fixRouteConfigLayout(fixed ?? "", filePath, pages.path)).toBeNull();
+    } finally {
+      pages.cleanup();
+    }
+  });
+
   test("infers ssr when an ancestor layout declares a query schema", () => {
     const pages = createPages({
       "root.tsx": ROOT_LAYOUT,
