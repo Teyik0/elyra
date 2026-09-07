@@ -23,6 +23,32 @@ afterAll((done) => {
   done();
 });
 
+interface DocumentAppOptions {
+  mode: "isr" | "ssr";
+  pageTerminal: Parameters<typeof adaptDefinedPage>[0];
+  pattern: string;
+  rootError?: RootLayout["error"];
+  rootTerminal: Parameters<typeof adaptDefinedLayout>[0];
+}
+
+function createDocumentApp(options: DocumentAppOptions): Elysia {
+  const root = {
+    ...(options.rootError ? { error: options.rootError } : {}),
+    path: "/root.tsx",
+    route: adaptDefinedLayout(options.rootTerminal, undefined),
+  } satisfies RootLayout;
+  const page = adaptDefinedPage(options.pageTerminal, root.route);
+  const route = {
+    mode: options.mode,
+    page,
+    path: `${options.pattern}.tsx`,
+    pattern: options.pattern,
+    routeChain: collectRouteChainFromRoute(page._route),
+    segmentBoundaries: [],
+  } satisfies ResolvedRoute;
+  return new Elysia().use(createRoutePlugin(route, root, "document-build"));
+}
+
 test("the root layout owns the rendered document", async () => {
   const rootTerminal = defineRootRoute()
     .config({ mode: "ssr" })
@@ -37,25 +63,17 @@ test("the root layout owns the rendered document", async () => {
         </body>
       </html>
     ));
-  const root = {
-    path: "/root.tsx",
-    route: adaptDefinedLayout(rootTerminal, undefined),
-  } satisfies RootLayout;
   const pageTerminal = defineRoute()
     .config({ layout: rootTerminal, mode: "ssr" })
     .loader(() => ({}))
     .head(() => ({ meta: [{ title: "Document route" }] }))
     .page(() => <main>Rendered once</main>);
-  const page = adaptDefinedPage(pageTerminal, root.route);
-  const route = {
+  const app = createDocumentApp({
     mode: "ssr",
-    page,
-    path: "/index.tsx",
+    pageTerminal,
     pattern: "/",
-    routeChain: collectRouteChainFromRoute(page._route),
-    segmentBoundaries: [],
-  } satisfies ResolvedRoute;
-  const app = new Elysia().use(createRoutePlugin(route, root, "document-build"));
+    rootTerminal,
+  });
 
   const response = await app.handle(new Request("http://localhost/"));
   const html = await response.text();
@@ -110,25 +128,17 @@ test("a broken root layout falls back to a complete document", async () => {
     .layout(() => {
       throw new Error("root layout failed");
     });
-  const root = {
-    error: ({ error }) => <main data-fallback="root">{error.message}</main>,
-    path: "/root.tsx",
-    route: adaptDefinedLayout(rootTerminal, undefined),
-  } satisfies RootLayout;
   const pageTerminal = defineRoute()
     .config({ layout: rootTerminal, mode: "ssr" })
     .loader(() => ({}))
     .page(() => <main>unreachable</main>);
-  const page = adaptDefinedPage(pageTerminal, root.route);
-  const route = {
+  const app = createDocumentApp({
     mode: "ssr",
-    page,
-    path: "/index.tsx",
+    pageTerminal,
     pattern: "/",
-    routeChain: collectRouteChainFromRoute(page._route),
-    segmentBoundaries: [],
-  } satisfies ResolvedRoute;
-  const app = new Elysia().use(createRoutePlugin(route, root, "document-build"));
+    rootError: ({ error }) => <main data-fallback="root">{error.message}</main>,
+    rootTerminal,
+  });
 
   const response = await app.handle(new Request("http://localhost/"));
   const html = await response.text();
@@ -141,28 +151,57 @@ test("a broken root layout falls back to a complete document", async () => {
   expect(html).toContain('id="__FURIN_DATA__"');
 });
 
+test("a head failure is rendered inside the root document", async () => {
+  const rootTerminal = defineRootRoute()
+    .config({ mode: "ssr" })
+    .layout(({ children }) => (
+      <html lang="en">
+        <head>
+          <HeadContent />
+        </head>
+        <body>
+          {children}
+          <Scripts />
+        </body>
+      </html>
+    ));
+  const pageTerminal = defineRoute()
+    .config({ layout: rootTerminal, mode: "ssr" })
+    .loader(() => ({}))
+    .head(() => {
+      throw new Error("head failed");
+    })
+    .page(() => <main>unreachable</main>);
+  const app = createDocumentApp({
+    mode: "ssr",
+    pageTerminal,
+    pattern: "/",
+    rootTerminal,
+  });
+
+  const response = await app.handle(new Request("http://localhost/"));
+  const html = await response.text();
+
+  expect(response.status).toBe(500);
+  expect(html.match(/<!DOCTYPE html>/g)).toHaveLength(1);
+  expect(html).toContain("Something went wrong");
+  expect(html).toContain('id="__FURIN_DATA__"');
+});
+
 test("a root layout that does not render html is rejected as a document", async () => {
   const rootTerminal = defineRootRoute()
     .config({ mode: "ssr" })
     .layout(({ children }) => <main data-invalid-root="">{children}</main>);
-  const root = {
-    path: "/root.tsx",
-    route: adaptDefinedLayout(rootTerminal, undefined),
-  } satisfies RootLayout;
   const pageTerminal = defineRoute()
     .config({ layout: rootTerminal, mode: "ssr" })
     .loader(() => ({}))
     .page(() => <p>invalid document content</p>);
-  const page = adaptDefinedPage(pageTerminal, root.route);
-  const route = {
+  const app = createDocumentApp({
     mode: "ssr",
-    page,
-    path: "/index.tsx",
+    pageTerminal,
     pattern: "/",
-    routeChain: collectRouteChainFromRoute(page._route),
-    segmentBoundaries: [],
-  } satisfies ResolvedRoute;
-  const app = new Elysia().use(createRoutePlugin(route, root, "document-build"));
+    rootTerminal,
+  });
 
   const response = await app.handle(new Request("http://localhost/"));
   const html = await response.text();
@@ -171,4 +210,90 @@ test("a root layout that does not render html is rejected as a document", async 
   expect(html.match(/<!DOCTYPE html>/g)).toHaveLength(1);
   expect(html).toContain("Something went wrong");
   expect(html).not.toContain("data-invalid-root");
+});
+
+test("an invalid ISR root document is not cached as a successful render", async () => {
+  const rootTerminal = defineRootRoute()
+    .config({ mode: "ssr" })
+    .layout(({ children }) => <main data-invalid-root="">{children}</main>);
+  const pageTerminal = defineRoute()
+    .config({ layout: rootTerminal, mode: "isr", revalidate: 60 })
+    .loader(() => ({}))
+    .page(() => <p>invalid ISR content</p>);
+  const app = createDocumentApp({
+    mode: "isr",
+    pageTerminal,
+    pattern: "/isr",
+    rootTerminal,
+  });
+
+  const first = await app.handle(new Request("http://localhost/isr"));
+  const second = await app.handle(new Request("http://localhost/isr"));
+  const html = await second.text();
+
+  expect(first.status).toBe(500);
+  expect(second.status).toBe(500);
+  expect(html).toContain("Something went wrong");
+  expect(html).not.toContain("invalid ISR content");
+});
+
+test("a root document without Scripts is rejected", async () => {
+  const rootTerminal = defineRootRoute()
+    .config({ mode: "ssr" })
+    .layout(({ children }) => (
+      <html lang="en">
+        <head>
+          <HeadContent />
+        </head>
+        <body>{children}</body>
+      </html>
+    ));
+  const pageTerminal = defineRoute()
+    .config({ layout: rootTerminal, mode: "ssr" })
+    .loader(() => ({}))
+    .page(() => <p>missing scripts</p>);
+  const app = createDocumentApp({
+    mode: "ssr",
+    pageTerminal,
+    pattern: "/",
+    rootTerminal,
+  });
+
+  const response = await app.handle(new Request("http://localhost/"));
+  const html = await response.text();
+
+  expect(response.status).toBe(500);
+  expect(html).toContain("Something went wrong");
+  expect(html).not.toContain("missing scripts");
+});
+
+test("a root document without HeadContent is rejected", async () => {
+  const rootTerminal = defineRootRoute()
+    .config({ mode: "ssr" })
+    .layout(({ children }) => (
+      <html lang="en">
+        <head />
+        <body>
+          {children}
+          <Scripts />
+        </body>
+      </html>
+    ));
+  const pageTerminal = defineRoute()
+    .config({ layout: rootTerminal, mode: "ssr" })
+    .loader(() => ({}))
+    .page(() => <p>missing head content</p>);
+  const app = createDocumentApp({
+    mode: "ssr",
+    pageTerminal,
+    pattern: "/",
+    rootTerminal,
+  });
+
+  const response = await app.handle(new Request("http://localhost/"));
+  const html = await response.text();
+
+  expect(response.status).toBe(500);
+  expect(html).toContain("Something went wrong");
+  expect(html).not.toContain("missing head content");
 });

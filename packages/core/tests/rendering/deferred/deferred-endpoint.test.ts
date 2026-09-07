@@ -491,6 +491,34 @@ describe("GET /_furin/data", () => {
     });
   });
 
+  test("does not let oversized head metadata break SPA navigation", async () => {
+    const { app, routes } = createDataTestApp();
+    const route = routes.find((candidate) => candidate.pattern === "/with-loader");
+    if (!route) {
+      throw new Error("No /with-loader route in fixtures");
+    }
+    route.page = {
+      ...route.page,
+      head: () => ({
+        meta: [{ title: "Large head" }],
+        styles: [{ children: "x".repeat(1024 * 1024) }],
+      }),
+    };
+
+    const response = await app.handle(
+      new Request("http://localhost/_furin/data?path=%2Fwith-loader")
+    );
+    const { syncData } = await parseDeferredNdjson(
+      response.body ??
+        new ReadableStream<Uint8Array>({ start: (controller) => controller.close() }),
+      undefined
+    );
+
+    expect(response.status).toBe(200);
+    expect(syncData.__furinTitle).toBe("Large head");
+    expect(syncData.__furinHead).toBeUndefined();
+  });
+
   test("does not set __furinStatus for a route without a loader", async () => {
     // SSR route without loader doesn't trigger notFound.
     // We test the ssr-page which has no loader — data should be empty.

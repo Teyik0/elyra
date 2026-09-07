@@ -187,7 +187,7 @@ const syncConfig = syncEl ? JSON.parse(syncEl.textContent || "{}") : {};
 const syncStream = typeof syncConfig.stream === "string" ? syncConfig.stream : undefined;
 const headEl = document.getElementById("__FURIN_HEAD__");
 const head = headEl ? JSON.parse(headEl.textContent || "{}") : {};
-const entryEl = document.querySelector("script[type=module][src]") as HTMLScriptElement | null;
+const entryEl = document.querySelector("script[data-furin-entry][src]") as HTMLScriptElement | null;
 const buildId = document.querySelector('meta[name="furin-build-id"]')?.getAttribute("content") ?? undefined;
 const faviconHref = document.querySelector('link[rel="icon"]')?.getAttribute("href") ?? undefined;
 const documentState: DocumentState = {

@@ -63,14 +63,18 @@ const withoutSchemaApp = new Elysia().get("/x/:id", ({ params }) => params.id);
 
 // ── 2. E2E Furin — page dynamique avec le squelette auto-injecté ───────────
 
-const benchRoot = mkdtempSync(join(import.meta.dir, "../../.tmp-tests/", "furin-bench-"));
+const benchTmpDir = join(import.meta.dir, "../../.tmp-tests");
+mkdirSync(benchTmpDir, { recursive: true });
+const benchRoot = mkdtempSync(join(benchTmpDir, "furin-bench-"));
 const pagesDir = join(benchRoot, "pages");
 mkdirSync(join(pagesDir, "posts"), { recursive: true });
 
 writeFileSync(
   join(pagesDir, "root.tsx"),
-  `import { defineRootRoute } from "@teyik0/furin";
-export const route = defineRootRoute().config({ mode: "ssr" }).layout(({ children }) => children);
+  `import { defineRootRoute, HeadContent, Scripts } from "@teyik0/furin";
+export const route = defineRootRoute().config({ mode: "ssr" }).layout(({ children }) => (
+  <html><head><HeadContent /></head><body>{children}<Scripts /></body></html>
+));
 `
 );
 writeFileSync(

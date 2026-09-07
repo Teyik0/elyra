@@ -1,7 +1,6 @@
 import { AsyncResource } from "node:async_hooks";
 import type { Context } from "elysia";
 import { createElement } from "react";
-import { renderToReadableStream } from "react-dom/server";
 import { FurinDocumentFallback } from "../../client/document.tsx";
 import { isNotFoundError } from "../../shared/not-found.ts";
 import type { SearchRouteMetadata } from "../../shared/search-params.ts";
@@ -228,9 +227,21 @@ export async function handleISR(
       return renderISRNon200(prepared, route, ctx, root, errorDigest, renderStart, buildId);
     }
 
-    const stream = await renderToReadableStream(
-      withDocumentState(element, assets, headData, syncData)
+    const { shellError, stream } = await renderElementWithShellFallback(
+      withDocumentState(element, assets, headData, syncData),
+      route.error ?? root.error,
+      prepared.ssrContext,
+      (fallback, digest) =>
+        withDocumentState(createElement(FurinDocumentFallback, null, fallback), assets, headData, {
+          __furinError: { digest, status: 500 },
+          __furinStatus: 500,
+        })
     );
+    if (shellError) {
+      prepared.status = 500;
+      prepared.errorDigest = shellError.digest;
+      return renderISRNon200(prepared, route, ctx, root, shellError.digest, renderStart, buildId);
+    }
     await stream.allReady;
     const reactHtml = await streamToString(stream);
     const html = reactHtml;

@@ -3,7 +3,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { staticPlugin } from "@elysiajs/static";
 import { type AnyElysia, Elysia, file } from "elysia";
-import { type DrainContext, initLogger, type LoggerConfig } from "evlog";
+import type { DrainContext, LoggerConfig } from "evlog";
 import { type EvlogElysiaOptions, evlog } from "evlog/elysia";
 import { FURIN_RENDER_DECORATOR, type FurinRouteDispatcher } from "./define-route.ts";
 import { consumePendingInvalidations } from "./server/cache/invalidation.ts";
@@ -28,6 +28,7 @@ import {
 } from "./server/instance.ts";
 import type { CompileContext, EmbeddedAppData } from "./server/internal.ts";
 import { getCompileContext } from "./server/internal.ts";
+import { initializeFurinLogger } from "./server/logger.ts";
 import { renderRootNotFound } from "./server/render/not-found.ts";
 import { warmSSGCache } from "./server/render/ssg.ts";
 import {
@@ -340,7 +341,7 @@ function createLoggerPlugin(
 
 function initializeLogger(logger: FurinLoggerOptions | undefined): EvlogElysiaOptions {
   const { sampling, ...elysiaLoggerOptions } = logger ?? {};
-  initLogger({
+  initializeFurinLogger({
     env: { service: "furin" },
     ...(sampling ? { sampling } : {}),
   });
@@ -649,10 +650,10 @@ export async function furin({
     };
     writeCurrentDevFiles(currentSnapshot);
     const refreshDevelopmentRoutes = async (): Promise<void> => {
+      invalidateStampedRouteModules();
       const next = await loadDevelopmentRoutes(resolvedPagesDir);
       const nextSnapshot = createDevelopmentRouteSnapshot(prefix, next.root, next.routes);
       writeCurrentDevFiles(nextSnapshot);
-      invalidateStampedRouteModules();
       currentSnapshot = nextSnapshot;
     };
     const devHtmlBundle = (await import(join(furinDir, "index.html"))).default;

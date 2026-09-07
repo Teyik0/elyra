@@ -1,5 +1,5 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: route discovery walks filesystem entries sequentially for deterministic ordering
-import { existsSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, parse } from "node:path";
 import type { RuntimePage, RuntimeRoute } from "../../client/internal/runtime-types.ts";
@@ -14,6 +14,7 @@ import { type CompileContext, getCompileContext } from "../internal.ts";
 import { IS_DEV } from "../runtime-env.ts";
 import { adaptDefinedLayout, adaptDefinedPage, isDefinedRouteTerminal } from "./defined-route.ts";
 import { filePathToPattern, resolveMode } from "./patterns.ts";
+import { routeModuleSourceVersion } from "./source-version.ts";
 import type { ResolvedRoute, RootLayout, SegmentBoundary } from "./types.ts";
 
 export function isModuleNotFoundError(err: unknown): boolean {
@@ -266,7 +267,7 @@ async function loadConventionComponent<T>(
     if (existsSync(filePath) || ctx?.modules[filePath]) {
       const moduleSpecifier =
         IS_DEV && existsSync(filePath)
-          ? `${filePath}?furin-server&t=${Math.trunc(statSync(filePath).mtimeMs * 1000)}`
+          ? `${filePath}?furin-server&t=${routeModuleSourceVersion(filePath)}`
           : filePath;
       const mod = (ctx?.modules[filePath] ?? (await import(moduleSpecifier))) as {
         default?: T;
@@ -514,7 +515,9 @@ async function buildDevRoute(
   let routeChain: RuntimeRoute[] = [];
 
   try {
-    const pageMod = (await import(`${absolutePath}?furin-server&t=${Date.now()}`)) as {
+    const pageMod = (await import(
+      `${absolutePath}?furin-server&t=${routeModuleSourceVersion(absolutePath)}`
+    )) as {
       route?: unknown;
     };
     const resolvedPage = await resolveRuntimePage(pageMod, absolutePath, pagesDir, root.route);

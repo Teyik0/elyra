@@ -69,7 +69,7 @@ export function HeadContent(): ReactNode {
 
   return (
     <>
-      <meta charSet="utf-8" />
+      <meta charSet="utf-8" data-furin-head="" />
       <meta content="width=device-width, initial-scale=1.0" name="viewport" />
       <script
         // biome-ignore lint/security/noDangerouslySetInnerHtml: static framework bootstrap with no user-controlled input.
@@ -138,6 +138,7 @@ export function Scripts(): ReactNode {
       <script
         // biome-ignore lint/security/noDangerouslySetInnerHtml: value is escaped framework JSON.
         dangerouslySetInnerHTML={{ __html: serializeJson(state.head ?? {}) }}
+        data-furin-scripts=""
         id="__FURIN_HEAD__"
         type="application/json"
       />

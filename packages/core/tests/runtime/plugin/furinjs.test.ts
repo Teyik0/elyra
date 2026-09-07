@@ -11,6 +11,7 @@ import { runCli } from "../../support/process";
 
 const { furin } = await import("../../../src/furin");
 const { __resetCompileContext, __setCompileContext } = await import("../../../src/server/internal");
+const { resetFurinLoggerForTests } = await import("../../../src/server/logger");
 const { __resetTemplateState } = await import("../../../src/server/render/template");
 const { __setDevMode } = await import("../../../src/server/runtime-env");
 
@@ -29,6 +30,7 @@ async function createTestApp(options: FurinOptions): Promise<Elysia> {
 
 function resetState(): void {
   resetEvlogMock();
+  resetFurinLoggerForTests();
   __setDevMode(true);
   __resetTemplateState();
   __resetCompileContext();
@@ -135,6 +137,18 @@ test.serial(
     expect(evlogOptionsMock.mock.calls[0]?.[0]).not.toHaveProperty("sampling");
   }
 );
+
+test.serial("furin() initializes the process-wide logger only once", async () => {
+  const app = rememberTmpApp(createTmpApp("cli-app"));
+  __setDevMode(true);
+  process.chdir(app.path);
+  const pagesDir = join(app.path, "src/pages");
+
+  await createTestApp({ pagesDir });
+  await createTestApp({ pagesDir, prefix: "/admin" });
+
+  expect(initLoggerOptionsMock).toHaveBeenCalledTimes(1);
+});
 
 test.serial("furin() scaffolds empty root and index route files into a working app", async () => {
   const app = rememberTmpApp(createTmpApp("cli-app"));

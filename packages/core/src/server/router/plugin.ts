@@ -31,6 +31,8 @@ import { mergeRouteSchemas } from "./schema-merge.ts";
 import { parseDataEndpointPath, parseRouteParams, parseRouteQuery } from "./schemas.ts";
 import type { ResolvedRoute, ResolvedRoutesSource, RootLayout } from "./types.ts";
 
+const MAX_NAVIGATION_HEAD_BYTES = 64 * 1024;
+
 interface DataRouteParamsInput {
   [key: string]: unknown;
 }
@@ -377,8 +379,16 @@ function withResolvedHead(
     return syncData;
   }
   const title = extractTitle(headOptions.meta);
-  if (title === undefined) {
-    return { ...syncData, __furinHead: headOptions };
+  let includeHead = false;
+  try {
+    includeHead =
+      new TextEncoder().encode(JSON.stringify(headOptions)).byteLength <= MAX_NAVIGATION_HEAD_BYTES;
+  } catch {
+    // Invalid or cyclic metadata must not break an otherwise valid navigation.
   }
-  return { ...syncData, __furinHead: headOptions, __furinTitle: title };
+  return {
+    ...syncData,
+    ...(includeHead ? { __furinHead: headOptions } : {}),
+    ...(title === undefined ? {} : { __furinTitle: title }),
+  };
 }

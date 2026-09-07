@@ -25,7 +25,9 @@
  *
  * Modules in a virtual namespace cannot resolve relative specifiers on their
  * own (there is no real directory context).  We rewrite every `./` / `../`
- * path to an absolute one before returning the source.
+ * path to an absolute one before returning the source. Local JS/TS dependencies
+ * use the same source-version rule as routes, so refreshing a route does not
+ * retain an old helper module. Shared dependencies keep one identity per version.
  *
  * ## Bare specifier rewriting
  *
@@ -55,6 +57,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { transformIsomorphicFunctions } from "../plugin/transform-isomorphic.ts";
 import { invalidateDevLoaderCacheBySource } from "./cache/dev-loader.ts";
+import { routeModuleSourceVersion } from "./router/source-version.ts";
 
 // Matches ?furin-server with an optional &t=<ms> cache-buster.
 const FURIN_SERVER_FILTER = /\?furin-server(?:&t=\d+)?$/;
@@ -215,6 +218,14 @@ const RELATIVE_SPECIFIER_RE = /(?:from|import)\s+["'](\.\.?\/[^"']+)["']/g;
 
 /** @internal exported for testing */
 export function rewriteRelativeImports(source: string, dir: string): string {
+  return rewriteRelativeImportsWithVersion(source, dir, false);
+}
+
+function rewriteRelativeImportsWithVersion(
+  source: string,
+  dir: string,
+  versioned: boolean
+): string {
   return source.replace(RELATIVE_SPECIFIER_RE, (match, relPath, offset) => {
     // Skip matches that appear on a comment line (// ...)
     const lineStart = source.lastIndexOf("\n", offset - 1) + 1;
@@ -222,9 +233,16 @@ export function rewriteRelativeImports(source: string, dir: string): string {
     if (linePrefix.startsWith("//") || linePrefix.startsWith("*")) {
       return match;
     }
-    const absPath = toImportSpecifier(resolve(dir, relPath));
+    let absPath = toImportSpecifier(resolve(dir, relPath));
+    if (versioned) {
+      absPath = toImportSpecifier(Bun.resolveSync(relPath, dir));
+    }
+    const specifier =
+      versioned && getSourceLoader(absPath) !== null
+        ? `${absPath}?furin-server&t=${routeModuleSourceVersion(absPath)}`
+        : absPath;
     const keyword = match.startsWith("import") ? "import" : "from";
-    return `${keyword} ${JSON.stringify(absPath)}`;
+    return `${keyword} ${JSON.stringify(specifier)}`;
   });
 }
 
@@ -328,7 +346,7 @@ export function transformDevSource(
   const dir = dirname(filePath);
   const serverSource = transformIsomorphicFunctions(raw, filePath, "server").code;
   const sourceForTranspile = options.rewriteRelativeImports
-    ? rewriteRelativeImports(serverSource, dir)
+    ? rewriteRelativeImportsWithVersion(serverSource, dir, true)
     : serverSource;
   const transpiler = new Bun.Transpiler({ loader });
   const transpiled = transpiler.transformSync(sourceForTranspile, loader);

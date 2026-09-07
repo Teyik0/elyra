@@ -1,5 +1,5 @@
 // biome-ignore-all lint/performance/noAwaitInLoops: HMR polling and invalidation are intentionally sequential
-import { existsSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import type { Context } from "elysia";
 import type { RuntimePage, RuntimeRoute } from "../../client/internal/runtime-types.ts";
 import type { SearchRouteMetadata } from "../../shared/search-params.ts";
@@ -21,6 +21,7 @@ import { renderSSR } from "../render/ssr.ts";
 import { adaptDefinedLayout, adaptDefinedPage, isDefinedRouteTerminal } from "./defined-route.ts";
 import { collectRouteTags, getSourceModuleCandidates, isModuleNotFoundError } from "./discovery.ts";
 import { collectIntermediateLayoutDirs, resolveMode } from "./patterns.ts";
+import { invalidateRouteModuleSourceVersions, routeModuleSourceVersion } from "./source-version.ts";
 import type { ResolvedRoute, RootLayout } from "./types.ts";
 
 type RouteModuleImport = (specifier: string) => Promise<Record<string, unknown>>;
@@ -37,15 +38,6 @@ const devRouteModuleCaches = new WeakMap<
   RouteModuleImport,
   Map<string, DevRouteModuleCacheEntry>
 >();
-
-function routeModuleSourceStamp(path: string): string {
-  try {
-    const stats = statSync(path, { bigint: true });
-    return `${stats.mtimeNs}:${stats.size}`;
-  } catch {
-    return "missing";
-  }
-}
 
 /**
  * Reuses one virtual ESM module per source version. A timestamp generated on
@@ -68,14 +60,14 @@ export async function importStampedRouteModule(
       devRouteModuleCaches.set(resolveImport, cache);
     }
   }
-  const stamp = routeModuleSourceStamp(path);
+  const stamp = routeModuleSourceVersion(path);
   const cached = cache.get(path);
   if (cached?.stamp === stamp) {
     return cached.module;
   }
 
   const entry: DevRouteModuleCacheEntry = {
-    module: resolveImport(`${path}?furin-server&t=${Bun.hash(stamp).toString()}`),
+    module: resolveImport(`${path}?furin-server&t=${stamp}`),
     stamp,
   };
   cache.set(path, entry);
@@ -90,6 +82,7 @@ export async function importStampedRouteModule(
 }
 
 export function invalidateStampedRouteModules(): void {
+  invalidateRouteModuleSourceVersions();
   runtimeDevRouteModuleCache.clear();
 }
 

@@ -426,6 +426,26 @@ export const route = defineRoute()
     }
   });
 
+  test("recognizes a quoted params key", () => {
+    const pages = createPages({
+      "[id].tsx": `import { defineRoute } from "@teyik0/furin";
+import { t } from "elysia";
+import { route as rootRoute } from "./root";
+
+export const route = defineRoute()
+  .config({ layout: rootRoute, mode: "ssg", "params": t.Object({ id: t.String() }) })
+  .page(() => "post");
+`,
+      "root.tsx": ROOT_LAYOUT,
+    });
+    try {
+      const filePath = join(pages.path, "[id].tsx");
+      expect(fixRouteConfigLayout(readFile(filePath), filePath, pages.path)).toBeNull();
+    } finally {
+      pages.cleanup();
+    }
+  });
+
   test("rejects non-identifier layout expressions", () => {
     const pages = createPages({
       "about.tsx": `import { defineRoute } from "@teyik0/furin";
@@ -673,6 +693,42 @@ export const route = defineRoute().page(() => "about");
       expect(fixed).toContain(`.config({ layout: rootRoute, mode: "ssg" }).page(() => "about")`);
       // idempotent: second pass changes nothing
       expect(fixRouteConfigLayout(fixed ?? "", filePath, pages.path)).toBeNull();
+    } finally {
+      pages.cleanup();
+    }
+  });
+
+  test("inserts params and the TypeBox import for a config-less dynamic route", () => {
+    const pages = createPages({
+      "[id].tsx": `import { defineRoute } from "@teyik0/furin";
+export const route = defineRoute().page(() => "post");
+`,
+      "root.tsx": ROOT_LAYOUT,
+    });
+    try {
+      const filePath = join(pages.path, "[id].tsx");
+      const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
+      expect(fixed).toContain('import { t } from "elysia";');
+      expect(fixed).toContain("params: t.Object({ id: t.String() })");
+      expect(fixRouteConfigLayout(fixed ?? "", filePath, pages.path)).toBeNull();
+    } finally {
+      pages.cleanup();
+    }
+  });
+
+  test("rejects a route chain without a page terminal", () => {
+    const pages = createPages({
+      "about.tsx": `import { defineRoute } from "@teyik0/furin";
+import { route as rootRoute } from "./root";
+export const route = defineRoute().config({ layout: rootRoute, mode: "ssg" });
+`,
+      "root.tsx": ROOT_LAYOUT,
+    });
+    try {
+      const filePath = join(pages.path, "about.tsx");
+      expect(() => fixRouteConfigLayout(readFile(filePath), filePath, pages.path)).toThrow(
+        `${filePath}: page files must end with .page()`
+      );
     } finally {
       pages.cleanup();
     }

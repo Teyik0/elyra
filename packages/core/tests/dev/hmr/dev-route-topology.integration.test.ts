@@ -67,23 +67,26 @@ describe.serial("dev route topology — hot add/remove of route files", () => {
     ].join("\n")
   );
 
-  const schemaRouteSource = (view: string): string =>
+  const schemaRouteSource = (viewExpression: string): string =>
     [
       'import { defineRoute } from "@teyik0/furin";',
       'import { t } from "elysia";',
+      'import { schemaView } from "../schema-view";',
       'import { route as rootRoute } from "./root";',
       "",
       "export const route = defineRoute()",
       "  .config({",
       "    layout: rootRoute,",
       '    mode: "ssr",',
-      `    query: t.Object({ view: t.Literal(${JSON.stringify(view)}) }),`,
+      `    query: t.Object({ view: t.Literal(${viewExpression}) }),`,
       "  })",
       "  .loader(({ query }) => ({ view: query.view }))",
       "  .page(({ data }) => <main data-schema={data.view}>{data.view}</main>);",
     ].join("\n");
 
-  writeAppFile(app.path, "src/pages/schema.tsx", schemaRouteSource("before"));
+  writeAppFile(app.path, "src/schema-view.ts", 'export const schemaView = "before" as const;');
+  writeAppFile(app.path, "src/pages/schema.tsx", schemaRouteSource("schemaView"));
+  writeAppFile(app.path, "src/pages/schema-dependency.tsx", schemaRouteSource("schemaView"));
 
   beforeAll(async () => {
     port = await getFreePort();
@@ -258,35 +261,43 @@ describe.serial("dev route topology — hot add/remove of route files", () => {
     }
   }, 20_000);
 
-  test("hot-editing a query schema refreshes document and data validation", async () => {
-    const initialResponse = await fetch(`http://localhost:${port}/schema?view=before`);
-    expect(initialResponse.status).toBe(200);
-    expect(await initialResponse.text()).toContain('data-schema="before"');
+  test.each(["schema", "schema-dependency"])(
+    "hot-editing %s refreshes document and data validation",
+    async (page) => {
+      const initialResponse = await fetch(`http://localhost:${port}/${page}?view=before`);
+      expect(initialResponse.status).toBe(200);
+      expect(await initialResponse.text()).toContain('data-schema="before"');
 
-    writeAppFile(app.path, "src/pages/schema.tsx", schemaRouteSource("after"));
+      if (page === "schema") {
+        writeAppFile(app.path, "src/pages/schema.tsx", schemaRouteSource('"after"'));
+      } else {
+        writeAppFile(app.path, "src/schema-view.ts", 'export const schemaView = "after" as const;');
+      }
 
-    const refreshed = await pollUntil(
-      async () => {
-        const response = await fetch(`http://localhost:${port}/schema?view=after`);
-        return response.status === 200 && (await response.text()).includes('data-schema="after"');
-      },
-      40,
-      250
-    );
-    expect(refreshed).toBe(true);
-    expect((await fetch(`http://localhost:${port}/schema?view=before`)).status).toBe(422);
+      const refreshed = await pollUntil(
+        async () => {
+          const response = await fetch(`http://localhost:${port}/${page}?view=after`);
+          return response.status === 200 && (await response.text()).includes('data-schema="after"');
+        },
+        40,
+        250
+      );
+      expect(refreshed, `${server.getStdout()}\n${server.getStderr()}`).toBe(true);
+      expect((await fetch(`http://localhost:${port}/${page}?view=before`)).status).toBe(422);
 
-    const dataResponse = await fetch(
-      `http://localhost:${port}/_furin/data?path=${encodeURIComponent("/schema?view=after")}`
-    );
-    expect(dataResponse.status).toBe(200);
-    const { syncData } = await parseDeferredNdjson(
-      dataResponse.body ??
-        new ReadableStream<Uint8Array>({ start: (controller) => controller.close() }),
-      undefined
-    );
-    expect(syncData.view).toBe("after");
-  }, 20_000);
+      const dataResponse = await fetch(
+        `http://localhost:${port}/_furin/data?path=${encodeURIComponent(`/${page}?view=after`)}`
+      );
+      expect(dataResponse.status).toBe(200);
+      const { syncData } = await parseDeferredNdjson(
+        dataResponse.body ??
+          new ReadableStream<Uint8Array>({ start: (controller) => controller.close() }),
+        undefined
+      );
+      expect(syncData.view).toBe("after");
+    },
+    20_000
+  );
 
   test("hot-adding and removing not-found.tsx refreshes the rendered convention", async () => {
     const missingUrl = `http://localhost:${port}/missing-convention`;
@@ -343,6 +354,22 @@ describe.serial("dev route topology — hot add/remove of route files", () => {
     );
 
     expect(fixed).toBe(true);
-    expect((await fetch(`http://localhost:${port}/`)).status).toBe(200);
+    let lastDocument = "";
+    const served = await pollUntil(
+      async () => {
+        const response = await fetch(`http://localhost:${port}/`);
+        const html = await response.text();
+        lastDocument = `${response.status}: ${html}`;
+        return (
+          response.status === 200 &&
+          html.startsWith("<!DOCTYPE html><html") &&
+          html.includes('data-furin-head=""') &&
+          html.includes('data-furin-scripts=""')
+        );
+      },
+      40,
+      250
+    );
+    expect(served, `${lastDocument}\n${server.getStdout()}\n${server.getStderr()}`).toBe(true);
   }, 20_000);
 });

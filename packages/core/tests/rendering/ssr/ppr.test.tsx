@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { Elysia, t } from "elysia";
 import { Suspense, use } from "react";
-import { defineRootRoute, defineRoute } from "../../../src/furin.ts";
+import { defineRootRoute, defineRoute, HeadContent, Scripts } from "../../../src/furin.ts";
 import { revalidateTag } from "../../../src/server/auto-invalidate";
 import { getAutoInvalidateRegistry } from "../../../src/server/auto-invalidate/registry.ts";
 import {
@@ -30,7 +30,13 @@ const rootTerminal = defineRootRoute()
   .config({ mode: "ssr" })
   .layout(({ children }) => (
     <html lang="en">
-      <body>{children}</body>
+      <head>
+        <HeadContent />
+      </head>
+      <body>
+        {children}
+        <Scripts />
+      </body>
     </html>
   ));
 const root = {

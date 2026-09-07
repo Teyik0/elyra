@@ -45,6 +45,13 @@ describe("generateHydrateEntry", () => {
     expect(code).not.toContain("createRoot(");
   });
 
+  test("restores only the framework client entry from the document", () => {
+    const code = generateHydrateEntry(ROUTES, ROOT, "", false);
+
+    expect(code).toContain('document.querySelector("script[data-furin-entry][src]")');
+    expect(code).not.toContain('document.querySelector("script[type=module][src]")');
+  });
+
   test("imports RouterProvider via package specifier so client links share one RouterContext", () => {
     const code = generateHydrateEntry(ROUTES, ROOT, "", false);
     expect(code).toContain('import { RouterProvider } from "@teyik0/furin/link";');

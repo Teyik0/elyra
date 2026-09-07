@@ -29,7 +29,6 @@ import {
   buildRouteFramePushScript,
   buildRouteFrameStreamScript,
   buildRouteFrameTemplate,
-  buildSyncRuntimeScript,
   resolvePath,
   streamToString,
 } from "./assemble.ts";
@@ -131,13 +130,28 @@ interface ShellFallbackResult {
   stream: Awaited<ReturnType<typeof renderToReadableStream>>;
 }
 
+function hasDocumentMarkers(html: string): boolean {
+  return html.includes('data-furin-head=""') && html.includes('data-furin-scripts=""');
+}
+
 async function requireDocumentStream(
   stream: Awaited<ReturnType<typeof renderToReadableStream>>
 ): Promise<Awaited<ReturnType<typeof renderToReadableStream>>> {
   const reader = stream.getReader();
-  const first = await reader.read();
-  const prefix = first.value === undefined ? "" : new TextDecoder().decode(first.value);
-  if (first.done || !prefix.startsWith("<!DOCTYPE html><html")) {
+  const decoder = new TextDecoder();
+  const buffered: Uint8Array[] = [];
+  let prefix = "";
+  let done = false;
+  while (!(done || hasDocumentMarkers(prefix))) {
+    // biome-ignore lint/performance/noAwaitInLoops: stream chunks must be inspected in order.
+    const { done: streamDone, value } = await reader.read();
+    done = streamDone;
+    if (value !== undefined) {
+      buffered.push(value);
+      prefix += decoder.decode(value, { stream: !done });
+    }
+  }
+  if (!(prefix.startsWith("<!DOCTYPE html><html") && hasDocumentMarkers(prefix))) {
     await reader.cancel();
     throw new Error(
       "[furin] The root layout must render an <html> document containing <HeadContent /> and <Scripts />."
@@ -157,7 +171,12 @@ async function requireDocumentStream(
       }
     },
     start(controller) {
-      controller.enqueue(first.value);
+      for (const chunk of buffered) {
+        controller.enqueue(chunk);
+      }
+      if (done) {
+        controller.close();
+      }
     },
   }) as Awaited<ReturnType<typeof renderToReadableStream>>;
   Object.defineProperty(validated, "allReady", { value: stream.allReady });
@@ -371,7 +390,7 @@ export async function prepareRender(
       throwOnFailure
     ));
   }
-  if (isFallback) {
+  if (isFallback || status !== 200) {
     element = wrapRootLayout(element, componentProps, root.route);
   }
 
@@ -416,6 +435,46 @@ export async function prepareRender(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+async function renderBufferedResult(
+  prepared: PreparedRender,
+  route: ResolvedRoute,
+  root: RootLayout
+): Promise<RenderResult> {
+  const { assets, deferredPromises, element, headData, headers, syncData } = prepared;
+  const { shellError, stream } = await renderElementWithShellFallback(
+    withDocumentState(element, assets, headData, syncData),
+    route.error ?? root.error,
+    prepared.ssrContext,
+    (fallback, digest) =>
+      withDocumentState(createElement(FurinDocumentFallback, null, fallback), assets, headData, {
+        __furinError: { digest, status: 500 },
+        __furinStatus: 500,
+      })
+  );
+  await stream.allReady;
+  const html = await streamToString(stream);
+  if (shellError) {
+    return {
+      headers,
+      html,
+      ndjson: await serializeLoaderDataNdjson(
+        {
+          __furinError: { digest: shellError.digest, status: 500 },
+          __furinStatus: 500,
+        },
+        undefined
+      ),
+      status: 500,
+    };
+  }
+  return {
+    headers,
+    html,
+    ndjson: await serializeLoaderDataNdjson(syncData, deferredPromises),
+    status: prepared.status,
+  };
+}
 
 export function renderForPath(
   route: ResolvedRoute,
@@ -478,18 +537,7 @@ export function renderForPath(
         },
       });
 
-      const { assets, deferredPromises, element, headData, headers, status, syncData } = prepared;
-      const stream = await renderToReadableStream(
-        withDocumentState(element, assets, headData, syncData)
-      );
-      await stream.allReady;
-      const reactHtml = await streamToString(stream);
-      return {
-        headers,
-        html: reactHtml,
-        ndjson: await serializeLoaderDataNdjson(syncData, deferredPromises),
-        status,
-      };
+      return renderBufferedResult(prepared, route, root);
     },
     { render: mode, route: route.pattern }
   );
@@ -569,7 +617,7 @@ function buildSsrTransportScripts(
 
   return {
     deferredSetupScript,
-    runtimeScripts: `${buildSyncRuntimeScript()}${routeFrameStreamScript}${dataScript}`,
+    runtimeScripts: `${routeFrameStreamScript}${dataScript}`,
     usesRouteFrames,
   };
 }
@@ -658,20 +706,7 @@ export async function renderToHTML(
     throw prepared;
   }
 
-  const { assets, deferredPromises, element, headData, headers, status, syncData } = prepared;
-
-  const stream = await renderToReadableStream(
-    withDocumentState(element, assets, headData, syncData)
-  );
-  await stream.allReady;
-  const reactHtml = await streamToString(stream);
-
-  return {
-    headers,
-    html: reactHtml,
-    ndjson: await serializeLoaderDataNdjson(syncData, deferredPromises),
-    status,
-  };
+  return renderBufferedResult(prepared, route, root);
 }
 
 export async function renderSSR(

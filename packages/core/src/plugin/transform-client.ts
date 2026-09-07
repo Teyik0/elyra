@@ -80,7 +80,7 @@ function collectDefineRouteBindings(program: Program): Set<string> {
   return bindings;
 }
 
-function rewriteDefineRouteImports(
+function rewriteClientImports(
   source: MagicString,
   program: Program,
   bindings: Set<string>
@@ -95,13 +95,18 @@ function rewriteDefineRouteImports(
     if (typeof moduleName !== "string" || !FURIN_SERVER_MODULES.has(moduleName)) {
       continue;
     }
-    const importsDefineRoute = (declaration.specifiers as unknown as AstNode[]).some(
+    const importsClientValue = (declaration.specifiers as unknown as AstNode[]).some(
       (specifier) => {
         const local = localName(specifier);
-        return local !== null && bindings.has(local);
+        const imported = importedName(specifier);
+        return (
+          (local !== null && bindings.has(local)) ||
+          imported === "HeadContent" ||
+          imported === "Scripts"
+        );
       }
     );
-    if (!importsDefineRoute) {
+    if (!importsClientValue) {
       continue;
     }
     const clientModule = moduleName === "furin" ? "furin/client" : "@teyik0/furin/client";
@@ -148,7 +153,7 @@ function removeChainedServerCalls(
   program: Program,
   bindings: Set<string>
 ): boolean {
-  let transformed = rewriteDefineRouteImports(source, program, bindings);
+  let transformed = rewriteClientImports(source, program, bindings);
 
   walk(program, {
     CallExpression(call, context) {

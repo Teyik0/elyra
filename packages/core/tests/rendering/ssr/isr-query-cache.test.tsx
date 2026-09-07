@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { Elysia, t } from "elysia";
-import { defineRootRoute, defineRoute } from "../../../src/furin.ts";
+import { defineRootRoute, defineRoute, HeadContent, Scripts } from "../../../src/furin.ts";
 import { __resetCacheState, revalidatePath } from "../../../src/server/cache/index.ts";
 import { renderForPath } from "../../../src/server/render/ssr.ts";
 import { adaptDefinedLayout, adaptDefinedPage } from "../../../src/server/router/defined-route.ts";
@@ -17,7 +17,13 @@ const rootTerminal = defineRootRoute()
   .config({ mode: "ssr" })
   .layout(({ children }) => (
     <html lang="en">
-      <body>{children}</body>
+      <head>
+        <HeadContent />
+      </head>
+      <body>
+        {children}
+        <Scripts />
+      </body>
     </html>
   ));
 const root = {

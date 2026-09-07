@@ -28,6 +28,21 @@ export const route = defineRoute()
     expect(result.removedServerCode).toBe(true);
   });
 
+  test.each(["furin", "@teyik0/furin"])("rewrites separate document imports from %s", (moduleName) => {
+    const result = transformForClient(
+      `import { HeadContent as Head, Scripts } from "${moduleName}";
+import { defineRootRoute } from "${moduleName}";
+export const route = defineRootRoute().config({ mode: "ssr" }).layout(({ children }) =>
+  <html><head><Head /></head><body>{children}<Scripts /></body></html>);`,
+      "root.tsx"
+    );
+
+    expect(result.code).not.toContain(`from "${moduleName}"`);
+    expect(result.code).toContain(`from "${moduleName}/client"`);
+    expect(result.code).toContain("<Head />");
+    expect(result.code).toContain("<Scripts />");
+  });
+
   test("supports an aliased defineRoute import", () => {
     const result = transformForClient(
       `import { defineRoute as routeBuilder } from "furin";

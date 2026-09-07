@@ -92,6 +92,7 @@ export function RouterProvider({
   // the provider boots into the inline not-found UI.
   const [state, setState] = useState<RouterState>(() => ({
     data: initialData,
+    head: initialDocumentState?.head,
     match: initialMatch,
     notFound: initialNotFound,
   }));
@@ -918,7 +919,7 @@ export function RouterProvider({
     <DocumentProvider
       value={{
         ...initialDocumentState,
-        head: state.head ?? initialDocumentState.head,
+        head: state.head,
       }}
     >
       {routerTree}

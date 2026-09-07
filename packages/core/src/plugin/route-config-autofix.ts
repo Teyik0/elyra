@@ -43,10 +43,13 @@ function asAstNode(node: unknown): AstNode | null {
 
 function propertyName(node: unknown): string | null {
   const ast = asAstNode(node);
-  if (ast?.type !== "Identifier" || typeof ast.name !== "string") {
-    return null;
+  if (ast?.type === "Identifier" && typeof ast.name === "string") {
+    return ast.name;
   }
-  return ast.name;
+  if (ast?.type === "Literal" && typeof ast.value === "string") {
+    return ast.value;
+  }
+  return null;
 }
 
 const WITHOUT_EXTENSION_RE = /\.(ts|tsx|jsx|js|mts|cts)$/;
@@ -842,7 +845,7 @@ function validateRouteChain(heads: ChainHead[], convention: RouteFileConvention)
   if ((convention.isRootLayout || convention.isNestedLayout) && routeHead.terminal === "page") {
     throw routeConfigError(convention.filePath, "layout files must end with .layout()");
   }
-  if (!(convention.isRootLayout || convention.isNestedLayout) && routeHead.terminal === "layout") {
+  if (!(convention.isRootLayout || convention.isNestedLayout) && routeHead.terminal !== "page") {
     throw routeConfigError(convention.filePath, "page files must end with .page()");
   }
   if (!routeHead.exportedAsRoute) {
@@ -878,14 +881,25 @@ function rewriteRootBuilder(
 function insertCompleteConfig(routeHead: ChainHead, ctx: FixContext): void {
   const binding =
     ctx.expected && !ctx.isRootLayout ? resolveBinding(ctx, Math.max(ctx.lastImportEnd, 0)) : null;
-  const layoutPart = binding && !ctx.isRootLayout ? `layout: ${binding}, ` : "";
+  const entries: string[] = [];
+  if (binding && !ctx.isRootLayout) {
+    entries.push(`layout: ${binding}`);
+  }
   const mode = inferRenderingMode({
     hasLoader: ctx.hasLoader,
     hasQuery: false,
     hasRevalidate: false,
     isRootLayout: ctx.isRootLayout,
   });
-  ctx.magic.appendRight(routeHead.end, `.config({ ${layoutPart}mode: "${mode}" })`);
+  entries.push(`mode: "${mode}"`);
+  if (ctx.dynamicParams.length > 0) {
+    const typeBoxBinding = ensureTImport(ctx);
+    const params = ctx.dynamicParams
+      .map((name) => `${paramKey(name)}: ${typeBoxBinding}.String()`)
+      .join(", ");
+    entries.push(`params: ${typeBoxBinding}.Object({ ${params} })`);
+  }
+  ctx.magic.appendRight(routeHead.end, `.config({ ${entries.join(", ")} })`);
 }
 
 function insertMissingLayoutTerminal(

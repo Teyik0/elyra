@@ -78,11 +78,12 @@ function writeAdminPages(appPath) {
     appPath,
     "src/admin/index.tsx",
     [
-      'import { defineRoute } from "@teyik0/furin";',
+      'import { defer, defineRoute } from "@teyik0/furin";',
       'import { route as rootRoute } from "./root";',
       "",
       "export const route = defineRoute()",
-      '  .config({ layout: rootRoute, mode: "ssg" })',
+      '  .config({ layout: rootRoute, mode: "ssr" })',
+      '  .loader(() => defer({ ready: Promise.resolve("yes") }))',
       "  .page(() => <main>Admin home</main>);",
     ].join("\\n")
   );
@@ -250,6 +251,7 @@ try {
 
     const adminHtml = await (await parent.handle(new Request("http://furin/admin"))).text();
     expect(adminHtml).toContain("__FURIN_SYNC__");
+    expect(adminHtml.match(/id="__FURIN_SYNC__"/g)).toHaveLength(1);
     expect(adminHtml).toContain("/_furin/sync");
 
     const frontHtml = await (await parent.handle(new Request("http://furin/"))).text();
