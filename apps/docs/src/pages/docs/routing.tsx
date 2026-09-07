@@ -6,7 +6,7 @@ import { getDocSourceText } from "@/lib/docs-server";
 import { route as parentRoute } from "./_route";
 
 export const route = defineRoute()
-  .config({ layout: parentRoute, mode: "ssr" })
+  .config({ layout: parentRoute, mode: "ssg" })
   .loader(() => {
     const doc = DOCS_BY_PATH["/docs/routing"];
     return { markdownSource: getDocSourceText(doc.sourcePath) };
