@@ -2,10 +2,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { createTmpApp, writeAppFile } from "../../support/app-fixtures.ts";
-import { extractDevClientEntry, getFreePort } from "../../support/hmr.ts";
+import { DEV_CLIENT_CHUNK_RE, extractDevClientEntry, getFreePort } from "../../support/hmr.ts";
 import { startProcess } from "../../support/process.ts";
-
-const BUN_DEV_CLIENT_ENTRY_PATTERN = /^\/_bun\/client\/index-/;
 
 /**
  * Integration test for the dev-mode HMR pipeline.
@@ -135,7 +133,7 @@ describe.serial("dev HMR", () => {
 
     const hmrEntryHtml = await (await fetch(`http://localhost:${port}/_bun_hmr_entry`)).text();
     expect(hmrEntryHtml).toContain("data-bun-dev-server-script");
-    expect(extractDevClientEntry(hmrEntryHtml)).toMatch(BUN_DEV_CLIENT_ENTRY_PATTERN);
+    expect(extractDevClientEntry(hmrEntryHtml)).toMatch(DEV_CLIENT_CHUNK_RE);
   }, 30_000);
 
   test("after file edit, SSR returns updated content (no restart)", async () => {

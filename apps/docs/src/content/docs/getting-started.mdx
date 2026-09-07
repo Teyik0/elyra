@@ -99,7 +99,7 @@ You can also create empty route files and let development mode scaffold the smal
 
 - `pages/root.tsx` becomes an SSR root layout.
 - `pages/**/_route.tsx` becomes an SSR layout linked to its nearest ancestor layout.
-- Any other route file becomes an SSG page linked to its nearest ancestor layout.
+- Any other route file, except the special `error.tsx` and `not-found.tsx` conventions, becomes an SSG page linked to its nearest ancestor layout.
 
 Non-empty helper files stay untouched. A route file must export exactly one builder as
 `export const route`, and its terminal must match its filename: `_route` uses `.layout()`, while

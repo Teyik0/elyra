@@ -11,7 +11,11 @@ export {
   HeadContent,
   Scripts,
 } from "./client/document.tsx";
-export { type HotComponentRegistry, updateHotComponent } from "./client/hmr.ts";
+export {
+  type HotComponentRegistry,
+  reconcileHotComponentRegistry,
+  updateHotComponent,
+} from "./client/hmr.ts";
 export {
   type SyncMutation,
   type SyncMutationContext,

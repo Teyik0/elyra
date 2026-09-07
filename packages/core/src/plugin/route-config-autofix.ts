@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { extname, join, relative, resolve } from "node:path";
 import MagicString from "magic-string";
 import { walk } from "yuku-ast";
@@ -53,6 +53,8 @@ function propertyName(node: unknown): string | null {
 }
 
 const WITHOUT_EXTENSION_RE = /\.(ts|tsx|jsx|js|mts|cts)$/;
+const NESTED_LAYOUT_FILE_NAMES = ["_route.tsx", "_route.ts", "_route.jsx", "_route.js"];
+const ROOT_LAYOUT_FILE_NAMES = ["root.tsx", "root.ts"];
 
 function withoutExtension(path: string): string {
   return path.replace(WITHOUT_EXTENSION_RE, "");
@@ -101,7 +103,7 @@ export function expectedLayoutFor(
   let current = directory;
   while (current.startsWith(pages) && current !== pages) {
     if (!(isLayoutFile && current === directory)) {
-      for (const candidate of ["_route.tsx", "_route.ts", "_route.jsx", "_route.js"]) {
+      for (const candidate of NESTED_LAYOUT_FILE_NAMES) {
         const layoutPath = join(current, candidate);
         if (probe(layoutPath)) {
           return {
@@ -114,7 +116,7 @@ export function expectedLayoutFor(
     current = resolve(current, "..");
   }
 
-  for (const candidate of ["root.tsx", "root.ts"]) {
+  for (const candidate of ROOT_LAYOUT_FILE_NAMES) {
     const layoutPath = join(pages, candidate);
     if (probe(layoutPath)) {
       return {
@@ -439,6 +441,7 @@ function collectChainHeads(program: Program, bindings: BuilderBindings): ChainHe
 
 interface FixContext {
   allBindings: Set<string>;
+  ancestorRequiresSsr: boolean;
   dynamicParams: string[];
   expected: ExpectedLayout | null;
   expectedResolvedPath: string;
@@ -455,23 +458,82 @@ interface FixContext {
 type InferredRenderingMode = "isr" | "ssg" | "ssr";
 
 function inferRenderingMode({
+  ancestorRequiresSsr,
   hasLoader,
   hasQuery,
   hasRevalidate,
   isRootLayout,
 }: {
+  ancestorRequiresSsr: boolean;
   hasLoader: boolean;
   hasQuery: boolean;
   hasRevalidate: boolean;
   isRootLayout: boolean;
 }): InferredRenderingMode {
-  if (isRootLayout || hasQuery) {
+  if (isRootLayout || hasQuery || ancestorRequiresSsr) {
     return "ssr";
   }
   if (!hasLoader) {
     return "ssg";
   }
   return hasRevalidate ? "isr" : "ssr";
+}
+
+function findSourceFile(
+  directory: string,
+  fileNames: readonly string[],
+  probe: LayoutProbe
+): string | null {
+  for (const fileName of fileNames) {
+    const candidate = join(directory, fileName);
+    if (probe(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function ancestorLayoutPaths(filePath: string, pagesDir: string, probe: LayoutProbe): string[] {
+  const pages = resolve(pagesDir);
+  const file = resolve(filePath);
+  const directory = resolve(file, "..");
+  const isLayoutFile = withoutExtension(file) === join(directory, "_route");
+  const paths: string[] = [];
+  let current = isLayoutFile ? resolve(directory, "..") : directory;
+
+  while (current.startsWith(pages) && current !== pages) {
+    const layoutPath = findSourceFile(current, NESTED_LAYOUT_FILE_NAMES, probe);
+    if (layoutPath) {
+      paths.push(layoutPath);
+    }
+    current = resolve(current, "..");
+  }
+
+  const rootPath = findSourceFile(pages, ROOT_LAYOUT_FILE_NAMES, probe);
+  if (rootPath) {
+    paths.push(rootPath);
+  }
+  return paths;
+}
+
+function layoutSourceRequiresSsr(filePath: string): boolean {
+  try {
+    const source = readFileSync(filePath, "utf8");
+    const parsed = parseSource(source, detectLangFromPath(filePath));
+    const bindings = collectBuilderBindings(parsed.program);
+    if (builderChainHasMethod(parsed.program, bindings, "loader")) {
+      return true;
+    }
+    return collectConfigObjects(parsed.program, bindings).some(
+      (object) => collectConfigProperties(object).query !== undefined
+    );
+  } catch {
+    return true;
+  }
+}
+
+function ancestorChainRequiresSsr(filePath: string, pagesDir: string, probe: LayoutProbe): boolean {
+  return ancestorLayoutPaths(filePath, pagesDir, probe).some(layoutSourceRequiresSsr);
 }
 
 const wordBoundaryRe = (binding: string): RegExp => new RegExp(`\\b${binding}\\b`);
@@ -601,6 +663,7 @@ function validateConfigProperties(
   const inferredMode = properties.mode
     ? null
     : inferRenderingMode({
+        ancestorRequiresSsr: ctx.ancestorRequiresSsr,
         hasLoader: ctx.hasLoader,
         hasQuery: Boolean(properties.query),
         hasRevalidate: Boolean(properties.revalidate),
@@ -886,6 +949,7 @@ function insertCompleteConfig(routeHead: ChainHead, ctx: FixContext): void {
     entries.push(`layout: ${binding}`);
   }
   const mode = inferRenderingMode({
+    ancestorRequiresSsr: ctx.ancestorRequiresSsr,
     hasLoader: ctx.hasLoader,
     hasQuery: false,
     hasRevalidate: false,
@@ -1029,6 +1093,7 @@ export function fixRouteConfigLayout(
   const configObjects = collectConfigObjects(parsed.program, bindings);
   const ctx: FixContext = {
     allBindings,
+    ancestorRequiresSsr: ancestorChainRequiresSsr(filePath, pagesDir, probe),
     dynamicParams: dynamicParamsFor(filePath, pagesDir),
     expected: convention.expected,
     expectedResolvedPath,

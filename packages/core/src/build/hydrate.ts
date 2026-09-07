@@ -45,6 +45,7 @@ export function generateHydrateEntry(
   };
 
   const routeEntries: string[] = [];
+  const activeHotComponentKeys = new Set<string>();
 
   const clientRoutes = [...routes].sort((a, b) =>
     compareRouteSpecificity(b.pattern, a.pattern),
@@ -61,6 +62,10 @@ export function generateHydrateEntry(
       .slice(1)
       .filter((entry) => entry.layout && entry.sourcePath)
       .map((entry) => entry.sourcePath as string);
+    activeHotComponentKeys.add(`page:${resolvedPage}`);
+    for (const layoutPath of layoutPaths) {
+      activeHotComponentKeys.add(`layout:${layoutPath.replace(/\\/g, "/")}`);
+    }
     const layoutIdents = layoutPaths.map((_, index) => `__furin_layout_${index}`);
 
     // Emit one boundary literal per segment that actually carries a convention
@@ -143,10 +148,12 @@ export function generateHydrateEntry(
 
   const resolvedRootLayout = rootLayout.replace(/\\/g, "/");
   const rootComponentKey = JSON.stringify(`root:${resolvedRootLayout}`);
+  activeHotComponentKeys.add(`root:${resolvedRootLayout}`);
+  const activeHotComponentKeysLiteral = JSON.stringify([...activeHotComponentKeys]);
 
   return `import { hydrateRoot } from "react-dom/client";
 import { createElement, type ReactNode } from "react";
-${loggingImports}import { DocumentProvider, type DocumentState, type HotComponentRegistry, updateHotComponent } from "@teyik0/furin/client";
+${loggingImports}import { DocumentProvider, type DocumentState, type HotComponentRegistry, reconcileHotComponentRegistry, updateHotComponent } from "@teyik0/furin/client";
 import { RouterProvider } from "@teyik0/furin/link";
 import { fromCrossJSON, parseDeferredNdjson } from "@teyik0/furin/link";
 import type { SerovalNode } from "seroval";
@@ -157,6 +164,7 @@ ${loggerSetup}
 const hotComponentRegistry = ((window as unknown as {
   __FURIN_HOT_COMPONENTS__?: HotComponentRegistry;
 }).__FURIN_HOT_COMPONENTS__ ??= new Map());
+reconcileHotComponentRegistry(hotComponentRegistry, new Set(${activeHotComponentKeysLiteral}));
 const hotComponent = <Props,>(key: string, component: (props: Props) => ReactNode) =>
   import.meta.hot ? updateHotComponent(hotComponentRegistry, key, component) : component;
 const __furin_root_component = hotComponent(${rootComponentKey}, __furin_root_route.component);

@@ -34,9 +34,10 @@ const root = {
 function resolveRoute(
   route: Parameters<typeof adaptDefinedPage>[0],
   path: string,
-  pattern: string
+  pattern: string,
+  routeRoot: RootLayout
 ): ResolvedRoute {
-  const page = adaptDefinedPage(route, root.route);
+  const page = adaptDefinedPage(route, routeRoot.route);
   return {
     mode: page.mode ?? "ssr",
     page,
@@ -77,7 +78,7 @@ test("ISR cache keys include the query string and path invalidation clears every
       return { tenant: query.tenant ?? "" };
     })
     .page(({ data }) => <main data-tenant={data.tenant}>{data.tenant}</main>);
-  const resolved = resolveRoute(route, "/search.tsx", "/search");
+  const resolved = resolveRoute(route, "/search.tsx", "/search", root);
   const app = new Elysia().use(createRoutePlugin(resolved, root, "build-1"));
 
   const alpha = await app
@@ -111,7 +112,7 @@ test("ISR cached loaders reject request-specific context", async () => {
       tenant: query.tenant ?? "",
     }))
     .page(({ data }) => <main>{data.tenant}</main>);
-  const resolved = resolveRoute(route, "/private.tsx", "/private");
+  const resolved = resolveRoute(route, "/private.tsx", "/private", root);
   const app = new Elysia().use(createRoutePlugin(resolved, root, "build-1"));
 
   const alice = await app.handle(
@@ -136,7 +137,7 @@ test("synthetic ISR renders preserve repeated query values for loaders", async (
       return {};
     })
     .page(() => <main>search</main>);
-  const resolved = resolveRoute(route, "/search.tsx", "/search");
+  const resolved = resolveRoute(route, "/search.tsx", "/search", root);
 
   await renderForPath(
     resolved,
@@ -161,7 +162,7 @@ test("synthetic ISR renders preserve __proto__ query values for loaders", async 
       return {};
     })
     .page(() => <main>search</main>);
-  const resolved = resolveRoute(route, "/search.tsx", "/search");
+  const resolved = resolveRoute(route, "/search.tsx", "/search", root);
 
   await renderForPath(
     resolved,
@@ -176,4 +177,29 @@ test("synthetic ISR renders preserve __proto__ query values for loaders", async 
 
   expect(Object.hasOwn(observedQuery as object, "__proto__")).toBe(true);
   expect(Reflect.get(observedQuery as object, "__proto__")).toBe("from-input");
+});
+
+test("an invalid ISR root document is not cached as a successful render", async () => {
+  const invalidRootTerminal = defineRootRoute()
+    .config({ mode: "ssr" })
+    .layout(({ children }) => <main data-invalid-root="">{children}</main>);
+  const invalidRoot = {
+    path: "/root.tsx",
+    route: adaptDefinedLayout(invalidRootTerminal, undefined),
+  } satisfies RootLayout;
+  const route = defineRoute()
+    .config({ layout: invalidRootTerminal, mode: "isr", revalidate: 60 })
+    .loader(() => ({}))
+    .page(() => <p>invalid ISR content</p>);
+  const resolved = resolveRoute(route, "/isr.tsx", "/isr", invalidRoot);
+  const app = new Elysia().use(createRoutePlugin(resolved, invalidRoot, "build-1"));
+
+  const first = await app.handle(new Request("http://localhost/isr"));
+  const second = await app.handle(new Request("http://localhost/isr"));
+  const html = await second.text();
+
+  expect(first.status).toBe(500);
+  expect(second.status).toBe(500);
+  expect(html).toContain("Something went wrong");
+  expect(html).not.toContain("invalid ISR content");
 });

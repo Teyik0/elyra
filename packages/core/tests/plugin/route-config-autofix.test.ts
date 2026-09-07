@@ -311,6 +311,64 @@ export const route = defineRoute().config({}).page(() => "about");
     }
   });
 
+  test("infers ssr when an ancestor layout has a loader", () => {
+    const pages = createPages({
+      "dashboard/_route.tsx": `import { defineRoute } from "@teyik0/furin";
+import { route as rootRoute } from "../root";
+
+export const route = defineRoute()
+  .config({ layout: rootRoute, mode: "ssr" })
+  .loader(() => ({ user: "Ada" }))
+  .layout(({ children }) => children);
+`,
+      "dashboard/index.tsx": `import { defineRoute } from "@teyik0/furin";
+import { route as dashboardRoute } from "./_route";
+
+export const route = defineRoute()
+  .config({ layout: dashboardRoute })
+  .page(() => "dashboard");
+`,
+      "root.tsx": ROOT_LAYOUT,
+    });
+    try {
+      const filePath = join(pages.path, "dashboard/index.tsx");
+      const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
+      expect(fixed).toContain('mode: "ssr"');
+      expect(fixed).not.toContain('mode: "ssg"');
+    } finally {
+      pages.cleanup();
+    }
+  });
+
+  test("infers ssr when an ancestor layout declares a query schema", () => {
+    const pages = createPages({
+      "root.tsx": ROOT_LAYOUT,
+      "search/_route.tsx": `import { defineRoute } from "@teyik0/furin";
+import { t } from "elysia";
+import { route as rootRoute } from "../root";
+
+export const route = defineRoute()
+  .config({ layout: rootRoute, mode: "ssr", query: t.Object({ q: t.String() }) })
+  .layout(({ children }) => children);
+`,
+      "search/index.tsx": `import { defineRoute } from "@teyik0/furin";
+import { route as searchRoute } from "./_route";
+
+export const route = defineRoute()
+  .config({ layout: searchRoute })
+  .page(() => "search");
+`,
+    });
+    try {
+      const filePath = join(pages.path, "search/index.tsx");
+      const fixed = fixRouteConfigLayout(readFile(filePath), filePath, pages.path);
+      expect(fixed).toContain('mode: "ssr"');
+      expect(fixed).not.toContain('mode: "ssg"');
+    } finally {
+      pages.cleanup();
+    }
+  });
+
   test("does not mutate unrelated config calls", () => {
     const pages = createPages({
       "about.tsx": `import { defineRoute } from "@teyik0/furin";

@@ -613,7 +613,15 @@ export async function furin({
         ...routeSourcePaths(routeInstance),
       ].filter((sourcePath) => existsSync(sourcePath));
       for (const sourcePath of sourcePaths) {
-        const source = readFileSync(sourcePath, "utf8");
+        let source: string;
+        try {
+          source = readFileSync(sourcePath, "utf8");
+        } catch (error) {
+          console.warn(
+            `[furin] Could not read ${sourcePath} for route config autofix: ${error instanceof Error ? error.message : String(error)}`
+          );
+          continue;
+        }
         const fixed = fixRouteConfigLayout(source, sourcePath, resolvedPagesDir);
         if (fixed !== null && fixed !== source) {
           writeFileSync(sourcePath, fixed);

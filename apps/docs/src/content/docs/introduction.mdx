@@ -31,7 +31,7 @@ bun dev
 
 Use one `defineRoute()` chain for the complete route contract:
 
-- mandatory `config({ layout, mode, revalidate, params, query, staticParams })`
+- required `config()` with `layout` and `mode`; `revalidate`, `params`, `query`, and `staticParams` are optional
 - optional `requestLoader()` for request-private data
 - optional `loader()` for public route data
 - optional `head()` after `loader()`

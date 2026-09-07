@@ -448,6 +448,7 @@ describe("generateHydrateEntry — HMR hardening", () => {
     expect(code).toContain('hotComponent("page:/app/src/pages/index.tsx"');
     expect(code).toContain('hotComponent("root:/app/src/pages/root.tsx"');
     expect(code).toContain("hmrWindow.__FURIN_HMR_UPDATE__");
+    expect(code).toContain("reconcileHotComponentRegistry(hotComponentRegistry, new Set(");
   });
 
   test("uses window.__FURIN_ROOT__ as the HMR root persistence mechanism", () => {

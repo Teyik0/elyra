@@ -9,6 +9,17 @@ export interface HotComponentSlot {
 
 export type HotComponentRegistry = Map<string, HotComponentSlot>;
 
+export function reconcileHotComponentRegistry(
+  registry: HotComponentRegistry,
+  activeKeys: ReadonlySet<string>
+): void {
+  for (const key of registry.keys()) {
+    if (!activeKeys.has(key)) {
+      registry.delete(key);
+    }
+  }
+}
+
 export function updateHotComponent<Props>(
   registry: HotComponentRegistry,
   key: string,
