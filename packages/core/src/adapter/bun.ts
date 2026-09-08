@@ -306,6 +306,9 @@ export async function buildBunTarget(
     await runBunBuild({
       entrypoints: [entryPath],
       compile: { outfile },
+      bytecode: true,
+      format: "esm",
+      target: "bun",
       minify: true,
       sourcemap: "none",
       define: { "process.env.NODE_ENV": JSON.stringify("production") },
