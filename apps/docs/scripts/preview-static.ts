@@ -30,7 +30,9 @@ export function startStaticPreview({ basePath, distDir, port }: StaticPreviewOpt
       [basePath]: Bun.file(join(distDir, "index.html")),
       [`${basePath}/_client/*`]: { dir: join(distDir, "_client") },
       "/favicon.ico": existsSync(faviconPath) ? Bun.file(faviconPath) : notFound(),
-      "/": (request) => Response.redirect(new URL(`${basePath}/`, request.url), 302),
+      "/": basePath
+        ? (request) => Response.redirect(new URL(`${basePath}/`, request.url), 302)
+        : Bun.file(join(distDir, "index.html")),
     },
     async fetch(request) {
       const { pathname } = new URL(request.url);
